@@ -189,9 +189,9 @@ func run() error {
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
-	zitadelAdminToken := cfg.RequireString("IAM_ZITADEL_ADMIN_TOKEN")
-	spiceDBPresharedKey := cfg.RequireString("IAM_SPICEDB_GRPC_PRESHARED_KEY")
-	emailIdentityHMACKey := cfg.RequireString("IAM_EMAIL_IDENTITY_HMAC_KEY")
+	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
+	spiceDBPresharedKey := cfg.RequireCredential("spicedb-grpc-preshared-key")
+	emailIdentityHMACKey := cfg.RequireCredential("email-identity-hmac-key")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err

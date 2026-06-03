@@ -205,7 +205,7 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 	}
 	if credential.TargetStore == "" {
 		switch credential.Target {
-		case "public_config", "provider_resource_id", "bootstrap_seed":
+		case "public_config", "provider_resource_id":
 		default:
 			v.add(rel, prefix+".target_store is required")
 		}
@@ -219,7 +219,7 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 			v.add(rel, prefix+".openbao_name must match the runtime secret naming shape")
 		}
 	}
-	if (credential.Target == "public_config" || credential.Target == "bootstrap_seed") && strings.TrimSpace(credential.SiteVar) == "" {
+	if credential.Target == "public_config" && strings.TrimSpace(credential.SiteVar) == "" {
 		v.add(rel, prefix+".site_var is required for "+credential.Target+" targets")
 	}
 	switch credential.Isolation {

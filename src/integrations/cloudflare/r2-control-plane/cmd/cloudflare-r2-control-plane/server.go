@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -389,8 +390,16 @@ func isSHA256Hex(value string) bool {
 }
 
 func loadServerAuthToken(cfg config) (string, error) {
-	if token := strings.TrimSpace(os.Getenv(cfg.authTokenEnv)); token != "" {
+	path := strings.TrimSpace(cfg.authTokenFile)
+	if path == "" {
+		return "", errors.New("auth token file is required")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read auth token file: %w", err)
+	}
+	if token := strings.TrimSpace(string(body)); token != "" {
 		return token, nil
 	}
-	return "", fmt.Errorf("auth token is required via %s", cfg.authTokenEnv)
+	return "", errors.New("auth token file is empty")
 }

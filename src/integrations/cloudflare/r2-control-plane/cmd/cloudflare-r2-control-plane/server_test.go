@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -10,21 +12,23 @@ import (
 	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
 )
 
-func TestLoadServerAuthTokenPrefersEnv(t *testing.T) {
-	t.Setenv("TEST_R2_CONTROL_PLANE_TOKEN", "from-env")
-
-	token, err := loadServerAuthToken(config{authTokenEnv: "TEST_R2_CONTROL_PLANE_TOKEN"})
+func TestLoadServerAuthTokenReadsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	token, err := loadServerAuthToken(config{authTokenFile: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if token != "from-env" {
-		t.Fatalf("token = %q, want env value", token)
+	if token != "from-file" {
+		t.Fatalf("token = %q, want file value", token)
 	}
 }
 
 func TestLoadServerAuthTokenRejectsMissingToken(t *testing.T) {
-	_, err := loadServerAuthToken(config{authTokenEnv: "TEST_R2_CONTROL_PLANE_TOKEN"})
-	if err == nil || !strings.Contains(err.Error(), "auth token is required") {
+	_, err := loadServerAuthToken(config{})
+	if err == nil || !strings.Contains(err.Error(), "auth token file is required") {
 		t.Fatalf("error = %v, want missing token refusal", err)
 	}
 }

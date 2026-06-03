@@ -46,6 +46,7 @@ job "verself-web" {
         PORT = "$${NOMAD_PORT_http}"
         PRODUCT_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
         VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
+        VERSELF_CRED_ELECTRIC_IAM_API_SECRET = "$${NOMAD_SECRETS_DIR}/electric-iam-api-secret"
         VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
       }
@@ -75,12 +76,11 @@ job "verself-web" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/electric.env"
+        destination = "secrets/electric-iam-api-secret"
         perms = "0600"
         data = <<-EOT
-VERSELF_CRED_VALUE_ELECTRIC_IAM_API_SECRET={{ with secret "kv-runtime/data/secret/org/electric-iam.api_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/electric-iam.api_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
-        env = true
       }
       template {
         change_mode = "restart"

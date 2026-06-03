@@ -1,23 +1,36 @@
 package r2control
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestParseEnvFile(t *testing.T) {
-	values, err := ParseEnvFile([]byte(`
-CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID='abc'
-CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY="def"
-`))
+func TestLoadParentCredentialsFromFiles(t *testing.T) {
+	dir := t.TempDir()
+	accessPath := filepath.Join(dir, "access-key-id")
+	secretPath := filepath.Join(dir, "secret-access-key")
+	if err := os.WriteFile(accessPath, []byte("abc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secretPath, []byte("def\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	creds, err := LoadParentCredentials(context.Background(), ParentCredentialConfig{
+		Source:              ParentCredentialSourceFiles,
+		AccessKeyIDFile:     accessPath,
+		SecretAccessKeyFile: secretPath,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if values["CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"] != "abc" {
-		t.Fatalf("access key = %q", values["CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"])
+	if creds.AccessKeyID != "abc" {
+		t.Fatalf("access key = %q", creds.AccessKeyID)
 	}
-	if values["CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY"] != "def" {
-		t.Fatalf("secret key = %q", values["CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY"])
+	if creds.SecretAccessKey != "def" {
+		t.Fatalf("secret key = %q", creds.SecretAccessKey)
 	}
 }
 

@@ -23,27 +23,26 @@ import (
 )
 
 type config struct {
-	action                   string
-	repoRoot                 string
-	site                     string
-	accountID                string
-	bucket                   string
-	keyPrefix                string
-	region                   string
-	credentialSource         string
-	credentialsFile          string
-	parentAccessKeyIDEnv     string
-	parentSecretAccessKeyEnv string
-	parentSessionTokenEnv    string
-	listenAddr               string
-	authTokenEnv             string
-	testPrefix               string
-	inventoryPrefix          string
-	inventoryDepth           int
-	tempTTL                  time.Duration
-	uploadSessionTTL         time.Duration
-	timeout                  time.Duration
-	verifyTempCredentials    bool
+	action                    string
+	repoRoot                  string
+	site                      string
+	accountID                 string
+	bucket                    string
+	keyPrefix                 string
+	region                    string
+	credentialSource          string
+	parentAccessKeyIDFile     string
+	parentSecretAccessKeyFile string
+	parentSessionTokenFile    string
+	listenAddr                string
+	authTokenFile             string
+	testPrefix                string
+	inventoryPrefix           string
+	inventoryDepth            int
+	tempTTL                   time.Duration
+	uploadSessionTTL          time.Duration
+	timeout                   time.Duration
+	verifyTempCredentials     bool
 }
 
 type report struct {
@@ -89,13 +88,12 @@ func run(args []string) error {
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")
 	fs.StringVar(&cfg.keyPrefix, "key-prefix", "sha256", "R2 artifact key prefix.")
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
-	fs.StringVar(&cfg.credentialSource, "credential-source", "env", "Scoped R2 credential source: env, env-file, or auto.")
-	fs.StringVar(&cfg.credentialsFile, "credentials-file", "", "Environment file containing scoped R2 publisher credentials.")
-	fs.StringVar(&cfg.parentAccessKeyIDEnv, "parent-access-key-id-env", "CLOUDFLARE_R2_PUBLISHER_TOKEN_ID", "Environment variable name for the R2 publisher token ID.")
-	fs.StringVar(&cfg.parentSecretAccessKeyEnv, "parent-secret-access-key-env", "CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY", "Environment variable name for the R2 publisher S3 secret.")
-	fs.StringVar(&cfg.parentSessionTokenEnv, "parent-session-token-env", "CLOUDFLARE_R2_PUBLISHER_SESSION_TOKEN", "Environment variable name for an optional R2 session token.")
+	fs.StringVar(&cfg.credentialSource, "credential-source", "files", "Scoped R2 credential source: files.")
+	fs.StringVar(&cfg.parentAccessKeyIDFile, "parent-access-key-id-file", "", "File containing the R2 publisher token ID.")
+	fs.StringVar(&cfg.parentSecretAccessKeyFile, "parent-secret-access-key-file", "", "File containing the R2 publisher S3 secret.")
+	fs.StringVar(&cfg.parentSessionTokenFile, "parent-session-token-file", "", "Optional file containing the R2 publisher session token.")
 	fs.StringVar(&cfg.listenAddr, "listen", "127.0.0.1:18732", "HTTP listen address for --action=serve.")
-	fs.StringVar(&cfg.authTokenEnv, "auth-token-env", "VERSELF_R2_CONTROL_PLANE_TOKEN", "Environment variable containing the --action=serve bearer token.")
+	fs.StringVar(&cfg.authTokenFile, "auth-token-file", "", "File containing the --action=serve bearer token.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.StringVar(&cfg.inventoryPrefix, "inventory-prefix", "", "R2 object prefix for --action=inventory.")
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
@@ -218,26 +216,25 @@ func (cfg config) validate() error {
 	if cfg.inventoryDepth < 1 || cfg.inventoryDepth > 8 {
 		return fmt.Errorf("--inventory-depth must be between 1 and 8")
 	}
-	if cfg.action == "serve" && strings.TrimSpace(os.Getenv(cfg.authTokenEnv)) == "" {
-		return fmt.Errorf("--auth-token-env value is required for action=serve")
+	if cfg.action == "serve" && strings.TrimSpace(cfg.authTokenFile) == "" {
+		return fmt.Errorf("--auth-token-file is required for action=serve")
 	}
 	switch cfg.credentialSource {
-	case r2control.ParentCredentialSourceEnv, r2control.ParentCredentialSourceEnvFile, r2control.ParentCredentialSourceAuto:
+	case r2control.ParentCredentialSourceFiles:
 	default:
-		return fmt.Errorf("--credential-source must be env, env-file, or auto")
+		return fmt.Errorf("--credential-source must be files")
 	}
 	return nil
 }
 
 func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 	return r2control.ParentCredentialConfig{
-		Source:             cfg.credentialSource,
-		AccountID:          cfg.accountID,
-		CredentialsFile:    cfg.credentialsFile,
-		AccessKeyIDEnv:     cfg.parentAccessKeyIDEnv,
-		SecretAccessKeyEnv: cfg.parentSecretAccessKeyEnv,
-		SessionTokenEnv:    cfg.parentSessionTokenEnv,
-		Timeout:            cfg.timeout,
+		Source:              cfg.credentialSource,
+		AccountID:           cfg.accountID,
+		AccessKeyIDFile:     cfg.parentAccessKeyIDFile,
+		SecretAccessKeyFile: cfg.parentSecretAccessKeyFile,
+		SessionTokenFile:    cfg.parentSessionTokenFile,
+		Timeout:             cfg.timeout,
 	}
 }
 

@@ -150,14 +150,12 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		"--cli-name", "guardian",
 	)
 
-	t.Setenv("LATITUDESH_AUTH_TOKEN", "lat_test_guardian")
-	runCLI(t, nil, "company", "options", "add", "guardian", "latitude.api_token", "--from-env", "LATITUDESH_AUTH_TOKEN")
+	runCLIWithInput(t, nil, "lat_test_guardian\n", "company", "options", "add", "guardian", "latitude.api_token", "--stdin")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.project_id", "--value", "proj_guardian")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.region", "--value", "ASH")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.plan", "--value", "f4-metal-medium")
 
-	t.Setenv("STRIPE_SECRET_KEY", "sk_test_guardian")
-	runCLI(t, nil, "company", "options", "add", "guardian", "stripe.secret_key", "--from-env", "STRIPE_SECRET_KEY")
+	runCLIWithInput(t, nil, "sk_test_guardian\n", "company", "options", "add", "guardian", "stripe.secret_key", "--stdin")
 	runCLI(t, nil, "company", "options", "set", "guardian", "stripe.publishable_key", "--value", "pk_test_guardian")
 
 	repoRoot := t.TempDir()
@@ -730,14 +728,13 @@ func TestEnvCommandsUseSecretsSDKBackedAPI(t *testing.T) {
 
 	t.Setenv("VERSELF_TOKEN", "tok_secret")
 	t.Setenv("VERSELF_SECRETS_API_URL", server.URL)
-	t.Setenv("API_TOKEN_VALUE", "tok_live")
 
-	runCLI(t, nil,
+	runCLIWithInput(t, nil, "tok_live\n",
 		"env", "add", "API_TOKEN",
 		"--org", "guardian",
 		"--project", "proj_1",
 		"--environment", "production",
-		"--from-env", "API_TOKEN_VALUE",
+		"--stdin",
 		"--idempotency-key", "secret:add",
 	)
 	if putKey != "secret:add" {

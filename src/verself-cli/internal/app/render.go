@@ -182,7 +182,7 @@ zitadel_domain: "{{ verself_domain }}"
 
 service_discovery_canary_org_slug: %s
 
-bootstrap_seed_codebase: verself-sh
+bootstrap_source_codebase: verself-sh
 bootstrap_runtime_substrate: customer_latitude_bare_metal
 `, yamlQuote(company.Site), yamlQuote(domain), yamlQuote(company.CompanyDomain), yamlQuote(company.Name)), nil
 }
@@ -232,7 +232,7 @@ func siteVarOverlay(company CompanyRecord) map[string]string {
 		"verself_domain":                    yamlQuote(company.ProductDomain),
 		"company_domain":                    yamlQuote(company.CompanyDomain),
 		"service_discovery_canary_org_slug": yamlQuote(company.Name),
-		"bootstrap_seed_codebase":           yamlQuote("verself-sh"),
+		"bootstrap_source_codebase":         yamlQuote("verself-sh"),
 		"bootstrap_runtime_substrate":       yamlQuote("customer_latitude_bare_metal"),
 	}
 }
@@ -262,7 +262,7 @@ func renderProvisioningTemplate(company CompanyRecord) string {
 func renderREADME(company CompanyRecord) string {
 	return fmt.Sprintf(`# %s
 
-This repository is a generated seed copy of `+"`verself-sh`"+`. It is fully
+This repository is a generated source copy of `+"`verself-sh`"+`. It is fully
 decoupled from Verself's production installation after export.
 
 Runtime substrate: customer-provisioned Latitude bare metal.

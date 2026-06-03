@@ -40,11 +40,11 @@ job "cloudflare-r2-control-plane" {
           "--account-id=__VERSELF_CLOUDFLARE_ACCOUNT_ID__",
           "--bucket=__VERSELF_NOMAD_ARTIFACT_BUCKET__",
           "--key-prefix=sha256",
-          "--credential-source=env",
-          "--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID",
-          "--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY",
+          "--credential-source=files",
+          "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
+          "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
           "--listen=127.0.0.1:18732",
-          "--auth-token-env=VERSELF_R2_CONTROL_PLANE_TOKEN",
+          "--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
         ]
       }
 
@@ -57,13 +57,26 @@ job "cloudflare-r2-control-plane" {
 
       template {
         change_mode = "restart"
-        destination = "secrets/r2-control-plane.env"
+        destination = "secrets/r2-publisher-token-id"
         perms = "0600"
-        env = true
         data = <<-EOT
-CLOUDFLARE_R2_PUBLISHER_TOKEN_ID={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value | toJSON }}{{ end }}
-CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-publisher-secret-access-key"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-control-plane-token"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
 

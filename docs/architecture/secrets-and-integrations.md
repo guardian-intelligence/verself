@@ -75,7 +75,7 @@ performed by an authenticated principal and leaves audit evidence.
 S0 repo_metadata_only
   -> S1 stripe_authenticated
   -> S2 provider_bootstrap_credentials_available
-  -> S3 controller_openbao_seeded
+  -> S3 controller_openbao_imported
   -> S4 bare_metal_allocated
   -> S5 host_openbao_installed
   -> S6 site_openbao_initialized
@@ -90,7 +90,7 @@ S0 repo_metadata_only
 | `S0 repo_metadata_only` | Catalog, site vars, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
 | `S1 stripe_authenticated` | The operator or agent has authenticated Stripe CLI/Projects locally. | Stripe config on the principal's machine only. | Initialize or select the site provider project. |
 | `S2 provider_bootstrap_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Bootstrap session memory until imported. | Import catalog-approved bootstrap keys. |
-| `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
+| `S3 controller_openbao_imported` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
 | `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
 | `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No runtime secret values copied yet. | Start OpenBao and initialize the site store. |
 | `S6 site_openbao_initialized` | The host OpenBao Raft store, wrapped recovery material, auth mounts, audit sinks, KV mounts, transit mount, and base policies exist for this site. The initial root token is used only inside the bootstrap transaction. | Site OpenBao and operator-held recovery material. | Reconcile runtime secret declarations and workload auth. |
@@ -107,7 +107,7 @@ values into gamma.
 The first-site bootstrap is the only special case. If there is no controller
 OpenBao yet, the bootstrap session may hold the small set of secret-zero values
 in process memory long enough to bring up the first OpenBao. Once any controller
-OpenBao exists, new sites use `S3 controller_openbao_seeded` instead of
+OpenBao exists, new sites use `S3 controller_openbao_imported` instead of
 plaintext files.
 
 ### Transition Rules
@@ -116,8 +116,8 @@ plaintext files.
   outputs, shell history, or logs.
 - Controller-owned provider authority may be used by provisioning, DNS, and TLS
   tasks. It cannot be a runtime secret source.
-- Provider-project imports reject environment variables that are not declared in
-  the catalog.
+- Provider-project imports reject variables that are not declared in the
+  catalog.
 - Host OpenBao initializes its own site-local Raft store and recovery material.
   Environments never share OpenBao root tokens, unseal keys, or Raft state.
 - The `bao operator init` response is the only normal path that exposes an
@@ -402,7 +402,7 @@ aspect integrations credentials rotate --site=gamma --key=<catalog-key>
 
 `credentials pull` imports provider-project values into the catalog-approved
 OpenBao targets without printing plaintext. It must reject unrecognized
-environment variable names from `.env` or provider-project output.
+variable names from provider-project output.
 
 Runtime services get credentials through OpenBao and secrets-service. They do
 not read provider project files, local `.env`, shell history, GitHub Actions
@@ -473,7 +473,7 @@ The catalog validator should run in CI and before `aspect deploy`.
   `.projects/vault`, `.projects/cache`, or generated artifacts.
 - Runtime services never read local provider workspaces, shell environments,
   GitHub Actions secrets, or operator terminals.
-- Provider project imports reject unknown environment variable names.
+- Provider project imports reject unknown variable names.
 - Rotation metadata exists for all `secret`, `key_material`, and
   `webhook_secret` entries.
 

@@ -58,6 +58,7 @@ type config struct {
 	zitadelBaseURL      string
 	zitadelHost         string
 	adminPAT            string
+	adminPATFile        string
 	verselfDomain       string
 	iamServiceDomain    string
 	projectName         string
@@ -73,10 +74,11 @@ type config struct {
 	// GitHub login IdP ("Sign in with GitHub"). Optional: when either value is
 	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
 	// login still converge. Values come from site metadata plus OpenBao-rendered
-	// Nomad environment.
-	githubLoginIDPName      string
-	githubLoginClientID     string
-	githubLoginClientSecret string
+	// Nomad credential files.
+	githubLoginIDPName          string
+	githubLoginClientID         string
+	githubLoginClientSecret     string
+	githubLoginClientSecretFile string
 }
 
 type zitadelClient struct {
@@ -176,7 +178,6 @@ func run(args []string) error {
 	cfg := config{
 		zitadelBaseURL:      envOr("AUTH_CONTROL_PLANE_ZITADEL_BASE_URL", defaultZitadelBaseURL),
 		zitadelHost:         envOr("AUTH_CONTROL_PLANE_ZITADEL_HOST", ""),
-		adminPAT:            envOr("AUTH_CONTROL_PLANE_ADMIN_PAT", ""),
 		verselfDomain:       envOr("AUTH_CONTROL_PLANE_VERSELF_DOMAIN", ""),
 		iamServiceDomain:    envOr("AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN", ""),
 		projectName:         defaultProjectName,
@@ -190,13 +191,13 @@ func run(args []string) error {
 		openBaoCACert:       envOr("BAO_CACERT", envOr("VAULT_CACERT", defaultOpenBaoCACert)),
 		openBaoToken:        envOr("BAO_TOKEN", envOr("VAULT_TOKEN", "")),
 
-		githubLoginIDPName:      envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
-		githubLoginClientID:     envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID", ""),
-		githubLoginClientSecret: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET", ""),
+		githubLoginIDPName:  envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
+		githubLoginClientID: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID", ""),
 	}
 	fs := flag.NewFlagSet("auth-control-plane-apply", flag.ContinueOnError)
 	fs.StringVar(&cfg.zitadelBaseURL, "zitadel-base-url", cfg.zitadelBaseURL, "Local Zitadel base URL.")
 	fs.StringVar(&cfg.zitadelHost, "zitadel-host", cfg.zitadelHost, "Zitadel HTTP Host header.")
+	fs.StringVar(&cfg.adminPATFile, "admin-pat-file", cfg.adminPATFile, "File containing the Zitadel admin PAT.")
 	fs.StringVar(&cfg.verselfDomain, "verself-domain", cfg.verselfDomain, "Product apex domain.")
 	fs.StringVar(&cfg.iamServiceDomain, "iam-service-domain", cfg.iamServiceDomain, "Public IAM service domain.")
 	fs.StringVar(&cfg.projectName, "project-name", cfg.projectName, "Zitadel project for product API audiences.")
@@ -209,8 +210,11 @@ func run(args []string) error {
 	fs.StringVar(&cfg.openBaoToken, "openbao-token", cfg.openBaoToken, "OpenBao token. Defaults to BAO_TOKEN or VAULT_TOKEN.")
 	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientID, "github-login-client-id", cfg.githubLoginClientID, "GitHub OAuth App client id for Sign in with GitHub.")
-	fs.StringVar(&cfg.githubLoginClientSecret, "github-login-client-secret", cfg.githubLoginClientSecret, "GitHub OAuth App client secret.")
+	fs.StringVar(&cfg.githubLoginClientSecretFile, "github-login-client-secret-file", cfg.githubLoginClientSecretFile, "File containing the GitHub OAuth App client secret.")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := cfg.loadCredentialFiles(); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
@@ -236,21 +240,58 @@ func run(args []string) error {
 	return apply(ctx, cfg)
 }
 
+func (cfg *config) loadCredentialFiles() error {
+	adminPAT, err := readRequiredCredentialFile(cfg.adminPATFile, "--admin-pat-file")
+	if err != nil {
+		return err
+	}
+	cfg.adminPAT = adminPAT
+
+	if strings.TrimSpace(cfg.githubLoginClientSecretFile) == "" {
+		if strings.TrimSpace(cfg.githubLoginClientID) != "" {
+			return fmt.Errorf("--github-login-client-secret-file is required when --github-login-client-id is set")
+		}
+		return nil
+	}
+	secret, err := readRequiredCredentialFile(cfg.githubLoginClientSecretFile, "--github-login-client-secret-file")
+	if err != nil {
+		return err
+	}
+	cfg.githubLoginClientSecret = secret
+	return nil
+}
+
+func readRequiredCredentialFile(path, flagName string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("%s is required", flagName)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", flagName, err)
+	}
+	value := strings.TrimSpace(string(body))
+	if value == "" {
+		return "", fmt.Errorf("%s is empty", flagName)
+	}
+	return value, nil
+}
+
 func (cfg config) validate() error {
 	missing := []string{}
 	for name, value := range map[string]string{
-		"--zitadel-base-url":           cfg.zitadelBaseURL,
-		"--zitadel-host":               cfg.zitadelHost,
-		"AUTH_CONTROL_PLANE_ADMIN_PAT": cfg.adminPAT,
-		"--verself-domain":             cfg.verselfDomain,
-		"--iam-service-domain":         cfg.iamServiceDomain,
-		"--project-name":               cfg.projectName,
-		"--browser-app-name":           cfg.browserAppName,
-		"--cli-app-name":               cfg.cliAppName,
-		"--claims-target-name":         cfg.claimsTargetName,
-		"--claims-action-path":         cfg.claimsActionPath,
-		"--openbao-addr":               cfg.openBaoAddr,
-		"--openbao-token":              cfg.openBaoToken,
+		"--zitadel-base-url":   cfg.zitadelBaseURL,
+		"--zitadel-host":       cfg.zitadelHost,
+		"--admin-pat-file":     cfg.adminPAT,
+		"--verself-domain":     cfg.verselfDomain,
+		"--iam-service-domain": cfg.iamServiceDomain,
+		"--project-name":       cfg.projectName,
+		"--browser-app-name":   cfg.browserAppName,
+		"--cli-app-name":       cfg.cliAppName,
+		"--claims-target-name": cfg.claimsTargetName,
+		"--claims-action-path": cfg.claimsActionPath,
+		"--openbao-addr":       cfg.openBaoAddr,
+		"--openbao-token":      cfg.openBaoToken,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)

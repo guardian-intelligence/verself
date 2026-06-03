@@ -40,47 +40,47 @@ const (
 	accountAdminAOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin/a"
 	accountAdminBOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin/b"
 	bootstrapPublisherOutputFD      = 3
-	bootstrapPublisherTokenIDEnv    = "VERSELF_BOOTSTRAP_R2_PUBLISHER_TOKEN_ID"
 	bootstrapPublisherTTL           = time.Hour
 )
 
 type config struct {
-	action                   string
-	repoRoot                 string
-	site                     string
-	accountID                string
-	bucket                   string
-	keyPrefix                string
-	region                   string
-	accountAdminAOpenBaoPath string
-	accountAdminBOpenBaoPath string
-	openBaoAddr              string
-	openBaoPath              string
-	openBaoCACertFile        string
-	openBaoTokenEnv          string
-	openBaoTokenFile         string
-	runtimeOpenBaoAddr       string
-	runtimeOpenBaoCACertFile string
-	runtimeOpenBaoTokenEnv   string
-	runtimeOpenBaoTokenFile  string
-	dnsInventory             string
-	dnsConcurrency           int
-	dryRun                   bool
-	certificateProjectionDir string
-	acmeDirectoryURL         string
-	acmeContactEmail         string
-	acmeDNSPropagationWait   time.Duration
-	certificateRenewBefore   time.Duration
-	bootstrapVarsFile        string
-	testPrefix               string
-	inventoryPrefix          string
-	inventoryDepth           int
-	tempTTL                  time.Duration
-	uploadSessionTTL         time.Duration
-	childTokenTTL            time.Duration
-	accountAdminTTL          time.Duration
-	timeout                  time.Duration
-	verifyTempCredentials    bool
+	action                        string
+	repoRoot                      string
+	site                          string
+	accountID                     string
+	bucket                        string
+	keyPrefix                     string
+	region                        string
+	accountAdminAOpenBaoPath      string
+	accountAdminBOpenBaoPath      string
+	openBaoAddr                   string
+	openBaoPath                   string
+	openBaoCACertFile             string
+	openBaoTokenEnv               string
+	openBaoTokenFile              string
+	runtimeOpenBaoAddr            string
+	runtimeOpenBaoCACertFile      string
+	runtimeOpenBaoTokenEnv        string
+	runtimeOpenBaoTokenFile       string
+	dnsInventory                  string
+	dnsConcurrency                int
+	dryRun                        bool
+	certificateProjectionDir      string
+	acmeDirectoryURL              string
+	acmeContactEmail              string
+	acmeDNSPropagationWait        time.Duration
+	certificateRenewBefore        time.Duration
+	bootstrapVarsFile             string
+	testPrefix                    string
+	inventoryPrefix               string
+	inventoryDepth                int
+	tempTTL                       time.Duration
+	uploadSessionTTL              time.Duration
+	childTokenTTL                 time.Duration
+	accountAdminTTL               time.Duration
+	timeout                       time.Duration
+	verifyTempCredentials         bool
+	bootstrapPublisherTokenIDFile string
 }
 
 type report struct {
@@ -203,6 +203,7 @@ func run(args []string) error {
 	fs.DurationVar(&cfg.accountAdminTTL, "account-admin-ttl", 7*24*time.Hour, "TTL for Cloudflare account-admin expiration updates.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
+	fs.StringVar(&cfg.bootstrapPublisherTokenIDFile, "bootstrap-publisher-token-id-file", "", "File containing the bootstrap publisher token ID for --action=revoke-bootstrap-publisher.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1077,9 +1078,16 @@ func mintBootstrapPublisher(ctx context.Context, cfg config) (err error) {
 }
 
 func revokeBootstrapPublisher(ctx context.Context, cfg config) error {
-	tokenID := strings.TrimSpace(os.Getenv(bootstrapPublisherTokenIDEnv))
+	if strings.TrimSpace(cfg.bootstrapPublisherTokenIDFile) == "" {
+		return fmt.Errorf("--bootstrap-publisher-token-id-file is required")
+	}
+	tokenIDBody, err := os.ReadFile(cfg.bootstrapPublisherTokenIDFile)
+	if err != nil {
+		return fmt.Errorf("read bootstrap publisher token ID file: %w", err)
+	}
+	tokenID := strings.TrimSpace(string(tokenIDBody))
 	if tokenID == "" {
-		return fmt.Errorf("%s is required", bootstrapPublisherTokenIDEnv)
+		return fmt.Errorf("bootstrap publisher token ID file is empty")
 	}
 	accountAdmin, err := loadRequiredAccountAdminCredentials(ctx, cfg)
 	if err != nil {

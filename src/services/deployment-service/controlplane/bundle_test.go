@@ -252,8 +252,9 @@ func TestResendRuntimeSecretLifecycleIsEmailServiceOwned(t *testing.T) {
   group "email-service" {
     task "email-service" {
       template {
+        destination = "secrets/resend-api-key"
         data = <<-EOT
-EMAIL_SERVICE_RESEND_API_KEY={{ with secret "kv-runtime/data/secret/org/email-service.resend.api_key" }}{{ .Data.data.value }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/email-service.resend.api_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }

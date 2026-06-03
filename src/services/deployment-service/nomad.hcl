@@ -42,6 +42,7 @@ job "deployment-service" {
         command = "local/bin/deployment-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         VERSELF_PG_DSN = "postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable"
       }
       resources {
@@ -73,6 +74,7 @@ job "deployment-service" {
         command = "local/bin/deployment-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         BAZELISK_HOME = "/var/lib/verself/deployment-service/.cache/bazelisk"
         HOME = "/var/lib/verself/deployment-service"
         LOGNAME = "deployment_service"
@@ -102,13 +104,26 @@ job "deployment-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/r2-control-plane-token.env"
+        destination = "secrets/r2-control-plane-token"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_SUBSTRATE_CONTROL_PLANE_MARKER={{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_OPERATOR_DEPLOY_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/substrate-control-plane-marker"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/operator-deploy-token"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {

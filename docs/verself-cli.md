@@ -139,7 +139,7 @@ operator checkout
 
 | Term | Layer | Meaning |
 | --- | --- | --- |
-| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, OpenBao seed metadata, and catalog declarations under `src/host/sites/<site>/`. |
+| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, and catalog declarations under `src/host/sites/<site>/`. |
 | Company | Business intent | The external business being created or operated. It supplies display name, owner identity, brand/domain intent, and billing/legal semantics. |
 | Organization | Product tenant | The IAM, billing, policy, and membership boundary in hosted Verself. A company is represented by one primary organization. |
 | Domain | DNS/resource | A DNS name attached to a company, organization, or service origin. `product_domain` names the hosted Verself product root; `company_domain` names the business. |
@@ -640,33 +640,33 @@ verself company use guardian
 verself company inspect guardian --json
 ```
 
-Company options are supplied through environment variables, stdin, explicit
-non-secret values, or structured field sets:
+Company options are supplied through stdin, explicit non-secret values, or
+structured field sets:
 
 ```text
-verself company options add guardian cloudflare.account_admin_a --from-env CLOUDFLARE_ACCOUNT_ADMIN_A
-verself company options add guardian cloudflare.account_admin_b --from-env CLOUDFLARE_ACCOUNT_ADMIN_B
-verself company options add guardian latitude.api_token --from-env LATITUDESH_AUTH_TOKEN
+printf '%s' "$CLOUDFLARE_ACCOUNT_ADMIN_A" | verself company options add guardian cloudflare.account_admin_a --stdin
+printf '%s' "$CLOUDFLARE_ACCOUNT_ADMIN_B" | verself company options add guardian cloudflare.account_admin_b --stdin
+printf '%s' "$LATITUDESH_AUTH_TOKEN" | verself company options add guardian latitude.api_token --stdin
 verself company options set guardian latitude.project_id --value <project-id>
 verself company options set guardian latitude.region --value ASH
 verself company options set guardian latitude.plan --value f4-metal-medium
-verself company options add guardian stripe.secret_key --from-env STRIPE_SECRET_KEY
-verself company options add guardian stripe.webhook_secret --from-env STRIPE_WEBHOOK_SECRET
+printf '%s' "$STRIPE_SECRET_KEY" | verself company options add guardian stripe.secret_key --stdin
+printf '%s' "$STRIPE_WEBHOOK_SECRET" | verself company options add guardian stripe.webhook_secret --stdin
 verself company options set guardian stripe.publishable_key --value "$STRIPE_PUBLISHABLE_KEY"
 verself company options set guardian stripe.default_currency --value usd
 ```
 
 Token-valued command-line flags are avoided because shells record argv in
-history and process listings. Secret-valued options use `--stdin`, `--from-env`,
-`--from-file`, a credential-store prompt, or OpenBao import.
+history and process listings. Secret-valued options use `--stdin`, a
+credential-store prompt, or controller OpenBao import.
 
 `company configure` writes the shared local store:
 
 - company records under `$XDG_DATA_HOME/verself/companies/<company>.json`;
 - active company pointer under `$XDG_CONFIG_HOME/verself/config.json`;
 - credential references in the company record;
-- secret values in the credential store or OpenBao seed import when explicitly
-  requested.
+- secret values in the credential store or controller OpenBao import when
+  explicitly requested.
 
 For Guardian, the company record derives these seeding inputs:
 
@@ -699,7 +699,6 @@ verself bootstrap --company guardian --option stripe.default_currency=usd
 - `.verself/bootstrap/manifest.yaml`;
 - `src/host/sites/<site>/vars.yml`;
 - `src/host/sites/<site>/provisioning.tfvars.json.template`;
-- `src/host/sites/<site>/openbao-seed.manifest.yaml`;
 - `src/<cli_name>-cli/` when rendering a named CLI;
 - bootstrap run records under `$XDG_STATE_HOME/verself/bootstrap/<run-id>.json`.
 
@@ -742,8 +741,8 @@ with `fields` instead of `secret`. Ambiguous values produce
 
 Initial local rendering has no hard runtime integration requirement. Every
 third-party runtime integration the deployed installation needs still belongs
-in the option catalog so operator artifacts can include the right OpenBao seed
-entries, service config keys, and verification commands.
+in the option catalog so operator artifacts can include the right OpenBao
+targets, service config keys, and verification commands.
 
 Initial option catalog:
 
@@ -762,9 +761,7 @@ and verification evidence. Service code then consumes generated config through
 the normal service runtime and never through CLI-only shortcuts.
 
 Secret-valued options store metadata and a `value_ref`; the plaintext lives in
-the company secret store or the catalog-approved OpenBao target. `company
-options add --from-env` is a convenience that writes the secret value and the
-option metadata in one transaction.
+the company secret store or the catalog-approved OpenBao target.
 
 Site root keys and unseal material are scoped to the target site. Global
 provider authorities such as Cloudflare DNS/TLS live in the prod controller and
@@ -1013,13 +1010,12 @@ normal organization membership.
 - Profile and account config store no bearer tokens, refresh tokens, provider
   tokens, or admin credentials. Account config stores only a credential
   reference and non-secret subject/org metadata.
-- Provider tokens enter company options through stdin, environment variables, OS
-  credential stores, or catalog-approved OpenBao imports.
+- Provider tokens enter company options through stdin, OS credential stores, or
+  catalog-approved OpenBao imports.
 - Generated secrets use cryptographic randomness and are written to encrypted
   storage.
-- Secret updates use stdin, environment variables, files, credential-store
-  prompts, or OpenBao import commands. `--value` is reserved for non-secret
-  options.
+- Secret updates use stdin, credential-store prompts, or OpenBao import
+  commands. `--value` is reserved for non-secret options.
 - The Zitadel admin PAT is consumed by `iam-service`, component reconcilers, and
   repo-local operator/seeding logic; routine CLI commands call service APIs.
 - Mutating commands set idempotency keys through SDK middleware.

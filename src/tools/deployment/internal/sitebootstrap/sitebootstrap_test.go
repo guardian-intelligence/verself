@@ -46,7 +46,7 @@ func TestBootstrapDeployChecksR2PublisherBeforeRemoteAccess(t *testing.T) {
 	}
 }
 
-func TestBootstrapR2ControlPlaneCommandUsesInMemoryPublisher(t *testing.T) {
+func TestBootstrapR2ControlPlaneCommandUsesCredentialFiles(t *testing.T) {
 	root := t.TempDir()
 	r2Binary := filepath.Join(root, "cloudflare-r2-control-plane")
 	if err := os.WriteFile(r2Binary, []byte("binary"), 0o700); err != nil {
@@ -67,27 +67,29 @@ func TestBootstrapR2ControlPlaneCommandUsesInMemoryPublisher(t *testing.T) {
 		SecretAccessKey: "publisher-secret",
 		TokenID:         "publisher-token-id",
 	}
-	cmd, err := startBootstrapR2ControlPlane(context.Background(), opts, "127.0.0.1:18732", "r2bootstrap_token", publisher)
+	cmd, cleanup, err := startBootstrapR2ControlPlane(context.Background(), opts, "127.0.0.1:18732", "r2bootstrap_token", publisher)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer cleanup()
 	args := strings.Join(cmd.Args, "\n")
 	for _, want := range []string{
 		"--action=serve",
 		"--site=gamma",
 		"--repo-root=" + root,
 		"--listen=127.0.0.1:18732",
-		"--auth-token-env=" + bootstrapR2AuthTokenEnv,
 		"--credential-source=" + bootstrapR2CredentialSource,
 	} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("R2 control-plane args missing %q:\n%s", want, args)
 		}
 	}
-	if strings.Contains(args, "--credentials-file") {
-		t.Fatalf("R2 bootstrap command still depends on a credential file:\n%s", args)
+	for _, prefix := range []string{"--auth-token-file=", "--parent-access-key-id-file=", "--parent-secret-access-key-file="} {
+		if argValue(cmd.Args, prefix) == "" {
+			t.Fatalf("R2 control-plane args missing %s:\n%s", prefix, args)
+		}
 	}
-	for _, forbidden := range []string{"account-admin", "openbao", "BAO_", "VAULT_"} {
+	for _, forbidden := range []string{"account-admin", "openbao", "BAO_", "VAULT_", "--auth-token-env", "--parent-access-key-id-env", "--parent-secret-access-key-env"} {
 		if strings.Contains(args, forbidden) {
 			t.Fatalf("R2 bootstrap command contains forbidden authority detail %q:\n%s", forbidden, args)
 		}
@@ -95,14 +97,14 @@ func TestBootstrapR2ControlPlaneCommandUsesInMemoryPublisher(t *testing.T) {
 	if strings.Contains(args, "-R") {
 		t.Fatalf("R2 bootstrap command still contains temporary artifact tunnel details:\n%s", args)
 	}
-	if !envContains(cmd.Env, bootstrapR2AuthTokenEnv+"=r2bootstrap_token") {
-		t.Fatalf("R2 control-plane command did not carry bootstrap auth token env: %v", cmd.Env)
-	}
-	if !envContains(cmd.Env, bootstrapR2AccessKeyIDEnv+"=publisher-token-id") {
-		t.Fatalf("R2 control-plane command did not carry publisher token id env: %v", cmd.Env)
-	}
-	if !envContains(cmd.Env, bootstrapR2SecretAccessEnv+"=publisher-secret") {
-		t.Fatalf("R2 control-plane command did not carry publisher secret env: %v", cmd.Env)
+	for path, want := range map[string]string{
+		argValue(cmd.Args, "--auth-token-file="):               "r2bootstrap_token",
+		argValue(cmd.Args, "--parent-access-key-id-file="):     "publisher-token-id",
+		argValue(cmd.Args, "--parent-secret-access-key-file="): "publisher-secret",
+	} {
+		if got := strings.TrimSpace(readFile(t, path)); got != want {
+			t.Fatalf("credential file %s = %q, want %q", path, got, want)
+		}
 	}
 }
 
@@ -160,11 +162,20 @@ func writeTestFile(t *testing.T, path, body string) {
 	}
 }
 
-func envContains(env []string, want string) bool {
-	for _, entry := range env {
-		if entry == want {
-			return true
+func argValue(args []string, prefix string) string {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, prefix) {
+			return strings.TrimPrefix(arg, prefix)
 		}
 	}
-	return false
+	return ""
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
 }

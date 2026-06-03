@@ -23,12 +23,8 @@ import (
 const (
 	defaultNomadRemoteAddr = "127.0.0.1:4646"
 
-	bootstrapR2CredentialSource  = "env"
-	bootstrapR2AccessKeyIDEnv    = "CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"
-	bootstrapR2SecretAccessEnv   = "CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"
-	bootstrapR2AuthTokenEnv      = "VERSELF_BOOTSTRAP_R2_CONTROL_PLANE_TOKEN"
-	bootstrapR2PublisherTokenEnv = "VERSELF_BOOTSTRAP_R2_PUBLISHER_TOKEN_ID"
-	openBaoRootKeyPath           = "/etc/verself/bootstrap/openbao-root.key"
+	bootstrapR2CredentialSource = "files"
+	openBaoRootKeyPath          = "/etc/verself/bootstrap/openbao-root.key"
 )
 
 type BootstrapDeployOptions struct {
@@ -116,10 +112,11 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 
 	r2ListenAddr := "127.0.0.1:" + strconv.Itoa(r2Port)
 	r2ControlPlaneURL := "http://" + r2ListenAddr
-	r2Cmd, err := startBootstrapR2ControlPlane(ctx, opts, r2ListenAddr, r2Token, publisher)
+	r2Cmd, r2Cleanup, err := startBootstrapR2ControlPlane(ctx, opts, r2ListenAddr, r2Token, publisher)
 	if err != nil {
 		return err
 	}
+	defer r2Cleanup()
 	r2Proc, err := startChildProcess(r2Cmd)
 	if err != nil {
 		return fmt.Errorf("start bootstrap R2 control plane: %w", err)
@@ -251,12 +248,24 @@ func revokeBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions, 
 	if tokenID == "" {
 		return errors.New("Cloudflare bootstrap publisher token ID is required for revoke")
 	}
+	credentialDir, err := os.MkdirTemp("", "verself-bootstrap-r2-revoke-")
+	if err != nil {
+		return fmt.Errorf("create bootstrap publisher revoke credential directory: %w", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(credentialDir)
+	}()
+	tokenIDFile, err := writeBootstrapCredentialFile(credentialDir, "r2-publisher-token-id", tokenID)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, opts.CloudflareBinary,
 		"--action=revoke-bootstrap-publisher",
 		"--site="+opts.Site,
 		"--repo-root="+opts.RepoRoot,
+		"--bootstrap-publisher-token-id-file="+tokenIDFile,
 	)
-	cmd.Env = append(os.Environ(), bootstrapR2PublisherTokenEnv+"="+tokenID)
+	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -287,30 +296,61 @@ func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int
 	return cmd
 }
 
-func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptions, listenAddr, token string, publisher bootstrapPublisherCredential) (*exec.Cmd, error) {
+func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptions, listenAddr, token string, publisher bootstrapPublisherCredential) (*exec.Cmd, func(), error) {
 	if err := checkBootstrapArtifactPublishingInput(opts); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if strings.TrimSpace(publisher.AccessKeyID) == "" || strings.TrimSpace(publisher.SecretAccessKey) == "" || strings.TrimSpace(publisher.TokenID) == "" {
-		return nil, errors.New("bootstrap publisher credential is incomplete")
+		return nil, nil, errors.New("bootstrap publisher credential is incomplete")
+	}
+	credentialDir, err := os.MkdirTemp("", "verself-bootstrap-r2-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create bootstrap R2 credential directory: %w", err)
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(credentialDir)
+	}
+	authTokenFile, err := writeBootstrapCredentialFile(credentialDir, "r2-control-plane-token", token)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	accessKeyIDFile, err := writeBootstrapCredentialFile(credentialDir, "r2-publisher-token-id", publisher.AccessKeyID)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	secretAccessKeyFile, err := writeBootstrapCredentialFile(credentialDir, "r2-publisher-secret-access-key", publisher.SecretAccessKey)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
 	}
 	args := []string{
 		"--action=serve",
 		"--site=" + opts.Site,
 		"--repo-root=" + opts.RepoRoot,
 		"--listen=" + listenAddr,
-		"--auth-token-env=" + bootstrapR2AuthTokenEnv,
+		"--auth-token-file=" + authTokenFile,
 		"--credential-source=" + bootstrapR2CredentialSource,
+		"--parent-access-key-id-file=" + accessKeyIDFile,
+		"--parent-secret-access-key-file=" + secretAccessKeyFile,
 	}
 	cmd := exec.CommandContext(ctx, opts.R2ControlPlaneBinary, args...)
-	cmd.Env = append(os.Environ(),
-		bootstrapR2AuthTokenEnv+"="+token,
-		bootstrapR2AccessKeyIDEnv+"="+publisher.AccessKeyID,
-		bootstrapR2SecretAccessEnv+"="+publisher.SecretAccessKey,
-	)
+	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd, nil
+	return cmd, cleanup, nil
+}
+
+func writeBootstrapCredentialFile(dir, name, value string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("bootstrap credential %s is empty", name)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+		return "", fmt.Errorf("write bootstrap credential %s: %w", name, err)
+	}
+	return path, nil
 }
 
 func checkLocalExecutable(path, label string) error {

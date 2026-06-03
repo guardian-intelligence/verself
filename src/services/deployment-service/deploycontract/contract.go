@@ -566,9 +566,10 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 	text := string(body)
 	for _, required := range []string{
 		`"--action=serve"`,
-		`"--credential-source=env"`,
-		`"--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID"`,
-		`"--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY"`,
+		`"--credential-source=files"`,
+		`"--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id"`,
+		`"--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key"`,
+		`"--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token"`,
 	} {
 		if !strings.Contains(text, required) {
 			v.add(rel, fmt.Sprintf("R2 control-plane runtime must declare %s", required))
@@ -577,6 +578,11 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 	for _, forbidden := range []string{
 		`"--credential-source=openbao"`,
 		`"--credential-source=account-admin"`,
+		`"--credential-source=env"`,
+		`"--credential-source=env-file"`,
+		`"--parent-access-key-id-env`,
+		`"--parent-secret-access-key-env`,
+		`"--auth-token-env`,
 		`"--openbao-addr`,
 		`"--openbao-token`,
 		`"--account-admin`,

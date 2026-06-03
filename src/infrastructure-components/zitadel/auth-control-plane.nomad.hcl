@@ -27,6 +27,10 @@ job "auth-control-plane" {
 
       config {
         command = "local/bin/auth-control-plane-apply"
+        args = [
+          "--admin-pat-file=$${NOMAD_SECRETS_DIR}/admin-pat",
+          "--github-login-client-secret-file=$${NOMAD_SECRETS_DIR}/github-login-client-secret",
+        ]
       }
 
       env {
@@ -45,11 +49,19 @@ job "auth-control-plane" {
 
       template {
         change_mode = "restart"
-        destination = "secrets/runtime.env"
-        env = true
+        destination = "secrets/admin-pat"
+        perms = "0600"
         data = <<-EOT
-AUTH_CONTROL_PLANE_ADMIN_PAT={{ with secret "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
-AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-login-client-secret"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
 

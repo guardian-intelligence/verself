@@ -292,6 +292,33 @@ integrations:
 	}
 }
 
+func TestValidateRepoRejectsBootstrapSeedCredentialTarget(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/integrations/catalog/sites/gamma.yml", `
+version: verself.integrations.v1
+site: gamma
+secret_store_policy: openbao_only
+integrations:
+  - key: example.provider
+    provider: example
+    owner: src/services/example-service
+    purpose: example
+    credentials:
+      - key: example-service.provider.api_key
+        source: bootstrap_session
+        target: bootstrap_seed
+        site_var: example_provider_api_key
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "target_store is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
@@ -344,7 +371,7 @@ func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testi
 func TestValidateRepoRejectsR2ControlPlaneOpenBaoRuntimeCredentials(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=env"`, `"--credential-source=openbao"`, 1))
+	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=files"`, `"--credential-source=openbao"`, 1))
 
 	_, err := ValidateRepo(root)
 	if err == nil {
@@ -358,7 +385,7 @@ func TestValidateRepoRejectsR2ControlPlaneOpenBaoRuntimeCredentials(t *testing.T
 func TestValidateRepoRejectsR2ControlPlaneAccountAdminRuntimeCredentials(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=env"`, `"--credential-source=account-admin"`, 1))
+	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=files"`, `"--credential-source=account-admin"`, 1))
 
 	_, err := ValidateRepo(root)
 	if err == nil {
@@ -465,10 +492,21 @@ job "deployment-service" {
   group "deployment-service" {
     task "deployment-service" {
       template {
+        destination = "secrets/r2-control-plane-token"
         data = <<-EOT
-VERSELF_CRED_VALUE_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_SUBSTRATE_CONTROL_PLANE_MARKER={{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
-VERSELF_CRED_VALUE_OPERATOR_DEPLOY_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        destination = "secrets/substrate-control-plane-marker"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        destination = "secrets/operator-deploy-token"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }
@@ -482,21 +520,33 @@ job "cloudflare-r2-control-plane" {
       config {
         args = [
           "--action=serve",
-          "--credential-source=env",
-          "--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID",
-          "--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY",
+          "--credential-source=files",
+          "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
+          "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
+          "--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
         ]
       }
       template {
+        destination = "secrets/r2-publisher-token-id"
         data = <<-EOT
-CLOUDFLARE_R2_PUBLISHER_TOKEN_ID={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
-CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
-VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-	EOT
-	      }
-	    }
-	  }
-	}
+{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
+		EOT
+		      }
+      template {
+        destination = "secrets/r2-publisher-secret-access-key"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
+		EOT
+		      }
+      template {
+        destination = "secrets/r2-control-plane-token"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
+		EOT
+		      }
+		    }
+		  }
+		}
 	`)
 	write(t, root, "src/infrastructure-components/substrate-control-plane/nomad.hcl", substrateControlPlaneNomadContract())
 	write(t, root, "src/infrastructure-components/openbao/cmd/openbao-bootstrap/main.go",
@@ -527,16 +577,28 @@ job "cloudflare-r2-control-plane" {
       config {
         args = [
           "--action=serve",
-          "--credential-source=env",
-          "--parent-access-key-id-env=CLOUDFLARE_R2_PUBLISHER_TOKEN_ID",
-          "--parent-secret-access-key-env=CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY",
+          "--credential-source=files",
+          "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
+          "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
+          "--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
         ]
       }
       template {
+        destination = "secrets/r2-publisher-token-id"
         data = <<-EOT
-CLOUDFLARE_R2_PUBLISHER_TOKEN_ID={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
-CLOUDFLARE_R2_PUBLISHER_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
-VERSELF_R2_CONTROL_PLANE_TOKEN={{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        destination = "secrets/r2-publisher-secret-access-key"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        destination = "secrets/r2-control-plane-token"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }
