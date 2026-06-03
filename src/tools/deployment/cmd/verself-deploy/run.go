@@ -57,6 +57,11 @@ type githubOIDCResponse struct {
 	Value string `json:"value"`
 }
 
+const (
+	deploymentFollowTimeout      = 20 * time.Minute
+	deploymentFollowPollInterval = time.Second
+)
+
 type problemDetails struct {
 	Type        string `json:"type"`
 	Title       string `json:"title"`
@@ -122,6 +127,16 @@ func run(ctx context.Context, opts runOptions) error {
 	}
 	if _, err := fmt.Fprintf(os.Stdout, "deployment_id=%s state=%s sha=%s traceparent=%s\n", out.Deployment.DeploymentID, out.Deployment.State, out.Deployment.SHA, out.Traceparent); err != nil {
 		return fmt.Errorf("write deployment response: %w", err)
+	}
+	record, traceparent, err := waitForDeploymentTerminal(ctx, baseURL, token, out.Deployment.DeploymentID, deploymentFollowTimeout, deploymentFollowPollInterval)
+	if err != nil {
+		return err
+	}
+	if err := printDeploymentRecord(record, traceparent); err != nil {
+		return err
+	}
+	if record.State != "succeeded" {
+		return fmt.Errorf("deployment_finished_unsuccessfully: deployment_id=%s state=%s error_code=%s error_detail=%s", record.DeploymentID, record.State, record.ErrorCode, record.ErrorDetail)
 	}
 	return nil
 }
@@ -272,6 +287,36 @@ func submitDeployment(ctx context.Context, baseURL string, token string, reqBody
 		return submitResponse{}, fmt.Errorf("deployment_request_failed: response omitted deployment_id")
 	}
 	return out, nil
+}
+
+func waitForDeploymentTerminal(ctx context.Context, baseURL string, token string, deploymentID string, timeout, pollInterval time.Duration) (deploymentRecord, string, error) {
+	if timeout <= 0 {
+		return deploymentRecord{}, "", fmt.Errorf("deployment_follow_failed: timeout must be positive")
+	}
+	if pollInterval <= 0 {
+		return deploymentRecord{}, "", fmt.Errorf("deployment_follow_failed: poll interval must be positive")
+	}
+	followCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var last deploymentRecord
+	var lastTraceparent string
+	for {
+		record, traceparent, err := getDeployment(followCtx, baseURL, token, deploymentID)
+		if err != nil {
+			return deploymentRecord{}, "", fmt.Errorf("deployment_follow_failed: %w", err)
+		}
+		last = record
+		lastTraceparent = traceparent
+		switch record.State {
+		case "succeeded", "failed":
+			return record, traceparent, nil
+		}
+		select {
+		case <-followCtx.Done():
+			return last, lastTraceparent, fmt.Errorf("deployment_follow_failed: %w: deployment_id=%s last_state=%s", followCtx.Err(), deploymentID, last.State)
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 func httpProblem(prefix string, status int, body []byte) error {
