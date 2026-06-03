@@ -410,7 +410,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		var doc RuntimeSecretsFile
 		if v.decode(rel, deploymentSecretsPath, &doc) {
 			v.requireGeneratedSecret(rel, doc, "deployment-service.r2_control_plane_token", 32, "base64url", "cloudflare-r2-control-plane")
-			v.requireGeneratedSecret(rel, doc, "deployment-service.r2_control_plane_token", 32, "base64url", "deployment-service")
 			v.requireProducedSecret(rel, doc, "deployment-service.substrate_control_plane_marker", "substrate-control-plane")
 		}
 	}
