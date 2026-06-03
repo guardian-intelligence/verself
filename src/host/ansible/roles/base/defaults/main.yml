@@ -4,5 +4,7 @@ base_nomad_runtime_users:
     home: /var/lib/company
   - name: spicedb
     home: /var/lib/spicedb
+  - name: stalwart
+    home: /var/lib/stalwart
   - name: verself-web
     home: /var/lib/verself-web
