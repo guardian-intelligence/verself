@@ -34,6 +34,7 @@ pkg_tar(
         "bin/deployment-service": "0755",
         "bin/nomad-chown-exec": "0755",
     },
+    visibility = ["//visibility:public"],
 )
 
 go_test(
