@@ -11,6 +11,7 @@ job "auth-control-plane" {
       user = "root"
 
       vault {
+        env  = false
         role = "auth-control-plane-runtime"
       }
 
@@ -30,6 +31,7 @@ job "auth-control-plane" {
         args = [
           "--admin-pat-file=$${NOMAD_SECRETS_DIR}/admin-pat",
           "--github-login-client-secret-file=$${NOMAD_SECRETS_DIR}/github-login-client-secret",
+          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
         ]
       }
 

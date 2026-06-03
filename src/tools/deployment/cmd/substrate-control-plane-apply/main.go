@@ -24,6 +24,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.BundlePath, "bundle", "", "Control-plane JSON or gzip-compressed JSON bundle.")
 	fs.StringVar(&cfg.OpenBaoAddr, "openbao-addr", "", "OpenBao API address.")
 	fs.StringVar(&cfg.OpenBaoCACert, "openbao-ca-cert", "", "OpenBao CA certificate path.")
+	fs.StringVar(&cfg.OpenBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao workload token.")
 	fs.StringVar(&cfg.PostgresRuntime, "postgres-runtime", "", "PostgreSQL runtime root.")
 	if err := fs.Parse(args); err != nil {
 		return err

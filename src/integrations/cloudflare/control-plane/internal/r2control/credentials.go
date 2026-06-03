@@ -25,7 +25,6 @@ type ParentCredentialConfig struct {
 	OpenBaoAddr       string
 	OpenBaoPath       string
 	OpenBaoCACertFile string
-	OpenBaoTokenEnv   string
 	OpenBaoTokenFile  string
 	Timeout           time.Duration
 }
@@ -45,9 +44,6 @@ func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 	if cfg.OpenBaoPath == "" {
 		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
 	}
-	if cfg.OpenBaoTokenEnv == "" {
-		cfg.OpenBaoTokenEnv = "BAO_TOKEN"
-	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
@@ -66,9 +62,9 @@ func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (Par
 }
 
 func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialConfig) (ParentCredentials, error) {
-	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
+	addr := strings.TrimRight(strings.TrimSpace(cfg.OpenBaoAddr), "/")
 	if addr == "" {
-		return ParentCredentials{}, errors.New("openbao address is required via config, BAO_ADDR, or VAULT_ADDR")
+		return ParentCredentials{}, errors.New("openbao address is required")
 	}
 	token, err := LoadOpenBaoToken(cfg)
 	if err != nil {
@@ -108,9 +104,9 @@ func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialC
 
 func WriteParentCredentialsToOpenBao(ctx context.Context, cfg ParentCredentialConfig, values map[string]string) error {
 	cfg = cfg.WithDefaults()
-	addr := strings.TrimRight(strings.TrimSpace(firstNonEmpty(cfg.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR"))), "/")
+	addr := strings.TrimRight(strings.TrimSpace(cfg.OpenBaoAddr), "/")
 	if addr == "" {
-		return errors.New("openbao address is required via config, BAO_ADDR, or VAULT_ADDR")
+		return errors.New("openbao address is required")
 	}
 	token, err := LoadOpenBaoToken(cfg)
 	if err != nil {
@@ -217,15 +213,7 @@ func LoadOpenBaoToken(cfg ParentCredentialConfig) (string, error) {
 		}
 		return token, nil
 	}
-	for _, envName := range []string{cfg.OpenBaoTokenEnv, "BAO_TOKEN", "VAULT_TOKEN"} {
-		if envName == "" {
-			continue
-		}
-		if token := strings.TrimSpace(os.Getenv(envName)); token != "" {
-			return token, nil
-		}
-	}
-	return "", errors.New("openbao token is required via token file, BAO_TOKEN, or VAULT_TOKEN")
+	return "", errors.New("openbao token file is required")
 }
 
 func OpenBaoSecretData(body []byte) (map[string]string, error) {

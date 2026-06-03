@@ -30,7 +30,7 @@ func applyResendKeys(ctx context.Context, args []string) error {
 	site := fs.String("site", envOr("VERSELF_SITE", ""), "Deployment site.")
 	openBaoAddr := fs.String("openbao-addr", envOr("BAO_ADDR", envOr("VAULT_ADDR", "https://127.0.0.1:8200")), "OpenBao API address.")
 	openBaoCACert := fs.String("openbao-ca-cert", envOr("BAO_CACERT", envOr("VAULT_CACERT", "/etc/verself/openbao/ca.pem")), "OpenBao CA certificate.")
-	openBaoToken := fs.String("openbao-token", envOr("VAULT_TOKEN", ""), "OpenBao token. Defaults to VAULT_TOKEN from Nomad.")
+	openBaoTokenFile := fs.String("openbao-token-file", "", "File containing the OpenBao workload token.")
 	resendAPIURL := fs.String("resend-api-url", envOr("RESEND_API_URL", "https://api.resend.com"), "Resend API base URL.")
 	adminSecret := fs.String("admin-secret", envOr("EMAIL_SERVICE_RESEND_ADMIN_SECRET", resendkeys.DefaultAdminSecret), "OpenBao runtime secret containing the Resend full-access API key.")
 	metadataSecret := fs.String("metadata-secret", envOr("EMAIL_SERVICE_RESEND_METADATA_SECRET", resendkeys.DefaultMetadataSecret), "OpenBao runtime secret for Resend child key metadata.")
@@ -40,7 +40,11 @@ func applyResendKeys(ctx context.Context, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	store, err := resendkeys.NewOpenBaoStore(*openBaoAddr, *openBaoCACert, *openBaoToken)
+	openBaoToken, err := readResendKeysTokenFile(*openBaoTokenFile)
+	if err != nil {
+		return err
+	}
+	store, err := resendkeys.NewOpenBaoStore(*openBaoAddr, *openBaoCACert, openBaoToken)
 	if err != nil {
 		return err
 	}
@@ -67,6 +71,22 @@ func applyResendKeys(ctx context.Context, args []string) error {
 	}
 	fmt.Println("email-service resend-keys: child keys already present")
 	return nil
+}
+
+func readResendKeysTokenFile(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("--openbao-token-file is required")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read --openbao-token-file: %w", err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		return "", fmt.Errorf("--openbao-token-file is empty")
+	}
+	return token, nil
 }
 
 type openBaoBackedResendAPI struct {

@@ -534,6 +534,7 @@ job "substrate-control-plane" {
   group "substrate-control-plane" {
     task "apply" {
       vault {
+        env  = false
         role = "substrate-control-plane"
       }
 
@@ -541,6 +542,12 @@ job "substrate-control-plane" {
         name = "vault_default"
         aud  = ["vault.io"]
         ttl  = "1h"
+      }
+
+      config {
+        args = [
+          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
+        ]
       }
     }
   }

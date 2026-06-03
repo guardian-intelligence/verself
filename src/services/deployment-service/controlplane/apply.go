@@ -28,6 +28,7 @@ type ApplyConfig struct {
 	OpenBaoAddr           string
 	OpenBaoCACert         string
 	OpenBaoToken          string
+	OpenBaoTokenFile      string
 	PostgresRuntime       string
 	PostgresIdentPath     string
 	PostgresReadyDeadline time.Duration
@@ -123,9 +124,6 @@ func (cfg ApplyConfig) withDefaults() ApplyConfig {
 	if cfg.OpenBaoCACert == "" {
 		cfg.OpenBaoCACert = envOr("BAO_CACERT", "/etc/verself/openbao/ca.pem")
 	}
-	if cfg.OpenBaoToken == "" {
-		cfg.OpenBaoToken = envOr("VAULT_TOKEN", "")
-	}
 	if cfg.PostgresRuntime == "" {
 		cfg.PostgresRuntime = envOr("VERSELF_POSTGRESQL_RUNTIME", filepath.Join(envOr("NOMAD_TASK_DIR", "local"), "postgresql", "opt", "verself", "postgresql"))
 	}
@@ -139,8 +137,15 @@ func (cfg ApplyConfig) withDefaults() ApplyConfig {
 }
 
 func newBaoClient(cfg ApplyConfig) (*baoClient, error) {
+	if strings.TrimSpace(cfg.OpenBaoToken) == "" && strings.TrimSpace(cfg.OpenBaoTokenFile) != "" {
+		body, err := os.ReadFile(cfg.OpenBaoTokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("read OpenBao token file: %w", err)
+		}
+		cfg.OpenBaoToken = strings.TrimSpace(string(body))
+	}
 	if strings.TrimSpace(cfg.OpenBaoToken) == "" {
-		return nil, fmt.Errorf("OpenBao workload token is required in VAULT_TOKEN")
+		return nil, fmt.Errorf("OpenBao workload token file is required")
 	}
 	roots := x509.NewCertPool()
 	if cfg.OpenBaoCACert != "" {

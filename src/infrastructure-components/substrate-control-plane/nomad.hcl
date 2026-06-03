@@ -17,6 +17,7 @@ job "substrate-control-plane" {
       user = "root"
 
       vault {
+        env  = false
         role = "substrate-control-plane"
       }
 
@@ -50,7 +51,10 @@ job "substrate-control-plane" {
 
       config {
         command = "local/bin/substrate-control-plane-apply"
-        args = ["--bundle=local/bundle.json.gz"]
+        args = [
+          "--bundle=local/bundle.json.gz",
+          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
+        ]
       }
 
       env {

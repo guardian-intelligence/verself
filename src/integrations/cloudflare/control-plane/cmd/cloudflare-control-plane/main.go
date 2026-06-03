@@ -56,11 +56,9 @@ type config struct {
 	openBaoAddr                   string
 	openBaoPath                   string
 	openBaoCACertFile             string
-	openBaoTokenEnv               string
 	openBaoTokenFile              string
 	runtimeOpenBaoAddr            string
 	runtimeOpenBaoCACertFile      string
-	runtimeOpenBaoTokenEnv        string
 	runtimeOpenBaoTokenFile       string
 	dnsInventory                  string
 	dnsConcurrency                int
@@ -176,14 +174,12 @@ func run(args []string) error {
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
 	fs.StringVar(&cfg.accountAdminAOpenBaoPath, "account-admin-a-openbao-path", accountAdminAOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot A.")
 	fs.StringVar(&cfg.accountAdminBOpenBaoPath, "account-admin-b-openbao-path", accountAdminBOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot B.")
-	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address. Defaults to BAO_ADDR or VAULT_ADDR.")
+	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
-	fs.StringVar(&cfg.openBaoTokenEnv, "openbao-token-env", "BAO_TOKEN", "Environment variable name for the OpenBao token.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao token.")
-	fs.StringVar(&cfg.runtimeOpenBaoAddr, "runtime-openbao-addr", "", "Runtime OpenBao address for service-required secret projection. Defaults to --openbao-addr, BAO_ADDR, or VAULT_ADDR.")
+	fs.StringVar(&cfg.runtimeOpenBaoAddr, "runtime-openbao-addr", "", "Runtime OpenBao address for service-required secret projection. Defaults to --openbao-addr.")
 	fs.StringVar(&cfg.runtimeOpenBaoCACertFile, "runtime-openbao-ca-cert", "", "Runtime OpenBao CA certificate file. Defaults to --openbao-ca-cert, BAO_CACERT, or VAULT_CACERT.")
-	fs.StringVar(&cfg.runtimeOpenBaoTokenEnv, "runtime-openbao-token-env", "", "Environment variable name for the runtime OpenBao token. Defaults to --openbao-token-env.")
 	fs.StringVar(&cfg.runtimeOpenBaoTokenFile, "runtime-openbao-token-file", "", "File containing the runtime OpenBao token. Defaults to --openbao-token-file.")
 	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
@@ -510,23 +506,17 @@ func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 		OpenBaoAddr:       cfg.openBaoAddr,
 		OpenBaoPath:       cfg.openBaoPath,
 		OpenBaoCACertFile: cfg.openBaoCACertFile,
-		OpenBaoTokenEnv:   cfg.openBaoTokenEnv,
 		OpenBaoTokenFile:  cfg.openBaoTokenFile,
 		Timeout:           cfg.timeout,
 	}
 }
 
 func (cfg config) runtimeOpenBaoCredentialConfig(path string) r2control.ParentCredentialConfig {
-	tokenEnv := cfg.runtimeOpenBaoTokenEnv
-	if strings.TrimSpace(tokenEnv) == "" {
-		tokenEnv = cfg.openBaoTokenEnv
-	}
 	return r2control.ParentCredentialConfig{
 		Source:            r2control.ParentCredentialSourceOpenBao,
 		OpenBaoAddr:       firstNonEmpty(cfg.runtimeOpenBaoAddr, cfg.openBaoAddr),
 		OpenBaoPath:       path,
 		OpenBaoCACertFile: firstNonEmpty(cfg.runtimeOpenBaoCACertFile, cfg.openBaoCACertFile),
-		OpenBaoTokenEnv:   tokenEnv,
 		OpenBaoTokenFile:  firstNonEmpty(cfg.runtimeOpenBaoTokenFile, cfg.openBaoTokenFile),
 		Timeout:           cfg.timeout,
 	}
@@ -769,8 +759,8 @@ func loadRequiredAccountAdminCredentials(ctx context.Context, cfg config) (r2con
 }
 
 func preflightOpenBaoPersistence(openBao r2control.ParentCredentialConfig, label string) error {
-	if firstNonEmpty(openBao.OpenBaoAddr, os.Getenv("BAO_ADDR"), os.Getenv("VAULT_ADDR")) == "" {
-		return fmt.Errorf("%s requires OpenBao address via flags, BAO_ADDR, or VAULT_ADDR", label)
+	if strings.TrimSpace(openBao.OpenBaoAddr) == "" {
+		return fmt.Errorf("%s requires OpenBao address", label)
 	}
 	if _, err := r2control.LoadOpenBaoToken(openBao); err != nil {
 		return fmt.Errorf("%s preflight failed: %w", label, err)

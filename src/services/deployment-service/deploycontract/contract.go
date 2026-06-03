@@ -583,8 +583,8 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 		`"--parent-access-key-id-env`,
 		`"--parent-secret-access-key-env`,
 		`"--auth-token-env`,
-		`"--openbao-addr`,
-		`"--openbao-token`,
+		`"--openbao-addr=`,
+		`"--openbao-token=`,
 		`"--account-admin`,
 		"BAO_ADDR",
 		"VAULT_ADDR",
@@ -612,7 +612,10 @@ func (v *Validator) requireEmailServiceResendKeyManagerBoundary(rel string) {
 	for _, required := range []string{
 		`job "email-service-resend-keys"`,
 		`role = "email-service-resend-keys-runtime"`,
-		`args = ["resend-keys", "apply"]`,
+		`env  = false`,
+		`"resend-keys"`,
+		`"apply"`,
+		`"--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token"`,
 		`VERSELF_SITE = "__VERSELF_SITE__"`,
 	} {
 		if !strings.Contains(text, required) {
@@ -643,8 +646,10 @@ func (v *Validator) requireSubstrateControlPlaneWorkloadIdentity(rel string) {
 	for _, required := range []string{
 		`vault {`,
 		`role = "substrate-control-plane"`,
+		`env  = false`,
 		`identity {`,
 		`aud  = ["vault.io"]`,
+		`"--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token"`,
 	} {
 		if !strings.Contains(text, required) {
 			v.add(rel, fmt.Sprintf("substrate-control-plane must use Nomad/OpenBao workload identity via %s", required))
@@ -653,12 +658,11 @@ func (v *Validator) requireSubstrateControlPlaneWorkloadIdentity(rel string) {
 	for _, forbidden := range []string{
 		`BAO_TOKEN =`,
 		`VAULT_TOKEN =`,
-		`"--openbao-token`,
+		`"--openbao-token=`,
 		`"/etc/openbao/root`,
 		"root_token",
 		"openbao_bootstrap_token",
 		"disable_file = true",
-		"env = false",
 	} {
 		if strings.Contains(text, forbidden) {
 			v.add(rel, fmt.Sprintf("substrate-control-plane must not depend on manual/root OpenBao token input %q", forbidden))

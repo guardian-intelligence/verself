@@ -71,6 +71,7 @@ type config struct {
 	openBaoAddr         string
 	openBaoCACert       string
 	openBaoToken        string
+	openBaoTokenFile    string
 	// GitHub login IdP ("Sign in with GitHub"). Optional: when either value is
 	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
 	// login still converge. Values come from site metadata plus OpenBao-rendered
@@ -189,7 +190,6 @@ func run(args []string) error {
 		zitadelReadyBackoff: time.Second,
 		openBaoAddr:         envOr("BAO_ADDR", envOr("VAULT_ADDR", defaultOpenBaoAddr)),
 		openBaoCACert:       envOr("BAO_CACERT", envOr("VAULT_CACERT", defaultOpenBaoCACert)),
-		openBaoToken:        envOr("BAO_TOKEN", envOr("VAULT_TOKEN", "")),
 
 		githubLoginIDPName:  envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
 		githubLoginClientID: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID", ""),
@@ -207,7 +207,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.claimsActionPath, "claims-action-path", cfg.claimsActionPath, "Product token claims action path.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", cfg.openBaoAddr, "OpenBao address for publishing Zitadel outputs.")
 	fs.StringVar(&cfg.openBaoCACert, "openbao-ca-cert", cfg.openBaoCACert, "OpenBao CA certificate path.")
-	fs.StringVar(&cfg.openBaoToken, "openbao-token", cfg.openBaoToken, "OpenBao token. Defaults to BAO_TOKEN or VAULT_TOKEN.")
+	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", cfg.openBaoTokenFile, "File containing the OpenBao workload token.")
 	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientID, "github-login-client-id", cfg.githubLoginClientID, "GitHub OAuth App client id for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientSecretFile, "github-login-client-secret-file", cfg.githubLoginClientSecretFile, "File containing the GitHub OAuth App client secret.")
@@ -246,6 +246,11 @@ func (cfg *config) loadCredentialFiles() error {
 		return err
 	}
 	cfg.adminPAT = adminPAT
+	openBaoToken, err := readRequiredCredentialFile(cfg.openBaoTokenFile, "--openbao-token-file")
+	if err != nil {
+		return err
+	}
+	cfg.openBaoToken = openBaoToken
 
 	if strings.TrimSpace(cfg.githubLoginClientSecretFile) == "" {
 		if strings.TrimSpace(cfg.githubLoginClientID) != "" {
@@ -291,7 +296,7 @@ func (cfg config) validate() error {
 		"--claims-target-name": cfg.claimsTargetName,
 		"--claims-action-path": cfg.claimsActionPath,
 		"--openbao-addr":       cfg.openBaoAddr,
-		"--openbao-token":      cfg.openBaoToken,
+		"--openbao-token-file": cfg.openBaoToken,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)

@@ -24,6 +24,7 @@ job "zitadel" {
       }
 
       vault {
+        env  = false
         role = "zitadel-runtime"
       }
 
@@ -50,6 +51,7 @@ job "zitadel" {
           "--steps=$${NOMAD_TASK_DIR}/steps.yaml",
           "--masterkey-openbao-secret=zitadel.masterkey",
           "--admin-pat-path=$${NOMAD_TASK_DIR}/zitadel-admin/admin.pat",
+          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
         ]
       }
 
@@ -176,6 +178,7 @@ EOT
       user = "root"
 
       vault {
+        env  = false
         role = "zitadel-runtime"
       }
 
@@ -201,6 +204,7 @@ EOT
           "--mode=start",
           "--config=$${NOMAD_TASK_DIR}/config.yaml",
           "--masterkey-openbao-secret=zitadel.masterkey",
+          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
         ]
       }
 

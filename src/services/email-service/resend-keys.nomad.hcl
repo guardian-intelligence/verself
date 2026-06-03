@@ -11,6 +11,7 @@ job "email-service-resend-keys" {
       user = "email_service"
 
       vault {
+        env  = false
         role = "email-service-resend-keys-runtime"
       }
 
@@ -28,7 +29,11 @@ job "email-service-resend-keys" {
 
       config {
         command = "local/bin/email-service"
-        args = ["resend-keys", "apply"]
+        args = [
+          "resend-keys",
+          "apply",
+          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
+        ]
       }
 
       env {
