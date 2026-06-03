@@ -300,6 +300,9 @@ func completedArtifactGetterSource(output string, object r2controlplane.UploadOb
 	if getterSource == "" {
 		return "", fmt.Errorf("R2 control-plane completed artifact %q without getter source", output)
 	}
+	if strings.HasPrefix(getterSource, "s3::") {
+		return getterSource, nil
+	}
 	parsed, err := url.Parse(getterSource)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
 		return "", fmt.Errorf("R2 control-plane completed artifact %q with invalid download source", output)
@@ -508,6 +511,9 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
 				}
 				getterOptions := map[string]string{}
+				if strings.HasPrefix(binding.Artifact.GetterSource, "s3::") {
+					getterOptions["region"] = "auto"
+				}
 				getterOptions["checksum"] = binding.Checksum
 				artifact.GetterSource = &binding.Artifact.GetterSource
 				artifact.GetterOptions = getterOptions
@@ -534,6 +540,9 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 
 func taskArtifact(binding artifactBinding, destination string) *api.TaskArtifact {
 	getterOptions := map[string]string{}
+	if strings.HasPrefix(binding.Artifact.GetterSource, "s3::") {
+		getterOptions["region"] = "auto"
+	}
 	getterOptions["checksum"] = binding.Checksum
 	source := binding.Artifact.GetterSource
 	return &api.TaskArtifact{
