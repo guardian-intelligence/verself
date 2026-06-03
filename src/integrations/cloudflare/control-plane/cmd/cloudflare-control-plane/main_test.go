@@ -26,6 +26,31 @@ func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 	}
 }
 
+func TestAccountAdminR2AuthorityErrorExplainsPermission(t *testing.T) {
+	err := accountAdminR2AuthorityError(validTestConfig(), r2control.APIStatusError{
+		Method:     http.MethodGet,
+		Path:       "/accounts/0123456789abcdef0123456789abcdef/r2/buckets/verself-deployment-artifacts",
+		StatusCode: http.StatusForbidden,
+		Body:       `{"success":false}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires Workers R2 Storage Read/Write") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestAccountAdminR2AuthorityErrorLeavesNonAuthError(t *testing.T) {
+	input := r2control.APIStatusError{
+		Method:     http.MethodGet,
+		Path:       "/accounts/0123456789abcdef0123456789abcdef/r2/buckets/missing",
+		StatusCode: http.StatusNotFound,
+		Body:       `{"success":false}`,
+	}
+	err := accountAdminR2AuthorityError(validTestConfig(), input)
+	if err.Error() != input.Error() {
+		t.Fatalf("error = %v, want original", err)
+	}
+}
+
 func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.openBaoAddr = "https://openbao.internal"

@@ -416,6 +416,26 @@ func (c *CloudflareAPIClient) CreateR2BucketToken(ctx context.Context, accountID
 	return c.CreateR2BucketTokenWithPermissions(ctx, accountID, bucket, name, []string{permissionName}, expiresOn)
 }
 
+func (c *CloudflareAPIClient) VerifyR2BucketTokenPermissionGroups(ctx context.Context, accountID string, permissionNames []string) error {
+	accountID = strings.ToLower(strings.TrimSpace(accountID))
+	if !IsCloudflareAccountID(accountID) {
+		return fmt.Errorf("account ID must be a 32-character lowercase hex Cloudflare account ID")
+	}
+	if len(permissionNames) == 0 {
+		return fmt.Errorf("at least one permission group name is required")
+	}
+	for _, permissionName := range permissionNames {
+		permissionName = strings.TrimSpace(permissionName)
+		if permissionName == "" {
+			return fmt.Errorf("permission group name is required")
+		}
+		if _, err := c.findPermissionGroup(ctx, accountID, permissionName, "com.cloudflare.edge.r2.bucket"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *CloudflareAPIClient) CreateR2BucketTokenWithPermissions(ctx context.Context, accountID, bucket, name string, permissionNames []string, expiresOn time.Time) (CreatedAPIToken, error) {
 	accountID = strings.ToLower(strings.TrimSpace(accountID))
 	bucket = strings.TrimSpace(bucket)

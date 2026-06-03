@@ -653,6 +653,12 @@ func loadAndVerifyAccountAdmin(ctx context.Context, cfg config, path string) (r2
 	if admin.AccessKeyID != "" && verified.ID != admin.AccessKeyID {
 		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("cloudflare account-admin verified as %s but OpenBao stored %s", verified.ID, admin.AccessKeyID)
 	}
+	if _, err := apiClient.GetAccountToken(ctx, cfg.accountID, verified.ID); err != nil {
+		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("cloudflare account-admin cannot read account token metadata; requires Account API Tokens Read on account %s: %w", cfg.accountID, err)
+	}
+	if err := verifyAccountAdminR2Authority(ctx, cfg, apiClient); err != nil {
+		return r2control.ParentCredentials{}, accountAdminStatus{}, err
+	}
 	admin.AccessKeyID = verified.ID
 	return admin, accountAdminStatus{
 		TokenIDFingerprint: r2control.Fingerprint(verified.ID),
@@ -737,17 +743,39 @@ func preflightOpenBaoPersistence(openBao r2control.ParentCredentialConfig, label
 }
 
 func ensureR2BucketWithAccountAdmin(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient) (bool, bool, error) {
-	var existed bool
-	var created bool
-	err := retryR2CredentialPropagation(ctx, "ensure R2 bucket with account-admin credential", func() error {
-		var ensureErr error
-		existed, created, ensureErr = apiClient.EnsureR2Bucket(ctx, cfg.accountID, cfg.bucket)
-		return ensureErr
-	})
+	existed, created, err := apiClient.EnsureR2Bucket(ctx, cfg.accountID, cfg.bucket)
 	if err != nil {
-		return false, false, err
+		return false, false, accountAdminR2AuthorityError(cfg, err)
 	}
 	return existed, created, nil
+}
+
+func verifyAccountAdminR2Authority(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient) error {
+	if err := apiClient.VerifyR2BucketTokenPermissionGroups(ctx, cfg.accountID, []string{
+		r2control.PermissionR2BucketItemRead,
+		r2control.PermissionR2BucketItemWrite,
+	}); err != nil {
+		return fmt.Errorf("cloudflare account-admin cannot inspect R2 bucket token permission groups; requires Account API Tokens Read on account %s: %w", cfg.accountID, err)
+	}
+	if strings.TrimSpace(cfg.bucket) == "" {
+		return nil
+	}
+	if _, err := apiClient.GetR2Bucket(ctx, cfg.accountID, cfg.bucket); err != nil {
+		var apiErr r2control.APIStatusError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return accountAdminR2AuthorityError(cfg, err)
+	}
+	return nil
+}
+
+func accountAdminR2AuthorityError(cfg config, err error) error {
+	var apiErr r2control.APIStatusError
+	if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
+		return fmt.Errorf("cloudflare account-admin cannot access R2 bucket %s on account %s; requires Workers R2 Storage Read/Write on the account: %w", cfg.bucket, cfg.accountID, err)
+	}
+	return err
 }
 
 func accountAdminAOpenBaoPath(cfg config) string {
