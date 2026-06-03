@@ -28,6 +28,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "secrets-service",
     job_spec = "nomad.hcl",
-    requires = ["openbao:api"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

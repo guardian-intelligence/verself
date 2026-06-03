@@ -146,8 +146,8 @@ provides mounted directories, not tool-specific cache APIs.
    platform toolchains, workspace cache, and manifest caches.
 6. On a golden VM hit, vm-orchestrator restores Firecracker from the manifest
    and vm-bridge runs `AfterRestore` to rebind lease identity, network, host
-   control, runner bootstrap material, and chrony/KVM PTP clock
-   synchronization with a 1ms time-sync gate.
+   control, runner bootstrap material, step restored realtime from KVM PTP,
+   and prove chrony/KVM PTP synchronization with a 1ms time-sync gate.
 7. On a golden VM miss, vm-orchestrator cold boots the VM and vm-bridge runs
    `LeaseInit` to mount filesystems, apply lease state, and prove chrony/KVM
    PTP clock synchronization with a 1ms source-offset gate.

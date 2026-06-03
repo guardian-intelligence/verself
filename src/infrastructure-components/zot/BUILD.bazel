@@ -47,6 +47,5 @@ nomad_component(
     deploy_phase = "platform",
     job_id = "zot",
     job_spec = "nomad.hcl",
-    provides = ["zot:http"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -46,11 +46,6 @@ nomad_component(
     digest_inputs = ["deploy/runtime-secrets.yml"],
     job_id = "zitadel",
     job_spec = "nomad.hcl",
-    provides = ["zitadel:http"],
-    requires = [
-        "email:resend-sending-key",
-        "postgres:server",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
@@ -66,7 +61,5 @@ nomad_component(
     digest_inputs = ["deploy/runtime-secrets.yml"],
     job_id = "auth-control-plane",
     job_spec = "auth-control-plane.nomad.hcl",
-    provides = ["auth:control-plane"],
-    requires = ["zitadel:http"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

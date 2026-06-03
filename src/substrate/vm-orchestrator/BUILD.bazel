@@ -182,10 +182,5 @@ nomad_component(
     deploy_phase = "platform",
     job_id = "vm-orchestrator",
     job_spec = "nomad.hcl",
-    provides = [
-        "nomad:job:vm-orchestrator",
-        "vm-orchestrator:socket",
-    ],
-    requires = ["otelcol:otlp"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

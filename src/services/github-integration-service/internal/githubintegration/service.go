@@ -438,6 +438,11 @@ func (s *Service) markRunnerCapacityFailed(ctx context.Context, row store.ListSu
 	phase := "sandbox_reconcile"
 	code := problemGithubRunnerSandboxAllocationTerminal
 	state := "sandbox_failed"
+	if sandboxRunnerGuestTimeSyncPrecisionGateReason(reason) {
+		phase = "guest_time_sync"
+		code = problemGithubRunnerGuestTimeSyncPrecisionGateFailed
+		state = "sandbox_failed"
+	}
 	if strings.Contains(reason, "assignment_deadline") {
 		phase = "assignment_wait"
 		code = problemGithubRunnerAssignmentDeadlineExceeded
@@ -511,6 +516,18 @@ func sandboxRunnerAllocationProblemReason(status sandboxrentalclient.RunnerAlloc
 		return problem.Code
 	}
 	return ""
+}
+
+func sandboxRunnerGuestTimeSyncPrecisionGateReason(reason string) bool {
+	msg := strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(msg, "runner_allocation.guest_time_sync_precision_gate_failed") ||
+		strings.Contains(msg, "host_step_offset_exceeded") ||
+		strings.Contains(msg, "restored_chrony_offset_exceeded") ||
+		strings.Contains(msg, "restored_chrony_skew_exceeded") ||
+		strings.Contains(msg, "restored chrony sync: chrony sync wait") ||
+		(strings.Contains(msg, "restored wall clock offset") && strings.Contains(msg, "exceeds")) ||
+		(strings.Contains(msg, "chrony offset") && strings.Contains(msg, "exceeds")) ||
+		(strings.Contains(msg, "chrony skew") && strings.Contains(msg, "exceeds"))
 }
 
 func runnerCapacityAssignmentDeadlineExceeded(deadline pgtype.Timestamptz, now time.Time) bool {

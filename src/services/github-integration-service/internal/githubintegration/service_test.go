@@ -383,6 +383,23 @@ func TestSandboxRunnerCapacityTerminalWithoutAssignment(t *testing.T) {
 	}
 }
 
+func TestSandboxRunnerGuestTimeSyncPrecisionGateReason(t *testing.T) {
+	for _, reason := range []string{
+		"runner_allocation.guest_time_sync_precision_gate_failed:lease 01K reached terminal state before ready",
+		"runner_allocation.snapshot_restore_failed:lease 01KT632XZKAJAGVMHEJ45WHGRY reached terminal state before ready: guest control protocol violation in await_after_restore_result: restored wall clock offset 3813174ns exceeds 1000000ns after host step",
+		"runner_allocation.snapshot_restore_failed:lease 01K reached terminal state before ready: guest control protocol violation in await_after_restore_result: restored chrony sync: chrony sync wait: exit status 1",
+		"runner_allocation.snapshot_restore_failed:lease 01K reached terminal state before ready: guest control protocol violation in await_after_restore_result: restored chrony sync: chrony skew 15.000ppm exceeds 10.000ppm",
+	} {
+		if !sandboxRunnerGuestTimeSyncPrecisionGateReason(reason) {
+			t.Fatalf("sandboxRunnerGuestTimeSyncPrecisionGateReason(%q) = false, want true", reason)
+		}
+	}
+
+	if sandboxRunnerGuestTimeSyncPrecisionGateReason("runner_allocation.snapshot_restore_failed:read restored PTP time: open /dev/ptp0: no such file or directory") {
+		t.Fatal("PTP availability failure should not be classified as precision gate failure")
+	}
+}
+
 func TestRunnerCapacityAssignmentDeadlineExceeded(t *testing.T) {
 	now := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	if !runnerCapacityAssignmentDeadlineExceeded(pgTime(now), now) {

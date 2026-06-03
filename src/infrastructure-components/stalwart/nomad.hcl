@@ -84,8 +84,7 @@ bind = ["127.0.0.1:8090"]
 protocol = "http"
 tls.implicit = false
 
-# Prod control-plane certificate projection writes this material and reloads
-# Stalwart after successful validation.
+# Host bootstrap provides this material before Stalwart starts.
 [certificate."default"]
 cert = "%%{file:/etc/stalwart/certs/cert.pem}%"
 private-key = "%%{file:/etc/stalwart/certs/key.pem}%"

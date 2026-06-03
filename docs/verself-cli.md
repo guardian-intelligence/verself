@@ -749,7 +749,7 @@ Initial option catalog:
 | Area | Options | Required by |
 | --- | --- | --- |
 | Compute | Latitude.sh API token, project ID, region, plan, SSH key policy | Checked-in provisioning task before `aspect deploy` |
-| DNS and TLS | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent | Prod control-plane DNS reconciliation and certificate projection before or during `aspect deploy` |
+| DNS and TLS | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent | Prod control-plane DNS reconciliation; explicit public-edge certificate issuance |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
 | Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and company addresses |

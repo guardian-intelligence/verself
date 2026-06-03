@@ -57,8 +57,7 @@
       Stalwart bootstrap resources are missing or stale.
 
 # --- Self-signed TLS placeholder ---
-# Stalwart needs a cert at startup for STARTTLS. Generate a self-signed one
-# that will be replaced by prod control-plane certificate projection.
+# Stalwart needs a cert at startup for STARTTLS.
 
 - name: Create stalwart TLS cert directory
   ansible.builtin.file:

@@ -41,11 +41,6 @@ func bootstrapDeploy(args []string) error {
 	repoRoot := fs.String("repo-root", "", "Repository root.")
 	inventory := fs.String("inventory", "", "Site inventory path.")
 	sshTransport := fs.String("ssh-transport", "recovery", "SSH transport for the Nomad tunnel: recovery or inventory.")
-	r2ControlPlaneBinary := fs.String("r2-control-plane-binary", "", "Bazel-resolved cloudflare-r2-control-plane binary.")
-	cloudflareBinary := fs.String("cloudflare-control-plane-binary", "", "Bazel-resolved cloudflare-control-plane binary.")
-	openBaoAddr := fs.String("openbao-addr", "", "Controller OpenBao address.")
-	openBaoCACertFile := fs.String("openbao-ca-cert", "", "Controller OpenBao CA certificate file.")
-	openBaoTokenFile := fs.String("openbao-token-file", "", "File containing the controller OpenBao token.")
 	timeout := fs.Duration("timeout", 15*time.Minute, "Bootstrap deploy timeout.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -65,17 +60,12 @@ func bootstrapDeploy(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	return sitebootstrap.RunBootstrapDeploy(ctx, sitebootstrap.BootstrapDeployOptions{
-		Site:                 *site,
-		SHA:                  *sha,
-		RepoRoot:             root,
-		InventoryPath:        inventoryPath,
-		SSHTransport:         *sshTransport,
-		R2ControlPlaneBinary: *r2ControlPlaneBinary,
-		CloudflareBinary:     *cloudflareBinary,
-		OpenBaoAddr:          *openBaoAddr,
-		OpenBaoCACertFile:    *openBaoCACertFile,
-		OpenBaoTokenFile:     *openBaoTokenFile,
-		Timeout:              *timeout,
+		Site:          *site,
+		SHA:           *sha,
+		RepoRoot:      root,
+		InventoryPath: inventoryPath,
+		SSHTransport:  *sshTransport,
+		Timeout:       *timeout,
 	})
 }
 

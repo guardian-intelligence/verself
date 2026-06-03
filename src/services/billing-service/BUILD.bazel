@@ -28,11 +28,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "billing",
     job_spec = "nomad.hcl",
-    requires = [
-        "nomad:job:secrets-service",
-        "openbao:api",
-        "postgres:server",
-        "tigerbeetle:client",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

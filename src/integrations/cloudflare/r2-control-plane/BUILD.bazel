@@ -29,9 +29,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "cloudflare-r2-control-plane",
     job_spec = "nomad.hcl",
-    provides = ["nomad:job:cloudflare-r2-control-plane"],
-    requires = [
-        "nomad:job:substrate-control-plane",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

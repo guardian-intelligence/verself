@@ -9,6 +9,7 @@ go_library(
         "inputs.go",
         "nomad.go",
         "source.go",
+        "task_users.go",
     ],
     importpath = "github.com/verself/deployment-service/deployengine",
     visibility = ["//visibility:public"],

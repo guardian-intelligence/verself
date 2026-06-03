@@ -48,7 +48,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "nomad-observer",
     job_spec = "nomad.hcl",
-    provides = ["nomad-observer:events"],
-    requires = ["otelcol:otlp"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

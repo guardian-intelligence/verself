@@ -50,11 +50,7 @@ type acmeChallengeRecord struct {
 }
 
 func issueSiteCertificates(ctx context.Context, cfg config) error {
-	accountAdmin, err := loadRequiredAccountAdminCredentials(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
+	apiClient, err := cloudflareProviderClient(cfg)
 	if err != nil {
 		return err
 	}
@@ -66,7 +62,7 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("list cloudflare zones for ACME DNS-01: %w", err)
 	}
-	projectionDir := certificateProjectionDir(cfg)
+	outputDir := certificateOutputDir(cfg)
 	accountKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return fmt.Errorf("generate ACME account key: %w", err)
@@ -83,12 +79,17 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 		return fmt.Errorf("register ACME account: %w", err)
 	}
 
-	out := baseReport(cfg, accountAdmin.Source)
-	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
-	out.VerifiedWith = "cloudflare-account-admin-acme-dns01"
+	out := report{
+		Timestamp:              time.Now().UTC().Format(time.RFC3339),
+		Action:                 cfg.action,
+		ControlPlaneSite:       cloudflareControlPlaneSite,
+		Site:                   cfg.site,
+		ParentCredentialSource: "provider:cloudflare-api-token-file",
+	}
+	out.VerifiedWith = "cloudflare-provider-token-acme-dns01"
 	for _, certificate := range certificates {
-		pemFile := filepath.Join(projectionDir, certificate.Name+".pem")
-		expiresAt, reusable, err := projectedCertificateReusable(pemFile, certificate.Domains, cfg.certificateRenewBefore)
+		pemFile := filepath.Join(outputDir, certificate.Name+".pem")
+		expiresAt, reusable, err := certificateReusable(pemFile, certificate.Domains, cfg.certificateRenewBefore)
 		if err != nil {
 			return err
 		}
@@ -97,7 +98,7 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 			if err != nil {
 				return fmt.Errorf("issue certificate %s: %w", certificate.Name, err)
 			}
-			if err := writeProjectedCertificate(pemFile, pemBody); err != nil {
+			if err := writeCertificate(pemFile, pemBody); err != nil {
 				return err
 			}
 			expiresAt = expires.Format(time.RFC3339)
@@ -113,7 +114,25 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 	return writeReport(out)
 }
 
+func cloudflareProviderClient(cfg config) (*r2control.CloudflareAPIClient, error) {
+	if strings.TrimSpace(cfg.provider) != "cloudflare" {
+		return nil, fmt.Errorf("--provider=cloudflare is required")
+	}
+	body, err := os.ReadFile(cfg.cloudflareAPITokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("read Cloudflare API token file: %w", err)
+	}
+	token := strings.TrimSpace(string(body))
+	if token == "" {
+		return nil, fmt.Errorf("Cloudflare API token file is empty")
+	}
+	return r2control.NewCloudflareAPIClient(token, cfg.timeout)
+}
+
 func loadSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error) {
+	if hasExplicitTLSConfig(cfg) {
+		return explicitSiteTLSCertificates(cfg)
+	}
 	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -154,6 +173,38 @@ func loadSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error)
 	}
 	zones := dedupeStrings([]string{productZone, companyZone})
 	return certificates, zones, nil
+}
+
+func hasExplicitTLSConfig(cfg config) bool {
+	return strings.TrimSpace(cfg.tlsProductDomain) != "" ||
+		strings.TrimSpace(cfg.tlsCompanyDomain) != "" ||
+		strings.TrimSpace(cfg.tlsProductZone) != "" ||
+		strings.TrimSpace(cfg.tlsCompanyZone) != ""
+}
+
+func explicitSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error) {
+	verselfDomain := cleanDNSName(cfg.tlsProductDomain)
+	companyDomain := cleanDNSName(cfg.tlsCompanyDomain)
+	productZone := cleanDNSName(cfg.tlsProductZone)
+	companyZone := cleanDNSName(cfg.tlsCompanyZone)
+	if verselfDomain == "" || companyDomain == "" || productZone == "" || companyZone == "" {
+		return nil, nil, fmt.Errorf("--tls-product-domain, --tls-company-domain, --tls-product-zone, and --tls-company-zone are required together")
+	}
+	certificates := []siteTLSCertificate{
+		{
+			Name: verselfDomain,
+			Domains: []string{
+				verselfDomain,
+				"*." + verselfDomain,
+				"*.api." + verselfDomain,
+			},
+		},
+		{
+			Name:    companyDomain,
+			Domains: []string{companyDomain},
+		},
+	}
+	return certificates, dedupeStrings([]string{productZone, companyZone}), nil
 }
 
 func issueACMECertificate(ctx context.Context, acmeClient *acme.Client, apiClient *r2control.CloudflareAPIClient, zones map[string]string, domains []string, propagationWait time.Duration) ([]byte, time.Time, error) {
@@ -290,18 +341,18 @@ func certificatePEM(keyPEM []byte, certDER [][]byte, domains []string) ([]byte, 
 		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
 	}
 	if _, err := tls.X509KeyPair(out, out); err != nil {
-		return nil, time.Time{}, fmt.Errorf("validate projected certificate keypair: %w", err)
+		return nil, time.Time{}, fmt.Errorf("validate certificate keypair: %w", err)
 	}
 	return out, leaf.NotAfter.UTC(), nil
 }
 
-func projectedCertificateReusable(path string, domains []string, renewBefore time.Duration) (string, bool, error) {
+func certificateReusable(path string, domains []string, renewBefore time.Duration) (string, bool, error) {
 	body, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("read projected certificate %s: %w", path, err)
+		return "", false, fmt.Errorf("read certificate %s: %w", path, err)
 	}
 	if _, err := tls.X509KeyPair(body, body); err != nil {
 		return "", false, nil
@@ -335,17 +386,17 @@ func firstCertificate(body []byte) (*x509.Certificate, error) {
 	}
 }
 
-func writeProjectedCertificate(path string, body []byte) error {
+func writeCertificate(path string, body []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create certificate projection directory: %w", err)
+		return fmt.Errorf("create certificate output directory: %w", err)
 	}
 	tmp := path + ".tmp-" + randomSuffix()
 	if err := os.WriteFile(tmp, body, 0o600); err != nil {
-		return fmt.Errorf("write certificate projection: %w", err)
+		return fmt.Errorf("write certificate: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("publish certificate projection: %w", err)
+		return fmt.Errorf("publish certificate: %w", err)
 	}
 	return nil
 }
@@ -358,14 +409,11 @@ func randomSuffix() string {
 	return fmt.Sprintf("%016x", new(big.Int).SetBytes(raw[:]))
 }
 
-func certificateProjectionDir(cfg config) string {
-	if strings.TrimSpace(cfg.certificateProjectionDir) != "" {
-		if filepath.IsAbs(cfg.certificateProjectionDir) {
-			return filepath.Clean(cfg.certificateProjectionDir)
-		}
-		return filepath.Join(cfg.repoRoot, cfg.certificateProjectionDir)
+func certificateOutputDir(cfg config) string {
+	if filepath.IsAbs(cfg.certificateOutputDir) {
+		return filepath.Clean(cfg.certificateOutputDir)
 	}
-	return filepath.Join(cfg.repoRoot, ".verself", "bootstrap", cfg.site, "tls", "haproxy")
+	return filepath.Join(cfg.repoRoot, cfg.certificateOutputDir)
 }
 
 func acmeContact(raw string) (string, error) {

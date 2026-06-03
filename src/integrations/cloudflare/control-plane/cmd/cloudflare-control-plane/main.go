@@ -38,53 +38,47 @@ const (
 const (
 	accountAdminAOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin/a"
 	accountAdminBOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin/b"
-	bootstrapPublisherOutputFD      = 3
-	bootstrapPublisherTTL           = time.Hour
 )
 
-var openBootstrapPublisherOutput = func() (*os.File, error) {
-	f := os.NewFile(uintptr(bootstrapPublisherOutputFD), "bootstrap-publisher-credential")
-	if f == nil {
-		return nil, fmt.Errorf("bootstrap publisher credential fd %d is not open", bootstrapPublisherOutputFD)
-	}
-	return f, nil
-}
-
 type config struct {
-	action                        string
-	repoRoot                      string
-	site                          string
-	accountID                     string
-	bucket                        string
-	keyPrefix                     string
-	region                        string
-	accountAdminAOpenBaoPath      string
-	accountAdminBOpenBaoPath      string
-	openBaoAddr                   string
-	openBaoPath                   string
-	openBaoCACertFile             string
-	openBaoTokenFile              string
-	runtimeOpenBaoAddr            string
-	runtimeOpenBaoCACertFile      string
-	runtimeOpenBaoTokenFile       string
-	dnsInventory                  string
-	dnsConcurrency                int
-	dryRun                        bool
-	certificateProjectionDir      string
-	acmeDirectoryURL              string
-	acmeContactEmail              string
-	acmeDNSPropagationWait        time.Duration
-	certificateRenewBefore        time.Duration
-	testPrefix                    string
-	inventoryPrefix               string
-	inventoryDepth                int
-	tempTTL                       time.Duration
-	uploadSessionTTL              time.Duration
-	childTokenTTL                 time.Duration
-	accountAdminTTL               time.Duration
-	timeout                       time.Duration
-	verifyTempCredentials         bool
-	bootstrapPublisherTokenIDFile string
+	action                   string
+	repoRoot                 string
+	site                     string
+	accountID                string
+	bucket                   string
+	keyPrefix                string
+	region                   string
+	accountAdminAOpenBaoPath string
+	accountAdminBOpenBaoPath string
+	openBaoAddr              string
+	openBaoPath              string
+	openBaoCACertFile        string
+	openBaoTokenFile         string
+	runtimeOpenBaoAddr       string
+	runtimeOpenBaoCACertFile string
+	runtimeOpenBaoTokenFile  string
+	dnsInventory             string
+	dnsConcurrency           int
+	dryRun                   bool
+	provider                 string
+	cloudflareAPITokenFile   string
+	certificateOutputDir     string
+	tlsProductDomain         string
+	tlsCompanyDomain         string
+	tlsProductZone           string
+	tlsCompanyZone           string
+	acmeDirectoryURL         string
+	acmeContactEmail         string
+	acmeDNSPropagationWait   time.Duration
+	certificateRenewBefore   time.Duration
+	testPrefix               string
+	inventoryPrefix          string
+	inventoryDepth           int
+	tempTTL                  time.Duration
+	childTokenTTL            time.Duration
+	accountAdminTTL          time.Duration
+	timeout                  time.Duration
+	verifyTempCredentials    bool
 }
 
 type report struct {
@@ -152,13 +146,6 @@ type accountAdminStatus struct {
 	ExpiresOn          string `json:"expires_on,omitempty"`
 }
 
-type bootstrapPublisherCredential struct {
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-	TokenID         string `json:"token_id"`
-	ExpiresOn       string `json:"expires_on"`
-}
-
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "cloudflare-control-plane: "+err.Error())
@@ -169,7 +156,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, provision-site-bootstrap, mint-bootstrap-publisher, revoke-bootstrap-publisher, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -188,21 +175,25 @@ func run(args []string) error {
 	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
-	fs.StringVar(&cfg.certificateProjectionDir, "certificate-projection-dir", "", "Local directory to receive HAProxy public certificate PEM projections. Defaults to .verself/bootstrap/<site>/tls/haproxy.")
+	fs.StringVar(&cfg.provider, "provider", "", "External provider for direct public-edge operations. Supported value: cloudflare.")
+	fs.StringVar(&cfg.cloudflareAPITokenFile, "cloudflare-api-token-file", "", "File containing a Cloudflare API token for direct DNS operations.")
+	fs.StringVar(&cfg.certificateOutputDir, "certificate-output-dir", "", "Directory to receive HAProxy public certificate PEM files.")
+	fs.StringVar(&cfg.tlsProductDomain, "tls-product-domain", "", "Product domain for public TLS issuance.")
+	fs.StringVar(&cfg.tlsCompanyDomain, "tls-company-domain", "", "Company domain for public TLS issuance.")
+	fs.StringVar(&cfg.tlsProductZone, "tls-product-zone", "", "Cloudflare DNS zone for the product domain.")
+	fs.StringVar(&cfg.tlsCompanyZone, "tls-company-zone", "", "Cloudflare DNS zone for the company domain.")
 	fs.StringVar(&cfg.acmeDirectoryURL, "acme-directory-url", letsEncryptProductionDirectoryURL, "ACME directory URL for public certificate issuance.")
 	fs.StringVar(&cfg.acmeContactEmail, "acme-contact-email", "", "ACME account contact email for --action=issue-site-certificates.")
 	fs.DurationVar(&cfg.acmeDNSPropagationWait, "acme-dns-propagation-wait", 2*time.Minute, "Maximum wait for ACME DNS-01 TXT propagation.")
-	fs.DurationVar(&cfg.certificateRenewBefore, "certificate-renew-before", 30*24*time.Hour, "Renew projected certificates expiring before this duration.")
+	fs.DurationVar(&cfg.certificateRenewBefore, "certificate-renew-before", 30*24*time.Hour, "Renew certificates expiring before this duration.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.StringVar(&cfg.inventoryPrefix, "inventory-prefix", "", "R2 object prefix for --action=inventory.")
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
 	fs.DurationVar(&cfg.tempTTL, "temp-ttl", 15*time.Minute, "TTL for Cloudflare temporary scoped R2 verification credentials.")
-	fs.DurationVar(&cfg.uploadSessionTTL, "upload-session-ttl", 30*time.Minute, "TTL for deployment artifact upload sessions.")
 	fs.DurationVar(&cfg.childTokenTTL, "child-token-ttl", 7*24*time.Hour, "TTL for generated Cloudflare child API tokens.")
 	fs.DurationVar(&cfg.accountAdminTTL, "account-admin-ttl", 7*24*time.Hour, "TTL for Cloudflare account-admin expiration updates.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
-	fs.StringVar(&cfg.bootstrapPublisherTokenIDFile, "bootstrap-publisher-token-id-file", "", "File containing the bootstrap publisher token ID for --action=revoke-bootstrap-publisher.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -214,7 +205,7 @@ func run(args []string) error {
 	}
 
 	timeout := cfg.timeout
-	if (cfg.action == "issue-site-certificates" || cfg.action == "provision-site") && timeout < 5*time.Minute {
+	if cfg.action == "issue-site-certificates" && timeout < 5*time.Minute {
 		timeout = 5 * time.Minute
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -236,12 +227,6 @@ func run(args []string) error {
 	}
 	if isChildProvisioningAction(cfg.action) {
 		return provisionChildCredential(ctx, cfg)
-	}
-	if cfg.action == "mint-bootstrap-publisher" {
-		return mintBootstrapPublisher(ctx, cfg)
-	}
-	if cfg.action == "revoke-bootstrap-publisher" {
-		return revokeBootstrapPublisher(ctx, cfg)
 	}
 
 	parent, err := r2control.LoadParentCredentials(ctx, cfg.parentCredentialConfig())
@@ -362,7 +347,7 @@ func (cfg *config) applySiteDefaults() error {
 		return err
 	}
 	cfg.repoRoot = repoRoot
-	needsSiteDefaults := cfg.accountID == "" || cfg.bucket == ""
+	needsSiteDefaults := !certificateOnlyAction(cfg.action) && (cfg.accountID == "" || cfg.bucket == "")
 	if needsSiteDefaults {
 		siteCfg, err := loadSiteConfig(cfg.repoRoot, cfg.site)
 		if err != nil {
@@ -387,9 +372,13 @@ func isRecoveryAction(action string) bool {
 	return action == "ensure-recovery" || action == "rotate-recovery"
 }
 
+func certificateOnlyAction(action string) bool {
+	return action == "issue-site-certificates"
+}
+
 func isChildProvisioningAction(action string) bool {
 	switch action {
-	case "ensure-bucket", "provision-site-bootstrap", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "ensure-bucket", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 		return true
 	default:
 		return false
@@ -415,30 +404,26 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "mint-bootstrap-publisher", "revoke-bootstrap-publisher", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, mint-bootstrap-publisher, revoke-bootstrap-publisher, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
-	if !r2control.IsCloudflareAccountID(cfg.accountID) {
-		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
-	}
-	if !r2control.IsR2BucketName(cfg.bucket) {
-		return fmt.Errorf("--bucket must be a valid lowercase R2 bucket name")
-	}
-	if strings.TrimSpace(cfg.region) == "" {
-		return fmt.Errorf("--region is required")
-	}
-	if strings.Trim(strings.TrimSpace(cfg.keyPrefix), "/") == "" {
-		return fmt.Errorf("--key-prefix is required")
+	if !certificateOnlyAction(cfg.action) {
+		if !r2control.IsCloudflareAccountID(cfg.accountID) {
+			return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
+		}
+		if !r2control.IsR2BucketName(cfg.bucket) {
+			return fmt.Errorf("--bucket must be a valid lowercase R2 bucket name")
+		}
+		if strings.TrimSpace(cfg.region) == "" {
+			return fmt.Errorf("--region is required")
+		}
+		if strings.Trim(strings.TrimSpace(cfg.keyPrefix), "/") == "" {
+			return fmt.Errorf("--key-prefix is required")
+		}
 	}
 	if cfg.tempTTL < time.Minute || cfg.tempTTL > 7*24*time.Hour {
 		return fmt.Errorf("--temp-ttl must be between 1 minute and 7 days")
-	}
-	if cfg.uploadSessionTTL < time.Minute || cfg.uploadSessionTTL > 7*24*time.Hour {
-		return fmt.Errorf("--upload-session-ttl must be between 1 minute and 7 days")
-	}
-	if cfg.uploadSessionTTL > bootstrapPublisherTTL {
-		return fmt.Errorf("--upload-session-ttl must be no more than the bootstrap publisher TTL")
 	}
 	if cfg.childTokenTTL <= 0 || cfg.childTokenTTL > 7*24*time.Hour {
 		return fmt.Errorf("--child-token-ttl must be greater than zero and no more than 7 days")
@@ -458,7 +443,16 @@ func (cfg config) validate() error {
 	if cfg.certificateRenewBefore <= 0 || cfg.certificateRenewBefore > 90*24*time.Hour {
 		return fmt.Errorf("--certificate-renew-before must be greater than zero and no more than 90 days")
 	}
-	if cfg.action == "issue-site-certificates" || cfg.action == "provision-site" {
+	if cfg.action == "issue-site-certificates" {
+		if strings.TrimSpace(cfg.provider) != "cloudflare" {
+			return fmt.Errorf("--provider=cloudflare is required for certificate issuance")
+		}
+		if strings.TrimSpace(cfg.cloudflareAPITokenFile) == "" {
+			return fmt.Errorf("--cloudflare-api-token-file is required for certificate issuance")
+		}
+		if strings.TrimSpace(cfg.certificateOutputDir) == "" {
+			return fmt.Errorf("--certificate-output-dir is required for certificate issuance")
+		}
 		if strings.TrimSpace(cfg.acmeDirectoryURL) == "" {
 			return fmt.Errorf("--acme-directory-url is required for certificate issuance")
 		}
@@ -624,15 +618,10 @@ func provisionSite(ctx context.Context, cfg config) error {
 	if err := reconcileDNS(ctx, dnsCfg); err != nil {
 		return fmt.Errorf("reconcile-dns: %w", err)
 	}
-	certCfg := cfg
-	certCfg.action = "issue-site-certificates"
-	if err := issueSiteCertificates(ctx, certCfg); err != nil {
-		return fmt.Errorf("issue-site-certificates: %w", err)
-	}
-	bootstrapCfg := cfg
-	bootstrapCfg.action = "provision-site-bootstrap"
-	if err := provisionChildCredential(ctx, bootstrapCfg); err != nil {
-		return fmt.Errorf("provision-site-bootstrap: %w", err)
+	bucketCfg := cfg
+	bucketCfg.action = "ensure-bucket"
+	if err := provisionChildCredential(ctx, bucketCfg); err != nil {
+		return fmt.Errorf("ensure-bucket: %w", err)
 	}
 	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin-pair")
 	out.VerifiedWith = "cloudflare-site-provisioned"
@@ -709,14 +698,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
 	if err != nil {
 		return err
-	}
-	if cfg.action == "provision-site-bootstrap" {
-		out := baseReport(cfg, accountAdmin.Source)
-		out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
-		if err := provisionSiteBootstrapCredentials(ctx, cfg, apiClient, &out); err != nil {
-			return err
-		}
-		return writeReport(out)
 	}
 	existed, created, err := ensureR2BucketWithAccountAdmin(ctx, cfg, apiClient)
 	if err != nil {
@@ -901,127 +882,6 @@ func verifyObjectRoundTripOnce(ctx context.Context, client *r2control.R2Client, 
 	out.TestObjectSHA256 = digest
 	out.TestObjectHeadStatus = headStatus
 	out.TestObjectGetStatus = getStatus
-	return nil
-}
-
-func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, out *report) (err error) {
-	suffix := time.Now().UTC().Format("20060102T150405Z")
-	existed, bucketCreated, err := ensureR2BucketWithAccountAdmin(ctx, cfg, apiClient)
-	if err != nil {
-		return err
-	}
-	out.BucketExisted = existed
-	out.BucketCreated = bucketCreated
-
-	publisher, err := createBootstrapPublisherToken(ctx, cfg, apiClient, suffix)
-	if err != nil {
-		return err
-	}
-	publisherDeleted := false
-	defer func() {
-		if !publisherDeleted {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, publisher)
-		}
-	}()
-	publisherClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     publisher.S3AccessKeyID,
-		SecretAccessKey: publisher.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-bootstrap-publisher-verification",
-		Timeout:         cfg.timeout,
-	})
-	if err != nil {
-		return err
-	}
-	if err := verifyObjectRoundTrip(ctx, publisherClient, cfg, "bootstrap-publisher", out); err != nil {
-		return err
-	}
-	if err := apiClient.DeleteAccountToken(ctx, cfg.accountID, publisher.ID); err != nil {
-		return fmt.Errorf("delete bootstrap publisher after verification: %w", err)
-	}
-	publisherDeleted = true
-	return nil
-}
-
-func createBootstrapPublisherToken(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, suffix string) (r2control.CreatedAPIToken, error) {
-	return apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, "verself-"+cfg.site+"-bootstrap-artifact-publisher-"+suffix, []string{
-		r2control.PermissionR2BucketItemRead,
-		r2control.PermissionR2BucketItemWrite,
-	}, time.Now().UTC().Add(bootstrapPublisherTTL))
-}
-
-func mintBootstrapPublisher(ctx context.Context, cfg config) (err error) {
-	accountAdmin, err := loadRequiredAccountAdminCredentials(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	if _, _, err := ensureR2BucketWithAccountAdmin(ctx, cfg, apiClient); err != nil {
-		return err
-	}
-	publisher, err := createBootstrapPublisherToken(ctx, cfg, apiClient, time.Now().UTC().Format("20060102T150405Z"))
-	if err != nil {
-		return err
-	}
-	delivered := false
-	defer func() {
-		if !delivered {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, publisher)
-		}
-	}()
-	publisherClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     publisher.S3AccessKeyID,
-		SecretAccessKey: publisher.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-bootstrap-publisher-verification",
-		Timeout:         cfg.timeout,
-	})
-	if err != nil {
-		return err
-	}
-	out := baseReport(cfg, accountAdmin.Source)
-	if err := verifyObjectRoundTrip(ctx, publisherClient, cfg, "bootstrap-publisher", &out); err != nil {
-		return err
-	}
-	if err := writeBootstrapPublisherCredential(publisher); err != nil {
-		return err
-	}
-	delivered = true
-	return nil
-}
-
-func revokeBootstrapPublisher(ctx context.Context, cfg config) error {
-	if strings.TrimSpace(cfg.bootstrapPublisherTokenIDFile) == "" {
-		return fmt.Errorf("--bootstrap-publisher-token-id-file is required")
-	}
-	tokenIDBody, err := os.ReadFile(cfg.bootstrapPublisherTokenIDFile)
-	if err != nil {
-		return fmt.Errorf("read bootstrap publisher token ID file: %w", err)
-	}
-	tokenID := strings.TrimSpace(string(tokenIDBody))
-	if tokenID == "" {
-		return fmt.Errorf("bootstrap publisher token ID file is empty")
-	}
-	accountAdmin, err := loadRequiredAccountAdminCredentials(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	if err := apiClient.DeleteAccountToken(ctx, cfg.accountID, tokenID); err != nil {
-		var statusErr r2control.APIStatusError
-		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
-			return nil
-		}
-		return err
-	}
 	return nil
 }
 
@@ -1680,27 +1540,6 @@ func deleteCreatedTokensOnError(errp *error, apiClient *r2control.CloudflareAPIC
 	if len(cleanupErrors) > 0 {
 		*errp = fmt.Errorf("%w; additionally failed to delete created Cloudflare tokens: %s", *errp, strings.Join(cleanupErrors, "; "))
 	}
-}
-
-func writeBootstrapPublisherCredential(publisher r2control.CreatedAPIToken) error {
-	credential := bootstrapPublisherCredential{
-		AccessKeyID:     publisher.S3AccessKeyID,
-		SecretAccessKey: publisher.S3SecretKey,
-		TokenID:         publisher.ID,
-		ExpiresOn:       publisher.ExpiresOn,
-	}
-	if strings.TrimSpace(credential.AccessKeyID) == "" || strings.TrimSpace(credential.SecretAccessKey) == "" || strings.TrimSpace(credential.TokenID) == "" {
-		return fmt.Errorf("bootstrap publisher credential is incomplete")
-	}
-	f, err := openBootstrapPublisherOutput()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	if err := json.NewEncoder(f).Encode(credential); err != nil {
-		return fmt.Errorf("write bootstrap publisher credential fd %d: %w", bootstrapPublisherOutputFD, err)
-	}
-	return nil
 }
 
 func objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[string]string {

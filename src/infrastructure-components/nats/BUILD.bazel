@@ -57,6 +57,5 @@ nomad_component(
     deploy_phase = "platform",
     job_id = "nats",
     job_spec = "nomad.hcl",
-    provides = ["nats:client"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

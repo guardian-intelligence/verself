@@ -31,11 +31,9 @@ pkg_tar(
     out = "cloudflare-r2-control-plane.tar",
     files = {
         ":cloudflare-r2-control-plane": "bin/cloudflare-r2-control-plane",
-        "//src/tools/deployment/cmd/nomad-chown-exec:nomad-chown-exec": "bin/nomad-chown-exec",
     },
     modes = {
         "bin/cloudflare-r2-control-plane": "0755",
-        "bin/nomad-chown-exec": "0755",
     },
     visibility = ["//visibility:public"],
 )

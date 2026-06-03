@@ -21,6 +21,15 @@ type RunnerProblem struct {
 	ObservedAt time.Time
 }
 
+const (
+	runnerAllocationSnapshotRestoreFailedCode             = "runner_allocation.snapshot_restore_failed"
+	runnerAllocationGuestTimeSyncPrecisionGateFailedCode  = "runner_allocation.guest_time_sync_precision_gate_failed"
+	runnerAllocationGuestTimeSyncPrecisionGateFailedTitle = "Guest time sync precision gate failed"
+	runnerAllocationGuestTimeSyncPrecisionGateFailedPhase = "guest_time_sync"
+	runnerAllocationSnapshotRestoreFailedTitle            = "Runner snapshot restore failed"
+	runnerAllocationSnapshotRestoreFailedPhase            = "snapshot_restore"
+)
+
 type runnerProblemSet struct {
 	problems []RunnerProblem
 }

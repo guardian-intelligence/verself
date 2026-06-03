@@ -16,7 +16,7 @@ import (
 
 const (
 	GoldenVMSnapshotKeySchema         = "fc-precontrol-chrony-v7"
-	GoldenVMRestoreHookVersion        = "lease-init+host-clock-first+chrony-restart-v5"
+	GoldenVMRestoreHookVersion        = "lease-init+host-ptp-clock-first+chrony-restart-v6"
 	GoldenVMBeforeSnapshotHookVersion = "before_golden_snapshot.stop_chronyd_v5"
 	snapshotKeySchema                 = GoldenVMSnapshotKeySchema
 	snapshotNetworkModel              = "network-overrides+lease-init-v1"

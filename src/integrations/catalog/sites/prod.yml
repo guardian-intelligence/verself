@@ -18,7 +18,6 @@ bootstrap_exceptions:
       - controller_openbao
     allowed_uses:
       - reconcile hosted-zone DNS records
-      - issue and project site TLS certificates
       - create site-scoped R2 deployment artifact child tokens
       - create site-scoped R2 object-storage child tokens
       - create recovery R2 child tokens

@@ -19,18 +19,19 @@ const tracerName = "github.com/verself/deployment-service/deployengine"
 var gitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 type Options struct {
-	Site                         string
-	SHA                          string
-	DeployRunKey                 string
-	RepoRoot                     string
-	R2ControlPlaneBootstrapToken string
-	R2ControlPlaneAddr           string
-	R2ControlPlaneHTTPClient     *http.Client
-	NomadAddr                    string
-	BazelBuildFlags              []string
-	Bootstrap                    bool
-	Tracer                       trace.Tracer
-	Stdout                       io.Writer
+	Site                      string
+	SHA                       string
+	DeployRunKey              string
+	RepoRoot                  string
+	ArtifactPublisher         ArtifactPublisher
+	R2ControlPlaneBearerToken string
+	R2ControlPlaneAddr        string
+	R2ControlPlaneHTTPClient  *http.Client
+	NomadAddr                 string
+	BazelBuildFlags           []string
+	TaskUserResolver          TaskUserResolver
+	Tracer                    trace.Tracer
+	Stdout                    io.Writer
 }
 
 type Result struct {
@@ -41,6 +42,30 @@ type Result struct {
 	NomadJobs           []NomadRegisterResult
 	NomadSubmittedJobs  uint32
 	NomadDispatchedJobs uint32
+}
+
+type ArtifactPublisher interface {
+	PublishDeploymentArtifacts(context.Context, ArtifactPublishRequest) (ArtifactPublishResult, error)
+}
+
+type ArtifactPublishRequest struct {
+	Site         string
+	SHA          string
+	DeployRunKey string
+	Artifacts    []ArtifactPublishCandidate
+}
+
+type ArtifactPublishCandidate struct {
+	Output    string
+	SHA256    string
+	LocalPath string
+	Body      []byte
+	SizeBytes int64
+	Label     string
+}
+
+type ArtifactPublishResult struct {
+	GetterSources map[string]string
 }
 
 type execution struct {
@@ -101,6 +126,9 @@ func newExecution(opts Options) (execution, error) {
 	if opts.Tracer == nil {
 		opts.Tracer = otel.Tracer(tracerName)
 	}
+	if opts.TaskUserResolver == nil {
+		opts.TaskUserResolver = localTaskUserResolver
+	}
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
 	}
@@ -112,8 +140,4 @@ func (e execution) stdout() io.Writer {
 		return os.Stdout
 	}
 	return e.Stdout
-}
-
-func (e execution) bootstrapMode() bool {
-	return e.Bootstrap
 }

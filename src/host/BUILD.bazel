@@ -59,6 +59,7 @@ pkg_tar(
     out = "host-tools.tar",
     files = {
         ":bazelisk_bin": "opt/verself/profile/bin/bazelisk",
+        "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane": "opt/verself/profile/bin/cloudflare-control-plane",
         ":nomad_bin": "opt/verself/profile/bin/nomad",
         "@otelcol_tools//tools/spiffe-helper": "opt/verself/profile/bin/spiffe-helper",
         ":spire_agent_bin": "opt/verself/profile/bin/spire-agent",
@@ -66,6 +67,7 @@ pkg_tar(
     },
     modes = {
         "opt/verself/profile/bin/bazelisk": "0755",
+        "opt/verself/profile/bin/cloudflare-control-plane": "0755",
         "opt/verself/profile/bin/nomad": "0755",
         "opt/verself/profile/bin/spiffe-helper": "0755",
         "opt/verself/profile/bin/spire-agent": "0755",

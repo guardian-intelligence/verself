@@ -51,6 +51,7 @@ const (
 	problemGithubRunnerSandboxOutboxCompleteFailed       githubProblemCode = "github_runner.sandbox_outbox_complete_failed"
 	problemGithubRunnerSubmissionCommitFailed            githubProblemCode = "github_runner.submission_commit_failed"
 	problemGithubRunnerSandboxAllocationTerminal         githubProblemCode = "github_runner.sandbox_allocation_terminal"
+	problemGithubRunnerGuestTimeSyncPrecisionGateFailed  githubProblemCode = "github_runner.guest_time_sync_precision_gate_failed"
 	problemGithubRunnerSandboxAllocationNotFound         githubProblemCode = "github_runner.sandbox_allocation_not_found"
 	problemGithubRunnerSandboxSubmitNotObserved          githubProblemCode = "github_runner.sandbox_submit_not_observed"
 	problemGithubRunnerAssignmentDeadlineExceeded        githubProblemCode = "github_runner.assignment_deadline_exceeded"
@@ -278,6 +279,7 @@ var githubProblemCatalog = map[githubProblemCode]githubProblemDefinition{
 	problemGithubRunnerSandboxOutboxCompleteFailed:       runnerProblemDefinition(problemGithubRunnerSandboxOutboxCompleteFailed, "Sandbox runner submit outbox completion failed", "Verself could not mark the sandbox submit outbox command complete.", "sandbox_outbox", false),
 	problemGithubRunnerSubmissionCommitFailed:            runnerProblemDefinition(problemGithubRunnerSubmissionCommitFailed, "Sandbox runner submission commit failed", "Verself could not commit sandbox runner submission state.", "sandbox_submit", true),
 	problemGithubRunnerSandboxAllocationTerminal:         runnerProblemDefinition(problemGithubRunnerSandboxAllocationTerminal, "GitHub runner capacity failed before assignment", "The sandbox allocation became terminal before GitHub assigned the runner.", "sandbox_reconcile", false),
+	problemGithubRunnerGuestTimeSyncPrecisionGateFailed:  runnerProblemDefinition(problemGithubRunnerGuestTimeSyncPrecisionGateFailed, "Guest time sync precision gate failed", "Verself could not prove the restored runner VM clock was synchronized closely enough to the host PTP source before starting the GitHub job.", "guest_time_sync", false),
 	problemGithubRunnerSandboxAllocationNotFound:         runnerProblemDefinition(problemGithubRunnerSandboxAllocationNotFound, "GitHub runner capacity failed before assignment", "sandbox-rental-service no longer has the expected runner allocation.", "sandbox_reconcile", false),
 	problemGithubRunnerSandboxSubmitNotObserved:          runnerProblemDefinition(problemGithubRunnerSandboxSubmitNotObserved, "GitHub runner capacity failed before assignment", "Verself did not observe sandbox submission before the runner assignment deadline.", "sandbox_submit", false),
 	problemGithubRunnerAssignmentDeadlineExceeded:        runnerProblemDefinition(problemGithubRunnerAssignmentDeadlineExceeded, "GitHub runner capacity failed before assignment", "GitHub did not assign the runner before the assignment deadline.", "assignment_wait", false),

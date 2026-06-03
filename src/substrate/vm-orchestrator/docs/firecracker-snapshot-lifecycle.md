@@ -139,10 +139,9 @@ the Verself manifest contract:
   contents are caller-managed and must be snapshotted by vm-orchestrator.
 - The pinned Firecracker `LoadSnapshot` request receives per-lease TAP
   rebinding through `network_overrides`. vm-bridge snapshot hooks stop chronyd
-  before snapshot capture. Restore hooks step restored guest realtime from the
-  host lease-control timestamp, require the guest wall clock to be within 1ms
-  of the host timestamp, start a fresh chronyd, and require synchronization
-  through `/dev/ptp0` with at most 1ms source offset before host control exposes
+  before snapshot capture. Restore hooks step restored guest realtime from
+  `/dev/ptp0`, start a fresh chronyd, and require synchronization through
+  `/dev/ptp0` with at most 1ms source offset before host control exposes
   customer exec.
 - Guest network connections and open vsock connections are not reusable across
   a restored Firecracker process. `AfterRestore` reconnects host control and

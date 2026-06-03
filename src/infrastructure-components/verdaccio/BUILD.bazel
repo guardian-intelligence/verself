@@ -13,7 +13,6 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "verdaccio",
     job_spec = "nomad.hcl",
-    provides = ["verdaccio:http"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

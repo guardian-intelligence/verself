@@ -43,6 +43,5 @@ nomad_component(
     deploy_phase = "platform",
     job_id = "tigerbeetle",
     job_spec = "nomad.hcl",
-    provides = ["tigerbeetle:client"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

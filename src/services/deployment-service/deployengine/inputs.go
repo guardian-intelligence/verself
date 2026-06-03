@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/hashicorp/nomad/api"
@@ -20,7 +19,7 @@ import (
 )
 
 const (
-	nomadComponentSchemaVersion = 6
+	nomadComponentSchemaVersion = 7
 	artifactSourcePrefix        = "verself-artifact://"
 
 	deployPhasePreArtifact = "pre_artifact"
@@ -71,8 +70,6 @@ type nomadComponentDescriptor struct {
 	JobID         string                    `json:"job_id"`
 	JobSpec       string                    `json:"job_spec"`
 	JobSpecPath   string                    `json:"job_spec_path"`
-	Provides      []string                  `json:"provides"`
-	Requires      []string                  `json:"requires"`
 	Sites         []string                  `json:"sites"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
 	PreArtifacts  []nomadDescriptorArtifact `json:"pre_artifacts"`
@@ -94,8 +91,6 @@ type nomadDescriptorInput struct {
 type nomadJob struct {
 	Component string
 	JobID     string
-	Provides  []string
-	Requires  []string
 	Source    string
 	Job       *api.Job
 }
@@ -140,15 +135,11 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 	if err != nil {
 		return nil, err
 	}
-	ordered, err := orderNomadComponents(descriptors)
+	bindings, artifacts, err := bindNomadArtifacts(repoRoot, cfg.ArtifactDelivery, descriptors)
 	if err != nil {
 		return nil, err
 	}
-	bindings, artifacts, err := bindNomadArtifacts(repoRoot, cfg.ArtifactDelivery, ordered)
-	if err != nil {
-		return nil, err
-	}
-	bundle, err := controlplane.LoadBundle(repoRoot, site, controlPlaneComponents(ordered))
+	bundle, err := controlplane.LoadBundle(repoRoot, site, controlPlaneComponents(descriptors))
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +156,7 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 		DeployRunKey:       deployRunKey,
 		SiteCfg:            cfg,
 		SiteModel:          model,
-		Components:         ordered,
+		Components:         descriptors,
 		Artifacts:          artifacts,
 		Bindings:           bindings,
 		ControlPlane:       bundle,
@@ -247,10 +238,7 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 			return nil, fmt.Errorf("%s: component descriptor requires label, component, job_id, job_spec, and job_spec_path", path)
 		}
 		if !validDeployPhase(component.DeployPhase) {
-			return nil, fmt.Errorf("%s: deploy_phase must be one of %s", path, strings.Join(deployPhaseOrder, ", "))
-		}
-		if len(component.Provides) == 0 {
-			component.Provides = []string{"nomad:job:" + component.JobID}
+			return nil, fmt.Errorf("%s: deploy_phase must be one of %s", path, strings.Join(deployPhaseValues, ", "))
 		}
 		if seenLabels[component.Label] {
 			return nil, fmt.Errorf("duplicate Nomad component descriptor label %s", component.Label)
@@ -291,7 +279,7 @@ func componentInSite(sites []string, site string) bool {
 	return false
 }
 
-func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, model siteconfig.Model, bindings map[string]artifactBinding, components []nomadComponentDescriptor) ([]nomadJob, error) {
+func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, model siteconfig.Model, bindings map[string]artifactBinding, components []nomadComponentDescriptor, taskUserResolver TaskUserResolver) ([]nomadJob, error) {
 	seenJobIDs := map[string]bool{}
 	jobs := make([]nomadJob, 0, len(components))
 	for _, component := range components {
@@ -314,6 +302,9 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 				return nil, fmt.Errorf("%s: %w", component.Label, err)
 			}
 		}
+		if err := applyTaskSecretTemplateOwnership(ctx, job, taskUserResolver); err != nil {
+			return nil, fmt.Errorf("%s: %w", component.Label, err)
+		}
 		parsedID := ""
 		if job.ID != nil {
 			parsedID = *job.ID
@@ -324,8 +315,6 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 		jobs = append(jobs, nomadJob{
 			Component: component.Component,
 			JobID:     component.JobID,
-			Provides:  append([]string(nil), component.Provides...),
-			Requires:  append([]string(nil), component.Requires...),
 			Source:    specPath,
 			Job:       job,
 		})
@@ -351,7 +340,7 @@ func resolveWorkspacePath(repoRoot, path string) string {
 	return filepath.Join(repoRoot, filepath.FromSlash(path))
 }
 
-var deployPhaseOrder = []string{
+var deployPhaseValues = []string{
 	deployPhasePreArtifact,
 	deployPhasePlatform,
 	deployPhaseProduct,
@@ -368,63 +357,6 @@ var deployPhaseRank = map[string]int{
 func validDeployPhase(value string) bool {
 	_, ok := deployPhaseRank[value]
 	return ok
-}
-
-func orderNomadComponents(components []nomadComponentDescriptor) ([]nomadComponentDescriptor, error) {
-	remaining := map[string]nomadComponentDescriptor{}
-	provider := map[string]string{}
-	for _, component := range components {
-		remaining[component.Label] = component
-		for _, provide := range component.Provides {
-			if prior := provider[provide]; prior != "" && prior != component.Label {
-				return nil, fmt.Errorf("resource %s is provided by both %s and %s", provide, prior, component.Label)
-			}
-			provider[provide] = component.Label
-		}
-	}
-	ordered := make([]nomadComponentDescriptor, 0, len(components))
-	for len(remaining) > 0 {
-		ready := make([]nomadComponentDescriptor, 0, len(remaining))
-		for label, component := range remaining {
-			blocked := false
-			for _, need := range component.Requires {
-				if owner := provider[need]; owner != "" {
-					if _, pending := remaining[owner]; pending && owner != label {
-						blocked = true
-						break
-					}
-				}
-			}
-			if !blocked {
-				ready = append(ready, component)
-			}
-		}
-		if len(ready) == 0 {
-			labels := make([]string, 0, len(remaining))
-			for label := range remaining {
-				labels = append(labels, label)
-			}
-			sort.Strings(labels)
-			return nil, fmt.Errorf("cyclic Nomad component requirements among %s", strings.Join(labels, ", "))
-		}
-		sort.Slice(ready, func(i, j int) bool {
-			if deployPhaseRank[ready[i].DeployPhase] != deployPhaseRank[ready[j].DeployPhase] {
-				return deployPhaseRank[ready[i].DeployPhase] < deployPhaseRank[ready[j].DeployPhase]
-			}
-			return ready[i].JobID < ready[j].JobID
-		})
-		for _, component := range ready {
-			ordered = append(ordered, component)
-			delete(remaining, component.Label)
-		}
-	}
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if deployPhaseRank[ordered[i].DeployPhase] != deployPhaseRank[ordered[j].DeployPhase] {
-			return deployPhaseRank[ordered[i].DeployPhase] < deployPhaseRank[ordered[j].DeployPhase]
-		}
-		return false
-	})
-	return ordered, nil
 }
 
 func controlPlaneComponents(components []nomadComponentDescriptor) []controlplane.Component {

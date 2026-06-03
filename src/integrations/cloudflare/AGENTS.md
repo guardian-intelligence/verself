@@ -2,7 +2,7 @@
 
 Cloudflare is a single global provider control plane anchored to prod authority. The repository still passes `--site=<site>` to Cloudflare tooling; that argument selects target site records, object prefixes, and R2 child credential destinations. It does not select a site-local Cloudflare authority.
 
-Site `prod` has a special infrastructure role: it owns global Cloudflare DNS and TLS/certificate control-plane operations for prod, gamma, dev, and future sites. Other sites receive derived DNS state and certificate projections. They do not receive Cloudflare DNS API tokens.
+Site `prod` has a special infrastructure role: it owns global Cloudflare DNS and R2 control-plane operations for prod, gamma, dev, and future sites. Host bootstrap does not receive Cloudflare account authority.
 
 Global Cloudflare account identity and account-owned R2 buckets are declared only in `src/integrations/cloudflare/account.json`. Site files may reference Cloudflare as a consumed capability, but must not declare `cloudflare_account_id` or global R2 bucket names.
 
@@ -22,7 +22,7 @@ Required account-admin token policies:
 
 ## R2 Model
 
-R2 is required for bootstrap and ongoing deployment. `aspect site bootstrap-deploy` publishes the initial immutable build artifacts through a short-lived publisher credential minted for that run; after Nomad starts deployment-service, normal deployments publish through the site-local Cloudflare R2 control-plane job.
+R2 is required for ongoing deployment. `aspect site bootstrap-deploy` copies the initial immutable build artifacts to the target host over SSH; after Nomad starts deployment-service, normal deployments publish through the site-local Cloudflare R2 control-plane job.
 
 The deployment artifact bucket is a global account resource declared in `account.json`:
 
@@ -37,9 +37,8 @@ verself-deployment-artifacts/<site>/sha256/<artifact-sha256>/...
 verself-deployment-artifacts/<site>/candidate/<deploy-run-key>/...
 ```
 
-The account-admin token creates the bucket through Cloudflare's REST R2 bucket API. Runtime and bootstrap jobs receive bucket-scoped child credentials only. R2 child credentials are delivered as S3-compatible access key IDs plus secret access keys. The Cloudflare API token value used to create a child credential is not a site runtime secret.
+The account-admin token creates the bucket through Cloudflare's REST R2 bucket API. Runtime jobs receive bucket-scoped child credentials only. R2 child credentials are delivered as S3-compatible access key IDs plus secret access keys. The Cloudflare API token value used to create a child credential is not a site runtime secret.
 
-- Bootstrap publisher: bucket item read/write, minted for each `aspect site bootstrap-deploy` run, passed in memory to the local R2 helper, and revoked before the command exits.
 - Nomad artifact fetch: the site-local R2 control plane returns per-object presigned download sources after upload verification; Nomad receives only object-scoped download URLs.
 - Object storage service admin/proxy: bucket item read/write, written only to OpenBao runtime secret names declared by `src/services/object-storage-service/deploy/runtime-secrets.yml`.
 - Deployment publisher: bucket item read/write, stored as capability metadata and projected into the OpenBao runtime names declared by `src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml`.
@@ -52,19 +51,19 @@ DNS records are target-site resources inside global hosted zones. For Gamma, `ve
 
 `cloudflare_product_zone` and `cloudflare_company_zone` name hosted zones. `verself_domain` and `company_domain` name public domains inside those zones. Do not infer the hosted zone from a subdomain site name.
 
-The prod Cloudflare control plane reconciles DNS using the account-admin pair. `aspect integrations cloudflare-control-plane --site=<site> --action=reconcile-dns` reads the prod account-admin pair from controller authority and applies the target site's `cloudflare_dns_records`. DNS reconciliation produces records and evidence only; target sites receive no DNS credential material.
+The prod Cloudflare control plane reconciles DNS using the account-admin pair. `aspect integrations cloudflare-control-plane --site=<site> --action=reconcile-dns` reads the prod account-admin pair from controller authority and applies the target site's `cloudflare_dns_records`. DNS reconciliation produces records and evidence only.
 
-DNS and ACME/TLS issuer authority are controller-only surfaces. Site hosts may consume public certificates projected by the prod control plane through OpenBao/Nomad/host convergence, but they must not receive Cloudflare DNS credentials for DNS-01 issuance.
+ACME/TLS issuer authority is an explicit public-edge input outside host bootstrap.
 
 ## TLS Certificate Model
 
-HAProxy public certificates are issued by the prod Cloudflare control plane before host convergence. The account-admin token creates short-lived ACME DNS-01 TXT records in the managed Cloudflare zones, completes the ACME authorization, deletes the TXT records, and projects combined private-key plus certificate-chain PEM files under:
+HAProxy public certificates are issued before the public edge is converged. The operator-provided Cloudflare token creates short-lived ACME DNS-01 TXT records in the managed Cloudflare zones, completes the ACME authorization, deletes the TXT records, and writes combined private-key plus certificate-chain PEM files under:
 
 ```text
-.verself/bootstrap/<site>/tls/haproxy/<certificate-name>.pem
+/etc/haproxy/certs/<certificate-name>.pem
 ```
 
-Host convergence copies those projected PEM files to `/etc/haproxy/certs` and reloads HAProxy. It must fail when a projected certificate is missing. A site bootstrap should provision the real public certificate; it should not manage a temporary public-edge certificate lifecycle.
+The HAProxy role fails if it cannot reuse the real public certificate. Site bootstrap does not manage a public-edge certificate lifecycle.
 
 The certificate set is derived from target site vars:
 
@@ -78,19 +77,20 @@ The hosted zone is derived from `cloudflare_product_zone` and `cloudflare_compan
 Certificate issuance state machine:
 
 ```text
-load account-admin slot A from prod controller authority
+load Cloudflare DNS token file from the explicit edge input
   -> resolve every hosted zone referenced by target site vars
-  -> inspect projected PEM for keypair validity, SAN coverage, and expiry
-  -> reuse projected PEM when it is valid and outside the renewal window
+  -> inspect host PEM for keypair validity, SAN coverage, and expiry
+  -> reuse host PEM when it is valid and outside the renewal window
   -> create ACME DNS-01 TXT records through Cloudflare
   -> wait for public DNS visibility
   -> complete ACME authorization and finalize the order
-  -> write projected PEM atomically with 0600 mode
+  -> write host PEM atomically with 0600 mode
   -> delete ACME TXT records
   -> emit certificate names, domains, paths, expiry, and reuse evidence
+  -> remove the copied Cloudflare token from the host
 ```
 
-The prod controller is the only holder of DNS issuer authority. Target sites receive certificate bytes, not Cloudflare DNS credentials. Renewal uses the same controller state transition and should run before host convergence or as a controller-owned operational task that refreshes the projection and then triggers host convergence.
+Renewal uses the same explicit edge transition. The Cloudflare token is not stored in Nomad, OpenBao runtime secrets, repo files, generated artifacts, or service environments.
 
 ## Account-Admin Rotation
 
@@ -139,11 +139,9 @@ The DNS transition emits evidence and produces no child credential.
 
 ## Bootstrap Boundary
 
-Bootstrap Cloudflare operations load account-admin authority from prod controller OpenBao. When prod controller OpenBao is not reachable, establish or recover controller OpenBao first; do not run Cloudflare DNS, TLS, or R2 provisioning from a local static secret file.
+Bootstrap artifact delivery does not use Cloudflare. DNS and R2 operations load account-admin authority from prod controller OpenBao. When prod controller OpenBao is not reachable, establish or recover controller OpenBao before running DNS or R2 provisioning. TLS issuance is a public-edge step outside host bootstrap.
 
 Product-provider secrets such as Stripe, Resend, GitHub App private material, object-storage provider keys, and runtime deployment publisher keys enter OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
-
-The bootstrap artifact publisher is a dynamic provider credential. The current control-plane binary mints it from prod controller OpenBao authority, passes it to the local R2 helper through private temp files, and revokes the Cloudflare token before `bootstrap-deploy` exits. The OpenBao-native form of this boundary is a Cloudflare secrets-engine plugin mounted in prod controller OpenBao: roles such as `bootstrap-artifact-publisher/<site>` return leased S3-compatible child credentials and revoke the provider token when the OpenBao lease is revoked or expires.
 
 ## Module Boundaries
 
@@ -153,7 +151,7 @@ The bootstrap artifact publisher is a dynamic provider credential. The current c
 
 ## Code Pointers
 
-- `control-plane/cmd/cloudflare-control-plane/main.go` provisions R2 child tokens, verifies each child token against R2, writes runtime values to `kv-runtime/data/secret/org/<secret-name>`, and mints/revokes the one-run bootstrap artifact publisher.
+- `control-plane/cmd/cloudflare-control-plane/main.go` provisions R2 child tokens, verifies each child token against R2, writes runtime values to `kv-runtime/data/secret/org/<secret-name>`, reconciles DNS, and issues public-edge certificates when invoked for that explicit transition.
 - `r2-control-plane/nomad.hcl` reads `cloudflare-r2-control-plane.publisher_token_id` and `cloudflare-r2-control-plane.publisher_secret_access_key` through Nomad's OpenBao template integration.
 - `r2-control-plane/cmd/cloudflare-r2-control-plane/server.go` signs per-object upload and download URLs from the OpenBao-projected publisher credential.
 - `../../services/object-storage-service/nomad.hcl` reads the object-storage R2 admin/proxy credentials through Nomad OpenBao templates.
