@@ -169,9 +169,9 @@ func validateBootstrapException(v *Validator, rel string, index int, exception B
 	}
 	requireName(v, rel, prefix+".provider", exception.Provider)
 	switch exception.Isolation {
-	case "bootstrap_shared", "controller_only":
+	case "controller_only":
 	default:
-		v.add(rel, prefix+".isolation must be bootstrap_shared or controller_only")
+		v.add(rel, prefix+".isolation must be controller_only")
 	}
 	if len(exception.CredentialKeys) == 0 {
 		v.add(rel, prefix+".credential_keys must not be empty")
@@ -223,12 +223,9 @@ func validateIntegrationCredential(v *Validator, rel, prefix string, credential 
 		v.add(rel, prefix+".site_var is required for "+credential.Target+" targets")
 	}
 	switch credential.Isolation {
-	case "", "bootstrap_shared", "site_scoped":
+	case "", "site_scoped":
 	default:
-		v.add(rel, prefix+".isolation must be bootstrap_shared or site_scoped when set")
-	}
-	if credential.Isolation == "bootstrap_shared" && (credential.Target == "runtime_secret" || credential.TargetStore == "site_openbao" || credential.TargetStore == "runtime_secret") {
-		v.add(rel, prefix+".isolation bootstrap_shared cannot feed runtime secrets or site OpenBao")
+		v.add(rel, prefix+".isolation must be site_scoped when set")
 	}
 }
 

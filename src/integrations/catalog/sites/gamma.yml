@@ -35,7 +35,7 @@ integrations:
         target: provisioning_bootstrap
         target_store: controller_openbao
         openbao_name: infrastructure.latitude.auth_token
-    gamma_policy: prefer dedicated Latitude project and token; mark bootstrap_shared only for the hourly tracer bullet.
+    gamma_policy: use a dedicated Latitude project and token for gamma provisioning.
   - key: edge.cloudflare_dns
     provider: cloudflare
     replacement: partial_stripe_projects_candidate
