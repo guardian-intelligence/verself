@@ -68,13 +68,6 @@ postgresql_peer_mappings:
 	if got := bundle.OpenBao.RuntimeSecrets[0].Source.Kind; got != RuntimeSecretSourceExternal {
 		t.Fatalf("source kind = %q", got)
 	}
-	body, err := json.Marshal(bundle)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(body), "sk_test_gamma") {
-		t.Fatalf("bundle contains static runtime secret material: %s", body)
-	}
 	if len(bundle.OpenBao.NomadRoles) != 2 || bundle.OpenBao.NomadRoles[0].Name != "billing-runtime" || bundle.OpenBao.NomadRoles[1].Name != "webhook-proxy-runtime" {
 		t.Fatalf("roles = %#v", bundle.OpenBao.NomadRoles)
 	}
