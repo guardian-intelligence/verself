@@ -642,13 +642,7 @@ func (s *Service) AdvanceExecution(ctx context.Context, executionID, attemptID u
 		_ = s.markBillingWindow(ctx, item.AttemptID, reservation.WindowID, "voided", 0, billingclient.BillingSettleResult{})
 		s.failDurableCaches(ctx, durablePlan, failureReason, err)
 		if restoreActivationRequested && goldenVMRestoreFailureReason(failureReason) {
-			handled, terminalErr := s.failRunnerAttemptWithProblem(ctx, item, failureReason, runnerAllocationProblemFromError(
-				"snapshot_restore",
-				"runner_allocation.snapshot_restore_failed",
-				"Runner snapshot restore failed",
-				err,
-				false,
-			), err)
+			handled, terminalErr := s.failRunnerAttemptWithProblem(ctx, item, failureReason, runnerSnapshotRestoreProblemFromError(err), err)
 			if handled {
 				return terminalErr
 			}
@@ -869,6 +863,40 @@ func goldenVMRestoreFailureReason(reason string) bool {
 	default:
 		return false
 	}
+}
+
+func runnerSnapshotRestoreProblemFromError(err error) RunnerProblem {
+	if runnerAllocationGuestTimeSyncPrecisionGateFailed(err) {
+		return runnerAllocationProblemFromError(
+			runnerAllocationGuestTimeSyncPrecisionGateFailedPhase,
+			runnerAllocationGuestTimeSyncPrecisionGateFailedCode,
+			runnerAllocationGuestTimeSyncPrecisionGateFailedTitle,
+			err,
+			false,
+		)
+	}
+	return runnerAllocationProblemFromError(
+		runnerAllocationSnapshotRestoreFailedPhase,
+		runnerAllocationSnapshotRestoreFailedCode,
+		runnerAllocationSnapshotRestoreFailedTitle,
+		err,
+		false,
+	)
+}
+
+func runnerAllocationGuestTimeSyncPrecisionGateFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, runnerAllocationGuestTimeSyncPrecisionGateFailedCode) ||
+		strings.Contains(msg, "host_step_offset_exceeded") ||
+		strings.Contains(msg, "restored_chrony_offset_exceeded") ||
+		strings.Contains(msg, "restored_chrony_skew_exceeded") ||
+		strings.Contains(msg, "restored chrony sync: chrony sync wait") ||
+		(strings.Contains(msg, "restored wall clock offset") && strings.Contains(msg, "exceeds")) ||
+		(strings.Contains(msg, "chrony offset") && strings.Contains(msg, "exceeds")) ||
+		(strings.Contains(msg, "chrony skew") && strings.Contains(msg, "exceeds"))
 }
 
 func (s *Service) waitLeaseReady(ctx context.Context, leaseID string, timeout time.Duration) (vmorchestrator.LeaseRecord, error) {

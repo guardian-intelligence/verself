@@ -383,6 +383,13 @@ export const GITHUB_INTEGRATION_PROBLEM_GROUPS: readonly GithubIntegrationProble
         "The sandbox allocation became terminal before GitHub assigned the runner.",
       ),
       runner(
+        "github_runner.guest_time_sync_precision_gate_failed",
+        "Guest time sync precision gate failed",
+        "guest_time_sync",
+        false,
+        "Verself could not prove the restored runner VM clock was synchronized closely enough to the host PTP source before starting the GitHub job.",
+      ),
+      runner(
         "github_runner.sandbox_allocation_not_found",
         "GitHub runner capacity failed before assignment",
         "sandbox_reconcile",

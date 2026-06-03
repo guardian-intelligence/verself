@@ -379,6 +379,7 @@ enum GithubIntegrationProblemPhase {
     SANDBOX_DISPATCH = "sandbox_dispatch"
     SANDBOX_SUBMIT = "sandbox_submit"
     SANDBOX_RECONCILE = "sandbox_reconcile"
+    GUEST_TIME_SYNC = "guest_time_sync"
     ASSIGNMENT_WAIT = "assignment_wait"
     ASSIGNMENT = "assignment"
     PROVIDER_SURFACE = "provider_surface"
@@ -505,6 +506,9 @@ enum GithubIntegrationProblemCode {
 
     @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_allocation_terminal", title: "GitHub runner capacity failed before assignment", status: 0, phase: "sandbox_reconcile", retryable: false, detail: "The sandbox allocation became terminal before GitHub assigned the runner.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-allocation-terminal")
     GITHUB_RUNNER_SANDBOX_ALLOCATION_TERMINAL = "github_runner.sandbox_allocation_terminal"
+
+    @githubIntegrationProblem(type: "urn:verself:problem:github-runner:guest_time_sync_precision_gate_failed", title: "Guest time sync precision gate failed", status: 0, phase: "guest_time_sync", retryable: false, detail: "Verself could not prove the restored runner VM clock was synchronized closely enough to the host PTP source before starting the GitHub job.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-guest-time-sync-precision-gate-failed")
+    GITHUB_RUNNER_GUEST_TIME_SYNC_PRECISION_GATE_FAILED = "github_runner.guest_time_sync_precision_gate_failed"
 
     @githubIntegrationProblem(type: "urn:verself:problem:github-runner:sandbox_allocation_not_found", title: "GitHub runner capacity failed before assignment", status: 0, phase: "sandbox_reconcile", retryable: false, detail: "sandbox-rental-service no longer has the expected runner allocation.", docs_url: "https://verself.sh/docs/reference/github-integration/errors#github-runner-sandbox-allocation-not-found")
     GITHUB_RUNNER_SANDBOX_ALLOCATION_NOT_FOUND = "github_runner.sandbox_allocation_not_found"

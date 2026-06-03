@@ -81,21 +81,27 @@ func TestChronycArgsUseLocalCommandSocket(t *testing.T) {
 func TestVerifyRestoredWallClockStepsStaleClock(t *testing.T) {
 	oldNow := wallClockNow
 	oldSetRealtime := setRealtimeUnixNano
+	oldPTPClock := ptpClockUnixNano
 	t.Cleanup(func() {
 		wallClockNow = oldNow
 		setRealtimeUnixNano = oldSetRealtime
+		ptpClockUnixNano = oldPTPClock
 	})
 
-	hostTime := time.Unix(0, 1_800_000_000_000)
+	hostControlTime := time.Unix(0, 1_799_999_990_000)
+	ptpTime := time.Unix(0, 1_800_000_000_000)
 	nowCalls := 0
 	wallClockNow = func() time.Time {
 		nowCalls++
 		switch nowCalls {
 		case 1:
-			return hostTime.Add(-25 * time.Minute)
+			return ptpTime.Add(-25 * time.Minute)
 		default:
-			return hostTime.Add(25 * time.Microsecond)
+			return ptpTime.Add(25 * time.Microsecond)
 		}
+	}
+	ptpClockUnixNano = func() (int64, error) {
+		return ptpTime.UnixNano(), nil
 	}
 	var steppedTo int64
 	setRealtimeUnixNano = func(unixNano int64) error {
@@ -104,11 +110,14 @@ func TestVerifyRestoredWallClockStepsStaleClock(t *testing.T) {
 	}
 
 	result := vmproto.ClockSyncResult{Status: "synchronized"}
-	if err := verifyRestoredWallClock(&result, hostTime.UnixNano()); err != nil {
+	if err := verifyRestoredWallClock(&result, hostControlTime.UnixNano()); err != nil {
 		t.Fatalf("verify restored wall clock: %v", err)
 	}
-	if steppedTo != hostTime.UnixNano() {
-		t.Fatalf("stepped to %d, want %d", steppedTo, hostTime.UnixNano())
+	if steppedTo != ptpTime.UnixNano() {
+		t.Fatalf("stepped to %d, want %d", steppedTo, ptpTime.UnixNano())
+	}
+	if result.HostUnixNano != ptpTime.UnixNano() {
+		t.Fatalf("host unix nano = %d, want PTP time %d", result.HostUnixNano, ptpTime.UnixNano())
 	}
 	if !result.HostStepApplied {
 		t.Fatal("host step was not recorded")
@@ -124,39 +133,62 @@ func TestVerifyRestoredWallClockStepsStaleClock(t *testing.T) {
 	}
 }
 
-func TestVerifyRestoredWallClockRejectsPostStepBeyondSLA(t *testing.T) {
+func TestVerifyRestoredWallClockLeavesPostStepGateToChrony(t *testing.T) {
 	oldNow := wallClockNow
 	oldSetRealtime := setRealtimeUnixNano
+	oldPTPClock := ptpClockUnixNano
 	t.Cleanup(func() {
 		wallClockNow = oldNow
 		setRealtimeUnixNano = oldSetRealtime
+		ptpClockUnixNano = oldPTPClock
 	})
 
-	hostTime := time.Unix(0, 1_800_000_000_000)
+	hostControlTime := time.Unix(0, 1_799_999_990_000)
+	ptpTime := time.Unix(0, 1_800_000_000_000)
 	nowCalls := 0
 	wallClockNow = func() time.Time {
 		nowCalls++
 		switch nowCalls {
 		case 1:
-			return hostTime.Add(-25 * time.Minute)
+			return ptpTime.Add(-25 * time.Minute)
 		default:
-			return hostTime.Add(2 * time.Millisecond)
+			return ptpTime.Add(2 * time.Millisecond)
 		}
+	}
+	ptpClockUnixNano = func() (int64, error) {
+		return ptpTime.UnixNano(), nil
 	}
 	setRealtimeUnixNano = func(int64) error {
 		return nil
 	}
 
 	result := vmproto.ClockSyncResult{Status: "synchronized"}
-	err := verifyRestoredWallClock(&result, hostTime.UnixNano())
-	if err == nil {
-		t.Fatal("verify restored wall clock returned nil error")
-	}
-	if result.Status != "host_step_offset_exceeded" {
-		t.Fatalf("status = %q, want host_step_offset_exceeded", result.Status)
+	if err := verifyRestoredWallClock(&result, hostControlTime.UnixNano()); err != nil {
+		t.Fatalf("verify restored wall clock: %v", err)
 	}
 	if result.PostStepWallOffsetNS != int64(2*time.Millisecond) {
 		t.Fatalf("post-step offset = %d, want %d", result.PostStepWallOffsetNS, int64(2*time.Millisecond))
+	}
+	if result.Status != "synchronized" {
+		t.Fatalf("status = %q, want synchronized", result.Status)
+	}
+}
+
+func TestVerifyRestoredWallClockRequiresPTPTime(t *testing.T) {
+	oldPTPClock := ptpClockUnixNano
+	t.Cleanup(func() { ptpClockUnixNano = oldPTPClock })
+
+	ptpClockUnixNano = func() (int64, error) {
+		return 0, errors.New("ptp missing")
+	}
+
+	result := vmproto.ClockSyncResult{Status: "synchronized"}
+	err := verifyRestoredWallClock(&result, time.Now().UnixNano())
+	if err == nil {
+		t.Fatal("verify restored wall clock returned nil error")
+	}
+	if result.Status != "ptp_time_read_failed" {
+		t.Fatalf("status = %q, want ptp_time_read_failed", result.Status)
 	}
 }
 
@@ -171,35 +203,41 @@ func TestVerifyRestoredWallClockRequiresHostTime(t *testing.T) {
 	}
 }
 
-func TestSyncRestoredClockStepsHostTimeBeforeRestartingChrony(t *testing.T) {
+func TestSyncRestoredClockStepsPTPTimeBeforeRestartingChrony(t *testing.T) {
 	oldNow := wallClockNow
 	oldSetRealtime := setRealtimeUnixNano
+	oldPTPClock := ptpClockUnixNano
 	oldRestartChrony := restartChronyDaemonAfterRestore
 	oldSyncRunningChrony := syncRunningChrony
 	t.Cleanup(func() {
 		wallClockNow = oldNow
 		setRealtimeUnixNano = oldSetRealtime
+		ptpClockUnixNano = oldPTPClock
 		restartChronyDaemonAfterRestore = oldRestartChrony
 		syncRunningChrony = oldSyncRunningChrony
 	})
 
-	hostTime := time.Unix(0, 1_800_000_000_000)
+	hostControlTime := time.Unix(0, 1_799_999_990_000)
+	ptpTime := time.Unix(0, 1_800_000_000_000)
 	nowCalls := 0
 	wallClockNow = func() time.Time {
 		nowCalls++
 		switch nowCalls {
 		case 1:
-			return hostTime.Add(-25 * time.Minute)
+			return ptpTime.Add(-25 * time.Minute)
 		default:
-			return hostTime.Add(25 * time.Microsecond)
+			return ptpTime.Add(25 * time.Microsecond)
 		}
+	}
+	ptpClockUnixNano = func() (int64, error) {
+		return ptpTime.UnixNano(), nil
 	}
 
 	var events []string
 	setRealtimeUnixNano = func(unixNano int64) error {
 		events = append(events, "set_realtime")
-		if unixNano != hostTime.UnixNano() {
-			t.Fatalf("set realtime unix nano = %d, want %d", unixNano, hostTime.UnixNano())
+		if unixNano != ptpTime.UnixNano() {
+			t.Fatalf("set realtime unix nano = %d, want %d", unixNano, ptpTime.UnixNano())
 		}
 		return nil
 	}
@@ -218,7 +256,7 @@ func TestSyncRestoredClockStepsHostTimeBeforeRestartingChrony(t *testing.T) {
 		}, nil
 	}
 
-	result, err := syncRestoredClockWithChrony(hostTime.UnixNano())
+	result, err := syncRestoredClockWithChrony(hostControlTime.UnixNano())
 	if err != nil {
 		t.Fatalf("sync restored clock: %v", err)
 	}
@@ -268,16 +306,21 @@ func TestSyncRestoredClockDoesNotRestartChronyWhenHostTimeIsMissing(t *testing.T
 
 func TestSyncRestoredClockRecordsChronyRestartFailure(t *testing.T) {
 	oldNow := wallClockNow
+	oldPTPClock := ptpClockUnixNano
 	oldRestartChrony := restartChronyDaemonAfterRestore
 	oldSyncRunningChrony := syncRunningChrony
 	t.Cleanup(func() {
 		wallClockNow = oldNow
+		ptpClockUnixNano = oldPTPClock
 		restartChronyDaemonAfterRestore = oldRestartChrony
 		syncRunningChrony = oldSyncRunningChrony
 	})
 
 	hostTime := time.Unix(0, 1_800_000_000_000)
 	wallClockNow = func() time.Time { return hostTime }
+	ptpClockUnixNano = func() (int64, error) {
+		return hostTime.UnixNano(), nil
+	}
 	restartChronyDaemonAfterRestore = func() error {
 		return errors.New("boom")
 	}
@@ -297,16 +340,21 @@ func TestSyncRestoredClockRecordsChronyRestartFailure(t *testing.T) {
 
 func TestSyncRestoredClockPrefixesRestoredChronyGateFailure(t *testing.T) {
 	oldNow := wallClockNow
+	oldPTPClock := ptpClockUnixNano
 	oldRestartChrony := restartChronyDaemonAfterRestore
 	oldSyncRunningChrony := syncRunningChrony
 	t.Cleanup(func() {
 		wallClockNow = oldNow
+		ptpClockUnixNano = oldPTPClock
 		restartChronyDaemonAfterRestore = oldRestartChrony
 		syncRunningChrony = oldSyncRunningChrony
 	})
 
 	hostTime := time.Unix(0, 1_800_000_000_000)
 	wallClockNow = func() time.Time { return hostTime }
+	ptpClockUnixNano = func() (int64, error) {
+		return hostTime.UnixNano(), nil
+	}
 	restartChronyDaemonAfterRestore = func() error { return nil }
 	syncRunningChrony = func() (vmproto.ClockSyncResult, error) {
 		return vmproto.ClockSyncResult{

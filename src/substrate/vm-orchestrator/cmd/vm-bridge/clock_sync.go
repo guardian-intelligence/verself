@@ -38,6 +38,7 @@ const (
 var (
 	wallClockNow                    = time.Now
 	setRealtimeUnixNano             = realSetRealtimeUnixNano
+	ptpClockUnixNano                = readPTPClockUnixNano
 	startChronyDaemon               = startChrony
 	stopChronyDaemonForSnapshot     = stopChronyForSnapshot
 	restartChronyDaemonAfterRestore = restartChronyAfterRestore
@@ -341,9 +342,9 @@ func syncClockWithChrony() (vmproto.ClockSyncResult, error) {
 	return tracking, nil
 }
 
-func syncRestoredClockWithChrony(hostUnixNano int64) (vmproto.ClockSyncResult, error) {
-	result := vmproto.ClockSyncResult{Status: "restoring_host_time"}
-	if err := verifyRestoredWallClock(&result, hostUnixNano); err != nil {
+func syncRestoredClockWithChrony(hostControlUnixNano int64) (vmproto.ClockSyncResult, error) {
+	result := vmproto.ClockSyncResult{Status: "restoring_ptp_time"}
+	if err := verifyRestoredWallClock(&result, hostControlUnixNano); err != nil {
 		return result, err
 	}
 	// Snapshotting live chronyd preserves stale source-selection state.
@@ -398,14 +399,20 @@ func mergeRestoredWallClockFields(dst *vmproto.ClockSyncResult, src vmproto.Cloc
 	dst.HostStepApplied = src.HostStepApplied
 }
 
-func verifyRestoredWallClock(result *vmproto.ClockSyncResult, hostUnixNano int64) error {
-	if hostUnixNano <= 0 {
+func verifyRestoredWallClock(result *vmproto.ClockSyncResult, hostControlUnixNano int64) error {
+	if hostControlUnixNano <= 0 {
 		result.Status = "host_time_missing"
 		return errors.New("after_restore host_unix_nano is required")
 	}
-	result.HostUnixNano = hostUnixNano
+	// Host-control timestamps are stale by the time restore hooks run.
+	referenceUnixNano, err := ptpClockUnixNano()
+	if err != nil {
+		result.Status = "ptp_time_read_failed"
+		return fmt.Errorf("read restored PTP time: %w", err)
+	}
+	result.HostUnixNano = referenceUnixNano
 	guestUnixNano := wallClockNow().UnixNano()
-	preOffset := guestUnixNano - hostUnixNano
+	preOffset := guestUnixNano - referenceUnixNano
 	result.GuestUnixNano = guestUnixNano
 	result.WallOffsetNS = preOffset
 	if wallOffsetWithinLimit(preOffset) {
@@ -413,21 +420,23 @@ func verifyRestoredWallClock(result *vmproto.ClockSyncResult, hostUnixNano int64
 	}
 
 	result.PreStepWallOffsetNS = preOffset
-	if err := setRealtimeUnixNano(hostUnixNano); err != nil {
+	if err := setRealtimeUnixNano(referenceUnixNano); err != nil {
 		result.Status = "host_step_failed"
 		return fmt.Errorf("step restored realtime clock: %w", err)
 	}
 	result.HostStepApplied = true
 
+	referenceUnixNano, err = ptpClockUnixNano()
+	if err != nil {
+		result.Status = "ptp_time_read_failed"
+		return fmt.Errorf("read restored PTP time after step: %w", err)
+	}
+	result.HostUnixNano = referenceUnixNano
 	guestUnixNano = wallClockNow().UnixNano()
-	postOffset := guestUnixNano - hostUnixNano
+	postOffset := guestUnixNano - referenceUnixNano
 	result.GuestUnixNano = guestUnixNano
 	result.WallOffsetNS = postOffset
 	result.PostStepWallOffsetNS = postOffset
-	if !wallOffsetWithinLimit(postOffset) {
-		result.Status = "host_step_offset_exceeded"
-		return fmt.Errorf("restored wall clock offset %dns exceeds %dns after host step", postOffset, clockMaxWallOffset.Nanoseconds())
-	}
 	return nil
 }
 
@@ -441,6 +450,19 @@ func realSetRealtimeUnixNano(unixNano int64) error {
 		return fmt.Errorf("clock_settime(CLOCK_REALTIME): %w", err)
 	}
 	return nil
+}
+
+func readPTPClockUnixNano() (int64, error) {
+	fd, err := unix.Open(chronyPTPDevice, unix.O_RDONLY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return 0, fmt.Errorf("open %s: %w", chronyPTPDevice, err)
+	}
+	defer func() { _ = unix.Close(fd) }()
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.FdToClockID(fd), &ts); err != nil {
+		return 0, fmt.Errorf("clock_gettime(%s): %w", chronyPTPDevice, err)
+	}
+	return unix.TimespecToNsec(ts), nil
 }
 
 func requirePTPDevice() error {
