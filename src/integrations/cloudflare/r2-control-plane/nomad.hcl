@@ -108,7 +108,7 @@ EOT
       healthy_deadline = "120s"
       progress_deadline = "300s"
       auto_revert = true
-      auto_promote = true
+      auto_promote = false
     }
   }
 }
