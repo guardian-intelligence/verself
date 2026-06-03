@@ -103,7 +103,12 @@ func run(ctx context.Context, cfg config) error {
 	switch cfg.action {
 	case "bootstrap":
 	case "generate-root-token":
-		return generateRootToken(ctx, cfg)
+		err := generateRootToken(ctx, cfg)
+		removeErr := removeSiteRootTokenFile(cfg.siteRootTokenFile)
+		if err != nil {
+			return err
+		}
+		return removeErr
 	default:
 		return fmt.Errorf("unsupported action %q", cfg.action)
 	}

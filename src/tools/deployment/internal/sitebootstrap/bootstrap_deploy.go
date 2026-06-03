@@ -112,23 +112,82 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err != nil {
 		return err
 	}
-	_, err = deployengine.Submit(ctx, deployengine.Options{
-		Site:                      opts.Site,
-		ArtifactNamespace:         opts.SHA,
-		DeployRunKey:              deployRunKey,
-		RepoRoot:                  opts.RepoRoot,
-		NomadComponentDescriptors: descriptors,
-		ArtifactPublisher:         remoteBootstrapArtifactPublisher{target: target, root: bootstrapArtifactRoot},
-		NomadAddr:                 "http://127.0.0.1:" + strconv.Itoa(nomadPort),
-		TaskUserResolver:          remoteTaskUserResolver(target),
-	})
+	bootstrapDescriptors, remainingDescriptors, activeDescriptors, err := partitionBootstrapNomadDescriptors(opts.Site, descriptors, []string{"postgresql", "openbao"})
 	if err != nil {
 		return err
+	}
+	common := deployengine.Options{
+		Site:              opts.Site,
+		ArtifactNamespace: opts.SHA,
+		DeployRunKey:      deployRunKey,
+		RepoRoot:          opts.RepoRoot,
+		ArtifactPublisher: remoteBootstrapArtifactPublisher{target: target, root: bootstrapArtifactRoot},
+		NomadAddr:         "http://127.0.0.1:" + strconv.Itoa(nomadPort),
+		TaskUserResolver:  remoteTaskUserResolver(target),
+	}
+	bootstrapOptions := common
+	bootstrapOptions.NomadComponentDescriptors = bootstrapDescriptors
+	_, err = deployengine.Submit(ctx, bootstrapOptions)
+	if err != nil {
+		return err
+	}
+	if err := waitRemotePostgresReady(ctx, target); err != nil {
+		return err
+	}
+	if err := waitRemoteOpenBaoReady(ctx, target); err != nil {
+		return err
+	}
+	runtimeSecrets, err := loadRuntimeSecretCatalog(opts.RepoRoot)
+	if err != nil {
+		return err
+	}
+	runtimeAccess, err := inspectNomadRuntimeAccess(ctx, common.NomadAddr, opts.RepoRoot, activeDescriptors, runtimeSecrets)
+	if err != nil {
+		return err
+	}
+	runtimeValues, err := reconcileOpenBaoRuntime(ctx, target, opts.OpenBaoSiteRootTokenFile, runtimeSecrets, runtimeAccess)
+	if err != nil {
+		return err
+	}
+	postgresCatalog, err := loadPostgresCatalog(opts.RepoRoot)
+	if err != nil {
+		return err
+	}
+	if err := reconcilePostgres(ctx, target, postgresCatalog, runtimeValues); err != nil {
+		return err
+	}
+	if len(remainingDescriptors) > 0 {
+		steadyOptions := common
+		steadyOptions.NomadComponentDescriptors = remainingDescriptors
+		if _, err := deployengine.Submit(ctx, steadyOptions); err != nil {
+			return err
+		}
 	}
 	if _, err := fmt.Printf("bootstrap_deploy_id=%s site=%s sha=%s\n", deployRunKey, opts.Site, opts.SHA); err != nil {
 		return fmt.Errorf("write bootstrap deployment response: %w", err)
 	}
 	return nil
+}
+
+func startTCPTunnel(ctx context.Context, target inventoryTarget, localPort int, remoteAddr string) *exec.Cmd {
+	forward := "127.0.0.1:" + strconv.Itoa(localPort) + ":" + remoteAddr
+	addr := target.User + "@" + target.Host
+	args := []string{
+		"-N",
+		"-L", forward,
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "IdentitiesOnly=yes",
+		"-o", "ServerAliveInterval=15",
+		"-o", "ServerAliveCountMax=2",
+	}
+	if target.Port != 0 {
+		args = append(args, "-p", strconv.Itoa(target.Port))
+	}
+	args = append(args, addr)
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd
 }
 
 func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context.Context, req deployengine.ArtifactPublishRequest) (deployengine.ArtifactPublishResult, error) {
@@ -408,25 +467,7 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 }
 
 func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int) *exec.Cmd {
-	remote := defaultNomadRemoteAddr
-	forward := "127.0.0.1:" + strconv.Itoa(localPort) + ":" + remote
-	addr := target.User + "@" + target.Host
-	args := []string{
-		"-N",
-		"-L", forward,
-		"-o", "ExitOnForwardFailure=yes",
-		"-o", "IdentitiesOnly=yes",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=2",
-	}
-	if target.Port != 0 {
-		args = append(args, "-p", strconv.Itoa(target.Port))
-	}
-	args = append(args, addr)
-	cmd := exec.CommandContext(ctx, "ssh", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd
+	return startTCPTunnel(ctx, target, localPort, defaultNomadRemoteAddr)
 }
 
 func validateLocalOpenBaoSiteRootTokenFile(path string) error {
