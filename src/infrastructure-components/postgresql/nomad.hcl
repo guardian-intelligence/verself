@@ -70,9 +70,12 @@ host    all       all   127.0.0.1/32 scram-sha-256
 host    all       all   ::1/128      scram-sha-256
 PGHBA
 
-cat >/etc/postgresql/verself/pg_ident.conf <<PGIDENT
+# substrate-control-plane owns service peer mappings; Postgres only seeds bootstrap auth.
+if [ ! -e /etc/postgresql/verself/pg_ident.conf ]; then
+  cat >/etc/postgresql/verself/pg_ident.conf <<PGIDENT
 verself_services      postgres            postgres
 PGIDENT
+fi
 
 chown postgres:postgres /etc/postgresql/verself/postgresql.conf /etc/postgresql/verself/pg_hba.conf /etc/postgresql/verself/pg_ident.conf
 chmod 0600 /etc/postgresql/verself/postgresql.conf /etc/postgresql/verself/pg_hba.conf /etc/postgresql/verself/pg_ident.conf
