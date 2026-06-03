@@ -188,13 +188,10 @@ func bootstrapCheck(ctx context.Context, baseURL string, token string) (bootstra
 }
 
 func deploymentBearerToken(ctx context.Context, audience string) (string, error) {
-	if token := strings.TrimSpace(os.Getenv("VERSELF_DEPLOY_BEARER_TOKEN")); token != "" {
-		return token, nil
-	}
 	reqURL := strings.TrimSpace(os.Getenv("ACTIONS_ID_TOKEN_REQUEST_URL"))
 	reqToken := strings.TrimSpace(os.Getenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN"))
 	if reqURL == "" || reqToken == "" {
-		return "", fmt.Errorf("deployment_auth_unavailable: GitHub Actions OIDC request environment is missing; run from an authorized GitHub workflow or provide operator deployment auth")
+		return "", fmt.Errorf("deployment_auth_unavailable: GitHub Actions OIDC request environment is missing; run from an authorized GitHub workflow")
 	}
 	u, err := url.Parse(reqURL)
 	if err != nil {

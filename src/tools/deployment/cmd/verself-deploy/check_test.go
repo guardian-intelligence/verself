@@ -81,12 +81,22 @@ spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
 deployment_service_domain: deployments.api.gamma.verself.test
 `)
-	t.Setenv("VERSELF_DEPLOY_BEARER_TOKEN", "deploy-token")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.test/oidc")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-request-token")
 
 	seen := map[string]int{}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen[r.Method+" "+r.URL.Path]++
 		switch r.Method + " " + r.URL.Path {
+		case "GET /oidc":
+			if r.Header.Get("Authorization") != "Bearer oidc-request-token" {
+				t.Fatalf("oidc request missing request token")
+			}
+			if r.URL.Query().Get("audience") != "https://deployments.api.gamma.verself.test" {
+				t.Fatalf("oidc audience = %q", r.URL.Query().Get("audience"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"value":"deploy-token"}`))
 		case "GET /api/v1/deployments/bootstrap:check":
 			if r.Header.Get("Authorization") != "Bearer deploy-token" {
 				t.Fatalf("bootstrap check missing bearer token")
@@ -104,10 +114,12 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	if err := check(context.Background(), checkOptions{Site: "gamma", RepoRoot: repoRoot}); err != nil {
 		t.Fatal(err)
 	}
-	if seen["GET /api/v1/deployments/bootstrap:check"] != 1 {
-		t.Fatalf("bootstrap check count = %d, want 1; all requests = %#v", seen["GET /api/v1/deployments/bootstrap:check"], seen)
+	for _, key := range []string{"GET /oidc", "GET /api/v1/deployments/bootstrap:check"} {
+		if seen[key] != 1 {
+			t.Fatalf("%s count = %d, want 1; all requests = %#v", key, seen[key], seen)
+		}
 	}
-	if len(seen) != 1 {
+	if len(seen) != 2 {
 		t.Fatalf("unexpected request set: %#v", seen)
 	}
 }
@@ -123,7 +135,6 @@ spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
 deployment_service_domain: deployments.api.gamma.verself.test
 `)
-	t.Setenv("VERSELF_DEPLOY_BEARER_TOKEN", "")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 

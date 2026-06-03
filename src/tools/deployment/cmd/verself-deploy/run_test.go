@@ -25,7 +25,8 @@ spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
 deployment_service_domain: deployments.api.gamma.verself.test
 `)
-	t.Setenv("VERSELF_DEPLOY_BEARER_TOKEN", "deploy-token")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.test/oidc")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-request-token")
 
 	for _, env := range []string{
 		"BAO_ADDR",
@@ -44,10 +45,19 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	seen := map[string]int{}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen[r.Method+" "+r.URL.Path]++
-		if r.Header.Get("Authorization") != "" && r.Header.Get("Authorization") != "Bearer deploy-token" {
+		if r.URL.Path != "/oidc" && r.Header.Get("Authorization") != "" && r.Header.Get("Authorization") != "Bearer deploy-token" {
 			t.Fatalf("unexpected authorization header %q", r.Header.Get("Authorization"))
 		}
 		switch r.Method + " " + r.URL.Path {
+		case "GET /oidc":
+			if r.Header.Get("Authorization") != "Bearer oidc-request-token" {
+				t.Fatalf("oidc request missing request token")
+			}
+			if r.URL.Query().Get("audience") != "https://deployments.api.gamma.verself.test" {
+				t.Fatalf("oidc audience = %q", r.URL.Query().Get("audience"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"value":"deploy-token"}`))
 		case "GET /healthz":
 			_, _ = w.Write([]byte("ok\n"))
 		case "GET /api/v1/deployments/bootstrap:check":
@@ -80,12 +90,12 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	if err := run(context.Background(), runOptions{Site: "gamma", SHA: sha, RepoRoot: repoRoot}); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"GET /healthz", "GET /api/v1/deployments/bootstrap:check", "POST /api/v1/deployments"} {
+	for _, key := range []string{"GET /healthz", "GET /oidc", "GET /api/v1/deployments/bootstrap:check", "POST /api/v1/deployments"} {
 		if seen[key] != 1 {
 			t.Fatalf("%s count = %d, want 1; all requests = %#v", key, seen[key], seen)
 		}
 	}
-	if len(seen) != 3 {
+	if len(seen) != 4 {
 		t.Fatalf("unexpected request set: %#v", seen)
 	}
 }
