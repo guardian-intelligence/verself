@@ -115,6 +115,15 @@ func TestRemoteArtifactGetterSourceUsesLoopbackHTTP(t *testing.T) {
 	}
 }
 
+func TestExternalRuntimeSecretImportErrorListsAllMissingSecrets(t *testing.T) {
+	err := externalRuntimeSecretImportError([]string{"z.secret", "a.secret"})
+
+	want := "external OpenBao runtime secrets are not imported: a.secret, z.secret"
+	if err == nil || err.Error() != want {
+		t.Fatalf("error = %v, want %q", err, want)
+	}
+}
+
 func TestParseRemotePasswdEntry(t *testing.T) {
 	identity, err := parseRemotePasswdEntry("deployment_service", "deployment_service:x:990:984::/home/deployment_service:/usr/sbin/nologin\n")
 	if err != nil {

@@ -185,6 +185,7 @@ func waitOpenBaoAPI(ctx context.Context, client *openBaoClient, processDone <-ch
 func (c *openBaoClient) reconcileRuntime(ctx context.Context, secrets runtimeSecretCatalog, access runtimeAccessCatalog) (map[string]string, error) {
 	values := map[string]string{}
 	activeSecrets := activeRuntimeSecrets(secrets, access)
+	missingExternal := []string{}
 	for _, name := range activeSecrets {
 		declaration := secrets.ByName[name]
 		switch {
@@ -198,13 +199,16 @@ func (c *openBaoClient) reconcileRuntime(ctx context.Context, secrets runtimeSec
 			if _, ok, err := c.getRuntimeSecret(ctx, name); err != nil {
 				return nil, err
 			} else if !ok {
-				return nil, fmt.Errorf("external OpenBao runtime secret %s is not imported", name)
+				missingExternal = append(missingExternal, name)
 			}
 		case strings.TrimSpace(declaration.ProducedByJob) != "":
 			continue
 		default:
 			return nil, fmt.Errorf("OpenBao runtime secret %s has no source", name)
 		}
+	}
+	if len(missingExternal) > 0 {
+		return nil, externalRuntimeSecretImportError(missingExternal)
 	}
 	for _, role := range sortedRuntimeRoles(access) {
 		policy := openBaoPolicyName(role)
@@ -216,6 +220,12 @@ func (c *openBaoClient) reconcileRuntime(ctx context.Context, secrets runtimeSec
 		}
 	}
 	return values, nil
+}
+
+func externalRuntimeSecretImportError(names []string) error {
+	names = append([]string(nil), names...)
+	sort.Strings(names)
+	return fmt.Errorf("external OpenBao runtime secrets are not imported: %s", strings.Join(names, ", "))
 }
 
 func activeRuntimeSecrets(secrets runtimeSecretCatalog, access runtimeAccessCatalog) []string {

@@ -119,6 +119,46 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 	}
 }
 
+func TestValidateImportAdminPairRequiresTokenFiles(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.action = "import-admin-pair"
+	cfg.openBaoAddr = "https://openbao.internal"
+	cfg.openBaoTokenFile = "/run/openbao/token"
+
+	err := cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--account-admin-a-api-token-file is required") {
+		t.Fatalf("validate error = %v", err)
+	}
+}
+
+func TestReadRequiredSecretFileRequiresOperatorOnlyMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("cloudflare-token\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := readRequiredSecretFile(path, "cloudflare token")
+	if err == nil || !strings.Contains(err.Error(), "readable only by the operator") {
+		t.Fatalf("read error = %v", err)
+	}
+}
+
+func TestReadRequiredSecretFileTrimsSecret(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte(" cloudflare-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := readRequiredSecretFile(path, "cloudflare token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearBytes(got)
+	if string(got) != "cloudflare-token" {
+		t.Fatalf("secret = %q", got)
+	}
+}
+
 func TestSiteDNSZonesUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `

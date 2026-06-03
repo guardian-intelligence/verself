@@ -40,6 +40,10 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--account-admin-a-openbao-path=" + ctx.args.account_admin_a_openbao_path)
     if ctx.args.account_admin_b_openbao_path != "":
         args_list.append("--account-admin-b-openbao-path=" + ctx.args.account_admin_b_openbao_path)
+    if ctx.args.account_admin_a_api_token_file != "":
+        args_list.append("--account-admin-a-api-token-file=" + (ctx.args.account_admin_a_api_token_file if ctx.args.account_admin_a_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_a_api_token_file)))
+    if ctx.args.account_admin_b_api_token_file != "":
+        args_list.append("--account-admin-b-api-token-file=" + (ctx.args.account_admin_b_api_token_file if ctx.args.account_admin_b_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_b_api_token_file)))
     if ctx.args.openbao_addr != "":
         args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
     if ctx.args.openbao_path != "":
@@ -110,11 +114,13 @@ cloudflare_control_plane = task(
     summary = "Manage Cloudflare DNS/R2 resources and public-edge certificate issuance.",
     args = {
         "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot A."),
         "account_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/b", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot B."),
+        "account_admin_a_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin API token slot A for --action=import-admin-pair."),
+        "account_admin_b_api_token_file": args.string(default = "", description = "File containing Cloudflare account-admin API token slot B for --action=import-admin-pair."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address."),
         "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", description = "Controller OpenBao KV path for R2 credentials."),
         "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT."),

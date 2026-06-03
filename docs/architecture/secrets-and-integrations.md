@@ -119,7 +119,7 @@ plaintext files.
 - Provider-project imports reject variables that are not declared in the
   catalog.
 - Host OpenBao initializes its own site-local Raft store and recovery material.
-  Environments never share OpenBao root tokens, unseal keys, or Raft state.
+  Sites never share OpenBao root tokens, unseal keys, or Raft state.
 - The `bao operator init` response is the only normal path that exposes an
   OpenBao root token. Bootstrap uses that token in process memory to create
   base auth, audit, and scoped reconciliation state, then revokes or discards

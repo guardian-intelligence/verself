@@ -115,6 +115,20 @@ values only once; write them directly into the approved import path. Do not
 stage Cloudflare account authority in repo-local env files, Nomad jobs, Ansible
 vars, or generated artifacts.
 
+Once OpenBao is reachable, import the pair through the provider control-plane
+tool. The token files must be regular files with mode `0600`.
+
+```shell
+aspect integrations cloudflare-control-plane \
+  --site=gamma \
+  --action=import-admin-pair \
+  --openbao-addr=https://127.0.0.1:<openbao-tunnel-port> \
+  --openbao-ca-cert=<path-to-openbao-ca.pem> \
+  --openbao-token-file=<path-to-temporary-openbao-root-token> \
+  --account-admin-a-api-token-file=<path-to-cloudflare-account-admin-a> \
+  --account-admin-b-api-token-file=<path-to-cloudflare-account-admin-b>
+```
+
 The R2 buckets are capability-owned global account resources:
 
 | Capability | Bucket | Runtime capability |
@@ -160,10 +174,10 @@ Steady-state artifact publication uses
 Deployment-service uploads artifact bytes to S3-compatible write handles and
 receives read handles for Nomad. Nomad receives object-scoped read sources.
 
-Bootstrap artifact delivery is SSH file copy to the target host. Nomad artifact
-downloads use `file://` sources for that first deployment. Steady-state
-deployments use per-object download sources returned by
-`object-storage-service` after upload verification.
+Bootstrap artifact delivery is SSH file copy to the target host. The target
+serves those files over a loopback-only artifact server for the first Nomad
+deployment. Steady-state deployments use per-object download sources returned
+by `object-storage-service` after upload verification.
 
 Runtime deployment, object-storage, and recovery credentials are
 `secrets-service` entries backed by OpenBao.

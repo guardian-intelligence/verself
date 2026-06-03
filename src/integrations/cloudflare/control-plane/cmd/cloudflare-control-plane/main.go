@@ -41,44 +41,46 @@ const (
 )
 
 type config struct {
-	action                   string
-	repoRoot                 string
-	site                     string
-	accountID                string
-	bucket                   string
-	keyPrefix                string
-	region                   string
-	accountAdminAOpenBaoPath string
-	accountAdminBOpenBaoPath string
-	openBaoAddr              string
-	openBaoPath              string
-	openBaoCACertFile        string
-	openBaoTokenFile         string
-	runtimeOpenBaoAddr       string
-	runtimeOpenBaoCACertFile string
-	runtimeOpenBaoTokenFile  string
-	dnsInventory             string
-	dnsConcurrency           int
-	dryRun                   bool
-	provider                 string
-	cloudflareAPITokenFile   string
-	certificateOutputDir     string
-	tlsProductDomain         string
-	tlsCompanyDomain         string
-	tlsProductZone           string
-	tlsCompanyZone           string
-	acmeDirectoryURL         string
-	acmeContactEmail         string
-	acmeDNSPropagationWait   time.Duration
-	certificateRenewBefore   time.Duration
-	testPrefix               string
-	inventoryPrefix          string
-	inventoryDepth           int
-	tempTTL                  time.Duration
-	childTokenTTL            time.Duration
-	accountAdminTTL          time.Duration
-	timeout                  time.Duration
-	verifyTempCredentials    bool
+	action                    string
+	repoRoot                  string
+	site                      string
+	accountID                 string
+	bucket                    string
+	keyPrefix                 string
+	region                    string
+	accountAdminAOpenBaoPath  string
+	accountAdminBOpenBaoPath  string
+	accountAdminAAPITokenFile string
+	accountAdminBAPITokenFile string
+	openBaoAddr               string
+	openBaoPath               string
+	openBaoCACertFile         string
+	openBaoTokenFile          string
+	runtimeOpenBaoAddr        string
+	runtimeOpenBaoCACertFile  string
+	runtimeOpenBaoTokenFile   string
+	dnsInventory              string
+	dnsConcurrency            int
+	dryRun                    bool
+	provider                  string
+	cloudflareAPITokenFile    string
+	certificateOutputDir      string
+	tlsProductDomain          string
+	tlsCompanyDomain          string
+	tlsProductZone            string
+	tlsCompanyZone            string
+	acmeDirectoryURL          string
+	acmeContactEmail          string
+	acmeDNSPropagationWait    time.Duration
+	certificateRenewBefore    time.Duration
+	testPrefix                string
+	inventoryPrefix           string
+	inventoryDepth            int
+	tempTTL                   time.Duration
+	childTokenTTL             time.Duration
+	accountAdminTTL           time.Duration
+	timeout                   time.Duration
+	verifyTempCredentials     bool
 }
 
 type report struct {
@@ -156,7 +158,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and site vars.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -165,6 +167,8 @@ func run(args []string) error {
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
 	fs.StringVar(&cfg.accountAdminAOpenBaoPath, "account-admin-a-openbao-path", accountAdminAOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot A.")
 	fs.StringVar(&cfg.accountAdminBOpenBaoPath, "account-admin-b-openbao-path", accountAdminBOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot B.")
+	fs.StringVar(&cfg.accountAdminAAPITokenFile, "account-admin-a-api-token-file", "", "File containing Cloudflare account-admin API token slot A for --action=import-admin-pair.")
+	fs.StringVar(&cfg.accountAdminBAPITokenFile, "account-admin-b-api-token-file", "", "File containing Cloudflare account-admin API token slot B for --action=import-admin-pair.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
@@ -212,6 +216,8 @@ func run(args []string) error {
 	defer cancel()
 
 	switch cfg.action {
+	case "import-admin-pair":
+		return importAccountAdminPair(ctx, cfg)
 	case "verify-admin-pair":
 		return verifyAccountAdminPair(ctx, cfg)
 	case "rotate-admin-pair":
@@ -404,9 +410,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "import-admin-pair", "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be import-admin-pair, verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !certificateOnlyAction(cfg.action) {
 		if !r2control.IsCloudflareAccountID(cfg.accountID) {
@@ -458,6 +464,20 @@ func (cfg config) validate() error {
 		}
 		if strings.TrimSpace(cfg.acmeContactEmail) == "" {
 			return fmt.Errorf("--acme-contact-email is required for certificate issuance")
+		}
+	}
+	if cfg.action == "import-admin-pair" {
+		if strings.TrimSpace(cfg.openBaoAddr) == "" {
+			return fmt.Errorf("--openbao-addr is required for account-admin import")
+		}
+		if strings.TrimSpace(cfg.openBaoTokenFile) == "" {
+			return fmt.Errorf("--openbao-token-file is required for account-admin import")
+		}
+		if strings.TrimSpace(cfg.accountAdminAAPITokenFile) == "" {
+			return fmt.Errorf("--account-admin-a-api-token-file is required for account-admin import")
+		}
+		if strings.TrimSpace(cfg.accountAdminBAPITokenFile) == "" {
+			return fmt.Errorf("--account-admin-b-api-token-file is required for account-admin import")
 		}
 	}
 	return nil
@@ -533,6 +553,120 @@ type accountAdminPair struct {
 	B       r2control.ParentCredentials
 	AStatus accountAdminStatus
 	BStatus accountAdminStatus
+}
+
+func importAccountAdminPair(ctx context.Context, cfg config) error {
+	aToken, err := readRequiredSecretFile(cfg.accountAdminAAPITokenFile, "account-admin a API token")
+	if err != nil {
+		return err
+	}
+	defer clearBytes(aToken)
+	bToken, err := readRequiredSecretFile(cfg.accountAdminBAPITokenFile, "account-admin b API token")
+	if err != nil {
+		return err
+	}
+	defer clearBytes(bToken)
+
+	aStatus, err := verifyAccountAdminToken(ctx, cfg, string(aToken))
+	if err != nil {
+		return fmt.Errorf("verify account-admin a token: %w", err)
+	}
+	bStatus, err := verifyAccountAdminToken(ctx, cfg, string(bToken))
+	if err != nil {
+		return fmt.Errorf("verify account-admin b token: %w", err)
+	}
+	if aStatus.tokenID == bStatus.tokenID {
+		return fmt.Errorf("account-admin slots a and b resolve to the same Cloudflare token ID")
+	}
+	if err := writeAccountAdminCredential(ctx, cfg, accountAdminAOpenBaoPath(cfg), aStatus.tokenID, string(aToken), aStatus.ExpiresOn); err != nil {
+		return fmt.Errorf("write account-admin a: %w", err)
+	}
+	if err := writeAccountAdminCredential(ctx, cfg, accountAdminBOpenBaoPath(cfg), bStatus.tokenID, string(bToken), bStatus.ExpiresOn); err != nil {
+		return fmt.Errorf("write account-admin b: %w", err)
+	}
+	pair, err := loadAndVerifyAccountAdminPair(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("verify imported account-admin pair: %w", err)
+	}
+	out := baseReport(cfg, "operator-token-file:cloudflare-account-admin-pair")
+	out.VerifiedWith = "cloudflare-account-admin-pair-import"
+	out.AccountAdminAStatus = pair.AStatus
+	out.AccountAdminBStatus = pair.BStatus
+	return writeReport(out)
+}
+
+func readRequiredSecretFile(path, label string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("%s file is required", label)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%s file %s must be readable only by the operator", label, path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	return body, nil
+}
+
+func clearBytes(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
+}
+
+type importedAccountAdminStatus struct {
+	tokenID string
+	accountAdminStatus
+}
+
+func verifyAccountAdminToken(ctx context.Context, cfg config, apiToken string) (importedAccountAdminStatus, error) {
+	if strings.TrimSpace(apiToken) == "" {
+		return importedAccountAdminStatus{}, fmt.Errorf("api token is empty")
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(apiToken, cfg.timeout)
+	if err != nil {
+		return importedAccountAdminStatus{}, err
+	}
+	verified, err := apiClient.VerifyAccountToken(ctx, cfg.accountID)
+	if err != nil {
+		return importedAccountAdminStatus{}, err
+	}
+	if verified.Status != "" && verified.Status != "active" {
+		return importedAccountAdminStatus{}, fmt.Errorf("cloudflare account-admin status is %q", verified.Status)
+	}
+	if strings.TrimSpace(verified.ID) == "" {
+		return importedAccountAdminStatus{}, fmt.Errorf("cloudflare account-admin token ID is empty")
+	}
+	if _, err := apiClient.GetAccountToken(ctx, cfg.accountID, verified.ID); err != nil {
+		return importedAccountAdminStatus{}, fmt.Errorf("cloudflare account-admin cannot read account token metadata; requires Account API Tokens Read on account %s: %w", cfg.accountID, err)
+	}
+	if err := verifyAccountAdminR2Authority(ctx, cfg, apiClient); err != nil {
+		return importedAccountAdminStatus{}, err
+	}
+	return importedAccountAdminStatus{
+		tokenID: verified.ID,
+		accountAdminStatus: accountAdminStatus{
+			TokenIDFingerprint: r2control.Fingerprint(verified.ID),
+			Status:             verified.Status,
+			ExpiresOn:          verified.ExpiresOn,
+		},
+	}, nil
 }
 
 func verifyAccountAdminPair(ctx context.Context, cfg config) error {
