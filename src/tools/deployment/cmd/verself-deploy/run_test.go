@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunSubmitsToDeploymentServiceHTTPBoundary(t *testing.T) {
@@ -65,6 +66,12 @@ deployment_service_domain: deployments.api.gamma.verself.test
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","state":"queued","sha":"` + sha + `"},"traceparent":"00-00000000000000000000000000000001-0000000000000001-01"}`))
+		case "GET /api/v1/deployments/dep_test":
+			if r.Header.Get("Authorization") != "Bearer deploy-token" {
+				t.Fatalf("status missing bearer token")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"` + sha + `","deploy_run_key":"deploy_test","state":"succeeded","nomad_submitted_jobs":42,"nomad_dispatched_jobs":1},"traceparent":"00-00000000000000000000000000000002-0000000000000002-01"}`))
 		default:
 			t.Fatalf("normal deploy made unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -76,12 +83,12 @@ deployment_service_domain: deployments.api.gamma.verself.test
 	if err := run(context.Background(), runOptions{Site: "gamma", SHA: sha, RepoRoot: repoRoot}); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"GET /healthz", "GET /oidc", "GET /api/v1/deployments/bootstrap:check", "POST /api/v1/deployments"} {
+	for _, key := range []string{"GET /healthz", "GET /oidc", "GET /api/v1/deployments/bootstrap:check", "POST /api/v1/deployments", "GET /api/v1/deployments/dep_test"} {
 		if seen[key] != 1 {
 			t.Fatalf("%s count = %d, want 1; all requests = %#v", key, seen[key], seen)
 		}
 	}
-	if len(seen) != 4 {
+	if len(seen) != 5 {
 		t.Fatalf("unexpected request set: %#v", seen)
 	}
 }
@@ -171,5 +178,36 @@ func TestSubmitDeploymentPreservesAdmissionProblemCode(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("error %q missing %q", text, want)
 		}
+	}
+}
+
+func TestWaitForDeploymentTerminalReturnsFailedState(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/deployments/dep_test" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"running"},"traceparent":"00-00000000000000000000000000000001-0000000000000001-01"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"failed","error_code":"deployment.nomad_failed","error_detail":"nomad deployment failed"},"traceparent":"00-00000000000000000000000000000002-0000000000000002-01"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	record, traceparent, err := waitForDeploymentTerminal(context.Background(), srv.URL, "token", "dep_test", time.Second, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != "failed" || record.ErrorCode != "deployment.nomad_failed" {
+		t.Fatalf("record = %#v", record)
+	}
+	if traceparent != "00-00000000000000000000000000000002-0000000000000002-01" {
+		t.Fatalf("traceparent = %q", traceparent)
+	}
+	if calls != 2 {
+		t.Fatalf("status calls = %d, want 2", calls)
 	}
 }
