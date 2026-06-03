@@ -12,7 +12,6 @@ job "cloudflare-r2-control-plane" {
 
     task "cloudflare-r2-control-plane" {
       driver = "raw_exec"
-      user = "nobody"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
 
@@ -33,8 +32,15 @@ job "cloudflare-r2-control-plane" {
       }
 
       config {
-        command = "local/bin/cloudflare-r2-control-plane"
+        command = "local/bin/nomad-chown-exec"
         args = [
+          "--user=nobody",
+          "--group=nogroup",
+          "--chown=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
+          "--chown=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
+          "--chown=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
+          "--",
+          "local/bin/cloudflare-r2-control-plane",
           "--action=serve",
           "--site=__VERSELF_SITE__",
           "--account-id=__VERSELF_CLOUDFLARE_ACCOUNT_ID__",

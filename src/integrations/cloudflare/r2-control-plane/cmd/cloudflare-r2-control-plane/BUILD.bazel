@@ -1,7 +1,7 @@
 # gazelle:prefix github.com/verself/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "cloudflare-r2-control-plane_lib",
@@ -24,10 +24,17 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-nomad_binary_artifact(
+pkg_tar(
     name = "cloudflare-r2-control-plane_nomad_artifact",
-    binary = ":cloudflare-r2-control-plane",
-    output = "cloudflare-r2-control-plane",
+    out = "cloudflare-r2-control-plane.tar",
+    files = {
+        ":cloudflare-r2-control-plane": "bin/cloudflare-r2-control-plane",
+        "//src/tools/deployment/cmd/nomad-chown-exec:nomad-chown-exec": "bin/nomad-chown-exec",
+    },
+    modes = {
+        "bin/cloudflare-r2-control-plane": "0755",
+        "bin/nomad-chown-exec": "0755",
+    },
 )
 
 go_test(

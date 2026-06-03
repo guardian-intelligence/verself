@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "deployment-service_lib",
@@ -23,10 +23,17 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-nomad_binary_artifact(
+pkg_tar(
     name = "deployment-service_nomad_artifact",
-    binary = ":deployment-service",
-    output = "deployment-service",
+    out = "deployment-service.tar",
+    files = {
+        ":deployment-service": "bin/deployment-service",
+        "//src/tools/deployment/cmd/nomad-chown-exec:nomad-chown-exec": "bin/nomad-chown-exec",
+    },
+    modes = {
+        "bin/deployment-service": "0755",
+        "bin/nomad-chown-exec": "0755",
+    },
 )
 
 go_test(
