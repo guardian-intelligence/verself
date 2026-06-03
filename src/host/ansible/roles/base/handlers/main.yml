@@ -3,3 +3,9 @@
   ansible.builtin.service:
     name: ssh
     state: reloaded
+
+- name: Restart bootstrap artifact server
+  ansible.builtin.systemd:
+    daemon_reload: true
+    name: verself-bootstrap-artifact-server
+    state: restarted

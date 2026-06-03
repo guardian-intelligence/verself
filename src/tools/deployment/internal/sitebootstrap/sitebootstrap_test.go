@@ -88,7 +88,7 @@ func TestSCPCommandUsesUppercasePortFlag(t *testing.T) {
 }
 
 func TestRemoteArtifactFileUsesDigestAndSafeSegments(t *testing.T) {
-	got := remoteArtifactFile("/var/lib/verself/bootstrap/artifacts", "..", ".", deployengine.ArtifactPublishCandidate{
+	got := remoteArtifactFile(bootstrapArtifactRoot, "..", ".", deployengine.ArtifactPublishCandidate{
 		Output: "../service/runtime",
 		SHA256: strings.Repeat("a", 64),
 	})
@@ -98,6 +98,20 @@ func TestRemoteArtifactFileUsesDigestAndSafeSegments(t *testing.T) {
 	}
 	if !strings.Contains(got, "/_/_/") || !strings.Contains(got, strings.Repeat("a", 64)+"-.._service_runtime.tar") {
 		t.Fatalf("remote artifact path missing digest-safe output name: %s", got)
+	}
+}
+
+func TestRemoteArtifactGetterSourceUsesLoopbackHTTP(t *testing.T) {
+	got := remoteArtifactGetterSource("gamma", "sha", deployengine.ArtifactPublishCandidate{
+		Output: "openbao-runtime",
+		SHA256: strings.Repeat("b", 64),
+	})
+
+	if strings.HasPrefix(got, "file:") {
+		t.Fatalf("getter source uses unsupported file scheme: %s", got)
+	}
+	if !strings.HasPrefix(got, "http://127.0.0.1:7380/gamma/sha/") {
+		t.Fatalf("getter source = %q", got)
 	}
 }
 

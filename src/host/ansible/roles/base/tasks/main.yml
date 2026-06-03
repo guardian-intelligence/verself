@@ -53,6 +53,29 @@
   loop_control:
     label: "{{ item.home }}"
 
+- name: Create bootstrap artifact root
+  ansible.builtin.file:
+    path: "{{ base_bootstrap_artifact_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy bootstrap artifact server unit
+  ansible.builtin.template:
+    src: verself-bootstrap-artifact-server.service.j2
+    dest: /etc/systemd/system/verself-bootstrap-artifact-server.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart bootstrap artifact server
+
+- name: Enable and start bootstrap artifact server
+  ansible.builtin.systemd:
+    name: verself-bootstrap-artifact-server
+    enabled: true
+    state: started
+
 - name: Block algif_aead autoload for Copy Fail
   ansible.builtin.copy:
     content: |

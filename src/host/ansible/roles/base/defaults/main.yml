@@ -1,4 +1,7 @@
 ---
+base_bootstrap_artifact_root: /var/lib/verself/bootstrap-artifacts
+base_bootstrap_artifact_server_listen: 127.0.0.1:7380
+
 base_nomad_runtime_users:
   - name: company
     home: /var/lib/company

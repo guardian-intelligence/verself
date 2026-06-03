@@ -7,7 +7,7 @@ import (
 	"github.com/verself/deployment-service/internal/deploymodel"
 )
 
-func TestApplyArtifactGetterSourcesAcceptsBootstrapFileURLs(t *testing.T) {
+func TestApplyArtifactGetterSourcesAcceptsPublisherURLs(t *testing.T) {
 	inputs := &deployInputs{
 		Bindings: map[string]artifactBinding{
 			"openbao-runtime": {
@@ -16,12 +16,12 @@ func TestApplyArtifactGetterSourcesAcceptsBootstrapFileURLs(t *testing.T) {
 		},
 	}
 	err := applyArtifactGetterSources(inputs, map[string]string{
-		"openbao-runtime": "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/openbao-runtime.tar",
+		"openbao-runtime": "http://127.0.0.1:7380/gamma/sha/openbao-runtime.tar",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := inputs.Bindings["openbao-runtime"].Artifact.GetterSource; !strings.HasPrefix(got, "file:///") {
+	if got := inputs.Bindings["openbao-runtime"].Artifact.GetterSource; !strings.HasPrefix(got, "http://127.0.0.1:7380/") {
 		t.Fatalf("getter source = %q", got)
 	}
 }

@@ -24,7 +24,8 @@ import (
 
 const (
 	defaultNomadRemoteAddr   = "127.0.0.1:4646"
-	bootstrapArtifactRoot    = "/var/lib/verself/bootstrap/artifacts"
+	bootstrapArtifactRoot    = "/var/lib/verself/bootstrap-artifacts"
+	bootstrapArtifactHTTP    = "http://127.0.0.1:7380"
 	openBaoSiteRootTokenPath = "/run/verself/bootstrap/openbao-site-root.token"
 	bootstrapRemoteTmpPrefix = "/tmp/verself-bootstrap-artifacts-"
 )
@@ -141,6 +142,9 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 	if strings.TrimSpace(req.ArtifactNamespace) == "" {
 		return deployengine.ArtifactPublishResult{}, errors.New("artifact namespace is required")
 	}
+	if err := ensureRemoteBootstrapArtifactServer(ctx, p.target); err != nil {
+		return deployengine.ArtifactPublishResult{}, err
+	}
 	sources := map[string]string{}
 	for _, artifact := range req.Artifacts {
 		output := strings.TrimSpace(artifact.Output)
@@ -168,7 +172,7 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 		if err := installRemoteArtifact(ctx, p.target, remoteTmp, remoteFile); err != nil {
 			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
 		}
-		sources[output] = (&url.URL{Scheme: "file", Path: remoteFile}).String()
+		sources[output] = remoteArtifactGetterSource(req.Site, req.ArtifactNamespace, artifact)
 	}
 	return deployengine.ArtifactPublishResult{GetterSources: sources}, nil
 }
@@ -246,11 +250,24 @@ func remoteTempArtifactPath(output string) (string, error) {
 }
 
 func remoteArtifactFile(root, site, sha string, artifact deployengine.ArtifactPublishCandidate) string {
+	return path.Join(root, remoteArtifactRelativePath(site, sha, artifact))
+}
+
+func remoteArtifactGetterSource(site, sha string, artifact deployengine.ArtifactPublishCandidate) string {
+	base, err := url.Parse(bootstrapArtifactHTTP)
+	if err != nil {
+		panic(err)
+	}
+	base.Path = path.Join("/", remoteArtifactRelativePath(site, sha, artifact))
+	return base.String()
+}
+
+func remoteArtifactRelativePath(site, sha string, artifact deployengine.ArtifactPublishCandidate) string {
 	name := strings.TrimSpace(artifact.SHA256)
 	if name == "" {
 		name = "unknown"
 	}
-	return path.Join(root, safeRemoteArtifactName(site), safeRemoteArtifactName(sha), name+"-"+safeRemoteArtifactName(artifact.Output)+".tar")
+	return path.Join(safeRemoteArtifactName(site), safeRemoteArtifactName(sha), name+"-"+safeRemoteArtifactName(artifact.Output)+".tar")
 }
 
 func safeRemoteArtifactName(value string) string {
@@ -286,6 +303,14 @@ func installRemoteArtifact(ctx context.Context, target inventoryTarget, remoteTm
 	cmd := sshCommand(ctx, target, command)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("install remote artifact: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func ensureRemoteBootstrapArtifactServer(ctx context.Context, target inventoryTarget) error {
+	cmd := sshCommand(ctx, target, "sudo -n systemctl is-active --quiet verself-bootstrap-artifact-server.service")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("bootstrap artifact server is not active: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
