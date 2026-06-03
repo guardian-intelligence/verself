@@ -47,7 +47,7 @@ The Smithy recovery model covers:
 
 The Smithy recovery model does not need to cover every byte:
 
-- `.tfstate`, bootstrap keys, generated bootstrap vars, and first-host recovery
+- `.tfstate`, bootstrap keys, and first-host recovery
   material are owned by the site bootstrap state machine and OpenBao bootstrap
   authority;
 - generated artifacts remain governed by generated-artifact policy;

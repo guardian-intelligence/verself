@@ -12,7 +12,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,7 +75,6 @@ type config struct {
 	acmeContactEmail              string
 	acmeDNSPropagationWait        time.Duration
 	certificateRenewBefore        time.Duration
-	bootstrapVarsFile             string
 	testPrefix                    string
 	inventoryPrefix               string
 	inventoryDepth                int
@@ -116,15 +114,13 @@ type report struct {
 	DNSDryRun                    bool                    `json:"dns_dry_run,omitempty"`
 	DNSChanges                   []dnsChangeReport       `json:"dns_changes,omitempty"`
 	TLSCertificates              []tlsCertificateReport  `json:"tls_certificates,omitempty"`
-	GetterCredentialPermission   string                  `json:"getter_credential_permission,omitempty"`
-	GetterCredentialName         string                  `json:"getter_credential_name,omitempty"`
-	GetterCredentialExpiresOn    string                  `json:"getter_credential_expires_on,omitempty"`
-	GetterAccessKeyIDFingerprint string                  `json:"getter_access_key_id_fingerprint,omitempty"`
-	GetterSecretKeyFingerprint   string                  `json:"getter_secret_key_fingerprint,omitempty"`
-	BootstrapVarsFile            string                  `json:"bootstrap_vars_file,omitempty"`
-	BootstrapVarsFingerprints    map[string]string       `json:"bootstrap_vars_fingerprints,omitempty"`
+	ChildCredentialPermission    string                  `json:"child_credential_permission,omitempty"`
+	ChildCredentialName          string                  `json:"child_credential_name,omitempty"`
+	ChildCredentialExpiresOn     string                  `json:"child_credential_expires_on,omitempty"`
+	ChildAccessKeyIDFingerprint  string                  `json:"child_access_key_id_fingerprint,omitempty"`
+	ChildSecretKeyFingerprint    string                  `json:"child_secret_key_fingerprint,omitempty"`
 	RuntimeSecretFingerprints    map[string]string       `json:"runtime_secret_fingerprints,omitempty"`
-	GetterObjectGetStatus        int                     `json:"getter_object_get_status,omitempty"`
+	VerificationObjectGetStatus  int                     `json:"verification_object_get_status,omitempty"`
 	Inventory                    []inventoryPrefixReport `json:"inventory,omitempty"`
 	AccountAdminAStatus          accountAdminStatus      `json:"account_admin_a_status,omitempty"`
 	AccountAdminBStatus          accountAdminStatus      `json:"account_admin_b_status,omitempty"`
@@ -173,7 +169,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, provision-site-bootstrap, mint-bootstrap-publisher, revoke-bootstrap-publisher, ensure-bucket, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, provision-site-bootstrap, mint-bootstrap-publisher, revoke-bootstrap-publisher, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -197,7 +193,6 @@ func run(args []string) error {
 	fs.StringVar(&cfg.acmeContactEmail, "acme-contact-email", "", "ACME account contact email for --action=issue-site-certificates.")
 	fs.DurationVar(&cfg.acmeDNSPropagationWait, "acme-dns-propagation-wait", 2*time.Minute, "Maximum wait for ACME DNS-01 TXT propagation.")
 	fs.DurationVar(&cfg.certificateRenewBefore, "certificate-renew-before", 30*24*time.Hour, "Renew projected certificates expiring before this duration.")
-	fs.StringVar(&cfg.bootstrapVarsFile, "bootstrap-vars-file", "", "Bootstrap vars JSON file to receive the Nomad artifact getter credential.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.StringVar(&cfg.inventoryPrefix, "inventory-prefix", "", "R2 object prefix for --action=inventory.")
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
@@ -394,7 +389,7 @@ func isRecoveryAction(action string) bool {
 
 func isChildProvisioningAction(action string) bool {
 	switch action {
-	case "ensure-bucket", "provision-site-bootstrap", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "ensure-bucket", "provision-site-bootstrap", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 		return true
 	default:
 		return false
@@ -420,9 +415,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "mint-bootstrap-publisher", "revoke-bootstrap-publisher", "ensure-getter", "rotate-getter", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "provision-site-bootstrap", "mint-bootstrap-publisher", "revoke-bootstrap-publisher", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, mint-bootstrap-publisher, revoke-bootstrap-publisher, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, mint-bootstrap-publisher, revoke-bootstrap-publisher, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !r2control.IsCloudflareAccountID(cfg.accountID) {
 		return fmt.Errorf("--account-id must be a 32-character lowercase hex Cloudflare account ID")
@@ -738,8 +733,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	switch cfg.action {
 	case "ensure-bucket":
 		err = nil
-	case "ensure-getter", "rotate-getter":
-		err = provisionGetterCredential(ctx, cfg, accountAdmin, parentClient, &out)
 	case "ensure-publisher", "rotate-publisher":
 		err = provisionPublisherCredential(ctx, cfg, accountAdmin, parentClient, &out)
 	case "ensure-recovery", "rotate-recovery":
@@ -911,48 +904,8 @@ func verifyObjectRoundTripOnce(ctx context.Context, client *r2control.R2Client, 
 	return nil
 }
 
-func verifyGetterReadRoundTrip(ctx context.Context, writerClient *r2control.R2Client, getterClient *r2control.R2Client, cfg config, operation string, out *report) error {
-	key, body, err := verificationObject(cfg.site, cfg.testPrefix)
-	if err != nil {
-		return err
-	}
-	digest := r2control.SHA256Hex(body)
-	return retryR2CredentialPropagation(ctx, operation, func() error {
-		if status, err := writerClient.PutObject(ctx, cfg.bucket, key, bytes.NewReader(body), digest); err != nil {
-			return err
-		} else if status < 200 || status >= 300 {
-			return r2VerificationStatusError{operation: "put getter verification object", status: status}
-		}
-		getStatus, got, err := getterClient.GetObject(ctx, cfg.bucket, key)
-		if err != nil {
-			return err
-		}
-		if getStatus != http.StatusOK {
-			return r2VerificationStatusError{operation: "getter credential get verification object", status: getStatus}
-		}
-		if !bytes.Equal(got, body) {
-			return fmt.Errorf("getter credential verification object body mismatch")
-		}
-		if out != nil {
-			out.GetterObjectGetStatus = getStatus
-			out.TestObjectKey = key
-			out.TestObjectSHA256 = digest
-		}
-		return nil
-	})
-}
-
 func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, out *report) (err error) {
 	suffix := time.Now().UTC().Format("20060102T150405Z")
-	expiresOn := time.Now().UTC().Add(cfg.childTokenTTL)
-	var getter r2control.CreatedAPIToken
-	getterPersisted := false
-	defer func() {
-		if !getterPersisted {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, getter)
-		}
-	}()
-
 	existed, bucketCreated, err := ensureR2BucketWithAccountAdmin(ctx, cfg, apiClient)
 	if err != nil {
 		return err
@@ -984,43 +937,10 @@ func provisionSiteBootstrapCredentials(ctx context.Context, cfg config, apiClien
 	if err := verifyObjectRoundTrip(ctx, publisherClient, cfg, "bootstrap-publisher", out); err != nil {
 		return err
 	}
-
-	getter, err = apiClient.CreateR2BucketToken(ctx, cfg.accountID, cfg.bucket, "verself-"+cfg.site+"-nomad-artifact-getter-"+suffix, r2control.PermissionR2BucketItemRead, expiresOn)
-	if err != nil {
-		return err
-	}
-	getterClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     getter.S3AccessKeyID,
-		SecretAccessKey: getter.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-bootstrap-getter-verification",
-		Timeout:         cfg.timeout,
-	})
-	if err != nil {
-		return err
-	}
-	if err := verifyGetterReadRoundTrip(ctx, publisherClient, getterClient, cfg, "verify bootstrap getter credential propagation", out); err != nil {
-		return err
-	}
 	if err := apiClient.DeleteAccountToken(ctx, cfg.accountID, publisher.ID); err != nil {
-		return fmt.Errorf("delete bootstrap publisher after getter verification: %w", err)
+		return fmt.Errorf("delete bootstrap publisher after verification: %w", err)
 	}
 	publisherDeleted = true
-
-	updates := nomadArtifactGetterBootstrapVars(getter)
-	varsFile := defaultBootstrapVarsFile(cfg)
-	if err := mergeBootstrapVars(varsFile, updates); err != nil {
-		return err
-	}
-	getterPersisted = true
-	out.BootstrapVarsFile = varsFile
-	out.GetterCredentialPermission = getter.PermissionGroup
-	out.GetterCredentialName = getter.Name
-	out.GetterCredentialExpiresOn = getter.ExpiresOn
-	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(getter.S3AccessKeyID)
-	out.GetterSecretKeyFingerprint = r2control.Fingerprint(getter.S3SecretKey)
-	out.BootstrapVarsFingerprints = fingerprintMap(updates)
 	return nil
 }
 
@@ -1105,55 +1025,6 @@ func revokeBootstrapPublisher(ctx context.Context, cfg config) error {
 	return nil
 }
 
-func provisionGetterCredential(ctx context.Context, cfg config, parent r2control.ParentCredentials, writerClient *r2control.R2Client, out *report) (err error) {
-	if strings.TrimSpace(parent.APIToken) == "" {
-		return fmt.Errorf("r2 getter provisioning requires the parent cloudflare API token value")
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	tokenName := "verself-" + cfg.site + "-nomad-artifact-getter-" + time.Now().UTC().Format("20060102T150405Z")
-	getter, err := apiClient.CreateR2BucketToken(ctx, cfg.accountID, cfg.bucket, tokenName, r2control.PermissionR2BucketItemRead, time.Now().UTC().Add(cfg.childTokenTTL))
-	if err != nil {
-		return err
-	}
-	persisted := false
-	defer func() {
-		if !persisted {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, getter)
-		}
-	}()
-	getterClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     getter.S3AccessKeyID,
-		SecretAccessKey: getter.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-getter-verification",
-		Timeout:         cfg.timeout,
-	})
-	if err != nil {
-		return err
-	}
-	if err := verifyGetterReadRoundTrip(ctx, writerClient, getterClient, cfg, "verify getter credential propagation", out); err != nil {
-		return err
-	}
-	updates := nomadArtifactGetterBootstrapVars(getter)
-	varsFile := defaultBootstrapVarsFile(cfg)
-	if err := mergeBootstrapVars(varsFile, updates); err != nil {
-		return err
-	}
-	persisted = true
-	out.GetterCredentialPermission = getter.PermissionGroup
-	out.GetterCredentialName = getter.Name
-	out.GetterCredentialExpiresOn = getter.ExpiresOn
-	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(getter.S3AccessKeyID)
-	out.GetterSecretKeyFingerprint = r2control.Fingerprint(getter.S3SecretKey)
-	out.BootstrapVarsFile = varsFile
-	out.BootstrapVarsFingerprints = fingerprintMap(updates)
-	return nil
-}
-
 func provisionPublisherCredential(ctx context.Context, cfg config, parent r2control.ParentCredentials, parentClient *r2control.R2Client, out *report) (err error) {
 	if strings.TrimSpace(parent.APIToken) == "" {
 		return fmt.Errorf("r2 publisher provisioning requires the parent cloudflare API token value")
@@ -1201,13 +1072,13 @@ func provisionPublisherCredential(ctx context.Context, cfg config, parent r2cont
 		return err
 	}
 	persisted = true
-	out.GetterCredentialPermission = publisher.PermissionGroup
-	out.GetterCredentialName = publisher.Name
-	out.GetterCredentialExpiresOn = publisher.ExpiresOn
-	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(publisher.S3AccessKeyID)
-	out.GetterSecretKeyFingerprint = r2control.Fingerprint(publisher.S3SecretKey)
+	out.ChildCredentialPermission = publisher.PermissionGroup
+	out.ChildCredentialName = publisher.Name
+	out.ChildCredentialExpiresOn = publisher.ExpiresOn
+	out.ChildAccessKeyIDFingerprint = r2control.Fingerprint(publisher.S3AccessKeyID)
+	out.ChildSecretKeyFingerprint = r2control.Fingerprint(publisher.S3SecretKey)
 	out.RuntimeSecretFingerprints = fingerprintMap(runtimeValues)
-	out.GetterObjectGetStatus = out.TestObjectGetStatus
+	out.VerificationObjectGetStatus = out.TestObjectGetStatus
 	return nil
 }
 
@@ -1280,13 +1151,13 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 		return err
 	}
 	persisted = true
-	out.GetterCredentialPermission = proxyToken.PermissionGroup
-	out.GetterCredentialName = proxyToken.Name
-	out.GetterCredentialExpiresOn = proxyToken.ExpiresOn
-	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(proxyToken.S3AccessKeyID)
-	out.GetterSecretKeyFingerprint = r2control.Fingerprint(proxyToken.S3SecretKey)
+	out.ChildCredentialPermission = proxyToken.PermissionGroup
+	out.ChildCredentialName = proxyToken.Name
+	out.ChildCredentialExpiresOn = proxyToken.ExpiresOn
+	out.ChildAccessKeyIDFingerprint = r2control.Fingerprint(proxyToken.S3AccessKeyID)
+	out.ChildSecretKeyFingerprint = r2control.Fingerprint(proxyToken.S3SecretKey)
 	out.RuntimeSecretFingerprints = fingerprintMap(updates)
-	out.GetterObjectGetStatus = out.TestObjectGetStatus
+	out.VerificationObjectGetStatus = out.TestObjectGetStatus
 	return nil
 }
 
@@ -1331,12 +1202,12 @@ func provisionRecoveryCredential(ctx context.Context, cfg config, parent r2contr
 		return err
 	}
 	persisted = true
-	out.GetterCredentialPermission = recovery.PermissionGroup
-	out.GetterCredentialName = recovery.Name
-	out.GetterCredentialExpiresOn = recovery.ExpiresOn
-	out.GetterAccessKeyIDFingerprint = r2control.Fingerprint(recovery.S3AccessKeyID)
-	out.GetterSecretKeyFingerprint = r2control.Fingerprint(recovery.S3SecretKey)
-	out.GetterObjectGetStatus = out.TestObjectGetStatus
+	out.ChildCredentialPermission = recovery.PermissionGroup
+	out.ChildCredentialName = recovery.Name
+	out.ChildCredentialExpiresOn = recovery.ExpiresOn
+	out.ChildAccessKeyIDFingerprint = r2control.Fingerprint(recovery.S3AccessKeyID)
+	out.ChildSecretKeyFingerprint = r2control.Fingerprint(recovery.S3SecretKey)
+	out.VerificationObjectGetStatus = out.TestObjectGetStatus
 	return nil
 }
 
@@ -1848,13 +1719,6 @@ func publisherRuntimeSecretValues(publisher r2control.CreatedAPIToken) map[strin
 	}
 }
 
-func nomadArtifactGetterBootstrapVars(getter r2control.CreatedAPIToken) map[string]string {
-	return map[string]string{
-		"nomad_artifact_getter_s3_access_key_id":     getter.S3AccessKeyID,
-		"nomad_artifact_getter_s3_secret_access_key": getter.S3SecretKey,
-	}
-}
-
 func fingerprintMap(values map[string]string) map[string]string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -1866,83 +1730,6 @@ func fingerprintMap(values map[string]string) map[string]string {
 		out[key] = r2control.Fingerprint(values[key])
 	}
 	return out
-}
-
-func defaultBootstrapVarsFile(cfg config) string {
-	if strings.TrimSpace(cfg.bootstrapVarsFile) != "" {
-		return cfg.bootstrapVarsFile
-	}
-	return filepath.Join(cfg.repoRoot, ".verself", "site-bootstrap", cfg.site, "bootstrap-vars.json")
-}
-
-func mergeBootstrapVars(path string, updates map[string]string) error {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return fmt.Errorf("bootstrap vars file is required")
-	}
-	values := map[string]string{}
-	body, err := os.ReadFile(path)
-	if err == nil && len(bytes.TrimSpace(body)) > 0 {
-		if err := json.Unmarshal(body, &values); err != nil {
-			return fmt.Errorf("decode bootstrap vars %s: %w", path, err)
-		}
-		if values == nil {
-			values = map[string]string{}
-		}
-	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("read bootstrap vars %s: %w", path, err)
-	}
-	for key, value := range updates {
-		if strings.TrimSpace(key) == "" {
-			return fmt.Errorf("bootstrap vars key is empty")
-		}
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("bootstrap vars %s is empty", key)
-		}
-		values[key] = value
-	}
-	body, err = json.MarshalIndent(values, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode bootstrap vars %s: %w", path, err)
-	}
-	body = append(body, '\n')
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create bootstrap vars directory: %w", err)
-	}
-	if err := writeFileAtomic(path, body, 0o600); err != nil {
-		return fmt.Errorf("write bootstrap vars %s: %w", path, err)
-	}
-	return nil
-}
-
-func writeFileAtomic(path string, body []byte, perm fs.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	closed := false
-	defer func() {
-		if !closed {
-			_ = tmp.Close()
-		}
-		_ = os.Remove(tmpPath)
-	}()
-	if err := tmp.Chmod(perm); err != nil {
-		return err
-	}
-	if _, err := tmp.Write(body); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	closed = true
-	return os.Rename(tmpPath, path)
 }
 
 func verificationObject(site, prefix string) (string, []byte, error) {

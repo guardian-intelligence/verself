@@ -70,8 +70,6 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--acme-dns-propagation-wait=" + ctx.args.acme_dns_propagation_wait)
     if ctx.args.certificate_renew_before != "":
         args_list.append("--certificate-renew-before=" + ctx.args.certificate_renew_before)
-    if ctx.args.bootstrap_vars_file != "":
-        args_list.append("--bootstrap-vars-file=" + (ctx.args.bootstrap_vars_file if ctx.args.bootstrap_vars_file.startswith("/") else ws_path(ctx, ctx.args.bootstrap_vars_file)))
     if ctx.args.test_prefix != "":
         args_list.append("--test-prefix=" + ctx.args.test_prefix)
     if ctx.args.inventory_prefix != "":
@@ -100,7 +98,7 @@ cloudflare_control_plane = task(
     summary = "Provision target-site Cloudflare resources from prod global account authority.",
     args = {
         "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-getter, rotate-getter, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot A."),
@@ -120,7 +118,6 @@ cloudflare_control_plane = task(
         "acme_contact_email": args.string(default = "", description = "ACME account contact email for issue-site-certificates."),
         "acme_dns_propagation_wait": args.string(default = "", description = "Maximum wait for ACME DNS-01 TXT propagation."),
         "certificate_renew_before": args.string(default = "", description = "Renew projected certificates expiring before this duration."),
-        "bootstrap_vars_file": args.string(default = "", description = "Bootstrap vars JSON file to receive the Nomad artifact getter credential."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "inventory_prefix": args.string(default = "", description = "R2 object prefix for --action=inventory."),
         "inventory_depth": args.int(default = 2, description = "Prefix depth for --action=inventory summaries."),

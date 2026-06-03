@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"sort"
@@ -86,15 +87,12 @@ func bindNomadArtifact(repoRoot string, policy artifactDeliveryPolicy, declared 
 		return fmt.Errorf("hash artifact %s: %w", declared.Path, err)
 	}
 	key := artifactKey(policy, digest, declared.Output)
-	getterSource := artifactGetterSource(policy, key)
 	artifact := deploymodel.Artifact{
-		Output:        declared.Output,
-		LocalPath:     artifactPath,
-		SHA256:        digest,
-		Bucket:        policy.Bucket,
-		Key:           key,
-		GetterSource:  getterSource,
-		GetterOptions: policy.GetterOptions,
+		Output:    declared.Output,
+		LocalPath: artifactPath,
+		SHA256:    digest,
+		Bucket:    policy.Bucket,
+		Key:       key,
 	}
 	bindings[declared.Output] = artifactBinding{
 		Artifact: artifact,
@@ -122,10 +120,6 @@ func artifactKey(policy artifactDeliveryPolicy, digest, output string) string {
 	return path.Join(policy.SitePrefix, strings.Trim(policy.KeyPrefix, "/"), digest, output+".tar")
 }
 
-func artifactGetterSource(policy artifactDeliveryPolicy, key string) string {
-	return strings.TrimRight(policy.GetterSourcePrefix, "/") + "/" + key
-}
-
 func bindControlPlaneBundleArtifact(policy artifactDeliveryPolicy, bundle any) (objectArtifact, error) {
 	raw, err := json.Marshal(bundle)
 	if err != nil {
@@ -139,12 +133,10 @@ func bindControlPlaneBundleArtifact(policy artifactDeliveryPolicy, bundle any) (
 	key := artifactKey(policy, digest, controlPlaneBundleOutput)
 	return objectArtifact{
 		Artifact: deploymodel.Artifact{
-			Output:        controlPlaneBundleOutput,
-			SHA256:        digest,
-			Bucket:        policy.Bucket,
-			Key:           key,
-			GetterSource:  artifactGetterSource(policy, key),
-			GetterOptions: policy.GetterOptions,
+			Output: controlPlaneBundleOutput,
+			SHA256: digest,
+			Bucket: policy.Bucket,
+			Key:    key,
 		},
 		Body:  body,
 		Label: "substrate-control-plane bundle",
@@ -227,7 +219,7 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
-		if object.Bucket != candidate.Artifact.Bucket || object.Key != candidate.Artifact.Key || object.GetterSource != candidate.Artifact.GetterSource {
+		if object.Bucket != candidate.Artifact.Bucket || object.Key != candidate.Artifact.Key {
 			err := fmt.Errorf("R2 control-plane returned mismatched object binding for %q", candidate.Artifact.Output)
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -262,8 +254,57 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
+	if err := applyCompletedArtifactSources(inputs, completed.Objects); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	span.SetStatus(codes.Ok, "")
 	return nil
+}
+
+func applyCompletedArtifactSources(inputs *deployInputs, objects []r2controlplane.UploadObject) error {
+	byOutput := mapUploadObjects(objects)
+	for output, binding := range inputs.Bindings {
+		object, ok := byOutput[output]
+		if !ok {
+			return fmt.Errorf("R2 control-plane completed response omitted artifact %q", output)
+		}
+		getterSource, err := completedArtifactGetterSource(output, object, binding.Artifact.Bucket, binding.Artifact.Key)
+		if err != nil {
+			return err
+		}
+		binding.Artifact.GetterSource = getterSource
+		inputs.Bindings[output] = binding
+	}
+	if inputs.ControlPlaneObject.Artifact.Output != "" {
+		output := inputs.ControlPlaneObject.Artifact.Output
+		object, ok := byOutput[output]
+		if !ok {
+			return fmt.Errorf("R2 control-plane completed response omitted artifact %q", output)
+		}
+		getterSource, err := completedArtifactGetterSource(output, object, inputs.ControlPlaneObject.Artifact.Bucket, inputs.ControlPlaneObject.Artifact.Key)
+		if err != nil {
+			return err
+		}
+		inputs.ControlPlaneObject.Artifact.GetterSource = getterSource
+	}
+	return nil
+}
+
+func completedArtifactGetterSource(output string, object r2controlplane.UploadObject, expectedBucket, expectedKey string) (string, error) {
+	if object.Bucket != expectedBucket || object.Key != expectedKey {
+		return "", fmt.Errorf("R2 control-plane completed response returned mismatched object binding for %q", output)
+	}
+	getterSource := strings.TrimSpace(object.GetterSource)
+	if getterSource == "" {
+		return "", fmt.Errorf("R2 control-plane completed artifact %q without getter source", output)
+	}
+	parsed, err := url.Parse(getterSource)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return "", fmt.Errorf("R2 control-plane completed artifact %q with invalid download source", output)
+	}
+	return getterSource, nil
 }
 
 func uploadCandidates(inputs *deployInputs, repoRoot string) ([]uploadCandidate, error) {
@@ -467,9 +508,6 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
 				}
 				getterOptions := map[string]string{}
-				for key, value := range binding.Artifact.GetterOptions {
-					getterOptions[key] = value
-				}
 				getterOptions["checksum"] = binding.Checksum
 				artifact.GetterSource = &binding.Artifact.GetterSource
 				artifact.GetterOptions = getterOptions
@@ -496,9 +534,6 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 
 func taskArtifact(binding artifactBinding, destination string) *api.TaskArtifact {
 	getterOptions := map[string]string{}
-	for key, value := range binding.Artifact.GetterOptions {
-		getterOptions[key] = value
-	}
 	getterOptions["checksum"] = binding.Checksum
 	source := binding.Artifact.GetterSource
 	return &api.TaskArtifact{

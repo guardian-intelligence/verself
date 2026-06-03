@@ -149,6 +149,27 @@ func (c *R2Client) PresignPutObject(ctx context.Context, bucket, key, payloadHas
 	return signedURL, signedHeaders, nil
 }
 
+func (c *R2Client) PresignGetObject(ctx context.Context, bucket, key string, expires time.Duration) (string, error) {
+	if expires < time.Minute || expires > 7*24*time.Hour {
+		return "", fmt.Errorf("r2 presigned GET expiry must be between 1 minute and 7 days")
+	}
+	u := c.ObjectURL(bucket, key)
+	query := u.Query()
+	query.Set("X-Amz-Expires", strconv.FormatInt(int64(expires/time.Second), 10))
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), http.NoBody)
+	if err != nil {
+		return "", err
+	}
+	signedURL, _, err := c.signer.PresignHTTP(ctx, c.creds, req, UnsignedPayload, "s3", c.region, time.Now().UTC(), func(options *awsv4.SignerOptions) {
+		options.DisableURIPathEscaping = true
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign R2 GET %s: %w", u.Redacted(), err)
+	}
+	return signedURL, nil
+}
+
 func (c *R2Client) HeadObject(ctx context.Context, bucket, key string) (int, error) {
 	status, _, err := c.SignedRequest(ctx, http.MethodHead, c.ObjectURL(bucket, key), http.NoBody, EmptyPayloadSHA256, nil)
 	return status, err

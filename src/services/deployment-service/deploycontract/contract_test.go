@@ -272,12 +272,13 @@ func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	}
 }
 
-func TestValidateRepoRejectsBootstrapR2TokenWithoutConsumer(t *testing.T) {
+func TestValidateRepoRejectsBootstrapR2TokenWithoutDeploymentServiceConsumer(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
 	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
   - name: deployment-service.r2_control_plane_token
+    consumer_job_ids: [cloudflare-r2-control-plane]
     generated:
       bytes: 32
       encoding: base64url
@@ -289,7 +290,7 @@ openbao_runtime_secret_declarations:
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), "must declare consumer_job_ids: [cloudflare-r2-control-plane]") {
+	if !strings.Contains(err.Error(), "must declare consumer_job_ids: [deployment-service]") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -355,7 +356,7 @@ func writeBootstrapRuntimeContracts(t *testing.T, root string) {
 	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
   - name: deployment-service.r2_control_plane_token
-    consumer_job_ids: [cloudflare-r2-control-plane]
+    consumer_job_ids: [cloudflare-r2-control-plane, deployment-service]
     generated:
       bytes: 32
       encoding: base64url

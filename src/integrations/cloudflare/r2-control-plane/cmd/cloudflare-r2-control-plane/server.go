@@ -210,14 +210,13 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 			}
 		}
 		objects = append(objects, r2client.UploadObject{
-			Output:       binding.output,
-			Bucket:       s.siteCfg.Bucket,
-			Key:          binding.key,
-			GetterSource: artifactGetterSource(s.siteCfg, binding.key),
-			Action:       action,
-			PutURL:       putURL,
-			Headers:      flattenHeaders(headers),
-			ExpiresAt:    expiresAt,
+			Output:    binding.output,
+			Bucket:    s.siteCfg.Bucket,
+			Key:       binding.key,
+			Action:    action,
+			PutURL:    putURL,
+			Headers:   flattenHeaders(headers),
+			ExpiresAt: expiresAt,
 		})
 	}
 	sessionID, err := randomID()
@@ -266,11 +265,12 @@ func (s *uploadServer) handleCompleteUploadSession(w http.ResponseWriter, r *htt
 	for _, object := range session.Objects {
 		objectKeys = append(objectKeys, object.Key)
 	}
-	tempClient, err := s.temporaryR2Client(r.Context(), r2control.TemporaryPermissionObjectReadOnly, objectKeys, completionCredentialTTL(session.ExpiresAt))
+	tempClient, err := s.temporaryR2Client(r.Context(), r2control.TemporaryPermissionObjectReadOnly, objectKeys, s.cfg.downloadURLTTL)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	objects := make([]r2client.UploadObject, 0, len(session.Objects))
 	for _, object := range session.Objects {
 		status, err := tempClient.HeadObject(r.Context(), object.Bucket, object.Key)
 		if err != nil {
@@ -281,12 +281,20 @@ func (s *uploadServer) handleCompleteUploadSession(w http.ResponseWriter, r *htt
 			writeJSONError(w, http.StatusConflict, fmt.Sprintf("artifact %s HEAD returned status %d", object.Output, status))
 			return
 		}
+		getterSource, err := tempClient.PresignGetObject(r.Context(), object.Bucket, object.Key, s.cfg.downloadURLTTL)
+		if err != nil {
+			writeJSONError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		object.GetterSource = getterSource
+		object.ExpiresAt = time.Now().UTC().Add(s.cfg.downloadURLTTL)
+		objects = append(objects, object)
 	}
 	writeJSON(w, http.StatusOK, r2client.CompleteUploadSessionResponse{
 		SessionID:   session.ID,
 		Site:        session.Site,
 		CompletedAt: time.Now().UTC(),
-		Objects:     session.Objects,
+		Objects:     objects,
 	})
 }
 
@@ -310,14 +318,6 @@ func (s *uploadServer) temporaryR2Client(_ context.Context, permission string, o
 		Source:          "cloudflare-r2-control-plane-upload-session",
 		Timeout:         s.cfg.timeout,
 	})
-}
-
-func completionCredentialTTL(expiresAt time.Time) time.Duration {
-	ttl := time.Until(expiresAt)
-	if ttl < time.Minute {
-		return time.Minute
-	}
-	return ttl
 }
 
 func decodeJSON(r *http.Request, out any) error {
@@ -360,10 +360,6 @@ func randomID() (string, error) {
 
 func artifactKey(cfg siteArtifactConfig, digest, output string) string {
 	return path.Join(cfg.SitePrefix, strings.Trim(cfg.KeyPrefix, "/"), digest, output+".tar")
-}
-
-func artifactGetterSource(cfg siteArtifactConfig, key string) string {
-	return strings.TrimRight(cfg.GetterSourcePrefix, "/") + "/" + key
 }
 
 func cleanArtifactOutput(output string) (string, error) {

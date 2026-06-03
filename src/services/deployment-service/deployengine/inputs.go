@@ -210,22 +210,6 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	raw.ArtifactDelivery.CloudflareAccountID = cloudflare.AccountID
 	raw.ArtifactDelivery.Bucket = cloudflare.DeploymentArtifactsBucket
 	raw.ArtifactDelivery.SitePrefix = sitePrefix
-	raw.ArtifactDelivery.GetterSourcePrefix = "s3::" + cloudflare.R2Endpoint + "/" + raw.ArtifactDelivery.Bucket
-	if raw.ArtifactDelivery.GetterOptions == nil {
-		raw.ArtifactDelivery.GetterOptions = map[string]string{}
-	}
-	region := strings.TrimSpace(raw.ArtifactDelivery.GetterOptions["region"])
-	if region == "" {
-		raw.ArtifactDelivery.GetterOptions["region"] = "auto"
-	} else if region != "auto" {
-		return siteConfig{}, fmt.Errorf("%s: cloudflare_r2_control_plane artifact_delivery.getter_options.region must be auto", path)
-	}
-	if raw.ArtifactDelivery.GetterCredentials.EnvironmentFile == "" || raw.ArtifactDelivery.GetterCredentials.AccessKeyIDEnv == "" || raw.ArtifactDelivery.GetterCredentials.SecretAccessKeyEnv == "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials requires environment_file, access_key_id_env, and secret_access_key_env", path)
-	}
-	if raw.ArtifactDelivery.GetterCredentials.Source != "host_environment" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.getter_credentials.source must be host_environment", path)
-	}
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
 	}

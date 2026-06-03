@@ -11,7 +11,7 @@ The Cloudflare account-admin pair is stored only in prod controller OpenBao:
 - `kv-controller/data/integrations/cloudflare/account-admin/a`
 - `kv-controller/data/integrations/cloudflare/account-admin/b`
 
-Initial provider ingress writes the account-admin pair directly to prod controller OpenBao. Do not copy account-admin tokens into repo files, generated bootstrap vars, Nomad jobs, Ansible vars, generated artifacts, or service environments.
+Initial provider ingress writes the account-admin pair directly to prod controller OpenBao. Do not copy account-admin tokens into repo files, Nomad jobs, Ansible vars, generated artifacts, or service environments.
 
 Required account-admin token policies:
 
@@ -40,7 +40,7 @@ verself-deployment-artifacts/<site>/candidate/<deploy-run-key>/...
 The account-admin token creates the bucket through Cloudflare's REST R2 bucket API. Runtime and bootstrap jobs receive bucket-scoped child credentials only. R2 child credentials are delivered as S3-compatible access key IDs plus secret access keys. The Cloudflare API token value used to create a child credential is not a site runtime secret.
 
 - Bootstrap publisher: bucket item read/write, minted for each `aspect site bootstrap-deploy` run, passed in memory to the local R2 helper, and revoked before the command exits.
-- Nomad artifact getter: bucket item read, written to the generated bootstrap-vars JSON so Nomad can fetch initial artifacts before it can render OpenBao templates.
+- Nomad artifact fetch: the site-local R2 control plane returns per-object presigned download sources after upload verification; Nomad receives only object-scoped download URLs.
 - Object storage service admin/proxy: bucket item read/write, written only to OpenBao runtime secret names declared by `src/services/object-storage-service/deploy/runtime-secrets.yml`.
 - Deployment publisher: bucket item read/write, stored as capability metadata and projected into the OpenBao runtime names declared by `src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml`.
 
@@ -120,7 +120,7 @@ load account-admin slot A from prod controller OpenBao
   -> ensure required global resource exists
   -> create new bucket-scoped R2 child token
   -> verify child token against the real provider API
-  -> persist the new generation to OpenBao runtime names, except the Nomad artifact getter explicitly needed before Nomad can render secrets
+  -> persist the new generation to OpenBao runtime names
   -> delete the newly created child token on any pre-persistence failure
 ```
 
@@ -141,9 +141,9 @@ The DNS transition emits evidence and produces no child credential.
 
 Bootstrap Cloudflare operations load account-admin authority from prod controller OpenBao. When prod controller OpenBao is not reachable, establish or recover controller OpenBao first; do not run Cloudflare DNS, TLS, or R2 provisioning from a local static secret file.
 
-Generated bootstrap vars contain only the machine-provisioned Nomad artifact getter needed before Nomad can render OpenBao templates. Product-provider secrets such as Stripe, Resend, GitHub App private material, object-storage provider keys, and runtime deployment publisher keys enter OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
+Product-provider secrets such as Stripe, Resend, GitHub App private material, object-storage provider keys, and runtime deployment publisher keys enter OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
 
-The bootstrap artifact publisher is a dynamic provider credential. The current control-plane binary mints it from prod controller OpenBao authority, writes it only to the child process environment for the local R2 helper, and revokes the Cloudflare token before `bootstrap-deploy` exits. The OpenBao-native form of this boundary is a Cloudflare secrets-engine plugin mounted in prod controller OpenBao: roles such as `bootstrap-artifact-publisher/<site>` return leased S3-compatible child credentials and revoke the provider token when the OpenBao lease is revoked or expires.
+The bootstrap artifact publisher is a dynamic provider credential. The current control-plane binary mints it from prod controller OpenBao authority, passes it to the local R2 helper through private temp files, and revokes the Cloudflare token before `bootstrap-deploy` exits. The OpenBao-native form of this boundary is a Cloudflare secrets-engine plugin mounted in prod controller OpenBao: roles such as `bootstrap-artifact-publisher/<site>` return leased S3-compatible child credentials and revoke the provider token when the OpenBao lease is revoked or expires.
 
 ## Module Boundaries
 
@@ -153,9 +153,9 @@ The bootstrap artifact publisher is a dynamic provider credential. The current c
 
 ## Code Pointers
 
-- `control-plane/cmd/cloudflare-control-plane/main.go` provisions R2 child tokens, verifies each child token against R2, writes runtime values to `kv-runtime/data/secret/org/<secret-name>`, writes only the Nomad artifact getter to generated bootstrap vars, and mints/revokes the one-run bootstrap artifact publisher.
+- `control-plane/cmd/cloudflare-control-plane/main.go` provisions R2 child tokens, verifies each child token against R2, writes runtime values to `kv-runtime/data/secret/org/<secret-name>`, and mints/revokes the one-run bootstrap artifact publisher.
 - `r2-control-plane/nomad.hcl` reads `cloudflare-r2-control-plane.publisher_token_id` and `cloudflare-r2-control-plane.publisher_secret_access_key` through Nomad's OpenBao template integration.
+- `r2-control-plane/cmd/cloudflare-r2-control-plane/server.go` signs per-object upload and download URLs from the OpenBao-projected publisher credential.
 - `../../services/object-storage-service/nomad.hcl` reads the object-storage R2 admin/proxy credentials through Nomad OpenBao templates.
-- Generated bootstrap vars are local operator artifacts. Runtime provider credentials must not appear there.
 
 Generated local files under `.verself/site-bootstrap/<site>/` are operator bootstrap artifacts. Do not commit them.

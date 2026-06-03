@@ -30,13 +30,6 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
     "kind": "cloudflare_r2_control_plane",
     "key_prefix": "sha256",
     "control_plane_addr": "http://127.0.0.1:18732",
-    "getter_options": {"region": "auto"},
-    "getter_credentials": {
-      "source": "host_environment",
-      "environment_file": "/etc/nomad/nomad-artifacts.env",
-      "access_key_id_env": "AWS_ACCESS_KEY_ID",
-      "secret_access_key_env": "AWS_SECRET_ACCESS_KEY"
-    },
     "checksum_algorithm": "sha256",
     "public": false
   },
@@ -52,9 +45,6 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	}
 	if cfg.ArtifactDelivery.Bucket != "verself-deployment-artifacts" {
 		t.Fatalf("bucket = %q", cfg.ArtifactDelivery.Bucket)
-	}
-	if cfg.ArtifactDelivery.GetterSourcePrefix != "s3::https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com/verself-deployment-artifacts" {
-		t.Fatalf("getter prefix = %q", cfg.ArtifactDelivery.GetterSourcePrefix)
 	}
 }
 
@@ -74,13 +64,6 @@ func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
     "kind": "cloudflare_r2_control_plane",
     "bucket": "verself-deployment-artifacts",
     "key_prefix": "sha256",
-    "getter_options": {"region": "auto"},
-    "getter_credentials": {
-      "source": "host_environment",
-      "environment_file": "/etc/nomad/nomad-artifacts.env",
-      "access_key_id_env": "AWS_ACCESS_KEY_ID",
-      "secret_access_key_env": "AWS_SECRET_ACCESS_KEY"
-    },
     "checksum_algorithm": "sha256",
     "public": false
   }
