@@ -44,10 +44,13 @@ evidence. Nomad jobs own runtime rollout behavior.
 
 ## Gamma Wipe + Bootstrap
 
-If the Latitude box is already freshly reinstalled to Ubuntu and you
-have the fresh-host SSH root password, start at step 2. If it still has old
-gamma state, first wipe it by reinstalling the OS from Latitude, then use
-the new IP and fresh-host SSH root password from that reinstall.
+If Gamma still has old state, reinstall it to Ubuntu from Latitude. Select the
+generic `verself-bootstrap` user data. That cloud-init only installs the
+operator SSH key and Python for Ansible; all site-specific state is applied by
+inventory and `aspect site converge-host`.
+
+If the reinstall does not use the generic user data, use the fresh-host SSH
+root password for `aspect site root-handoff` before host convergence.
 
 ```shell
 cd /home/ubuntu/Projects/verself-sh
@@ -228,15 +231,29 @@ credentials.
 ```shell
 BOOTSTRAP_SECRET_DIR="$(mktemp -d -t verself-bootstrap.XXXXXX)"
 chmod 700 "$BOOTSTRAP_SECRET_DIR"
-printf '%s\n' '<gamma-root-password>' > "$BOOTSTRAP_SECRET_DIR/root-password"
-chmod 600 "$BOOTSTRAP_SECRET_DIR/root-password"
 printf '%s\n' '<gamma-site-root-key>' > "$BOOTSTRAP_SECRET_DIR/site-root-key"
 chmod 600 "$BOOTSTRAP_SECRET_DIR/site-root-key"
 ```
 
-Prefer pinned host key verification:
+If the reinstall used `verself-bootstrap`, write inventory for the new host and
+verify direct SSH as `ubuntu` before convergence:
 
 ```shell
+aspect site inventory-write \
+  --site=gamma \
+  --host=<gamma-public-ip> \
+  --force
+
+ssh ubuntu@<gamma-public-ip> true
+```
+
+If the reinstall did not use `verself-bootstrap`, prefer pinned host key
+verification for root handoff:
+
+```shell
+printf '%s\n' '<gamma-root-password>' > "$BOOTSTRAP_SECRET_DIR/root-password"
+chmod 600 "$BOOTSTRAP_SECRET_DIR/root-password"
+
 aspect site root-handoff \
   --site=gamma \
   --host=<gamma-public-ip> \
