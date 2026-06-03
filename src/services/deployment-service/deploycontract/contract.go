@@ -558,7 +558,7 @@ func (v *Validator) walkNomadSpecs() error {
 		text := string(body)
 		for _, literal := range forbidden {
 			if strings.Contains(text, literal) {
-				v.add(rel, fmt.Sprintf("authored Nomad spec contains environment literal %q; use __VERSELF_* site tokens", literal))
+				v.add(rel, fmt.Sprintf("authored Nomad spec contains deployment-specific literal %q; use __VERSELF_* site tokens", literal))
 			}
 		}
 		return nil
