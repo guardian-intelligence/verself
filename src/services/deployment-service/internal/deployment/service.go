@@ -27,14 +27,13 @@ const deploymentStateUpdateAttemptTimeout = 5 * time.Second
 const deploymentStateUpdateRetryInterval = 500 * time.Millisecond
 
 type Config struct {
-	Site                        string
-	RepoRoot                    string
-	SubstrateControlPlaneMarker string
-	R2ControlPlaneAddr          string
-	NomadAddr                   string
-	NomadAllocID                string
-	RecoverySSHReady            string
-	BazelJobs                   int
+	Site               string
+	RepoRoot           string
+	R2ControlPlaneAddr string
+	NomadAddr          string
+	NomadAllocID       string
+	RecoverySSHReady   string
+	BazelJobs          int
 }
 
 type Service struct {
@@ -76,9 +75,6 @@ func (s *Service) DependencyChecks(ctx context.Context) []DependencyCheck {
 		{Stage: "S2", Name: "recovery_ssh_ready", Run: func(context.Context) DependencyCheck { return s2RecoverySSHReady(s.Config.RecoverySSHReady) }},
 		{Stage: "S3", Name: "bazelisk", Run: func(context.Context) DependencyCheck { return s3Bazelisk() }},
 		{Stage: "S3", Name: "git", Run: func(context.Context) DependencyCheck { return s3Git() }},
-		{Stage: "S5", Name: "substrate_control_plane_applied", Run: func(context.Context) DependencyCheck {
-			return s5SubstrateControlPlane(s.Config.SubstrateControlPlaneMarker)
-		}},
 		{Stage: "S6", Name: "nomad", Run: func(ctx context.Context) DependencyCheck { return s6Nomad(ctx, s.Config.NomadAddr) }},
 		{Stage: "S7", Name: "postgres", Run: func(ctx context.Context) DependencyCheck { return s7Postgres(ctx, s.Store) }},
 		{Stage: "S7", Name: "repo_root", Run: func(ctx context.Context) DependencyCheck { return s7RepoRoot(ctx, s.Config.RepoRoot) }},
@@ -203,9 +199,7 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 	}
 	_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateSucceeded, func(attemptCtx context.Context) error {
 		return s.Store.MarkSucceeded(attemptCtx, record.DeploymentID, DeploymentResult{
-			ControlPlaneBundleSHA256: result.ControlPlaneSHA256,
-			NomadSubmittedJobs:       result.NomadSubmittedJobs,
-			NomadDispatchedJobs:      result.NomadDispatchedJobs,
+			NomadSubmittedJobs: result.NomadSubmittedJobs,
 		})
 	})
 }
@@ -408,13 +402,6 @@ func s3Bazelisk() DependencyCheck {
 func s3Git() DependencyCheck {
 	_, err := exec.LookPath("git")
 	return dependency("S3", "git", err)
-}
-
-func s5SubstrateControlPlane(token string) DependencyCheck {
-	if strings.TrimSpace(token) != "" {
-		return dependencyOK("S5", "substrate_control_plane_applied")
-	}
-	return dependencyFailed("S5", "substrate_control_plane_applied", "substrate-control-plane apply marker was not delivered from OpenBao")
 }
 
 func s6Nomad(ctx context.Context, addr string) DependencyCheck {

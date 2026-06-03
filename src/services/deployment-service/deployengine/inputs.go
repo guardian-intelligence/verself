@@ -11,7 +11,6 @@ import (
 
 	"github.com/hashicorp/nomad/api"
 
-	"github.com/verself/deployment-service/controlplane"
 	"github.com/verself/deployment-service/deploycontract"
 	"github.com/verself/deployment-service/internal/deploymodel"
 	"github.com/verself/deployment-service/internal/siteinject"
@@ -36,9 +35,6 @@ type deployInputs struct {
 	Components         []nomadComponentDescriptor
 	Artifacts          []deploymodel.Artifact
 	Bindings           map[string]artifactBinding
-	ControlPlane       controlplane.Bundle
-	ControlPlaneSHA256 string
-	ControlPlaneObject objectArtifact
 }
 
 type siteConfig struct {
@@ -95,12 +91,6 @@ type nomadJob struct {
 	Job       *api.Job
 }
 
-type objectArtifact struct {
-	Artifact deploymodel.Artifact
-	Body     []byte
-	Label    string
-}
-
 type authoredNomadSpecParser interface {
 	ParseJobHCL(context.Context, []byte, string) (*api.Job, error)
 }
@@ -139,29 +129,14 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 	if err != nil {
 		return nil, err
 	}
-	bundle, err := controlplane.LoadBundle(repoRoot, site, controlPlaneComponents(descriptors))
-	if err != nil {
-		return nil, err
-	}
-	bundleSHA256, err := controlplane.BundleSHA256(bundle)
-	if err != nil {
-		return nil, err
-	}
-	controlPlaneObject, err := bindControlPlaneBundleArtifact(cfg.ArtifactDelivery, bundle)
-	if err != nil {
-		return nil, err
-	}
 	return &deployInputs{
-		SHA:                sha,
-		DeployRunKey:       deployRunKey,
-		SiteCfg:            cfg,
-		SiteModel:          model,
-		Components:         descriptors,
-		Artifacts:          artifacts,
-		Bindings:           bindings,
-		ControlPlane:       bundle,
-		ControlPlaneSHA256: bundleSHA256,
-		ControlPlaneObject: controlPlaneObject,
+		SHA:          sha,
+		DeployRunKey: deployRunKey,
+		SiteCfg:      cfg,
+		SiteModel:    model,
+		Components:   descriptors,
+		Artifacts:    artifacts,
+		Bindings:     bindings,
 	}, nil
 }
 
@@ -357,22 +332,6 @@ var deployPhaseRank = map[string]int{
 func validDeployPhase(value string) bool {
 	_, ok := deployPhaseRank[value]
 	return ok
-}
-
-func controlPlaneComponents(components []nomadComponentDescriptor) []controlplane.Component {
-	out := make([]controlplane.Component, 0, len(components))
-	for _, component := range components {
-		jobSpec := component.JobSpec
-		if jobSpec == "" {
-			jobSpec = component.JobSpecPath
-		}
-		out = append(out, controlplane.Component{
-			Component: component.Component,
-			JobID:     component.JobID,
-			JobSpec:   jobSpec,
-		})
-	}
-	return out
 }
 
 func artifactSitePrefix(site string) (string, error) {

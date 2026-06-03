@@ -238,9 +238,7 @@ func TestStoreStateChangesAppendOrderedEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.MarkSucceeded(ctx, record.DeploymentID, DeploymentResult{
-		ControlPlaneBundleSHA256: "0123456789abcdef",
-		NomadSubmittedJobs:       2,
-		NomadDispatchedJobs:      1,
+		NomadSubmittedJobs: 2,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -266,9 +264,7 @@ func TestStoreStateChangesAppendOrderedEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	if current.State != StateSucceeded ||
-		current.ControlPlaneBundleSHA256 != "0123456789abcdef" ||
-		current.NomadSubmittedJobs != 2 ||
-		current.NomadDispatchedJobs != 1 {
+		current.NomadSubmittedJobs != 2 {
 		t.Fatalf("record = %#v, want succeeded deployment result", current)
 	}
 }

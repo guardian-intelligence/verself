@@ -231,7 +231,6 @@ func TestDependencyChecksReturnCanonicalS0ToS7Model(t *testing.T) {
 		"S2/recovery_ssh_ready",
 		"S3/bazelisk",
 		"S3/git",
-		"S5/substrate_control_plane_applied",
 		"S6/nomad",
 		"S7/postgres",
 		"S7/repo_root",
@@ -437,12 +436,11 @@ func TestDependencyChecksRunSlowProbesConcurrently(t *testing.T) {
 
 	started := time.Now()
 	checks := (&Service{Config: Config{
-		Site:                        "gamma",
-		SubstrateControlPlaneMarker: "substrate-marker",
-		NomadAddr:                   nomad.URL,
-		R2ControlPlaneAddr:          r2.URL,
-		NomadAllocID:                "alloc-1",
-		RecoverySSHReady:            "true",
+		Site:               "gamma",
+		NomadAddr:          nomad.URL,
+		R2ControlPlaneAddr: r2.URL,
+		NomadAllocID:       "alloc-1",
+		RecoverySSHReady:   "true",
 	}}).DependencyChecks(context.Background())
 	elapsed := time.Since(started)
 	if elapsed > 350*time.Millisecond {
@@ -533,7 +531,7 @@ func TestDependencyChecksRequireNomadAllocationAndRecoveryHandoff(t *testing.T) 
 	for _, check := range checks {
 		found[check.Code] = check
 	}
-	for _, code := range []string{"deployment.bootstrap.s1.host_allocated", "deployment.bootstrap.s2.recovery_ssh_ready", "deployment.bootstrap.s5.substrate_control_plane_applied"} {
+	for _, code := range []string{"deployment.bootstrap.s1.host_allocated", "deployment.bootstrap.s2.recovery_ssh_ready"} {
 		check, ok := found[code]
 		if !ok {
 			t.Fatalf("missing %s in checks: %+v", code, checks)

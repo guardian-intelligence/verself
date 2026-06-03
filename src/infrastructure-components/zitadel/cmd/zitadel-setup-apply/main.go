@@ -369,8 +369,7 @@ func readMasterkey(ctx context.Context, cfg config) (string, error) {
 }
 
 func runZitadelBootstrap(ctx context.Context, cfg config, masterkey string, uid, gid int, stdout, stderr io.Writer) error {
-	// PostgreSQL ownership is reconciled by substrate-control-plane; Zitadel
-	// only initializes its own internals here.
+	// Zitadel bootstrap only initializes its own internals.
 	if err := runZitadelCommand(ctx, cfg, masterkey, uid, gid, stdout, stderr,
 		"init",
 		"zitadel",

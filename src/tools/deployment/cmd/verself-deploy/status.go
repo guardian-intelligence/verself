@@ -24,20 +24,18 @@ type statusOptions struct {
 }
 
 type deploymentRecord struct {
-	DeploymentID             string    `json:"deployment_id"`
-	Site                     string    `json:"site"`
-	SHA                      string    `json:"sha"`
-	DeployRunKey             string    `json:"deploy_run_key"`
-	State                    string    `json:"state"`
-	ErrorCode                string    `json:"error_code"`
-	ErrorDetail              string    `json:"error_detail"`
-	ControlPlaneBundleSHA256 string    `json:"control_plane_bundle_sha256"`
-	NomadSubmittedJobs       uint32    `json:"nomad_submitted_jobs"`
-	NomadDispatchedJobs      uint32    `json:"nomad_dispatched_jobs"`
-	CreatedAt                time.Time `json:"created_at"`
-	UpdatedAt                time.Time `json:"updated_at"`
-	StartedAt                time.Time `json:"started_at"`
-	FinishedAt               time.Time `json:"finished_at"`
+	DeploymentID       string    `json:"deployment_id"`
+	Site               string    `json:"site"`
+	SHA                string    `json:"sha"`
+	DeployRunKey       string    `json:"deploy_run_key"`
+	State              string    `json:"state"`
+	ErrorCode          string    `json:"error_code"`
+	ErrorDetail        string    `json:"error_detail"`
+	NomadSubmittedJobs uint32    `json:"nomad_submitted_jobs"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	StartedAt          time.Time `json:"started_at"`
+	FinishedAt         time.Time `json:"finished_at"`
 }
 
 type deploymentEvent struct {
@@ -211,9 +209,9 @@ func listDeploymentEvents(ctx context.Context, baseURL string, token string, dep
 }
 
 func printDeploymentRecord(record deploymentRecord, traceparent string) error {
-	if _, err := fmt.Fprintf(os.Stdout, "deployment_id=%s state=%s site=%s sha=%s deploy_run_key=%s submitted_jobs=%d dispatched_jobs=%d error_code=%s traceparent=%s\n",
+	if _, err := fmt.Fprintf(os.Stdout, "deployment_id=%s state=%s site=%s sha=%s deploy_run_key=%s submitted_jobs=%d error_code=%s traceparent=%s\n",
 		record.DeploymentID, record.State, record.Site, record.SHA, record.DeployRunKey,
-		record.NomadSubmittedJobs, record.NomadDispatchedJobs,
+		record.NomadSubmittedJobs,
 		record.ErrorCode, traceparent); err != nil {
 		return fmt.Errorf("write deployment record: %w", err)
 	}

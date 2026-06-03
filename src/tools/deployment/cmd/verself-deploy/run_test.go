@@ -71,7 +71,7 @@ deployment_service_domain: deployments.api.gamma.verself.test
 				t.Fatalf("status missing bearer token")
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"` + sha + `","deploy_run_key":"deploy_test","state":"succeeded","nomad_submitted_jobs":42,"nomad_dispatched_jobs":1},"traceparent":"00-00000000000000000000000000000002-0000000000000002-01"}`))
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"` + sha + `","deploy_run_key":"deploy_test","state":"succeeded","nomad_submitted_jobs":42},"traceparent":"00-00000000000000000000000000000002-0000000000000002-01"}`))
 		default:
 			t.Fatalf("normal deploy made unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -228,7 +228,7 @@ func TestWaitForDeploymentTerminalRecoversAfterTransientStatusOutage(t *testing.
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"status":503,"code":"deployment.datastore_unavailable","detail":"postgres is restarting"}`))
 		default:
-			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"succeeded","nomad_submitted_jobs":42,"nomad_dispatched_jobs":1},"traceparent":"00-00000000000000000000000000000003-0000000000000003-01"}`))
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"succeeded","nomad_submitted_jobs":42},"traceparent":"00-00000000000000000000000000000003-0000000000000003-01"}`))
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -237,7 +237,7 @@ func TestWaitForDeploymentTerminalRecoversAfterTransientStatusOutage(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.State != "succeeded" || record.NomadSubmittedJobs != 42 || record.NomadDispatchedJobs != 1 {
+	if record.State != "succeeded" || record.NomadSubmittedJobs != 42 {
 		t.Fatalf("record = %#v", record)
 	}
 	if traceparent != "00-00000000000000000000000000000003-0000000000000003-01" {
@@ -276,7 +276,7 @@ func TestWaitForDeploymentTerminalRefreshesUnauthorizedBearer(t *testing.T) {
 			if r.Header.Get("Authorization") != "Bearer fresh-token" {
 				t.Fatalf("refreshed status authorization = %q", r.Header.Get("Authorization"))
 			}
-			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"succeeded","nomad_submitted_jobs":42,"nomad_dispatched_jobs":1},"traceparent":"00-00000000000000000000000000000003-0000000000000003-01"}`))
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"succeeded","nomad_submitted_jobs":42},"traceparent":"00-00000000000000000000000000000003-0000000000000003-01"}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

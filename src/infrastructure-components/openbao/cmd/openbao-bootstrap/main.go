@@ -650,56 +650,7 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	}, http.StatusNoContent); err != nil {
 		return err
 	}
-	policy := strings.TrimSpace(`
-path "sys/policies/acl/*" {
-  capabilities = ["create", "update", "read", "list"]
-}
-
-path "auth/jwt-nomad/role/*" {
-  capabilities = ["create", "update", "read", "list"]
-}
-
-path "sys/mounts" {
-  capabilities = ["read"]
-}
-
-path "sys/mounts/transit" {
-  capabilities = ["create", "update", "read", "sudo"]
-}
-
-path "kv-runtime/data/secret/org/*" {
-  capabilities = ["create", "update", "read", "delete"]
-}
-
-path "kv-runtime/metadata/secret/org/*" {
-  capabilities = ["read", "list", "delete"]
-}
-
-path "transit/random/*" {
-  capabilities = ["update"]
-}
-`)
-	if _, err := api(http.MethodPost, "sys/policies/acl/substrate-control-plane", map[string]any{"policy": policy}, http.StatusOK, http.StatusNoContent); err != nil {
-		return err
-	}
-	_, err = api(http.MethodPost, "auth/jwt-nomad/role/substrate-control-plane", map[string]any{
-		"role_type":               "jwt",
-		"bound_audiences":         []string{"vault.io"},
-		"user_claim":              "/nomad_job_id",
-		"user_claim_json_pointer": true,
-		"claim_mappings": map[string]string{
-			"nomad_namespace": "nomad_namespace",
-			"nomad_job_id":    "nomad_job_id",
-			"nomad_task":      "nomad_task",
-		},
-		"bound_claims_type":      "glob",
-		"bound_claims":           map[string]string{"nomad_job_id": "substrate-control-plane*"},
-		"token_type":             "service",
-		"token_policies":         []string{"substrate-control-plane"},
-		"token_period":           "30m",
-		"token_explicit_max_ttl": 0,
-	}, http.StatusNoContent)
-	return err
+	return nil
 }
 
 func apiClient(cfg config) (*http.Client, error) {

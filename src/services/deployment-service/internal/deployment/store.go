@@ -162,9 +162,7 @@ func activeDeploymentConflict(err error) bool {
 }
 
 type DeploymentResult struct {
-	ControlPlaneBundleSHA256 string
-	NomadSubmittedJobs       uint32
-	NomadDispatchedJobs      uint32
+	NomadSubmittedJobs uint32
 }
 
 func (s Store) updateState(ctx context.Context, deploymentID string, state string, code string, detail string, result DeploymentResult, started bool, finished bool) error {
@@ -172,10 +170,6 @@ func (s Store) updateState(ctx context.Context, deploymentID string, state strin
 		return errors.New("postgres pool is nil")
 	}
 	submittedJobs, err := int32FromUint32(result.NomadSubmittedJobs, "nomad_submitted_jobs")
-	if err != nil {
-		return err
-	}
-	dispatchedJobs, err := int32FromUint32(result.NomadDispatchedJobs, "nomad_dispatched_jobs")
 	if err != nil {
 		return err
 	}
@@ -189,14 +183,12 @@ UPDATE deployment_requests
 SET state = $2,
     error_code = $3,
     error_detail = $4,
-    control_plane_bundle_sha256 = CASE WHEN $5::text <> '' THEN $5 ELSE control_plane_bundle_sha256 END,
-    nomad_submitted_jobs = CASE WHEN $6::integer > 0 THEN $6 ELSE nomad_submitted_jobs END,
-    nomad_dispatched_jobs = CASE WHEN $7::integer > 0 THEN $7 ELSE nomad_dispatched_jobs END,
-    started_at = CASE WHEN $8 THEN now() ELSE started_at END,
-    finished_at = CASE WHEN $9 THEN now() ELSE finished_at END,
+    nomad_submitted_jobs = CASE WHEN $5::integer > 0 THEN $5 ELSE nomad_submitted_jobs END,
+    started_at = CASE WHEN $6 THEN now() ELSE started_at END,
+    finished_at = CASE WHEN $7 THEN now() ELSE finished_at END,
     updated_at = now()
 WHERE deployment_id = $1
-`, deploymentID, state, code, detail, result.ControlPlaneBundleSHA256, submittedJobs, dispatchedJobs, started, finished)
+`, deploymentID, state, code, detail, submittedJobs, started, finished)
 	if err != nil {
 		return fmt.Errorf("update deployment request: %w", err)
 	}
@@ -244,8 +236,7 @@ func (s Store) Get(ctx context.Context, deploymentID string) (Record, error) {
 SELECT deployment_id, site, sha, deploy_run_key, source_kind, source_subject,
        repository, ref, workflow, job_workflow_ref, provider_run_id,
        provider_run_attempt, state, error_code, error_detail,
-       control_plane_bundle_sha256, nomad_submitted_jobs,
-       nomad_dispatched_jobs,
+       nomad_submitted_jobs,
        created_at, updated_at, started_at, finished_at
 FROM deployment_requests
 WHERE deployment_id = $1
@@ -265,8 +256,7 @@ func (s Store) FindBySourceAttempt(ctx context.Context, site string, source Sour
 SELECT deployment_id, site, sha, deploy_run_key, source_kind, source_subject,
        repository, ref, workflow, job_workflow_ref, provider_run_id,
        provider_run_attempt, state, error_code, error_detail,
-       control_plane_bundle_sha256, nomad_submitted_jobs,
-       nomad_dispatched_jobs,
+       nomad_submitted_jobs,
        created_at, updated_at, started_at, finished_at
 FROM deployment_requests
 WHERE site = $1
@@ -323,7 +313,6 @@ func scanRecord(row recordRow) (Record, error) {
 	var record Record
 	var attempt int32
 	var submittedJobs int32
-	var dispatchedJobs int32
 	if err := row.Scan(
 		&record.DeploymentID,
 		&record.Site,
@@ -340,9 +329,7 @@ func scanRecord(row recordRow) (Record, error) {
 		&record.State,
 		&record.ErrorCode,
 		&record.ErrorDetail,
-		&record.ControlPlaneBundleSHA256,
 		&submittedJobs,
-		&dispatchedJobs,
 		&record.CreatedAt,
 		&record.UpdatedAt,
 		&record.StartedAt,
@@ -361,13 +348,8 @@ func scanRecord(row recordRow) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	convertedDispatchedJobs, err := uint32FromInt32(dispatchedJobs, "nomad_dispatched_jobs")
-	if err != nil {
-		return Record{}, err
-	}
 	record.ProviderRunAttempt = convertedAttempt
 	record.NomadSubmittedJobs = convertedSubmittedJobs
-	record.NomadDispatchedJobs = convertedDispatchedJobs
 	return record, nil
 }
 

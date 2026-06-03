@@ -53,9 +53,7 @@ type Record struct {
 	State                    string    `json:"state"`
 	ErrorCode                string    `json:"error_code"`
 	ErrorDetail              string    `json:"error_detail"`
-	ControlPlaneBundleSHA256 string    `json:"control_plane_bundle_sha256"`
 	NomadSubmittedJobs       uint32    `json:"nomad_submitted_jobs"`
-	NomadDispatchedJobs      uint32    `json:"nomad_dispatched_jobs"`
 	CreatedAt                time.Time `json:"created_at"`
 	UpdatedAt                time.Time `json:"updated_at"`
 	StartedAt                time.Time `json:"started_at"`

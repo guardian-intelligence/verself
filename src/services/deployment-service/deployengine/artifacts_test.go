@@ -103,13 +103,6 @@ func TestApplyCompletedArtifactSourcesBindsDownloadURLs(t *testing.T) {
 				},
 			},
 		},
-		ControlPlaneObject: objectArtifact{
-			Artifact: deploymodel.Artifact{
-				Output: controlPlaneBundleOutput,
-				Bucket: "verself-deployment-artifacts",
-				Key:    "gamma/sha256/control-plane.tar",
-			},
-		},
 	}
 	err := applyCompletedArtifactSources(inputs, []r2controlplane.UploadObject{
 		{
@@ -118,21 +111,12 @@ func TestApplyCompletedArtifactSourcesBindsDownloadURLs(t *testing.T) {
 			Key:          "gamma/sha256/service.tar",
 			GetterSource: "https://downloads.example.test/service.tar?X-Amz-Signature=abc",
 		},
-		{
-			Output:       controlPlaneBundleOutput,
-			Bucket:       "verself-deployment-artifacts",
-			Key:          "gamma/sha256/control-plane.tar",
-			GetterSource: "https://downloads.example.test/control-plane.tar?X-Amz-Signature=def",
-		},
 	})
 	if err != nil {
 		t.Fatalf("apply completed artifact sources: %v", err)
 	}
 	if got := inputs.Bindings["deployment-service"].Artifact.GetterSource; got != "https://downloads.example.test/service.tar?X-Amz-Signature=abc" {
 		t.Fatalf("service download source = %q", got)
-	}
-	if got := inputs.ControlPlaneObject.Artifact.GetterSource; got != "https://downloads.example.test/control-plane.tar?X-Amz-Signature=def" {
-		t.Fatalf("control-plane download source = %q", got)
 	}
 }
 
@@ -143,22 +127,15 @@ func TestApplyArtifactGetterSourcesAcceptsBootstrapFileURLs(t *testing.T) {
 				Artifact: deploymodel.Artifact{Output: "openbao-runtime"},
 			},
 		},
-		ControlPlaneObject: objectArtifact{
-			Artifact: deploymodel.Artifact{Output: controlPlaneBundleOutput},
-		},
 	}
 	err := applyArtifactGetterSources(inputs, map[string]string{
-		"openbao-runtime":        "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/openbao-runtime.tar",
-		controlPlaneBundleOutput: "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/substrate-control-plane-bundle.tar",
+		"openbao-runtime": "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/openbao-runtime.tar",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := inputs.Bindings["openbao-runtime"].Artifact.GetterSource; !strings.HasPrefix(got, "file:///") {
 		t.Fatalf("getter source = %q", got)
-	}
-	if got := inputs.ControlPlaneObject.Artifact.GetterSource; !strings.HasPrefix(got, "file:///") {
-		t.Fatalf("control-plane getter source = %q", got)
 	}
 }
 

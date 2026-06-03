@@ -15,7 +15,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/integrations/cloudflare/r2-control-plane/client",
-        "//src/services/deployment-service/controlplane",
         "//src/services/deployment-service/deploycontract",
         "//src/services/deployment-service/internal/bazelbuild",
         "//src/services/deployment-service/internal/deploymodel",
