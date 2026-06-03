@@ -27,20 +27,8 @@
 
 - name: Load Nomad artifact getter credentials
   ansible.builtin.include_vars:
-    file: "{{ verself_site_secret_vars_file }}"
-  when: verself_site_secret_vars_file | default('', true) | length > 0
-  no_log: true
-
-- name: Assert Nomad artifact getter credentials
-  ansible.builtin.assert:
-    that:
-      - nomad_artifact_getter_s3_access_key_id | default('', true) | length > 0
-      - nomad_artifact_getter_s3_secret_access_key | default('', true) | length > 0
-      - nomad_artifact_region | default('', true) | length > 0
-    fail_msg: >-
-      Nomad artifact getter credentials are required. Run
-      aspect integrations cloudflare-r2-control-plane --action=rotate-getter
-      and rerun host convergence with the generated site secret vars.
+    file: "{{ verself_bootstrap_vars_file }}"
+  when: verself_bootstrap_vars_file | default('', true) | length > 0
   no_log: true
 
 - name: Deploy Nomad artifact getter environment
@@ -54,26 +42,40 @@
       {{ nomad_artifact_getter_s3_secret_key_env_var }}={{ nomad_artifact_getter_s3_secret_access_key }}
       AWS_REGION={{ nomad_artifact_region }}
       AWS_EC2_METADATA_DISABLED=true
+  when:
+    - nomad_artifact_getter_s3_access_key_id | default('', true) | length > 0
+    - nomad_artifact_getter_s3_secret_access_key | default('', true) | length > 0
+    - nomad_artifact_region | default('', true) | length > 0
   notify: restart nomad
   no_log: true
 
-- name: Create bootstrap substrate seed directory
+- name: Remove stale Nomad artifact getter environment when credentials are absent
   ansible.builtin.file:
-    path: "{{ nomad_openbao_runtime_seed_dest | dirname }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "0700"
-  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
+    path: "{{ nomad_artifact_getter_s3_environment_file }}"
+    state: absent
+  when: >-
+    nomad_artifact_getter_s3_access_key_id | default('', true) | length == 0
+    or nomad_artifact_getter_s3_secret_access_key | default('', true) | length == 0
+    or nomad_artifact_region | default('', true) | length == 0
+  notify: restart nomad
+  no_log: true
 
-- name: Deploy filtered OpenBao runtime seed
+- name: Assert OpenBao site root key input
+  ansible.builtin.assert:
+    that:
+      - verself_openbao_site_root_key_file | default('', true) | length > 0
+    fail_msg: >-
+      OpenBao bootstrap requires verself_openbao_site_root_key_file. Provide
+      the site root key before host convergence.
+  no_log: true
+
+- name: Deploy OpenBao site root key
   ansible.builtin.copy:
-    src: "{{ verself_openbao_runtime_seed_file }}"
-    dest: "{{ nomad_openbao_runtime_seed_dest }}"
+    src: "{{ verself_openbao_site_root_key_file }}"
+    dest: "{{ nomad_openbao_root_key_dest }}"
     owner: root
     group: root
     mode: "0600"
-  when: verself_openbao_runtime_seed_file | default('', true) | length > 0
   no_log: true
 
 - name: Create Nomad state directory
@@ -101,14 +103,22 @@
   register: nomad_cpuinfo
 
 - name: Derive x86-64 psABI level from CPU flags
+  vars:
+    nomad_cpu_flags: "{{ ((nomad_cpuinfo.content | b64decode).split('\n') | select('match', '^flags') | list | first | default('')).split() }}"
+    nomad_x86_64_v4_flags: [avx512f, avx512bw, avx512cd, avx512dq, avx512vl]
+    nomad_x86_64_v3_flags: [avx2, bmi1, bmi2, fma, f16c, movbe]
+    nomad_x86_64_v2_flags: [sse4_2, sse4_1, ssse3, popcnt]
   ansible.builtin.set_fact:
     nomad_node_cpu_isa_level: >-
-      {%- set flags = ((nomad_cpuinfo.content | b64decode).split('\n') | select('match', '^flags') | list | first | default('')).split() -%}
-      {%- if 'avx512f' in flags and 'avx512bw' in flags and 'avx512cd' in flags and 'avx512dq' in flags and 'avx512vl' in flags -%}x86-64-v4
-      {%- elif 'avx2' in flags and 'bmi1' in flags and 'bmi2' in flags and 'fma' in flags and 'f16c' in flags and 'movbe' in flags -%}x86-64-v3
-      {%- elif 'sse4_2' in flags and 'sse4_1' in flags and 'ssse3' in flags and 'popcnt' in flags -%}x86-64-v2
-      {%- else -%}x86-64-v1
-      {%- endif -%}
+      {{
+        'x86-64-v4'
+        if (nomad_x86_64_v4_flags | difference(nomad_cpu_flags) | length) == 0
+        else 'x86-64-v3'
+        if (nomad_x86_64_v3_flags | difference(nomad_cpu_flags) | length) == 0
+        else 'x86-64-v2'
+        if (nomad_x86_64_v2_flags | difference(nomad_cpu_flags) | length) == 0
+        else 'x86-64-v1'
+      }}
 
 - name: Deploy Nomad agent configuration
   ansible.builtin.template:

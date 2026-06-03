@@ -128,6 +128,11 @@ func (cfg *config) validate() error {
 	if cfg.nftBin == "" {
 		return errors.New("--nft-bin is required")
 	}
+	nftBin, err := resolveExecutablePath(cfg.nftBin)
+	if err != nil {
+		return fmt.Errorf("resolve --nft-bin: %w", err)
+	}
+	cfg.nftBin = nftBin
 	if cfg.destRoot == "" {
 		return errors.New("--dest-root is required")
 	}
@@ -148,6 +153,20 @@ func (cfg *config) validate() error {
 		}
 	}
 	return nil
+}
+
+func resolveExecutablePath(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	if strings.ContainsRune(path, rune(os.PathSeparator)) {
+		return filepath.Abs(path)
+	}
+	resolved, err := exec.LookPath(path)
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
 }
 
 func installHostRuntime(cfg *config) error {

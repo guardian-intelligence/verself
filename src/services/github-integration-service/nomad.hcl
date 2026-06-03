@@ -27,6 +27,7 @@ job "github-integration" {
         command = "local/bin/github-integration-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "github-integration-service-migration"
@@ -70,6 +71,7 @@ job "github-integration" {
         command = "local/bin/github-integration-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         GITHUB_API_BASE_URL = "https://api.github.com"
         GITHUB_APP_ID = "__VERSELF_GITHUB_APP_ID__"
         GITHUB_APP_SETUP_URL = "__VERSELF_GITHUB_APP_SETUP_URL__"
@@ -102,11 +104,10 @@ job "github-integration" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -115,14 +116,27 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/provider.env"
+        destination = "secrets/github-app-private-key"
         perms = "0600"
         data = <<-EOT
-GITHUB_APP_PRIVATE_KEY={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.private_key" }}{{ .Data.data.value | toJSON }}{{ end }}
-GITHUB_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
-GITHUB_OAUTH_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/github-integration-service.github.oauth_client_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/github-integration-service.github.private_key" }}{{ .Data.data.value }}{{ end }}
 EOT
-        env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-webhook-secret"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/github-integration-service.github.webhook_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-oauth-client-secret"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/github-integration-service.github.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       restart {
         attempts = 3

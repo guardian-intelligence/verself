@@ -1,0 +1,9 @@
+{
+  "version": "verself.cloudflare.account.v1",
+  "control_plane_site": "prod",
+  "account_id": "c3eaeffaadf7d4847684d4775c16d598",
+  "r2": {
+    "deployment_artifacts_bucket": "verself-deployment-artifacts",
+    "recovery_bucket": "verself-recovery"
+  }
+}

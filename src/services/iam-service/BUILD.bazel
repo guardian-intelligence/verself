@@ -30,7 +30,6 @@ nomad_component(
     job_spec = "nomad.hcl",
     requires = [
         "auth:control-plane",
-        "clickhouse:migrations",
         "nomad:job:secrets-service",
         "nomad:job:spicedb",
         "openbao:api",

@@ -40,6 +40,7 @@ job "source-code-hosting-service" {
         command = "local/bin/source-code-hosting-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "source-code-hosting-service-migration"
@@ -59,20 +60,18 @@ job "source-code-hosting-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/webhook.env"
+        destination = "secrets/webhook-secret"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -84,10 +83,17 @@ EOT
         destination = "secrets/forgejo.env"
         perms = "0600"
         data = <<-EOT
-SOURCE_FORGEJO_AUTOMATION_TOKEN={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value | toJSON }}{{ end }}
 SOURCE_FORGEJO_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
 EOT
         env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/forgejo-automation-token"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
     }
     task "source-code-hosting-service" {
@@ -113,6 +119,7 @@ EOT
         command = "local/bin/source-code-hosting-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "source-code-hosting-service"
@@ -132,20 +139,18 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/webhook.env"
+        destination = "secrets/webhook-secret"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_WEBHOOK_SECRET={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -187,12 +192,11 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/provider.env"
+        destination = "secrets/forgejo-automation-token"
         perms = "0600"
         data = <<-EOT
-SOURCE_FORGEJO_AUTOMATION_TOKEN={{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value }}{{ end }}
 EOT
-        env = true
       }
       template {
         change_mode = "restart"

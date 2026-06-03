@@ -19,6 +19,7 @@ job "forgejo" {
       driver = "raw_exec"
       user = "root"
       vault {
+        env  = false
         role = "forgejo-runtime"
       }
       identity {
@@ -164,6 +165,7 @@ EOT
       driver = "raw_exec"
       user = "root"
       vault {
+        env  = false
         role = "forgejo-runtime"
       }
       identity {
@@ -270,6 +272,7 @@ EOT
       driver = "raw_exec"
       user = "root"
       vault {
+        env  = false
         role = "forgejo-runtime"
       }
       identity {
@@ -364,9 +367,10 @@ def ensure_user():
     sqlite_exec("UPDATE user SET is_admin = 1 WHERE lower_name = 'forgejo-automation';")
 
 def bao_client():
-    token = os.environ.get("BAO_TOKEN") or os.environ.get("VAULT_TOKEN")
+    token_path = pathlib.Path(os.environ.get("NOMAD_SECRETS_DIR", "secrets")) / "vault_token"
+    token = token_path.read_text(encoding="utf-8").strip()
     if not token:
-        raise SystemExit("OpenBao workload token is required")
+        raise SystemExit("OpenBao workload token file is empty")
     addr = (os.environ.get("BAO_ADDR") or os.environ.get("VAULT_ADDR") or "https://127.0.0.1:8200").rstrip("/")
     ca = os.environ.get("BAO_CACERT") or os.environ.get("VAULT_CACERT") or "/etc/verself/openbao/ca.pem"
     ctx = ssl.create_default_context(cafile=ca)

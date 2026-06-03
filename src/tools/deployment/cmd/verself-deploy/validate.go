@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/verself/deployment-tools/internal/deploycontract"
-	"github.com/verself/deployment-tools/internal/siteconfig"
+	"github.com/verself/deployment-service/deploycontract"
+	"github.com/verself/deployment-service/siteconfig"
 )
 
 type validateOptions struct {

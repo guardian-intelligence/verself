@@ -139,7 +139,7 @@ operator checkout
 
 | Term | Layer | Meaning |
 | --- | --- | --- |
-| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, OpenBao seed metadata, and catalog declarations under `src/host/sites/<site>/`. |
+| Site | Repo/operator | A checked-in deployment environment such as `prod`, `beta`, `gamma`, or `dev-shovon`. It owns host vars, inventory, provisioning input, and catalog declarations under `src/host/sites/<site>/`. |
 | Company | Business intent | The external business being created or operated. It supplies display name, owner identity, brand/domain intent, and billing/legal semantics. |
 | Organization | Product tenant | The IAM, billing, policy, and membership boundary in hosted Verself. A company is represented by one primary organization. |
 | Domain | DNS/resource | A DNS name attached to a company, organization, or service origin. `product_domain` names the hosted Verself product root; `company_domain` names the business. |
@@ -321,7 +321,7 @@ Durable local state is append-or-replace by resource kind: profiles, accounts,
 and active context update XDG config/data, company records live under XDG data, run records
 append under XDG state, cached discovery is rebuildable under XDG cache, and
 secret material is stored by reference in the credential store or imported into
-catalog-approved OpenBao seed bundles. Public bootstrap option overrides affect
+OpenBao runtime paths. Public bootstrap option overrides affect
 the current run unless the user also writes them through `verself company`.
 
 ## Profile Model
@@ -640,32 +640,33 @@ verself company use guardian
 verself company inspect guardian --json
 ```
 
-Company options are supplied through environment variables, stdin, explicit
-non-secret values, or structured field sets:
+Company options are supplied through stdin, explicit non-secret values, or
+structured field sets:
 
 ```text
-verself company options add guardian cloudflare.api_token --from-env CLOUDFLARE_API_TOKEN
-verself company options add guardian latitude.api_token --from-env LATITUDESH_AUTH_TOKEN
+printf '%s' "$CLOUDFLARE_ACCOUNT_ADMIN_A" | verself company options add guardian cloudflare.account_admin_a --stdin
+printf '%s' "$CLOUDFLARE_ACCOUNT_ADMIN_B" | verself company options add guardian cloudflare.account_admin_b --stdin
+printf '%s' "$LATITUDESH_AUTH_TOKEN" | verself company options add guardian latitude.api_token --stdin
 verself company options set guardian latitude.project_id --value <project-id>
 verself company options set guardian latitude.region --value ASH
 verself company options set guardian latitude.plan --value f4-metal-medium
-verself company options add guardian stripe.secret_key --from-env STRIPE_SECRET_KEY
-verself company options add guardian stripe.webhook_secret --from-env STRIPE_WEBHOOK_SECRET
+printf '%s' "$STRIPE_SECRET_KEY" | verself company options add guardian stripe.secret_key --stdin
+printf '%s' "$STRIPE_WEBHOOK_SECRET" | verself company options add guardian stripe.webhook_secret --stdin
 verself company options set guardian stripe.publishable_key --value "$STRIPE_PUBLISHABLE_KEY"
 verself company options set guardian stripe.default_currency --value usd
 ```
 
 Token-valued command-line flags are avoided because shells record argv in
-history and process listings. Secret-valued options use `--stdin`, `--from-env`,
-`--from-file`, a credential-store prompt, or OpenBao import.
+history and process listings. Secret-valued options use `--stdin`, a
+credential-store prompt, or controller OpenBao import.
 
 `company configure` writes the shared local store:
 
 - company records under `$XDG_DATA_HOME/verself/companies/<company>.json`;
 - active company pointer under `$XDG_CONFIG_HOME/verself/config.json`;
 - credential references in the company record;
-- secret values in the credential store or OpenBao seed import when explicitly
-  requested.
+- secret values in the credential store or controller OpenBao import when
+  explicitly requested.
 
 For Guardian, the company record derives these seeding inputs:
 
@@ -698,7 +699,6 @@ verself bootstrap --company guardian --option stripe.default_currency=usd
 - `.verself/bootstrap/manifest.yaml`;
 - `src/host/sites/<site>/vars.yml`;
 - `src/host/sites/<site>/provisioning.tfvars.json.template`;
-- `src/host/sites/<site>/openbao-seed.manifest.yaml`;
 - `src/<cli_name>-cli/` when rendering a named CLI;
 - bootstrap run records under `$XDG_STATE_HOME/verself/bootstrap/<run-id>.json`.
 
@@ -731,7 +731,7 @@ An option has:
 | `value_ref` | Redacted local reference, never the raw secret. |
 | `classification` | Derived provider, kind, capability set, and confidence. |
 | `purpose` | `infrastructure`, `runtime_integration`, `identity`, `notification`, `billing`, or `backup`. |
-| `render_targets` | Site vars, provisioning tfvars, OpenBao seed bundle, bootstrap manifest, README, or service config template. |
+| `render_targets` | Site vars, provisioning tfvars, OpenBao runtime path, bootstrap manifest, README, or service config template. |
 | `required_by` | Phase, command surface, or service capability that cannot run without this option. |
 
 Opaque credentials are classified from value shape, environment variable name,
@@ -741,15 +741,15 @@ with `fields` instead of `secret`. Ambiguous values produce
 
 Initial local rendering has no hard runtime integration requirement. Every
 third-party runtime integration the deployed installation needs still belongs
-in the option catalog so operator artifacts can include the right OpenBao seed
-entries, service config keys, and verification commands.
+in the option catalog so operator artifacts can include the right OpenBao
+targets, service config keys, and verification commands.
 
 Initial option catalog:
 
 | Area | Options | Required by |
 | --- | --- | --- |
 | Compute | Latitude.sh API token, project ID, region, plan, SSH key policy | Checked-in provisioning task before `aspect deploy` |
-| DNS and TLS | Cloudflare API token, account ID, zone ID, DNS zone intent | DNS reconciliation and host convergence tasks before or during `aspect deploy` |
+| DNS and TLS | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent | Prod control-plane DNS reconciliation and certificate projection before or during `aspect deploy` |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
 | Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and company addresses |
@@ -761,13 +761,12 @@ and verification evidence. Service code then consumes generated config through
 the normal service runtime and never through CLI-only shortcuts.
 
 Secret-valued options store metadata and a `value_ref`; the plaintext lives in
-the company secret store or the catalog-approved OpenBao target. `company
-options add --from-env` is a convenience that writes the secret value and the
-option metadata in one transaction.
+the company secret store or the catalog-approved OpenBao target.
 
-Bootstrap tokens and unseal material are scoped to the target site. Runtime
-services authenticate to OpenBao with SPIFFE JWT-SVIDs mapped to scoped
-policies.
+Site root keys and unseal material are scoped to the target site. Global
+provider authorities such as Cloudflare DNS/TLS live in the prod controller and
+project derived state to target sites. Runtime services authenticate to OpenBao
+with SPIFFE JWT-SVIDs mapped to scoped policies.
 
 ## Derivation Rules [DESCOPED]
 
@@ -847,7 +846,7 @@ Resolved by later provisioning and seeding commands:
 
 Generated by bootstrap rendering:
 
-- OpenBao seed-bundle manifests for generated site secrets;
+- OpenBao runtime secret declarations and generated bootstrap evidence;
 - bootstrap run identifiers;
 - rendered artifact manifest hashes.
 
@@ -870,7 +869,6 @@ writes the artifacts the operator's `aspect deploy` will consume:
 | `src/<cli_name>-cli/` | CLI package or build target that emits the chosen command name. |
 | `src/host/sites/<site>/vars.yml` | Rendered site variables, domains, service origins, and canary defaults. |
 | `src/host/sites/<site>/provisioning.tfvars.json.template` | Latitude/OpenTofu input template with provider-specific placeholders. |
-| `src/host/sites/<site>/openbao-seed.manifest.yaml` | Catalog-approved seed-bundle metadata for generated and supplied secrets. |
 | `README.md` | Operator next commands using `<cli_name>`, owner email, organization name, and selected site. |
 
 The operator-local flow is:
@@ -1012,13 +1010,12 @@ normal organization membership.
 - Profile and account config store no bearer tokens, refresh tokens, provider
   tokens, or admin credentials. Account config stores only a credential
   reference and non-secret subject/org metadata.
-- Provider tokens enter company options through stdin, environment variables, OS
-  credential stores, or catalog-approved OpenBao imports.
+- Provider tokens enter company options through stdin, OS credential stores, or
+  catalog-approved OpenBao imports.
 - Generated secrets use cryptographic randomness and are written to encrypted
   storage.
-- Secret updates use stdin, environment variables, files, credential-store
-  prompts, or OpenBao import commands. `--value` is reserved for non-secret
-  options.
+- Secret updates use stdin, credential-store prompts, or OpenBao import
+  commands. `--value` is reserved for non-secret options.
 - The Zitadel admin PAT is consumed by `iam-service`, component reconcilers, and
   repo-local operator/seeding logic; routine CLI commands call service APIs.
 - Mutating commands set idempotency keys through SDK middleware.

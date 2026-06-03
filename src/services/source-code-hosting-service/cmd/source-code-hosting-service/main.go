@@ -76,9 +76,9 @@ func run() error {
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
 	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
-	forgejoToken := cfg.RequireString("SOURCE_FORGEJO_AUTOMATION_TOKEN")
+	forgejoToken := cfg.RequireCredential("forgejo-automation-token")
 	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
-	webhookSecret := cfg.CredentialOr("webhook-secret", cfg.String("SOURCE_WEBHOOK_SECRET", ""))
+	webhookSecret := cfg.RequireCredential("webhook-secret")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {

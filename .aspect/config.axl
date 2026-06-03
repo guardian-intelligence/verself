@@ -32,7 +32,6 @@ load(
 )
 load(
     ".aspect/tasks/canary.axl",
-    canary_post_deploy = "post_deploy",
     canary_service_discovery = "service_discovery",
 )
 load(".aspect/tasks/check.axl", "check")
@@ -53,17 +52,14 @@ load(
     ".aspect/tasks/dev.axl",
     dev_hooks_install = "hooks_install",
     dev_install = "install",
-    dev_sops_init = "sops_init",
 )
 load(
     ".aspect/tasks/host_configuration.axl",
-    host_configuration_edit_secrets = "edit_secrets",
     host_configuration_operator_access_handoff = "operator_access_handoff",
 )
 load(
     ".aspect/tasks/integrations.axl",
-    integrations_cloudflare_dns = "cloudflare_dns",
-    integrations_cloudflare_r2_control_plane = "cloudflare_r2_control_plane",
+    integrations_cloudflare_control_plane = "cloudflare_control_plane",
     integrations_stripe_projects = "stripe_projects",
 )
 load(
@@ -92,12 +88,10 @@ load(
 )
 load(
     ".aspect/tasks/site.axl",
+    site_bootstrap_deploy = "bootstrap_deploy",
     site_converge_host = "converge_host",
     site_inventory_write = "inventory_write",
-    site_materialize_seed = "materialize_seed",
     site_root_handoff = "root_handoff",
-    site_seed_template = "seed_template",
-    site_validate_seed = "validate_seed",
 )
 load(".aspect/tasks/tidy.axl", "tidy")
 load(".aspect/tasks/vp.axl", "vp")
@@ -123,20 +117,16 @@ def config(ctx):
     ctx.tasks.add(release_npm_probe)
 
     # aspect host ...
-    ctx.tasks.add(host_configuration_edit_secrets)
     ctx.tasks.add(host_configuration_operator_access_handoff)
 
     # aspect site ...
-    ctx.tasks.add(site_seed_template)
-    ctx.tasks.add(site_validate_seed)
-    ctx.tasks.add(site_materialize_seed)
     ctx.tasks.add(site_inventory_write)
     ctx.tasks.add(site_root_handoff)
     ctx.tasks.add(site_converge_host)
+    ctx.tasks.add(site_bootstrap_deploy)
 
     # aspect integrations ...
-    ctx.tasks.add(integrations_cloudflare_dns)
-    ctx.tasks.add(integrations_cloudflare_r2_control_plane)
+    ctx.tasks.add(integrations_cloudflare_control_plane)
     ctx.tasks.add(integrations_stripe_projects)
 
     # aspect db pg|ch|tb ...
@@ -151,7 +141,6 @@ def config(ctx):
 
     # aspect dev ...
     ctx.tasks.add(dev_install)
-    ctx.tasks.add(dev_sops_init)
     ctx.tasks.add(dev_hooks_install)
 
     # aspect persona ...
@@ -181,5 +170,4 @@ def config(ctx):
     ctx.tasks.add(mail_test_accounts_delete)
 
     # aspect canary ...
-    ctx.tasks.add(canary_post_deploy)
     ctx.tasks.add(canary_service_discovery)

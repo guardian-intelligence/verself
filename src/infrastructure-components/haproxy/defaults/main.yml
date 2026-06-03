@@ -2,23 +2,16 @@
 haproxy_config_dir: /etc/haproxy
 haproxy_nomad_upstreams_config: "{{ haproxy_config_dir }}/nomad-upstreams.cfg"
 haproxy_cert_dir: /etc/haproxy/certs
+haproxy_public_certificate_projection_dir: "{{ playbook_dir }}/../../../../.verself/site-bootstrap/{{ verself_site | default('prod') }}/tls/haproxy"
 haproxy_map_dir: /etc/haproxy/maps
 haproxy_log_dir: /var/log/haproxy
 haproxy_shm_stats_file: /var/lib/haproxy/edge-stats.shm
-haproxy_secret_dir: /var/lib/verself/access/haproxy
 haproxy_well_known_dir: /var/www/verself/.well-known
 haproxy_verself_discovery_manifest_path: "{{ haproxy_well_known_dir }}/verself"
 haproxy_iam_service_state_dir: /var/lib/verself/bootstrap/iam-service
 haproxy_verself_cli_client_id_path: "{{ haproxy_iam_service_state_dir }}/oidc-cli-client-id"
 haproxy_verself_product_api_audience_path: "{{ haproxy_iam_service_state_dir }}/auth-audience"
-haproxy_lego_path: /var/lib/lego
-haproxy_lego_email: "hostmaster@{{ verself_domain }}"
-# lego's authoritative DNS checker can select Cloudflare IPv6 nameservers before host IPv6 egress is fully reliable.
-haproxy_lego_dns_propagation_disable_ans: false
-haproxy_lego_dns_propagation_wait: 60s
-haproxy_lego_dns_resolvers: []
 haproxy_runtime_library_path: /opt/verself/profile/lib/haproxy
-haproxy_cloudflare_token_path: "{{ haproxy_secret_dir }}/cloudflare-dns-api-token"
 haproxy_global_maxconn: 20000
 haproxy_public_frontend_maxconn: 12000
 haproxy_internal_frontend_maxconn: 2000
@@ -89,8 +82,31 @@ haproxy_cloudflare_trusted_ips:
   - "2a06:98c0::/29"
   - "2c0f:f248::/32"
 
-haproxy_firecracker_host_service_ip: "{{ firecracker_host_service_ip }}"
+haproxy_firecracker_host_service_interface: "{{ firecracker_host_service_interface | default('verself-host0') }}"
+haproxy_firecracker_host_service_ip: "{{ firecracker_host_service_ip | default('10.255.0.1') }}"
 haproxy_metrics_address: 127.0.0.1:8404
+haproxy_public_route_declaration_files:
+  - "{{ playbook_dir }}/../../../../src/infrastructure-components/forgejo/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/infrastructure-components/grafana/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/infrastructure-components/pomerium/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/infrastructure-components/stalwart/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/infrastructure-components/verdaccio/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/analytics-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/billing-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/deployment-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/distribution-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/email-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/github-integration-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/governance-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/iam-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/notifications-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/profile-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/projects-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/sandbox-rental-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/secrets-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/services/source-code-hosting-service/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/viteplus-monorepo/apps/company/deploy/public-routes.yml"
+  - "{{ playbook_dir }}/../../../../src/viteplus-monorepo/apps/verself-web/deploy/public-routes.yml"
 
 haproxy_h2c_components:
   - billing

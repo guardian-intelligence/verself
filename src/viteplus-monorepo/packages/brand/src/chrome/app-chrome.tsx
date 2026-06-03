@@ -48,7 +48,7 @@ export interface AppChromeProps {
   readonly section?: string | null;
   // Whether to draw the chrome's bottom rule. Default true. Layouts may set
   // false on routes where the page already provides its own separation
-  // (e.g. /newsroom/$slug, where the article header is the masthead).
+  // (e.g. /news/$slug, where the article header is the masthead).
   readonly bottomRule?: boolean;
   // Whether the masthead pins to the top on scroll. Default true. Letters
   // sets false: its paper is a scroll-locked sheet, so the masthead must
@@ -108,7 +108,7 @@ export function AppChrome({
   // The chrome reads as one bar across all three treatments: same width,
   // same items, same placement. Each treatment paints itself via the
   // var(--treatment-*) ramp, but the geometry stays uniform so the masthead
-  // does not change shape when a reader crosses /letters → /newsroom → /.
+  // does not change shape when a reader crosses /letters → /news → /.
   // Consumers align their content wrappers to the same max-w-6xl so the
   // wordmark and the page body sit on the same column. The rule is drawn
   // on the inner container, never on the <header> element, so it cannot

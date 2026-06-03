@@ -33,7 +33,7 @@ export function NewsroomStrip() {
 
   return (
     <aside
-      aria-label="From the Newsroom"
+      aria-label="From News"
       style={{
         background: "var(--color-flare)",
         color: "var(--color-ink)",
@@ -51,7 +51,7 @@ export function NewsroomStrip() {
               margin: 0,
             }}
           >
-            From the Newsroom · {item.date}
+            From News · {item.date}
           </p>
           <p
             style={{

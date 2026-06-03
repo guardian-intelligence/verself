@@ -32,9 +32,5 @@ go_library(
 go_test(
     name = "app_test",
     srcs = ["app_test.go"],
-    data = [
-        "//src/tools/dev/binaries:age-keygen",
-        "//src/tools/dev/binaries:sops",
-    ],
     embed = [":app"],
 )

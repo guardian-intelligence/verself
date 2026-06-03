@@ -1,0 +1,8 @@
+---
+base_nomad_runtime_users:
+  - name: company
+    home: /var/lib/company
+  - name: spicedb
+    home: /var/lib/spicedb
+  - name: verself-web
+    home: /var/lib/verself-web

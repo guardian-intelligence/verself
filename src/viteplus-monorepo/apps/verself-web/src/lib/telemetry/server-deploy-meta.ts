@@ -14,6 +14,7 @@ export function deployMetaTags(): DeployMetaTag[] {
   }
   const env = process.env;
   const tags: DeployMetaTag[] = [
+    { name: DEPLOY_META.site, content: env.VERSELF_SITE ?? "" },
     { name: DEPLOY_META.runKey, content: env.VERSELF_DEPLOY_RUN_KEY ?? "" },
     { name: DEPLOY_META.id, content: env.VERSELF_DEPLOY_ID ?? "" },
     { name: DEPLOY_META.commitSha, content: env.VERSELF_COMMIT_SHA ?? "" },

@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { Menu } from "lucide-react";
 
 // TopNav — the single masthead nav surfaced on every Guardian treatment.
-// Three rooms: Home (Workshop) · Letters · Newsroom. The same component
+// Three rooms: Home (Workshop) · Letters · News. The same component
 // renders under all three treatment scopes so the chrome reads uniformly:
 // same width, same items, same placement. Active-state styling resolves
 // from `var(--treatment-ink)` so the indicator repaints per treatment
@@ -14,7 +14,7 @@ import { Menu } from "lucide-react";
 // need instead of opening a full-screen disclosure.
 
 interface NavItem {
-  readonly to: "/" | "/letters" | "/newsroom";
+  readonly to: "/" | "/letters" | "/news";
   readonly label: string;
   readonly match: (pathname: string) => boolean;
 }
@@ -23,9 +23,9 @@ const ITEMS: ReadonlyArray<NavItem> = [
   { to: "/", label: "Home", match: (p) => p === "/" },
   { to: "/letters", label: "Letters", match: (p) => p === "/letters" || p.startsWith("/letters/") },
   {
-    to: "/newsroom",
-    label: "Newsroom",
-    match: (p) => p === "/newsroom" || p.startsWith("/newsroom/"),
+    to: "/news",
+    label: "News",
+    match: (p) => p === "/news" || p.startsWith("/news/"),
   },
 ];
 

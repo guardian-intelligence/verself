@@ -57,7 +57,7 @@ Use the repo wrapper so the command runs from the correct site worktree:
 ```text
 aspect integrations stripe-projects --site=gamma --action=status
 aspect integrations stripe-projects --site=gamma --action=init --confirm
-aspect integrations stripe-projects --site=gamma --action=search --query=resend
+aspect integrations stripe-projects --site=gamma --action=search --query=webhook
 aspect integrations stripe-projects --site=gamma --action=env-pull --confirm
 ```
 
@@ -75,11 +75,11 @@ performed by an authenticated principal and leaves audit evidence.
 S0 repo_metadata_only
   -> S1 stripe_authenticated
   -> S2 provider_bootstrap_credentials_available
-  -> S3 controller_openbao_seeded
+  -> S3 controller_openbao_imported
   -> S4 bare_metal_allocated
   -> S5 host_openbao_installed
   -> S6 site_openbao_initialized
-  -> S7 site_openbao_seeded
+  -> S7 runtime_secret_policy_reconciled
   -> S8 nomad_ready
   -> S9 deployed
   -> S10 steady_state_rotation
@@ -90,34 +90,34 @@ S0 repo_metadata_only
 | `S0 repo_metadata_only` | Catalog, site vars, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
 | `S1 stripe_authenticated` | The operator or agent has authenticated Stripe CLI/Projects locally. | Stripe config on the principal's machine only. | Initialize or select the site provider project. |
 | `S2 provider_bootstrap_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Bootstrap session memory until imported. | Import catalog-approved bootstrap keys. |
-| `S3 controller_openbao_seeded` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
+| `S3 controller_openbao_imported` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
 | `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
-| `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No site secrets copied yet. | Start OpenBao and initialize the site store. |
-| `S6 site_openbao_initialized` | The host OpenBao Raft store, recovery material, auth mounts, and base policies exist for this site. The initial root token is used only inside the `bao operator init` transaction. | Site OpenBao and operator-held recovery material. | Import a wrapped site seed bundle. |
-| `S7 site_openbao_seeded` | Runtime secrets, provider credentials, and transit keys are present in site OpenBao. | Site OpenBao is the source of truth. | Hand off to Nomad. |
+| `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No runtime secret values copied yet. | Start OpenBao and initialize the site store. |
+| `S6 site_openbao_initialized` | The host OpenBao Raft store, wrapped recovery material, auth mounts, audit sinks, KV mounts, transit mount, and base policies exist for this site. The initial root token is used only inside the bootstrap transaction. | Site OpenBao and operator-held recovery material. | Reconcile runtime secret declarations and workload auth. |
+| `S7 runtime_secret_policy_reconciled` | Generated runtime secrets are created through OpenBao transit/random, produced-secret placeholders, external secret declarations, OpenBao policies, and Nomad JWT roles are present. External provider values may still be missing until their integration lifecycle runs. | OpenBao is the source of truth for secret values and metadata. | Hand off to Nomad. |
 | `S8 nomad_ready` | Base OS, SPIRE, OpenBao workload auth, and Nomad are ready. | Runtime reads use OpenBao/secrets-service. | Nomad deploys service jobs. |
 | `S9 deployed` | Services run from Nomad and consume only OpenBao-backed runtime secrets. | Site OpenBao and product KV. | Post-deploy canaries pass. |
 | `S10 steady_state_rotation` | Future credential changes use catalog-driven import, rotate, and revoke commands. | OpenBao only. | Repeat from provider handoff or rotation transition. |
 
 The phrase "copy OpenBao" means install/copy OpenBao runtime assets to the new
-host and then seed that site's OpenBao from a catalog-approved, wrapped bundle.
-It does not mean copying prod's OpenBao data, root token, unseal keys, Raft
-store, or runtime secret values into gamma.
+host and then initialize that site's OpenBao store. It does not mean copying
+prod's OpenBao data, root token, unseal keys, Raft store, or runtime secret
+values into gamma.
 
 The first-site bootstrap is the only special case. If there is no controller
 OpenBao yet, the bootstrap session may hold the small set of secret-zero values
 in process memory long enough to bring up the first OpenBao. Once any controller
-OpenBao exists, new sites use `S3 controller_openbao_seeded` instead of
+OpenBao exists, new sites use `S3 controller_openbao_imported` instead of
 plaintext files.
 
 ### Transition Rules
 
 - No transition writes plaintext credentials to git, `.env`, generated Bazel
   outputs, shell history, or logs.
-- `bootstrap_shared` values may be used by provisioning and DNS tasks, but they
-  cannot be runtime secret sources.
-- Provider-project imports reject environment variables that are not declared in
-  the catalog.
+- Controller-owned provider authority may be used by provisioning, DNS, and TLS
+  tasks. It cannot be a runtime secret source.
+- Provider-project imports reject variables that are not declared in the
+  catalog.
 - Host OpenBao initializes its own site-local Raft store and recovery material.
   Environments never share OpenBao root tokens, unseal keys, or Raft state.
 - The `bao operator init` response is the only normal path that exposes an
@@ -130,10 +130,88 @@ plaintext files.
   that path.
 - Runtime services authenticate with SPIFFE JWT-SVIDs or Nomad workload
   identity mapped to scoped OpenBao policies.
+- Runtime declarations with `generated` source request entropy from OpenBao
+  transit/random and then store the resulting value in OpenBao KV. Workload
+  reconcilers do not use process-local RNG for runtime secret material.
 - Owner-local deployment declarations define every runtime secret, provider
   credential, host credential projection, and consumer.
+- Missing product-provider external OpenBao secrets do not block substrate reconciliation.
+  The consuming workload or promotion gate reports the absent runtime secret.
 - The successful transition to `S9 deployed` requires provider-specific canary
   evidence, not just a green Nomad allocation.
+
+## Cloudflare Control Plane
+
+Cloudflare account authority is a prod control-plane concern. Prod owns global
+Cloudflare DNS reconciliation and TLS certificate issuance for every Verself
+site. Target sites receive DNS records, certificate projections, and scoped R2
+credentials. They do not receive Cloudflare DNS API tokens.
+
+Cloudflare R2 credentials are account-scoped provider credentials. Verself keeps
+the Cloudflare account boundary in controller OpenBao and projects narrower
+bucket credentials into site OpenBao. The Cloudflare account token is never a
+runtime service credential.
+
+The site root key initializes and unseals the site OpenBao instance. Site
+OpenBao then creates runtime DEKs and stores imported provider credentials under
+site-local policy. Cloudflare account tokens, R2 temporary credentials, DNS
+authority, Stripe keys, Resend full-access authority, and GitHub App private
+material originate from their provider control planes and enter OpenBao through
+the approved import or rotation path. Resend sending keys are child credentials
+created by `email-service`.
+
+Controller OpenBao stores two equivalent account-admin credentials:
+
+```text
+kv-controller/data/integrations/cloudflare/account-admin/a
+kv-controller/data/integrations/cloudflare/account-admin/b
+```
+
+Each credential has a seven-day expiration and the minimal Cloudflare account
+permissions required to verify, update, roll, create, and delete account-owned
+R2 child tokens, reconcile DNS, and issue DNS-01 certificates. The two-token
+shape is required for availability during rotation: one token extends and rolls
+the other, the new value is written and verified, then the fresh token extends
+and rolls the first. Cloudflare DNS authority is not projected into target
+sites. R2 blast radius is controlled with bucket-scoped child credentials.
+
+DNS authority is verified by listing the hosted zones referenced by target site
+vars and recording zone ID fingerprints. `aspect integrations
+cloudflare-control-plane --site=<site> --action=reconcile-dns` runs from the
+prod controller and applies the site's `cloudflare_dns_records` with the
+account-admin pair. It produces DNS records and operational evidence, not site
+credential material.
+
+TLS/certificate issuance uses the same prod Cloudflare authority. Certificate
+material is projected to target-site OpenBao/Nomad or host convergence outputs
+as derived secret material. Site hosts do not run Cloudflare DNS-01 issuers.
+
+R2 buckets are capability resources:
+
+| Capability | Bucket | Child credential |
+| --- | --- | --- |
+| Deployment artifact upload | `verself-deployment-artifacts` | read/write deployment publisher |
+| Nomad artifact fetch | `verself-deployment-artifacts` | read-only deployment getter |
+| Recovery and backup bytes | `verself-recovery` | recovery reader/writer |
+
+The site-local Cloudflare R2 control-plane receives only the deployment
+publisher access key ID and secret access key from site OpenBao. It locally
+signs short-lived upload credentials for each upload session and never consumes
+account-admin authority.
+
+Site identity is encoded in object prefixes and policy metadata:
+
+```text
+verself-deployment-artifacts/<site>/sha256/<artifact-sha256>/...
+verself-deployment-artifacts/<site>/candidate/<deploy-run-key>/...
+verself-recovery/<site>/...
+```
+
+The rotation job creates child token generations before deleting old
+generations. A run that cannot verify the new generation leaves the old
+generation active, emits a structured failure event, and emails the operator.
+Silent retries, implicit fallback credentials, and deletion before verification
+are invalid state transitions.
 
 ## Storage Classes
 
@@ -141,7 +219,7 @@ plaintext files.
 | --- | --- | --- | --- |
 | `bootstrap_session` | Operator or privileged-agent process memory | Initial import command | Secret-zero values only. Do not persist. |
 | `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
-| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning and seed-bundle tools | Pre-host source of truth for site bootstrap inputs. |
+| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning tools | Pre-host source of truth for site bootstrap inputs. |
 | `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
 | `host_runtime_file` | Nomad allocation `secrets/` directory or component-owned runtime config | Host daemons and local jobs | Derived projection only. Files are never secret sources and deploy tooling does not read them. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
@@ -157,29 +235,30 @@ webhook verification, ClickHouse canaries, or host convergence.
 
 | Provider surface | Stripe Projects role | Verself-owned role |
 | --- | --- | --- |
-| Resend or alternate email provider | Candidate provider provisioning and credential handoff. | Sender-domain DNS, runtime secret import, email-service canary. |
+| Resend or alternate email provider | Candidate provider provisioning and full-access authority handoff. | Child sending-key creation, sender-domain policy, runtime secret ownership, email-service canary. |
 | PostHog, Sentry, OpenRouter, queue/cache/search providers | Preferred provisioning path when selected. | Catalog validation, OpenBao import, service config, canary evidence. |
-| Cloudflare DNS/TLS | Possible provider account linking for supported services. | Parent-zone DNS token remains a bootstrap exception when using `verself.sh`. |
-| Stripe Billing | No replacement for the product billing integration. | Billing service Stripe client, webhook endpoint, signing secret, catalog seed. |
+| Cloudflare DNS/TLS | Possible provider account linking for supported services. | Prod Cloudflare control-plane reconciles DNS and issues certificates for every site. |
+| Stripe Billing | No replacement for the product billing integration. | Billing service Stripe client, webhook endpoint, signing secret, catalog entry. |
 | GitHub App and hosted runners | Provider-specific setup. | GitHub App, webhooks, runner prefix/group, runtime secrets, canaries. |
 | Latitude bare-metal provisioning | Provider-specific setup. | OpenTofu/Ansible provisioning, inventory, host convergence. |
 
 ## Bootstrap Exceptions
 
 Some provider credentials cannot be fully isolated because the provider scopes
-authorization above the environment boundary. These credentials must be marked
-`bootstrap_shared`, never imported as runtime secrets, and used only by
+authorization above the environment boundary. These credentials remain
+controller-owned, are never imported as runtime secrets, and are used only by
 operator-controlled or privileged-agent-controlled tasks.
 
 | Provider surface | Reason | Allowed use |
 | --- | --- | --- |
-| Cloudflare parent-zone DNS token for `verself.sh` | Cloudflare API tokens scope DNS at zone level, not individual subdomains. | Delegate or reconcile gamma DNS records. |
+| Cloudflare account-admin pair | Cloudflare DNS/TLS and account-owned R2 are global account resources. | Reconcile DNS, issue certificates, create R2 child credentials. |
 | Cloudflare Email Routing token for the company domain | Company mail routing is account or zone scoped. | Operator mailbox routing. Avoid gamma use unless explicitly needed. |
 | Shared provider billing account for Projects paid tiers | Payment method belongs to the Stripe account used by Projects. | Provider spend authorization with explicit limits. |
 
 A bootstrap exception must include an owner, scope, provider permissions,
 permitted commands, rotation path, and blast-radius statement. Runtime
-declarations that reference a `bootstrap_shared` credential fail validation.
+declarations that reference a controller-owned provider authority credential
+fail validation.
 
 ## Catalog Entry
 
@@ -229,8 +308,8 @@ integrations:
         target: site_vars
         site_var: stripe_publishable_key
     verification:
-      - command: aspect deploy --site=gamma --sha=HEAD --post-deploy-checks=medium
-      - evidence: billing Stripe webhook route accepts signed sandbox event
+      - command: aspect deploy --site=gamma --sha=HEAD
+      - evidence: billing Stripe webhook provider canary passes for the deploy run key
 ```
 
 For a Stripe Projects-backed provider, `source` names the Projects environment
@@ -323,7 +402,7 @@ aspect integrations credentials rotate --site=gamma --key=<catalog-key>
 
 `credentials pull` imports provider-project values into the catalog-approved
 OpenBao targets without printing plaintext. It must reject unrecognized
-environment variable names from `.env` or provider-project output.
+variable names from provider-project output.
 
 Runtime services get credentials through OpenBao and secrets-service. They do
 not read provider project files, local `.env`, shell history, GitHub Actions
@@ -356,7 +435,7 @@ secrets, or operator terminals.
 
    `stripe projects env --pull` refreshes the local vault and `.env` file for
    local handoff. The import tool reads only catalog-approved variable names and
-   writes OpenBao seed material.
+   writes OpenBao entries.
 
 5. Add service ownership.
 
@@ -394,7 +473,7 @@ The catalog validator should run in CI and before `aspect deploy`.
   `.projects/vault`, `.projects/cache`, or generated artifacts.
 - Runtime services never read local provider workspaces, shell environments,
   GitHub Actions secrets, or operator terminals.
-- Provider project imports reject unknown environment variable names.
+- Provider project imports reject unknown variable names.
 - Rotation metadata exists for all `secret`, `key_material`, and
   `webhook_secret` entries.
 
@@ -406,8 +485,8 @@ Credential and integration operations emit operational evidence:
 | --- | --- |
 | Catalog validation | Site, integration key, owner, storage target, missing or extra keys. |
 | Provider import | Site, provider project ID, variable names, target keys, value fingerprints, no plaintext. |
-| Host materialization | Credstore paths, groups, modes, consumer components. |
-| OpenBao seed | Mount, namespace, secret names, version fingerprints. |
+| Host materialization | Bootstrap output paths and generated secret fingerprints. |
+| OpenBao reconciliation | Mount, namespace, secret names, version fingerprints, policies, and roles. |
 | Runtime read | Workload SPIFFE ID, secret name, OpenBao role, result class. |
 | Provider canary | Provider, resource ID, endpoint, route, deploy run key, pass/fail. |
 
@@ -420,8 +499,8 @@ provider-specific canary evidence in ClickHouse.
 2. Add owner-local declaration validators for runtime secrets, host credential
    projections, provider variables, and bootstrap-shared exceptions.
 3. Add site catalog entries and mark bootstrap-shared Cloudflare exceptions.
-4. Add bootstrap session, controller OpenBao seed, and site OpenBao seed-bundle
-   import commands.
+4. Add bootstrap session, controller OpenBao ingress, and site OpenBao
+   reconciliation commands.
 5. Add provider-project import for Stripe Projects-backed providers.
 6. Add rotation and provider canary evidence.
 7. Gate `aspect deploy` on catalog validation for non-bootstrap deploys.
@@ -433,3 +512,11 @@ provider-specific canary evidence in ClickHouse.
   https://docs.stripe.com/testing-use-cases
 - Stripe API key management:
   https://docs.stripe.com/keys-best-practices
+- OpenBao JWT auth method:
+  https://openbao.org/api-docs/auth/jwt/
+- Nomad Vault/OpenBao workload identity integration:
+  https://developer.hashicorp.com/nomad/docs/secure/vault
+- Nomad job `identity` block:
+  https://developer.hashicorp.com/nomad/docs/job-specification/identity
+- SPIFFE JWT-SVID:
+  https://github.com/spiffe/spiffe/blob/main/standards/JWT-SVID.md

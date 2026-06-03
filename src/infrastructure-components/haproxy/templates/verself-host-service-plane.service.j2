@@ -1,0 +1,14 @@
+[Unit]
+Description=Verself host-service plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/usr/sbin/ip link add {{ haproxy_firecracker_host_service_interface }} type dummy
+ExecStart=/usr/sbin/ip addr replace {{ haproxy_firecracker_host_service_ip }}/32 dev {{ haproxy_firecracker_host_service_interface }}
+ExecStart=/usr/sbin/ip link set dev {{ haproxy_firecracker_host_service_interface }} up
+
+[Install]
+WantedBy=multi-user.target

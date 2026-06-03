@@ -34,12 +34,16 @@ function readMetaContent(name: string): string {
 function buildResourceAttributes() {
   const attrs: Record<string, string> = {
     [ATTR_SERVICE_NAME]: "verself-web",
-    [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: "production",
   };
+  const site = readMetaContent(DEPLOY_META.site);
   const runKey = readMetaContent(DEPLOY_META.runKey);
   const id = readMetaContent(DEPLOY_META.id);
   const commitSha = readMetaContent(DEPLOY_META.commitSha);
   const supervisor = readMetaContent(DEPLOY_META.supervisor);
+  if (site) {
+    attrs[ATTR_DEPLOYMENT_ENVIRONMENT_NAME] = site;
+    attrs[RESOURCE_ATTR_KEYS.site] = site;
+  }
   if (runKey) attrs[RESOURCE_ATTR_KEYS.runKey] = runKey;
   if (id) attrs[RESOURCE_ATTR_KEYS.id] = id;
   if (commitSha) attrs[RESOURCE_ATTR_KEYS.commitSha] = commitSha;

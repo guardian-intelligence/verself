@@ -1,43 +1,35 @@
 package main
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
 )
 
-func TestLoadServerAuthTokenCreatesMissingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "r2-control-plane", "gamma.token")
-
+func TestLoadServerAuthTokenReadsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	token, err := loadServerAuthToken(config{authTokenFile: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(token) != 32 {
-		t.Fatalf("token length = %d", len(token))
+	if token != "from-file" {
+		t.Fatalf("token = %q, want file value", token)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("token file mode = %o", info.Mode().Perm())
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(string(body)) != token {
-		t.Fatal("token file did not contain generated token")
-	}
-	again, err := loadServerAuthToken(config{authTokenFile: path})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again != token {
-		t.Fatal("existing token was not reused")
+}
+
+func TestLoadServerAuthTokenRejectsMissingToken(t *testing.T) {
+	_, err := loadServerAuthToken(config{})
+	if err == nil || !strings.Contains(err.Error(), "auth token file is required") {
+		t.Fatalf("error = %v, want missing token refusal", err)
 	}
 }
 
@@ -46,6 +38,11 @@ func TestUploadServerRequiresBearerToken(t *testing.T) {
 	if server.authorized(httptest.NewRequest("POST", "/", nil)) {
 		t.Fatal("request without bearer token was authorized")
 	}
+	rawTokenReq := httptest.NewRequest("POST", "/", nil)
+	rawTokenReq.Header.Set("Authorization", "expected")
+	if server.authorized(rawTokenReq) {
+		t.Fatal("request without bearer scheme was authorized")
+	}
 	req := httptest.NewRequest("POST", "/", nil)
 	req.Header.Set("Authorization", "Bearer expected")
 	if !server.authorized(req) {
@@ -53,12 +50,25 @@ func TestUploadServerRequiresBearerToken(t *testing.T) {
 	}
 }
 
-func TestReadParentAPITokenRejectsWhitespaceSeparatedValues(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(path, []byte("one two\n"), 0o600); err != nil {
+func TestUploadServerTemporaryR2ClientUsesLocalSigning(t *testing.T) {
+	server := uploadServer{
+		cfg: config{timeout: time.Second},
+		siteCfg: siteArtifactConfig{
+			AccountID: "c3eaeffaadf7d4847684d4775c16d598",
+			Bucket:    "verself-deployment-artifacts",
+			Region:    "auto",
+		},
+		publisher: r2control.ParentCredentials{
+			AccessKeyID:     "publisher-token-id",
+			SecretAccessKey: "publisher-secret",
+		},
+	}
+
+	client, err := server.temporaryR2Client(context.Background(), r2control.TemporaryPermissionObjectReadOnly, []string{"gamma/sha256/abc/service.tar"}, time.Minute)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readParentAPIToken(path); err == nil {
-		t.Fatal("expected whitespace-separated token to fail")
+	if client == nil {
+		t.Fatal("temporary client was nil")
 	}
 }

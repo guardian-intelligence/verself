@@ -1,15 +1,4 @@
 ---
-- name: "Site secrets"
-  hosts: all
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - always
-  tasks:
-    - name: Load site secrets
-      ansible.builtin.import_tasks: tasks/site-secrets.yml
-
 - name: "Host bootstrap foundation"
   hosts: all
   become: true
@@ -60,22 +49,6 @@
         - spire
         - identity
 
-- name: "ClickHouse bootstrap"
-  hosts: infra
-  become: true
-  gather_facts: false
-  vars_files:
-    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
-  tags:
-    - bootstrap
-    - clickhouse
-    - observability
-  roles:
-    - role: clickhouse
-      tags:
-        - clickhouse
-        - observability
-
 - name: "Nomad bootstrap"
   hosts: infra
   become: true
@@ -91,3 +64,18 @@
       tags:
         - nomad
         - scheduler
+
+- name: "Public edge bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - edge
+  roles:
+    - role: haproxy
+      tags:
+        - haproxy
+        - edge

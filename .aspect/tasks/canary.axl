@@ -1,7 +1,6 @@
-"""aspect canary — operator deploy-time canaries.
+"""aspect canary — operator live-system canaries.
 
   aspect canary service-discovery [--duration=180s --rps=10 --slug=guardian-intelligence]
-  aspect canary post-deploy [--size=medium|large|all]
 
 The canary uploads the discovery-canary binary to the prod host via the
 operator SSH plane and runs it as the billing user. SPIRE issues the
@@ -11,7 +10,7 @@ catalog resolver and reports any non-2xx-or-4xx outcome.
 The implementation lives in src/tools/operator/cmd/aspect-operator.
 """
 
-load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "VERSELF_DEPLOY_TARGET", "bazel_run", "ws_path")
+load(".aspect/lib/helpers.axl", "ASPECT_OPERATOR_TARGET", "bazel_run", "ws_path")
 
 def _service_discovery_impl(ctx):
     cli_args = [
@@ -51,37 +50,5 @@ service_discovery = task(
         "slug": args.string(default = "", description = "Org slug to resolve through IAM; defaults to service_discovery_canary_org_slug from site facts."),
         "format": args.string(default = "table", description = "Output format: table | json."),
         "authz_org_id": args.string(default = "", description = "Canonical organization ID fallback used for the authorization probe."),
-    },
-)
-
-def _post_deploy_impl(ctx):
-    cli_args = [
-        "canary",
-        "--repo-root",
-        ws_path(ctx),
-        "--site",
-        ctx.args.site or "prod",
-        "--size",
-        ctx.args.size or "medium",
-    ]
-    if ctx.args.component:
-        cli_args.extend(["--component", ctx.args.component])
-    if ctx.args.job_id:
-        cli_args.extend(["--job-id", ctx.args.job_id])
-    if ctx.args.sha:
-        cli_args.extend(["--sha", ctx.args.sha])
-    return bazel_run(ctx, VERSELF_DEPLOY_TARGET, cli_args, cwd = ws_path(ctx), label = "verself-deploy canary --size=" + (ctx.args.size or "medium"))
-
-post_deploy = task(
-    implementation = _post_deploy_impl,
-    name = "post-deploy",
-    group = ["canary"],
-    summary = "Run deployable-owned post-deployment canaries by size against the current site.",
-    args = {
-        "site": args.string(default = "prod", description = "Deployment site."),
-        "size": args.string(default = "medium", description = "Canary size to run: medium, large, or all."),
-        "component": args.string(default = "", description = "Optional component key filter."),
-        "job_id": args.string(default = "", description = "Optional Nomad job id filter."),
-        "sha": args.string(default = "", description = "Optional Git SHA for canary correlation."),
     },
 )

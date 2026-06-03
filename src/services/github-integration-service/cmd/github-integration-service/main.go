@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -78,9 +77,9 @@ func run() error {
 	oauthAuthorizeURL := cfg.String("GITHUB_OAUTH_AUTHORIZE_URL", "https://github.com/login/oauth/authorize")
 	oauthTokenURL := cfg.String("GITHUB_OAUTH_TOKEN_URL", "https://github.com/login/oauth/access_token")
 	oauthRedirectURL := cfg.String("GITHUB_OAUTH_REDIRECT_URL", "")
-	privateKey := strings.TrimSpace(cfg.String("GITHUB_APP_PRIVATE_KEY", ""))
-	webhookSecret := strings.TrimSpace(cfg.String("GITHUB_WEBHOOK_SECRET", ""))
-	oauthClientSecret := strings.TrimSpace(cfg.String("GITHUB_OAUTH_CLIENT_SECRET", ""))
+	privateKey := cfg.RequireCredential("github-app-private-key")
+	webhookSecret := cfg.RequireCredential("github-webhook-secret")
+	oauthClientSecret := cfg.RequireCredential("github-oauth-client-secret")
 	runnerGroupID := cfg.Int64("GITHUB_RUNNER_GROUP_ID", 1)
 	runnerClassPrefix := cfg.String("GITHUB_RUNNER_CLASS_PREFIX", "verself-")
 	repositoryRunnerClassActiveLimit := int32FromInt(cfg.Int("GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT", 15), "GITHUB_REPOSITORY_RUNNER_CLASS_ACTIVE_LIMIT")

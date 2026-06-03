@@ -24,12 +24,12 @@ export const TREATMENT_WORDMARK_VARIANT: Record<Treatment, LockupVariant> = {
 
 // Default section suffix per treatment — the uppercase string that renders
 // after `GUARDIAN · ` in the masthead. Workshop is the house root ("/"): no
-// suffix, the mark is Guardian-the-house. Newsroom and Letters are sections:
-// the suffix is the room name. Routes that want a more specific suffix
+// suffix, the mark is Guardian-the-house. News and Letters are sections:
+// the suffix is the public section name. Routes that want a more specific suffix
 // (/design → "BRAND SYSTEM") pass it explicitly via AppChrome's `section`
 // prop and override the default.
 export const TREATMENT_DEFAULT_SECTION: Record<Treatment, string | undefined> = {
   workshop: undefined,
-  newsroom: "Newsroom",
+  newsroom: "News",
   letters: "Letters",
 };

@@ -1,11 +1,8 @@
 {
   "artifact_delivery": {
     "kind": "cloudflare_r2_control_plane",
-    "bucket": "nomad-artifacts-dev",
     "key_prefix": "sha256",
-    "cloudflare_account_id": "c3eaeffaadf7d4847684d4775c16d598",
     "control_plane_addr": "http://127.0.0.1:18732",
-    "control_plane_token_file": "r2-control-plane/dev.token",
     "getter_options": {
       "region": "auto"
     },

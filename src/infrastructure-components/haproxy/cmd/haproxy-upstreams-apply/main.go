@@ -184,7 +184,7 @@ func applyOnce(cfg config) (bool, error) {
 		return false, fmt.Errorf("haproxy validation failed after writing config set; previous files restored: %w", err)
 	}
 	if cfg.reloadUnit != "" {
-		if err := systemctl("reload", cfg.reloadUnit); err != nil {
+		if err := reloadOrStartSystemdUnit(cfg.reloadUnit); err != nil {
 			return false, err
 		}
 	}
@@ -297,10 +297,14 @@ func validateHAProxy(cfg config) error {
 	if err != nil {
 		return err
 	}
+	ldLibraryPath, err := relativePathToAbs(cfg.haproxyLDLibraryPath)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, haproxyBin, argv...)
 	// HAProxy validates after dropping privileges; do not inherit an operator-only cwd.
 	cmd.Dir = "/"
-	cmd.Env = withLDLibraryPath(os.Environ(), cfg.haproxyLDLibraryPath)
+	cmd.Env = withLDLibraryPath(os.Environ(), ldLibraryPath)
 	if cfg.haproxyUser != "" {
 		credential, err := userCredential(cfg.haproxyUser)
 		if err != nil {
@@ -316,12 +320,16 @@ func validateHAProxy(cfg config) error {
 }
 
 func commandPath(path string) (string, error) {
-	if filepath.IsAbs(path) || !strings.ContainsRune(path, '/') {
+	return relativePathToAbs(path)
+}
+
+func relativePathToAbs(path string) (string, error) {
+	if path == "" || filepath.IsAbs(path) || !strings.ContainsRune(path, '/') {
 		return path, nil
 	}
 	absPath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve command path %s: %w", path, err)
+		return "", fmt.Errorf("resolve path %s: %w", path, err)
 	}
 	return absPath, nil
 }
@@ -368,6 +376,32 @@ func withLDLibraryPath(env []string, path string) []string {
 		}
 	}
 	return append(env, "LD_LIBRARY_PATH="+path)
+}
+
+func reloadOrStartSystemdUnit(unit string) error {
+	active, err := systemdUnitActive(unit)
+	if err != nil {
+		return err
+	}
+	action := "start"
+	if active {
+		action = "reload"
+	}
+	return systemctl(action, unit)
+}
+
+func systemdUnitActive(unit string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "systemctl", "is-active", "--quiet", unit).CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 3 {
+		return false, nil
+	}
+	return false, fmt.Errorf("systemctl is-active --quiet %s: %w: %s", unit, err, strings.TrimSpace(string(out)))
 }
 
 func systemctl(action, unit string) error {

@@ -46,7 +46,6 @@ go_library(
 
 go_binary(
     name = "aspect-operator",
-    data = ["//src/tools/dev/binaries:sops"],
     embed = [":aspect-operator_lib"],
     visibility = ["//visibility:public"],
 )

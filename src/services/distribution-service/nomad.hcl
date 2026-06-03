@@ -40,6 +40,7 @@ job "distribution-service" {
         command = "local/bin/distribution-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         DISTRIBUTION_TRUSTED_BUILDERS = "__VERSELF_DISTRIBUTION_TRUSTED_BUILDERS__"
         DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -59,11 +60,10 @@ job "distribution-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -96,6 +96,7 @@ EOT
         command = "local/bin/distribution-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         DISTRIBUTION_TRUSTED_BUILDERS = "__VERSELF_DISTRIBUTION_TRUSTED_BUILDERS__"
         DISTRIBUTION_TRUSTED_SIGNERS = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -115,11 +116,10 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {

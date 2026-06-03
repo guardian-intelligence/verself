@@ -23,9 +23,6 @@ ExternalPort: 443
 	if !bytes.Contains(got, []byte("ExternalDomain: example.test\n")) {
 		t.Fatalf("external domain was not rewritten:\n%s", string(got))
 	}
-	if bytes.Contains(got, []byte("auth.example.test")) {
-		t.Fatalf("legacy auth domain remained:\n%s", string(got))
-	}
 	again, err := normalizeExternalDomain(got, "example.test")
 	if err != nil {
 		t.Fatalf("normalize twice: %v", err)

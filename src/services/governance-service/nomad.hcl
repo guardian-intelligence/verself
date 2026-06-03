@@ -40,6 +40,7 @@ job "governance-service" {
         command = "local/bin/governance-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         GOVERNANCE_BILLING_PG_DSN = "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
         GOVERNANCE_EXPORT_DIR = "/var/lib/governance-service/exports"
         GOVERNANCE_IAM_PG_DSN = "postgres://iam_service@/iam_service?host=/var/run/postgresql&sslmode=disable"
@@ -64,20 +65,18 @@ job "governance-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/governance.env"
+        destination = "secrets/api-activity-hmac-key"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_API_ACTIVITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -110,6 +109,7 @@ EOT
         command = "local/bin/governance-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         GOVERNANCE_BILLING_PG_DSN = "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
         GOVERNANCE_EXPORT_DIR = "/var/lib/governance-service/exports"
         GOVERNANCE_IAM_PG_DSN = "postgres://iam_service@/iam_service?host=/var/run/postgresql&sslmode=disable"
@@ -134,20 +134,18 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/governance.env"
+        destination = "secrets/api-activity-hmac-key"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_API_ACTIVITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {

@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "bep",
+    srcs = ["bep.go"],
+    importpath = "github.com/verself/deployment-service/internal/bep",
+    visibility = ["//src/services/deployment-service:__subpackages__"],
+)
+
+go_test(
+    name = "bep_test",
+    srcs = ["bep_test.go"],
+    embed = [":bep"],
+)

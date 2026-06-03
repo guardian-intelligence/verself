@@ -26,7 +26,7 @@ consistency modes directly, or infer product authorization from browser state.
 | Product authorization API, schema lifecycle, relationship writes, audit, revocation epochs | `iam-service` |
 | Product resource state | Owning service PostgreSQL database |
 | Authorization evidence, audits, and operator inspection | ClickHouse plus `governance-service` |
-| Public TLS and routing | HAProxy plus lego |
+| Public TLS and routing | HAProxy plus prod Cloudflare/TLS control-plane certificate projection |
 
 SpiceDB is private substrate. It has no public origin, no browser-facing route,
 and no direct product-service credential distribution. HAProxy is involved only

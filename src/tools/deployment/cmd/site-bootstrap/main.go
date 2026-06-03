@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -21,15 +20,11 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: site-bootstrap seed-template|seed-validate|seed-materialize|inventory-write|root-handoff")
+		return fmt.Errorf("usage: site-bootstrap bootstrap-deploy|inventory-write|root-handoff")
 	}
 	switch args[0] {
-	case "seed-template":
-		return seedTemplate(args[1:])
-	case "seed-validate":
-		return seedValidate(args[1:])
-	case "seed-materialize":
-		return seedMaterialize(args[1:])
+	case "bootstrap-deploy":
+		return bootstrapDeploy(args[1:])
 	case "inventory-write":
 		return inventoryWrite(args[1:])
 	case "root-handoff":
@@ -39,92 +34,49 @@ func run(args []string) error {
 	}
 }
 
-func seedTemplate(args []string) error {
-	fs := flag.NewFlagSet("seed-template", flag.ContinueOnError)
+func bootstrapDeploy(args []string) error {
+	fs := flag.NewFlagSet("bootstrap-deploy", flag.ContinueOnError)
 	site := fs.String("site", "prod", "Deployment site.")
-	out := fs.String("out", "", "Seed template output path.")
-	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
-	force := fs.Bool("force", false, "Overwrite an existing output file.")
+	sha := fs.String("sha", "", "Git SHA to bootstrap deploy.")
+	repoRoot := fs.String("repo-root", "", "Repository root.")
+	inventory := fs.String("inventory", "", "Site inventory path.")
+	sshTransport := fs.String("ssh-transport", "recovery", "SSH transport for the Nomad tunnel: recovery or inventory.")
+	r2ControlPlaneBinary := fs.String("r2-control-plane-binary", "", "Bazel-resolved cloudflare-r2-control-plane binary.")
+	cloudflareBinary := fs.String("cloudflare-control-plane-binary", "", "Bazel-resolved cloudflare-control-plane binary.")
+	openBaoAddr := fs.String("openbao-addr", "", "Controller OpenBao address.")
+	openBaoCACertFile := fs.String("openbao-ca-cert", "", "Controller OpenBao CA certificate file.")
+	openBaoTokenFile := fs.String("openbao-token-file", "", "File containing the controller OpenBao token.")
+	timeout := fs.Duration("timeout", 15*time.Minute, "Bootstrap deploy timeout.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	output := *out
-	if output == "" {
-		output = defaultSeedBundlePath(*site)
+	root := *repoRoot
+	if root == "" {
+		var err error
+		root, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("resolve repo root: %w", err)
+		}
 	}
-	if err := sitebootstrap.WriteSeedTemplate(sitebootstrap.SeedTemplateOptions{
-		Site:       *site,
-		OutputPath: output,
-		RepoRoot:   *repoRoot,
-		ForceWrite: *force,
-	}); err != nil {
-		return err
+	inventoryPath := *inventory
+	if inventoryPath == "" {
+		inventoryPath = defaultInventoryPath(*site)
 	}
-	fmt.Println(output)
-	return nil
-}
-
-func seedValidate(args []string) error {
-	fs := flag.NewFlagSet("seed-validate", flag.ContinueOnError)
-	site := fs.String("site", "prod", "Deployment site.")
-	seed := fs.String("seed-bundle", "", "Operator-provided seed bundle path.")
-	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
-	format := fs.String("format", "text", "Output format: text or json.")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	seedPath := *seed
-	if seedPath == "" {
-		seedPath = defaultSeedBundlePath(*site)
-	}
-	evidence, err := sitebootstrap.ValidateSeedBundle(*site, seedPath, *repoRoot)
-	if err != nil {
-		return err
-	}
-	return printEvidence(evidence, *format)
-}
-
-func seedMaterialize(args []string) error {
-	fs := flag.NewFlagSet("seed-materialize", flag.ContinueOnError)
-	site := fs.String("site", "prod", "Deployment site.")
-	seed := fs.String("seed-bundle", "", "Operator-provided seed bundle path.")
-	repoRoot := fs.String("repo-root", "", "Repository root for owner-local deployment declarations.")
-	vars := fs.String("out-vars", "", "Ansible vars output path.")
-	runtimeSeed := fs.String("out-openbao-runtime-seed", "", "Filtered OpenBao runtime seed output path.")
-	evidence := fs.String("out-evidence", "", "Fingerprint evidence output path.")
-	force := fs.Bool("force", false, "Overwrite existing generated outputs.")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	seedPath := *seed
-	if seedPath == "" {
-		seedPath = defaultSeedBundlePath(*site)
-	}
-	varsPath := *vars
-	if varsPath == "" {
-		varsPath = defaultVarsPath(*site)
-	}
-	runtimeSeedPath := *runtimeSeed
-	if runtimeSeedPath == "" {
-		runtimeSeedPath = defaultRuntimeSeedPath(*site)
-	}
-	evidencePath := *evidence
-	if evidencePath == "" {
-		evidencePath = defaultEvidencePath(*site)
-	}
-	report, err := sitebootstrap.MaterializeSeedBundle(sitebootstrap.MaterializeOptions{
-		Site:            *site,
-		SeedPath:        seedPath,
-		VarsPath:        varsPath,
-		RuntimeSeedPath: runtimeSeedPath,
-		Evidence:        evidencePath,
-		RepoRoot:        *repoRoot,
-		ForceWrite:      *force,
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	return sitebootstrap.RunBootstrapDeploy(ctx, sitebootstrap.BootstrapDeployOptions{
+		Site:                 *site,
+		SHA:                  *sha,
+		RepoRoot:             root,
+		InventoryPath:        inventoryPath,
+		SSHTransport:         *sshTransport,
+		R2ControlPlaneBinary: *r2ControlPlaneBinary,
+		CloudflareBinary:     *cloudflareBinary,
+		OpenBaoAddr:          *openBaoAddr,
+		OpenBaoCACertFile:    *openBaoCACertFile,
+		OpenBaoTokenFile:     *openBaoTokenFile,
+		Timeout:              *timeout,
 	})
-	if err != nil {
-		return err
-	}
-	return printEvidence(report, "text")
 }
 
 func inventoryWrite(args []string) error {
@@ -197,38 +149,6 @@ func rootHandoff(args []string) error {
 		WriteInventoryFile: !*noInventory,
 		ForceInventory:     *forceInventory,
 	})
-}
-
-func printEvidence(evidence sitebootstrap.Evidence, format string) error {
-	switch format {
-	case "json":
-		body, err := json.MarshalIndent(evidence, "", "  ")
-		if err != nil {
-			return fmt.Errorf("encode evidence: %w", err)
-		}
-		fmt.Println(string(body))
-	case "text":
-		fmt.Printf("validated site bootstrap seed: site=%s values=%d\n", evidence.Site, len(evidence.Values))
-	default:
-		return fmt.Errorf("--format must be text or json")
-	}
-	return nil
-}
-
-func defaultSeedBundlePath(site string) string {
-	return filepath.Join(".verself", "site-bootstrap", site, "seed.yml")
-}
-
-func defaultVarsPath(site string) string {
-	return filepath.Join(".verself", "site-bootstrap", site, "ansible-secrets.json")
-}
-
-func defaultRuntimeSeedPath(site string) string {
-	return filepath.Join(".verself", "site-bootstrap", site, "openbao-runtime-seed.json")
-}
-
-func defaultEvidencePath(site string) string {
-	return filepath.Join(".verself", "site-bootstrap", site, "seed-fingerprints.json")
 }
 
 func defaultInventoryPath(site string) string {

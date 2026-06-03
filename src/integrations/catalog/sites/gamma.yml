@@ -8,17 +8,21 @@ provider_project:
   status: not_initialized
   bootstrap_command: aspect integrations stripe-projects --site=gamma --action=init --confirm
 bootstrap_exceptions:
-  - key: edge.cloudflare_parent_zone_dns
+  - key: cloudflare.account_admin
     provider: cloudflare
-    isolation: bootstrap_shared
+    isolation: controller_only
     credential_keys:
-      - cloudflare_api_token
+      - cloudflare_account_admin_api_token_a
+      - cloudflare_account_admin_api_token_b
     storage_targets:
       - controller_openbao
     allowed_uses:
-      - delegate or reconcile gamma.verself.sh DNS records
-      - haproxy lego DNS-01 certificate renewal for gamma names
-    reason: Cloudflare DNS token resources are zone scoped for verself.sh.
+      - reconcile hosted-zone DNS records
+      - issue and project site TLS certificates
+      - create site-scoped R2 deployment artifact child tokens
+      - create site-scoped R2 object-storage child tokens
+      - create recovery R2 child tokens
+    reason: Cloudflare account API tokens are account authority and must never be generated bootstrap vars or runtime material.
 integrations:
   - key: infrastructure.latitude
     provider: latitude
@@ -37,14 +41,8 @@ integrations:
     replacement: partial_stripe_projects_candidate
     owner: src/integrations/cloudflare
     purpose: dns_and_tls
-    credentials:
-      - key: edge.cloudflare.parent_zone_dns_token
-        source: bootstrap_session
-        target: controller_openbao
-        target_store: controller_openbao
-        openbao_name: edge.cloudflare.parent_zone_dns_token
-        isolation: bootstrap_shared
-    gamma_policy: parent-zone token use is operator-only and never a runtime secret.
+    controller: prod
+    gamma_policy: DNS and TLS automation runs from prod Cloudflare control-plane authority; gamma receives only derived DNS state and certificate projections.
   - key: billing.stripe
     provider: stripe
     replacement: keep_provider_native
@@ -70,20 +68,6 @@ integrations:
         target: provider_resource_id
         catalog_field: stripe_test_webhook_endpoint_id
     gamma_policy: use sandbox/test-mode resources that cannot affect prod billing.
-  - key: email.provider
-    provider: resend
-    replacement: stripe_projects_candidate
-    owner: src/services/email-service
-    purpose: outbound_email
-    credentials:
-      - key: email-service.resend.api_key
-        source: stripe_projects_env
-        external_name: RESEND_API_KEY
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: email-service.resend.api_key
-    migration_check: aspect integrations stripe-projects --site=gamma --action=search --query=resend
-    gamma_policy: use notify.gamma.verself.sh or another gamma-only sender domain.
   - key: github.runner_app
     provider: github
     replacement: provider_specific

@@ -15,7 +15,7 @@ Use the Aspect wrapper from the repo root:
 ```text
 aspect integrations stripe-projects --site=gamma --action=status
 aspect integrations stripe-projects --site=gamma --action=init --confirm
-aspect integrations stripe-projects --site=gamma --action=search --query=resend
+aspect integrations stripe-projects --site=gamma --action=search --query=webhook
 aspect integrations stripe-projects --site=gamma --action=env-pull --confirm
 ```
 

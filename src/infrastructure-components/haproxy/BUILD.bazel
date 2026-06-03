@@ -1,10 +1,20 @@
 # gazelle:prefix github.com/verself/infrastructure-components/haproxy
 
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
-exports_files(["tools.lock.json"])
+HAPROXY_RUNTIME_DEBS = [
+    "@haproxy_tool_haproxy_deb//file",
+    "@haproxy_tool_libcrypt1_deb//file",
+    "@haproxy_tool_libgcc_s1_deb//file",
+    "@haproxy_tool_libjemalloc2_deb//file",
+    "@haproxy_tool_liblua5_4_0_deb//file",
+    "@haproxy_tool_libopentracing1_deb//file",
+    "@haproxy_tool_libopentracing_c_wrapper_deb//file",
+    "@haproxy_tool_libpcre2_8_0_deb//file",
+    "@haproxy_tool_libssl_awslc_deb//file",
+    "@haproxy_tool_libstdcpp6_deb//file",
+]
 
 genrule(
     name = "haproxy_bin",
@@ -19,21 +29,74 @@ install -m 0755 "$$tmp/usr/sbin/haproxy" "$@"
 """,
 )
 
-pkg_tar(
+filegroup(
+    name = "runtime_debs",
+    srcs = HAPROXY_RUNTIME_DEBS,
+)
+
+genrule(
     name = "runtime_artifact",
-    out = "haproxy-runtime.tar",
-    files = {
-        ":haproxy_bin": "bin/haproxy",
-        "@haproxy_tools//tools/lego": "bin/lego",
-        "//src/infrastructure-components/haproxy/cmd/haproxy-lego-renew:haproxy-lego-renew": "bin/haproxy-lego-renew",
-        "//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply": "bin/haproxy-upstreams-apply",
-    },
-    modes = {
-        "bin/haproxy": "0755",
-        "bin/haproxy-lego-renew": "0755",
-        "bin/haproxy-upstreams-apply": "0755",
-        "bin/lego": "0755",
-    },
+    srcs = [
+        ":runtime_debs",
+        "//src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply",
+    ],
+    outs = ["haproxy-runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract" "$$tmp/runtime/bin" "$$tmp/runtime/lib/haproxy"
+for deb in $(locations :runtime_debs); do
+  dpkg-deb -x "$$deb" "$$tmp/extract"
+done
+install -m 0755 "$$tmp/extract/usr/sbin/haproxy" "$$tmp/runtime/bin/haproxy"
+install -m 0755 "$(location //src/infrastructure-components/haproxy/cmd/haproxy-upstreams-apply:haproxy-upstreams-apply)" "$$tmp/runtime/bin/haproxy-upstreams-apply"
+for libdir in "$$tmp/extract/lib/x86_64-linux-gnu" "$$tmp/extract/usr/lib/x86_64-linux-gnu" "$$tmp/extract/opt/aws-lc/lib/x86_64-linux-gnu"; do
+  if [ -d "$$libdir" ]; then
+    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -aL {} "$$tmp/runtime/lib/haproxy/" \\;
+  fi
+done
+for lib in libcrypto.so libcrypt.so.1 libgcc_s.so.1 libjemalloc.so.2 liblua5.4.so.0 libopentracing-c-wrapper.so.0 libopentracing.so.1 libpcre2-8.so.0 libssl.so libstdc++.so.6; do
+  test -e "$$tmp/runtime/lib/haproxy/$$lib"
+done
+chmod -R a+rX "$$tmp/runtime"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "host_install_artifact",
+    srcs = [":runtime_debs"],
+    outs = ["haproxy-host-install.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract" "$$tmp/runtime/opt/verself/profile/bin" "$$tmp/runtime/opt/verself/profile/lib/haproxy"
+for deb in $(locations :runtime_debs); do
+  dpkg-deb -x "$$deb" "$$tmp/extract"
+done
+install -m 0755 "$$tmp/extract/usr/sbin/haproxy" "$$tmp/runtime/opt/verself/profile/bin/haproxy"
+for libdir in "$$tmp/extract/lib/x86_64-linux-gnu" "$$tmp/extract/usr/lib/x86_64-linux-gnu" "$$tmp/extract/opt/aws-lc/lib/x86_64-linux-gnu"; do
+  if [ -d "$$libdir" ]; then
+    find "$$libdir" -maxdepth 1 -name 'lib*.so*' -exec cp -aL {} "$$tmp/runtime/opt/verself/profile/lib/haproxy/" \\;
+  fi
+done
+for lib in libcrypto.so libcrypt.so.1 libgcc_s.so.1 libjemalloc.so.2 liblua5.4.so.0 libopentracing-c-wrapper.so.0 libopentracing.so.1 libpcre2-8.so.0 libssl.so libstdc++.so.6; do
+  test -e "$$tmp/runtime/opt/verself/profile/lib/haproxy/$$lib"
+done
+chmod -R a+rX "$$tmp/runtime"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -63,6 +126,7 @@ go_test(
     name = "frontend_policy_test",
     srcs = ["frontend_policy_test.go"],
     data = [
+        "nomad.hcl",
         "templates/haproxy.cfg.j2",
         "templates/nomad-upstreams.cfg.j2",
     ],
@@ -78,6 +142,7 @@ filegroup(
         "//src/infrastructure-components/verdaccio:deploy_declarations",
         "//src/services/analytics-service:deploy_declarations",
         "//src/services/billing-service:deploy_declarations",
+        "//src/services/deployment-service:deploy_declarations",
         "//src/services/distribution-service:deploy_declarations",
         "//src/services/email-service:deploy_declarations",
         "//src/services/github-integration-service:deploy_declarations",
@@ -111,6 +176,7 @@ nomad_component(
         "auth:control-plane",
         "forgejo:http",
         "grafana:http",
+        "host:firewall",
         "stalwart:http",
         "verdaccio:http",
         "zitadel:http",

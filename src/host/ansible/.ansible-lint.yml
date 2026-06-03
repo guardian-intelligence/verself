@@ -4,7 +4,6 @@ use_default_rules: true
 
 exclude_paths:
   - .cache/
-  - group_vars/all/secrets.sops.yml
 
 warn_list:
   - experimental

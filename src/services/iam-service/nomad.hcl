@@ -30,6 +30,7 @@ job "iam-service" {
         command = "local/bin/iam-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
         IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT = "https://api.pwnedpasswords.com"
         IAM_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
@@ -88,6 +89,7 @@ EOT
         command = "local/bin/iam-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
         IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT = "https://api.pwnedpasswords.com"
         IAM_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
@@ -148,19 +150,67 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/provider.env"
+        destination = "secrets/email-identity-hmac-key"
         perms = "0600"
         data = <<-EOT
-IAM_EMAIL_IDENTITY_HMAC_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" }}{{ .Data.data.value | toJSON }}{{ end }}
-IAM_SPICEDB_GRPC_PRESHARED_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value | toJSON }}{{ end }}
-IAM_ZITADEL_ADMIN_TOKEN={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_GITHUB_LOGIN_IDP_ID={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_OIDC_CLIENT_ID={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_OIDC_CLIENT_SECRET={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_ZITADEL_ACTION_SIGNING_KEY={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" }}{{ .Data.data.value }}{{ end }}
 EOT
-        env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/spicedb-grpc-preshared-key"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/zitadel-admin-token"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/auth-audience"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/github-login-idp-id"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/oidc-client-id"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/oidc-client-secret"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/zitadel-action-signing-key"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       template {
         change_mode = "restart"

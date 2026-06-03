@@ -10,7 +10,10 @@ nomad_component(
     deploy_phase = "platform",
     job_id = "substrate-control-plane",
     job_spec = "nomad.hcl",
-    provides = ["substrate:control-plane"],
+    provides = [
+        "nomad:job:substrate-control-plane",
+        "substrate:control-plane",
+    ],
     requires = [
         "openbao:api",
         "postgres:server",

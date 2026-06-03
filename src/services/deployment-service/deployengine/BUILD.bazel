@@ -1,0 +1,47 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "deployengine",
+    srcs = [
+        "artifacts.go",
+        "bazel.go",
+        "engine.go",
+        "inputs.go",
+        "nomad.go",
+        "source.go",
+    ],
+    importpath = "github.com/verself/deployment-service/deployengine",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/integrations/cloudflare/r2-control-plane/client",
+        "//src/services/deployment-service/controlplane",
+        "//src/services/deployment-service/deploycontract",
+        "//src/services/deployment-service/internal/bazelbuild",
+        "//src/services/deployment-service/internal/deploymodel",
+        "//src/services/deployment-service/internal/nomadclient",
+        "//src/services/deployment-service/internal/siteinject",
+        "//src/services/deployment-service/siteconfig",
+        "@com_github_hashicorp_nomad_api//:api",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "deployengine_test",
+    srcs = [
+        "artifacts_test.go",
+        "engine_test.go",
+        "nomad_test.go",
+        "source_test.go",
+    ],
+    embed = [":deployengine"],
+    deps = [
+        "//src/integrations/cloudflare/r2-control-plane/client",
+        "//src/services/deployment-service/internal/deploymodel",
+        "@com_github_hashicorp_nomad_api//:api",
+        "@io_opentelemetry_go_otel//:otel",
+    ],
+)

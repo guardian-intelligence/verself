@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "siteinject",
+    srcs = ["siteinject.go"],
+    importpath = "github.com/verself/deployment-service/internal/siteinject",
+    visibility = ["//src/services/deployment-service:__subpackages__"],
+    deps = [
+        "//src/services/deployment-service/siteconfig",
+        "@com_github_hashicorp_nomad_api//:api",
+    ],
+)
+
+go_test(
+    name = "siteinject_test",
+    srcs = ["siteinject_test.go"],
+    embed = [":siteinject"],
+)

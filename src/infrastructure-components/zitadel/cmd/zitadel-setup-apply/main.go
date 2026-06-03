@@ -65,6 +65,7 @@ type config struct {
 	openBaoAddr        string
 	openBaoCACert      string
 	openBaoToken       string
+	openBaoTokenFile   string
 	runSetup           bool
 }
 
@@ -90,7 +91,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		zitadelGroup:       envOr("VERSELF_ZITADEL_GROUP", defaultZitadelGroup),
 		openBaoAddr:        envOr("BAO_ADDR", envOr("VAULT_ADDR", "")),
 		openBaoCACert:      envOr("BAO_CACERT", envOr("VAULT_CACERT", "")),
-		openBaoToken:       envOr("BAO_TOKEN", envOr("VAULT_TOKEN", "")),
 		runSetup:           true,
 	}
 	fs := flag.NewFlagSet("zitadel-setup-apply", flag.ContinueOnError)
@@ -108,7 +108,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&cfg.zitadelGroup, "zitadel-group", cfg.zitadelGroup, "Group to own Zitadel config files.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", cfg.openBaoAddr, "OpenBao address for publishing generated Zitadel admin PATs.")
 	fs.StringVar(&cfg.openBaoCACert, "openbao-ca-cert", cfg.openBaoCACert, "OpenBao CA certificate path.")
-	fs.StringVar(&cfg.openBaoToken, "openbao-token", cfg.openBaoToken, "OpenBao token. Defaults to BAO_TOKEN or VAULT_TOKEN.")
+	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", cfg.openBaoTokenFile, "File containing the OpenBao workload token.")
 	fs.BoolVar(&cfg.runSetup, "run-setup", cfg.runSetup, "Run zitadel setup after applying config.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -117,6 +117,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
 	}
 	cfg.mode = mode(modeValue)
+	openBaoToken, err := readRequiredCredentialFile(cfg.openBaoTokenFile, "--openbao-token-file")
+	if err != nil {
+		return err
+	}
+	cfg.openBaoToken = openBaoToken
 	if err := cfg.validate(); err != nil {
 		return err
 	}
@@ -178,14 +183,14 @@ func (cfg config) validate() error {
 		return fmt.Errorf("--openbao-addr is required")
 	}
 	if strings.TrimSpace(cfg.openBaoToken) == "" {
-		return fmt.Errorf("--openbao-token is required")
+		return fmt.Errorf("--openbao-token-file is required")
 	}
 	if cfg.mode == modeSetup && len(cfg.adminPATSecrets) > 0 {
 		if strings.TrimSpace(cfg.openBaoAddr) == "" {
 			return fmt.Errorf("--openbao-addr is required when admin PAT OpenBao secrets are configured")
 		}
 		if strings.TrimSpace(cfg.openBaoToken) == "" {
-			return fmt.Errorf("--openbao-token is required when admin PAT OpenBao secrets are configured")
+			return fmt.Errorf("--openbao-token-file is required when admin PAT OpenBao secrets are configured")
 		}
 		for _, secret := range cfg.adminPATSecrets {
 			if strings.TrimSpace(secret) == "" || strings.ContainsAny(secret, "/ ") {
@@ -194,6 +199,22 @@ func (cfg config) validate() error {
 		}
 	}
 	return nil
+}
+
+func readRequiredCredentialFile(path, flagName string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("%s is required", flagName)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", flagName, err)
+	}
+	value := strings.TrimSpace(string(body))
+	if value == "" {
+		return "", fmt.Errorf("%s is empty", flagName)
+	}
+	return value, nil
 }
 
 func initTelemetry(ctx context.Context) (func(context.Context) error, error) {

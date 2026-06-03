@@ -9,6 +9,13 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["host_tools.MODULE.bazel"])
 
 genrule(
+    name = "bazelisk_bin",
+    srcs = ["@host_tool_bazelisk//file"],
+    outs = ["bazelisk"],
+    cmd = "install -m 0755 $(location @host_tool_bazelisk//file) $@",
+)
+
+genrule(
     name = "nomad_bin",
     srcs = ["@host_tool_nomad//file"],
     outs = ["nomad"],
@@ -51,12 +58,16 @@ pkg_tar(
     name = "host_tools_artifact",
     out = "host-tools.tar",
     files = {
+        ":bazelisk_bin": "opt/verself/profile/bin/bazelisk",
         ":nomad_bin": "opt/verself/profile/bin/nomad",
+        "@otelcol_tools//tools/spiffe-helper": "opt/verself/profile/bin/spiffe-helper",
         ":spire_agent_bin": "opt/verself/profile/bin/spire-agent",
         ":spire_server_bin": "opt/verself/profile/bin/spire-server",
     },
     modes = {
+        "opt/verself/profile/bin/bazelisk": "0755",
         "opt/verself/profile/bin/nomad": "0755",
+        "opt/verself/profile/bin/spiffe-helper": "0755",
         "opt/verself/profile/bin/spire-agent": "0755",
         "opt/verself/profile/bin/spire-server": "0755",
     },
@@ -73,6 +84,7 @@ spire_identity_registry(
         "//src/infrastructure-components/temporal-platform:spiffe_identity_server",
         "//src/services/analytics-service:spiffe_identity",
         "//src/services/billing-service:spiffe_identity",
+        "//src/services/deployment-service:spiffe_identity",
         "//src/services/distribution-service:spiffe_identity",
         "//src/services/governance-service:spiffe_identity",
         "//src/services/github-integration-service:spiffe_identity",
@@ -169,7 +181,6 @@ genrule(
         "@dev_tool_ansible_collection_ansible_posix//file",
         "@dev_tool_ansible_collection_community_general//file",
         "@dev_tool_ansible_collection_community_postgresql//file",
-        "@dev_tool_ansible_collection_community_sops//file",
     ],
     outs = ["ansible_collections.tar"],
     cmd = """
@@ -179,11 +190,9 @@ trap 'rm -rf "$$tmp"' EXIT
 mkdir -p "$$tmp/ansible_collections/ansible/posix"
 mkdir -p "$$tmp/ansible_collections/community/general"
 mkdir -p "$$tmp/ansible_collections/community/postgresql"
-mkdir -p "$$tmp/ansible_collections/community/sops"
 tar -xzf "$(location @dev_tool_ansible_collection_ansible_posix//file)" -C "$$tmp/ansible_collections/ansible/posix"
 tar -xzf "$(location @dev_tool_ansible_collection_community_general//file)" -C "$$tmp/ansible_collections/community/general"
 tar -xzf "$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$tmp/ansible_collections/community/postgresql"
-tar -xzf "$(location @dev_tool_ansible_collection_community_sops//file)" -C "$$tmp/ansible_collections/community/sops"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" ansible_collections
 """,
 )
@@ -257,7 +266,6 @@ genrule(
         "@dev_tool_ansible_collection_ansible_posix//file",
         "@dev_tool_ansible_collection_community_general//file",
         "@dev_tool_ansible_collection_community_postgresql//file",
-        "@dev_tool_ansible_collection_community_sops//file",
     ],
     outs = ["ansible_lint_check.stamp"],
     cmd = """
@@ -295,11 +303,9 @@ export PATH="$$tool_bin:$${PATH:-}"
 mkdir -p "$$collections_tmp/ansible_collections/ansible/posix"
 mkdir -p "$$collections_tmp/ansible_collections/community/general"
 mkdir -p "$$collections_tmp/ansible_collections/community/postgresql"
-mkdir -p "$$collections_tmp/ansible_collections/community/sops"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_ansible_posix//file)" -C "$$collections_tmp/ansible_collections/ansible/posix"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_general//file)" -C "$$collections_tmp/ansible_collections/community/general"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$collections_tmp/ansible_collections/community/postgresql"
-tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_sops//file)" -C "$$collections_tmp/ansible_collections/community/sops"
 cd src/host/ansible
 "$$execroot/$(execpath :ansible_lint_bin)" playbooks roles
 touch "$$out"

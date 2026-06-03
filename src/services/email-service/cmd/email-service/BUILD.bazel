@@ -3,7 +3,10 @@ load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "email-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "resend_keys.go",
+    ],
     importpath = "github.com/verself/email-service/cmd/email-service",
     visibility = ["//visibility:private"],
     deps = [
@@ -11,6 +14,7 @@ go_library(
         "//src/services/email-service/internal/app",
         "//src/services/email-service/internal/mailstore",
         "//src/services/email-service/internal/provider",
+        "//src/services/email-service/internal/resendkeys",
         "//src/services/email-service/internal/sessionproxy",
         "//src/services/email-service/internal/sync",
         "//src/services/email-service/migrations",

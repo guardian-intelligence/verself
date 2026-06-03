@@ -40,6 +40,7 @@ job "sandbox-rental" {
         command = "local/bin/sandbox-rental-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service-migration"
@@ -67,20 +68,18 @@ job "sandbox-rental" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/sandbox.env"
+        destination = "secrets/runner-bootstrap-secret"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_RUNNER_BOOTSTRAP_SECRET={{ with secret "kv-runtime/data/secret/org/sandbox-rental-service.runner_bootstrap_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/sandbox-rental-service.runner_bootstrap_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -113,6 +112,7 @@ EOT
         command = "local/bin/sandbox-rental-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-service"
@@ -140,20 +140,18 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/sandbox.env"
+        destination = "secrets/runner-bootstrap-secret"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_RUNNER_BOOTSTRAP_SECRET={{ with secret "kv-runtime/data/secret/org/sandbox-rental-service.runner_bootstrap_secret" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/sandbox-rental-service.runner_bootstrap_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -232,6 +230,7 @@ EOT
         command = "local/bin/sandbox-rental-recurring-worker"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "sandbox-rental-recurring-worker"

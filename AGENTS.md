@@ -9,6 +9,10 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
+<available_tooling>
+Integrations: `aspect integrations`
+</available_toling>
+
 
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.
@@ -151,7 +155,7 @@ Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, diff
 
 OpenBao is the runtime secret source of truth; Nomad is the runtime secret delivery mechanism; SPIRE is workload mTLS identity, not the normal secret-delivery path.
 
-Per environment, the founder configures a single root key that they are responsible for, it's used to seal/unseal Openbao. All other secrets are created as needed at runtime.
+Per environment, the founder configures a single site root key that they are responsible for; it initializes, seals, and unseals OpenBao. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
@@ -159,15 +163,15 @@ Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel
 
 The bootstrap from zero special case:
 
-1. Operator sets up API keys and root password
+1. Operator sets up provider API keys, the fresh-host SSH root password when needed, and the site root key
     a. Minimum needed are
         i. Compute Provider (Latitude only for now)
         ii. Domain Registrar (Cloudflare only for now)
         iii. Object Storage Provider (Cloudflare R2 only for now)
-    b. Additional integrations: Stripe for payments, Resend for email delivery (alternatives planned)
-2. SSH into target box, verify the OS/machine is configured correctly, apply security patches. Seed OpenBao with the root key.
-3. Aspect deploy builds locally, uploads build artifacts to the box. The build includes all binaries + source code.
-4. Nomad orchestrates a regular deployment, each deployable unit declares its own bootstrap semantics which will be hit in the bootstrap path such as installing/configuring binaries, running migrations, ensuring required binaries are running.
+    b. Additional bootstrap integrations: Stripe for payments and GitHub App private material
+2. SSH into target box, verify the OS/machine is configured correctly, apply security patches. Host convergence installs the site root key for OpenBao bootstrap.
+3. `aspect site bootstrap-deploy` builds locally, publishes the initial immutable artifacts through a temporary controller-owned R2 path, and registers the minimum Nomad jobs over recovery SSH.
+4. Nomad brings up the site-local deployment-service and control-plane jobs. After that, `aspect deploy` only submits authenticated deployment requests to deployment-service.
 
 # Tech Stack (partial description):
 
@@ -202,7 +206,7 @@ Each service defines a /recoveryz to expose recovery health status
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
-* HAProxy (AWS-LC build) terminates public TLS with certificates issued by lego (Cloudflare DNS-01) and renewed by the typed `haproxy-lego-renew` Go unit; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
+* HAProxy (AWS-LC build) terminates public TLS with certificates projected by the prod Cloudflare/TLS control plane; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 * Stalwart over JMAP for inbound mail, Resend API integration for outbound

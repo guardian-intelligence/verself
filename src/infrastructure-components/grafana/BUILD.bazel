@@ -16,11 +16,14 @@ set -euo pipefail
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 mkdir -p "$$tmp/extract" "$$tmp/runtime/grafana" "$$tmp/runtime/plugins"
-tar -xzf "$(location @grafana_tool_grafana_oss//file)" -C "$$tmp/extract"
+grafana_archive="$$PWD/$(location @grafana_tool_grafana_oss//file)"
+plugin_archive="$$PWD/$(location @grafana_tool_clickhouse_datasource//file)"
+zipper="$$PWD/$(location @bazel_tools//tools/zip:zipper)"
+tar -xzf "$$grafana_archive" -C "$$tmp/extract"
 grafana_root="$$(find "$$tmp/extract" -mindepth 1 -maxdepth 1 -type d | sort | head -n1)"
 test -n "$$grafana_root"
 cp -a "$$grafana_root/." "$$tmp/runtime/grafana/"
-unzip -q "$(location @grafana_tool_clickhouse_datasource//file)" -d "$$tmp/plugin"
+(cd "$$tmp" && "$$zipper" x "$$plugin_archive" -d plugin)
 test -d "$$tmp/plugin/grafana-clickhouse-datasource"
 cp -a "$$tmp/plugin/grafana-clickhouse-datasource" "$$tmp/runtime/plugins/grafana-clickhouse-datasource"
 printf '4.17.0\\n' > "$$tmp/runtime/plugins/.grafana-clickhouse-datasource-version"
@@ -30,6 +33,7 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
+    tools = ["@bazel_tools//tools/zip:zipper"],
 )
 
 pkg_tar(
@@ -76,9 +80,6 @@ nomad_component(
         ":runtime_artifact": "grafana-runtime",
     },
     provides = ["grafana:http"],
-    requires = [
-        "clickhouse:migrations",
-        "postgres:server",
-    ],
+    requires = ["postgres:server"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

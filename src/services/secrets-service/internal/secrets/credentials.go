@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -218,7 +217,7 @@ func (s *BaoStore) CreateOpaqueCredential(ctx context.Context, principal Princip
 		return OpaqueCredentialMaterial{}, err
 	}
 	credentialID := uuid.NewString()
-	token, tokenPrefix, err := newOpaqueCredentialToken(credentialID)
+	token, tokenPrefix, err := s.newOpaqueCredentialToken(ctx, entry, principal.storageNamespace(), credentialID)
 	if err != nil {
 		return OpaqueCredentialMaterial{}, err
 	}
@@ -336,7 +335,7 @@ func (s *BaoStore) RollOpaqueCredential(ctx context.Context, principal Principal
 	if doc.Status != CredentialStatusActive {
 		return OpaqueCredentialMaterial{}, fmt.Errorf("%w: credential is not active", ErrConflict)
 	}
-	token, tokenPrefix, err := newOpaqueCredentialToken(doc.CredentialID)
+	token, tokenPrefix, err := s.newOpaqueCredentialToken(ctx, entry, principal.storageNamespace(), doc.CredentialID)
 	if err != nil {
 		return OpaqueCredentialMaterial{}, err
 	}
@@ -634,13 +633,49 @@ func credentialHasScopes(actual []string, required []string) bool {
 	return true
 }
 
-func newOpaqueCredentialToken(credentialID string) (string, string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", "", fmt.Errorf("%w: generate credential material: %v", ErrCrypto, err)
+func (s *BaoStore) newOpaqueCredentialToken(ctx context.Context, entry baoTokenEntry, namespace string, credentialID string) (string, string, error) {
+	raw, err := s.randomCredentialBytes(ctx, entry, namespace, 32)
+	if err != nil {
+		return "", "", err
+	}
+	return opaqueCredentialTokenFromBytes(credentialID, raw)
+}
+
+func opaqueCredentialTokenFromBytes(credentialID string, raw []byte) (string, string, error) {
+	credentialID = strings.TrimSpace(credentialID)
+	if _, err := uuid.Parse(credentialID); err != nil {
+		return "", "", fmt.Errorf("%w: credential_id must be a UUID", ErrInvalidArgument)
+	}
+	if len(raw) != 32 {
+		return "", "", fmt.Errorf("%w: credential material must be 32 bytes", ErrCrypto)
 	}
 	token := strings.Join([]string{credentialTokenPrefix, credentialID, base64.RawURLEncoding.EncodeToString(raw)}, "_")
 	return token, credentialTokenPrefix + "_" + credentialID[:8], nil
+}
+
+func (s *BaoStore) randomCredentialBytes(ctx context.Context, entry baoTokenEntry, namespace string, length int) ([]byte, error) {
+	if length <= 0 {
+		return nil, fmt.Errorf("%w: credential material length is required", ErrInvalidArgument)
+	}
+	mount := s.transitMount(namespace)
+	response, _, err := s.doBao(ctx, "secrets.bao.transit.random", http.MethodPost, mount, "random", []string{fmt.Sprint(length)}, entry, map[string]string{
+		"format": "base64",
+	}, http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	value := strings.TrimSpace(stringFrom(response.Data, "random_bytes"))
+	if value == "" {
+		return nil, fmt.Errorf("%w: openbao transit/random response missing random_bytes", ErrStore)
+	}
+	raw, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: decode openbao credential material: %v", ErrStore, err)
+	}
+	if len(raw) != length {
+		return nil, fmt.Errorf("%w: openbao transit/random returned %d bytes, want %d", ErrStore, len(raw), length)
+	}
+	return raw, nil
 }
 
 func credentialIDFromOpaqueToken(token string) (string, error) {

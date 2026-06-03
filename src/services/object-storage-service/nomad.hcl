@@ -27,6 +27,7 @@ job "object-storage-service" {
         command = "local/bin/object-storage-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
         OBJECT_STORAGE_ROLE = "s3"
         OBJECT_STORAGE_S3_REGION = "auto"
@@ -73,7 +74,7 @@ job "object-storage-service" {
         command = "local/bin/object-storage-service"
       }
       env {
-        CREDENTIALS_DIRECTORY = "secrets"
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
         OBJECT_STORAGE_ROLE = "s3"
         OBJECT_STORAGE_S3_REGION = "auto"
@@ -108,11 +109,32 @@ job "object-storage-service" {
         perms = "0600"
         data = <<-EOT
 OBJECT_STORAGE_S3_URLS=__VERSELF_CLOUDFLARE_R2_ENDPOINT__
-VERSELF_CRED_VALUE_CREDENTIAL_KEK={{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_R2_PROXY_ACCESS_KEY_ID={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_R2_PROXY_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/credential-kek"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-proxy-access-key-id"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-proxy-secret-access-key"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       service {
         name = "object-storage-service-public-http"
@@ -174,7 +196,7 @@ EOT
       }
       env {
         OBJECT_STORAGE_ADMIN_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_admin_http}"
-        CREDENTIALS_DIRECTORY = "secrets"
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
         OBJECT_STORAGE_R2_ENDPOINT = "__VERSELF_CLOUDFLARE_R2_ENDPOINT__"
         OBJECT_STORAGE_ROLE = "admin"
@@ -193,14 +215,34 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_CREDENTIAL_KEK={{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_R2_ADMIN_ACCESS_KEY_ID={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" }}{{ .Data.data.value | toJSON }}{{ end }}
-VERSELF_CRED_VALUE_R2_ADMIN_SECRET_ACCESS_KEY={{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/credential-kek"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-admin-access-key-id"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/r2-admin-secret-access-key"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {

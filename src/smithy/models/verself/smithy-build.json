@@ -4,6 +4,7 @@
     "analytics.smithy",
     "billing.smithy",
     "common.smithy",
+    "deployment.smithy",
     "distribution.smithy",
     "github_integration.smithy",
     "governance.smithy",
@@ -97,6 +98,26 @@
             "/servers": [
               {
                 "url": "https://127.0.0.1:4261"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "deployment-public": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.deployment.v1#Deployment",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://deployments.api.verself.sh"
               }
             ]
           }

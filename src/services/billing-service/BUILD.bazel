@@ -29,7 +29,6 @@ nomad_component(
     job_id = "billing",
     job_spec = "nomad.hcl",
     requires = [
-        "clickhouse:migrations",
         "openbao:api",
         "postgres:server",
         "tigerbeetle:client",

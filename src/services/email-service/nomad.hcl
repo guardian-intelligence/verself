@@ -40,6 +40,7 @@ job "email-service" {
         command = "local/bin/email-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         EMAIL_SERVICE_RESEND_FROM_NAME = "verself"
         EMAIL_SERVICE_STALWART_PUBLIC_BASE_URL = "__VERSELF_STALWART_PUBLIC_BASE_URL__"
         EMAIL_SERVICE_SYNC_DISCOVERY_INTERVAL = "2m"
@@ -60,11 +61,10 @@ job "email-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -104,6 +104,7 @@ EOT
         command = "local/bin/email-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         EMAIL_SERVICE_AGENT_SENDER_ADDRESS = "__VERSELF_AGENT_SENDER_ADDRESS__"
         EMAIL_SERVICE_AGENT_SENDER_NAME = "Verself Agents"
         EMAIL_SERVICE_AGENT_SENDER_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
@@ -127,11 +128,10 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -176,11 +176,25 @@ EOT
         destination = "secrets/provider.env"
         perms = "0600"
         data = <<-EOT
-EMAIL_SERVICE_RESEND_API_KEY={{ with secret "kv-runtime/data/secret/org/email-service.resend.api_key" }}{{ .Data.data.value | toJSON }}{{ end }}
 EMAIL_SERVICE_STALWART_ADMIN_USERNAME=verself-admin
-EMAIL_SERVICE_STALWART_ADMIN_PASSWORD={{ with secret "kv-runtime/data/secret/org/stalwart.admin_password" }}{{ .Data.data.value | toJSON }}{{ end }}
 EOT
         env = true
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/resend-api-key"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/email-service.resend.api_key" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/stalwart-admin-password"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/stalwart.admin_password" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
       template {
         change_mode = "restart"

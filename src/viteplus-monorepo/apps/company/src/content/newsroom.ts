@@ -1,5 +1,5 @@
-// Newsroom items — content source for the /newsroom index, the
-// /newsroom/$slug article route, and the homepage NewsroomStrip.
+// Newsroom items — content source for the /news index, the
+// /news/$slug article route, and the homepage broadcast strip.
 //
 // Doctrine (per /design/newsroom): Flare on a homepage or cross-treatment
 // surface always means "Guardian is speaking in the public register." If it
@@ -34,22 +34,19 @@ export interface NewsroomItem {
 
 const ITEMS: readonly NewsroomItem[] = [
   {
-    slug: "we-opened-the-newsroom",
+    slug: "guardian-intelligence-announces-verself-private-beta",
     kicker: "Announcement",
     category: "announcement",
-    title: "We opened the Newsroom.",
-    deck: "Bulletins, milestones, and public notes from Guardian now have a home of their own, distinct from the long-form register of Letters.",
-    date: "23 April 2026",
-    publishedAt: "2026-04-23",
+    title: "Guardian Intelligence Inc. announces private beta of Verself.",
+    deck: "Verself is the world's fastest Agent-Native Cloud, fully open-source and built for durable developer and agent environments.",
+    date: "1 June 2026",
+    publishedAt: "2026-06-01",
     author: { name: "Shovon Hasan", role: "Founder & CEO", avatar: "/people/shovon-hasan.jpg" },
     body: [
-      "The house has three rooms. Workshop is where the work happens — Iron ground, Geist everywhere, Amber as the single accent. Letters is where we argue — Paper, Fraunces, one Bordeaux rule for the pull-quote. Today the middle room opens. Newsroom is where Guardian speaks in the public register: short, dated, on the record.",
-      "We split it out because the registers were colliding. Bulletins about a milestone or a launch were showing up alongside essays about why the house exists, and the two read at different speeds. An announcement wants a headline and a timestamp. An essay wants a deck and a margin. A single surface cannot serve both without dulling one of them. So we gave the announcement its own room, on its own ground, with its own rhythm.",
-      "The Newsroom ground is Argent. Flare appears in bounded bands — a hero card for the current bulletin, a subscribe strip at the foot of the page — and nowhere else. An acid-green page teaches the eye to stop seeing green; an acid-green band inside a white room teaches the eye to notice the band. Bordeaux and Amber never appear here. Fraunces stays because the Newsroom still carries the house voice.",
-      "What belongs in the Newsroom: shipped features that change the public contract, milestones that customers and partners should hear about from us before they hear about it from anyone else, corrections and public notes, and the occasional announcement that is too short for a Letter and too material for a changelog entry. What does not belong: argument, commentary, or anything that asks the reader to sit down for five minutes. Those stay in Letters.",
-      "The cadence is deliberate. Guardian speaks rarely. When the second bulletin files, it will land above this one and the archive grid will fill in under it. Until then, this is the whole room.",
+      "Seattle, Washington -- Guardian Intelligence Inc. today announced the private beta of Verself, the world's fastest Agent-Native Cloud. Verself is a fully open-source cloud platform designed for agent-native software teams, pairing bare-metal performance with persistent developer environments so humans and coding agents can build, test, and deploy from the same durable system state.",
+      "The private beta will focus on teams working at the edge of AI-assisted software delivery, where fast feedback loops, reproducible deployments, and secure-by-default infrastructure are product requirements rather than tooling details. Guardian Intelligence will share more availability details as the beta expands.",
     ],
-    ctaLabel: "Read the bulletin",
+    ctaLabel: "Read the announcement",
   },
   {
     slug: "brand-system-shipped",
@@ -118,7 +115,7 @@ export function newsroomItemBySlug(slug: string): NewsroomItem | undefined {
 // override via ctaHref for the rare bulletin that tees up a non-article
 // destination (a design page, an external launch page, etc.).
 export function newsroomCtaHref(item: NewsroomItem): string {
-  return item.ctaHref ?? `/newsroom/${item.slug}`;
+  return item.ctaHref ?? `/news/${item.slug}`;
 }
 
 export function newsroomCtaLabel(item: NewsroomItem): string {
@@ -126,8 +123,8 @@ export function newsroomCtaLabel(item: NewsroomItem): string {
 }
 
 export const NEWSROOM_META = {
-  title: "Newsroom — Guardian",
-  description: "Bulletins, milestones, and public notes from Guardian Intelligence.",
+  title: "News — Guardian",
+  description: "News, milestones, and public notes from Guardian Intelligence.",
   siteURL: "https://guardianintelligence.org",
 } as const;
 

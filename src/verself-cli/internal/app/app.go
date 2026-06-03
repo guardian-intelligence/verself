@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -123,7 +122,7 @@ func (c CLI) usage() error {
   %[1]s orgs update --version VERSION [--display-name NAME] [--slug SLUG] [--json]
   %[1]s orgs members invite <email> [--role ROLE] [--given-name NAME] [--family-name NAME] [--json]
   %[1]s company configure <name> [flags]
-  %[1]s company options add <company> <key> [--from-env KEY|--stdin|--from-file PATH|--value VALUE]
+  %[1]s company options add <company> <key> [--stdin|--from-file PATH|--value VALUE]
   %[1]s company secret generate <company> --all|--key KEY
   %[1]s projects list [--state active|archived] [--json]
   %[1]s projects get <project-id> [--json]
@@ -174,7 +173,7 @@ func (c CLI) usage() error {
   %[1]s billing statement --product-id PRODUCT_ID [--json]
   %[1]s upgrade [--channel stable|canary] [--json]
   %[1]s env get <key> --org ORG --project PROJECT --environment ENV
-  %[1]s env add <key> --org ORG --project PROJECT --environment ENV --from-env NAME|--from-file PATH|--stdin
+  %[1]s env add <key> --org ORG --project PROJECT --environment ENV --from-file PATH|--stdin
   %[1]s env pull [file] --org ORG --project PROJECT --environment ENV
   %[1]s env run --org ORG --project PROJECT --environment ENV -- <command>
   %[1]s env rm <key> --org ORG --project PROJECT --environment ENV
@@ -393,7 +392,6 @@ func (c CLI) companyOptions(args []string) error {
 func (c CLI) companyOptionSet(args []string, allowSecret bool) error {
 	fs := flag.NewFlagSet("company options set", flag.ContinueOnError)
 	fs.SetOutput(c.err)
-	fromEnv := fs.String("from-env", "", "read value from environment variable")
 	fromFile := fs.String("from-file", "", "read value from file")
 	stdin := fs.Bool("stdin", false, "read value from stdin")
 	valueFlag := fs.String("value", "", "literal non-secret value")
@@ -404,7 +402,7 @@ func (c CLI) companyOptionSet(args []string, allowSecret bool) error {
 		return errors.New("usage: company options set <company> <key>")
 	}
 	companyName, key := fs.Arg(0), fs.Arg(1)
-	value, source, secret, err := c.readInputValue(*fromEnv, *fromFile, *stdin, *valueFlag, allowSecret)
+	value, source, secret, err := c.readInputValue(*fromFile, *stdin, *valueFlag, allowSecret)
 	if err != nil {
 		return err
 	}
@@ -582,7 +580,6 @@ func (c CLI) companySecretSet(args []string) error {
 	fs := flag.NewFlagSet("company secret set", flag.ContinueOnError)
 	fs.SetOutput(c.err)
 	key := fs.String("key", "", "secret key")
-	fromEnv := fs.String("from-env", "", "read value from environment variable")
 	fromFile := fs.String("from-file", "", "read value from file")
 	stdin := fs.Bool("stdin", false, "read value from stdin")
 	if err := parseInterspersed(fs, args); err != nil {
@@ -591,7 +588,7 @@ func (c CLI) companySecretSet(args []string) error {
 	if fs.NArg() != 1 || *key == "" {
 		return errors.New("usage: company secret set <company> --key <key>")
 	}
-	value, source, _, err := c.readInputValue(*fromEnv, *fromFile, *stdin, "", true)
+	value, source, _, err := c.readInputValue(*fromFile, *stdin, "", true)
 	if err != nil {
 		return err
 	}
@@ -853,7 +850,6 @@ func (c CLI) envSet(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fromEnv := fs.String("from-env", "", "read value from environment variable")
 	fromFile := fs.String("from-file", "", "read value from file")
 	stdin := fs.Bool("stdin", false, "read value from stdin")
 	idempotencyKey := fs.String("idempotency-key", "", "stable mutation key")
@@ -866,7 +862,7 @@ func (c CLI) envSet(ctx context.Context, args []string) error {
 	if err := requireScope(*scope); err != nil {
 		return err
 	}
-	value, _, _, err := c.readInputValue(*fromEnv, *fromFile, *stdin, "", true)
+	value, _, _, err := c.readInputValue(*fromFile, *stdin, "", true)
 	if err != nil {
 		return err
 	}
@@ -1042,26 +1038,17 @@ func sortedKeys(values map[string]string) []string {
 	return keys
 }
 
-func (c CLI) readInputValue(fromEnv, fromFile string, stdin bool, literal string, allowSecret bool) (value string, source string, secret bool, err error) {
+func (c CLI) readInputValue(fromFile string, stdin bool, literal string, allowSecret bool) (value string, source string, secret bool, err error) {
 	count := 0
-	for _, set := range []bool{fromEnv != "", fromFile != "", stdin, literal != ""} {
+	for _, set := range []bool{fromFile != "", stdin, literal != ""} {
 		if set {
 			count++
 		}
 	}
 	if count != 1 {
-		return "", "", false, errors.New("provide exactly one of --from-env, --from-file, --stdin, or --value")
+		return "", "", false, errors.New("provide exactly one of --from-file, --stdin, or --value")
 	}
 	switch {
-	case fromEnv != "":
-		if !allowSecret {
-			return "", "", false, errors.New("--from-env is only accepted for secret-valued add commands")
-		}
-		value = c.getenv(fromEnv)
-		if value == "" {
-			return "", "", false, fmt.Errorf("environment variable %s is empty", fromEnv)
-		}
-		return value, "env:" + fromEnv, true, nil
 	case fromFile != "":
 		if !allowSecret {
 			return "", "", false, errors.New("--from-file is only accepted for secret-valued add commands")
@@ -1092,33 +1079,33 @@ func classifyOption(company CompanyRecord, name string) CompanyOption {
 		opt.Provider = parts[0]
 		opt.Kind = parts[1]
 	}
-	target := func(file string) []string {
-		return []string{filepath.ToSlash(filepath.Join("src", "host", "sites", company.Site, "secrets", file))}
+	target := func() []string {
+		return []string{openBaoRuntimeTarget(name)}
 	}
 	switch {
 	case name == "latitude.api_token":
 		opt.Purpose = "infrastructure"
-		opt.RenderTargets = target("provisioning.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "provisioning"
 	case strings.HasPrefix(name, "cloudflare."):
 		opt.Purpose = "infrastructure"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "dns"
 	case strings.HasPrefix(name, "stripe."):
 		opt.Purpose = "billing"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "billing-service.runtime"
 	case strings.HasPrefix(name, "aws."):
 		opt.Purpose = "backup"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "backup.runtime"
 	case strings.HasPrefix(name, "resend."):
 		opt.Purpose = "notification"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 		opt.RequiredBy = "notifications-service.runtime"
 	default:
 		opt.Purpose = "runtime_integration"
-		opt.RenderTargets = target("external.sops.yml")
+		opt.RenderTargets = target()
 	}
 	return opt
 }
@@ -1142,7 +1129,7 @@ func findSecretSpec(site, key string) SecretSpec {
 	return SecretSpec{
 		Key:           key,
 		Kind:          "secret",
-		RenderTargets: []string{"src/host/sites/" + site + "/secrets/external.sops.yml"},
+		RenderTargets: []string{openBaoRuntimeTarget(key)},
 		Generator:     func() (string, error) { return randomSecret(32) },
 	}
 }

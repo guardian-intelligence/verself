@@ -1,0 +1,26 @@
+# gazelle:prefix github.com/verself/integrations/cloudflare/r2-control-plane
+
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
+load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+
+deploy_declarations(visibility = ["//visibility:public"])
+
+go_module_checks()
+
+nomad_component(
+    name = "nomad_component",
+    artifacts = {
+        "//src/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane:cloudflare-r2-control-plane_nomad_artifact": "cloudflare-r2-control-plane",
+    },
+    component = "cloudflare_r2_control_plane",
+    deploy_phase = "platform",
+    digest_inputs = [":deploy_declarations"],
+    job_id = "cloudflare-r2-control-plane",
+    job_spec = "nomad.hcl",
+    provides = ["nomad:job:cloudflare-r2-control-plane"],
+    requires = [
+        "nomad:job:substrate-control-plane",
+    ],
+    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)

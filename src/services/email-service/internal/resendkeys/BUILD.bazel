@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "resendkeys",
+    srcs = ["keys.go"],
+    importpath = "github.com/verself/email-service/internal/resendkeys",
+    visibility = ["//src/services/email-service:__subpackages__"],
+)
+
+go_test(
+    name = "resendkeys_test",
+    srcs = ["keys_test.go"],
+    embed = [":resendkeys"],
+)

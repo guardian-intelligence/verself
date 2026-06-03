@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -38,31 +37,35 @@ type uploadBinding struct {
 }
 
 type uploadServer struct {
-	cfg          config
-	siteCfg      siteArtifactConfig
-	parent       r2control.ParentCredentials
-	parentClient *r2control.R2Client
-	authToken    string
-	mu           sync.Mutex
-	sessions     map[string]uploadSession
+	cfg       config
+	siteCfg   siteArtifactConfig
+	publisher r2control.ParentCredentials
+	authToken string
+	mu        sync.Mutex
+	sessions  map[string]uploadSession
 }
 
-func serveUploadAPI(ctx context.Context, cfg config, parent r2control.ParentCredentials, parentClient *r2control.R2Client) error {
-	siteCfg, err := loadSiteConfig(cfg.repoRoot, cfg.site)
+func serveUploadAPI(ctx context.Context, cfg config, publisher r2control.ParentCredentials) error {
+	siteCfg, err := siteArtifactConfigFromConfig(cfg)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(publisher.AccessKeyID) == "" {
+		return fmt.Errorf("publisher Cloudflare token id is required for upload sessions")
+	}
+	if strings.TrimSpace(publisher.SecretAccessKey) == "" {
+		return fmt.Errorf("publisher Cloudflare R2 secret access key is required for upload sessions")
 	}
 	token, err := loadServerAuthToken(cfg)
 	if err != nil {
 		return err
 	}
 	srv := &uploadServer{
-		cfg:          cfg,
-		siteCfg:      siteCfg,
-		parent:       parent,
-		parentClient: parentClient,
-		authToken:    token,
-		sessions:     map[string]uploadSession{},
+		cfg:       cfg,
+		siteCfg:   siteCfg,
+		publisher: publisher,
+		authToken: token,
+		sessions:  map[string]uploadSession{},
 	}
 	httpServer := &http.Server{
 		Addr:              cfg.listenAddr,
@@ -109,8 +112,12 @@ func (s *uploadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *uploadServer) authorized(r *http.Request) bool {
-	got := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	return got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.authToken)) == 1
+	prefix, token, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !ok || !strings.EqualFold(prefix, "Bearer") {
+		return false
+	}
+	got := strings.TrimSpace(token)
+	return got != "" && len(got) == len(s.authToken) && subtle.ConstantTimeCompare([]byte(got), []byte(s.authToken)) == 1
 }
 
 func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.Request, site string) {
@@ -135,17 +142,9 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 		writeJSONError(w, http.StatusBadRequest, "at least one artifact is required")
 		return
 	}
-	if strings.TrimSpace(s.parent.SessionToken) != "" {
-		writeJSONError(w, http.StatusFailedDependency, "parent Cloudflare credential must not be temporary")
-		return
-	}
 	ctx := r.Context()
-	if _, _, err := s.parentClient.EnsureBucket(ctx, s.siteCfg.Bucket); err != nil {
-		writeJSONError(w, http.StatusBadGateway, err.Error())
-		return
-	}
 	bindings := make([]uploadBinding, 0, len(req.Artifacts))
-	missingObjectKeys := make([]string, 0, len(req.Artifacts))
+	objectKeys := make([]string, 0, len(req.Artifacts))
 	seen := map[string]bool{}
 	for _, artifact := range req.Artifacts {
 		output, err := cleanArtifactOutput(artifact.Output)
@@ -167,53 +166,31 @@ func (s *uploadServer) handleCreateUploadSession(w http.ResponseWriter, r *http.
 			return
 		}
 		key := artifactKey(s.siteCfg, artifact.SHA256, output)
-		status, err := s.parentClient.HeadObject(ctx, s.siteCfg.Bucket, key)
-		if err != nil {
-			writeJSONError(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		present := false
-		switch status {
-		case http.StatusOK:
-			present = true
-		case http.StatusNotFound:
-			missingObjectKeys = append(missingObjectKeys, key)
-		default:
-			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("artifact %s HEAD returned status %d", output, status))
-			return
-		}
+		objectKeys = append(objectKeys, key)
 		bindings = append(bindings, uploadBinding{
-			output:  output,
-			sha256:  artifact.SHA256,
-			key:     key,
-			present: present,
+			output: output,
+			sha256: artifact.SHA256,
+			key:    key,
 		})
 	}
-	var tempClient *r2control.R2Client
-	if len(missingObjectKeys) > 0 {
-		// Keep the Cloudflare Account API token out of the deploy hot path.
-		temp, err := r2control.CreateLocalTemporaryCredentials(r2control.Endpoint(s.siteCfg.AccountID), s.siteCfg.AccountID, s.parent.SecretAccessKey, r2control.TemporaryCredentialRequest{
-			ParentAccessKeyID: s.parent.AccessKeyID,
-			Bucket:            s.siteCfg.Bucket,
-			Permission:        r2control.TemporaryPermissionObjectReadWrite,
-			Objects:           missingObjectKeys,
-			TTL:               s.cfg.uploadSessionTTL,
-		})
+	tempClient, err := s.temporaryR2Client(ctx, r2control.TemporaryPermissionObjectReadWrite, objectKeys, s.cfg.uploadSessionTTL)
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	for i := range bindings {
+		status, err := tempClient.HeadObject(ctx, s.siteCfg.Bucket, bindings[i].key)
 		if err != nil {
 			writeJSONError(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		tempClient, err = r2control.NewR2Client(r2control.R2ClientConfig{
-			Endpoint:        r2control.Endpoint(s.siteCfg.AccountID),
-			Region:          s.siteCfg.Region,
-			AccessKeyID:     temp.AccessKeyID,
-			SecretAccessKey: temp.SecretAccessKey,
-			SessionToken:    temp.SessionToken,
-			Source:          "cloudflare-r2-control-plane-upload-session",
-			Timeout:         s.cfg.timeout,
-		})
-		if err != nil {
-			writeJSONError(w, http.StatusFailedDependency, err.Error())
+		switch status {
+		case http.StatusOK:
+			bindings[i].present = true
+		case http.StatusNotFound:
+			bindings[i].present = false
+		default:
+			writeJSONError(w, http.StatusBadGateway, fmt.Sprintf("artifact %s HEAD returned status %d", bindings[i].output, status))
 			return
 		}
 	}
@@ -285,8 +262,17 @@ func (s *uploadServer) handleCompleteUploadSession(w http.ResponseWriter, r *htt
 		writeJSONError(w, http.StatusGone, "upload session expired")
 		return
 	}
+	objectKeys := make([]string, 0, len(session.Objects))
 	for _, object := range session.Objects {
-		status, err := s.parentClient.HeadObject(r.Context(), object.Bucket, object.Key)
+		objectKeys = append(objectKeys, object.Key)
+	}
+	tempClient, err := s.temporaryR2Client(r.Context(), r2control.TemporaryPermissionObjectReadOnly, objectKeys, completionCredentialTTL(session.ExpiresAt))
+	if err != nil {
+		writeJSONError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	for _, object := range session.Objects {
+		status, err := tempClient.HeadObject(r.Context(), object.Bucket, object.Key)
 		if err != nil {
 			writeJSONError(w, http.StatusBadGateway, err.Error())
 			return
@@ -302,6 +288,36 @@ func (s *uploadServer) handleCompleteUploadSession(w http.ResponseWriter, r *htt
 		CompletedAt: time.Now().UTC(),
 		Objects:     session.Objects,
 	})
+}
+
+func (s *uploadServer) temporaryR2Client(_ context.Context, permission string, objectKeys []string, ttl time.Duration) (*r2control.R2Client, error) {
+	temp, err := r2control.CreateLocalTemporaryCredentials(r2control.Endpoint(s.siteCfg.AccountID), s.siteCfg.AccountID, s.publisher.SecretAccessKey, r2control.TemporaryCredentialRequest{
+		ParentAccessKeyID: s.publisher.AccessKeyID,
+		Bucket:            s.siteCfg.Bucket,
+		Permission:        permission,
+		Objects:           objectKeys,
+		TTL:               ttl,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r2control.NewR2Client(r2control.R2ClientConfig{
+		Endpoint:        r2control.Endpoint(s.siteCfg.AccountID),
+		Region:          s.siteCfg.Region,
+		AccessKeyID:     temp.AccessKeyID,
+		SecretAccessKey: temp.SecretAccessKey,
+		SessionToken:    temp.SessionToken,
+		Source:          "cloudflare-r2-control-plane-upload-session",
+		Timeout:         s.cfg.timeout,
+	})
+}
+
+func completionCredentialTTL(expiresAt time.Time) time.Duration {
+	ttl := time.Until(expiresAt)
+	if ttl < time.Minute {
+		return time.Minute
+	}
+	return ttl
 }
 
 func decodeJSON(r *http.Request, out any) error {
@@ -343,7 +359,7 @@ func randomID() (string, error) {
 }
 
 func artifactKey(cfg siteArtifactConfig, digest, output string) string {
-	return strings.Trim(cfg.KeyPrefix, "/") + "/" + digest + "/" + output + ".tar"
+	return path.Join(cfg.SitePrefix, strings.Trim(cfg.KeyPrefix, "/"), digest, output+".tar")
 }
 
 func artifactGetterSource(cfg siteArtifactConfig, key string) string {
@@ -376,36 +392,14 @@ func isSHA256Hex(value string) bool {
 func loadServerAuthToken(cfg config) (string, error) {
 	path := strings.TrimSpace(cfg.authTokenFile)
 	if path == "" {
-		return "", fmt.Errorf("auth token file is required")
+		return "", errors.New("auth token file is required")
 	}
-	body, err := osReadFile(path)
-	if err == nil {
-		token := strings.TrimSpace(string(body))
-		if token == "" {
-			return "", fmt.Errorf("auth token file is empty")
-		}
-		return token, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return "", fmt.Errorf("create auth token directory: %w", err)
-	}
-	token, err := randomID()
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
-		return "", fmt.Errorf("write auth token file: %w", err)
-	}
-	return token, nil
-}
-
-func osReadFile(path string) ([]byte, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read auth token file: %w", err)
+		return "", fmt.Errorf("read auth token file: %w", err)
 	}
-	return body, nil
+	if token := strings.TrimSpace(string(body)); token != "" {
+		return token, nil
+	}
+	return "", errors.New("auth token file is empty")
 }

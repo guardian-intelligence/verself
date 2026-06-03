@@ -52,6 +52,13 @@ type config struct {
 }
 
 func main() {
+	if handled, err := runResendKeysCLI(context.Background()); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := runMigrationCLI(context.Background()); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -201,9 +208,9 @@ func loadConfig() (config, error) {
 		PGDSN:                 l.RequireString("VERSELF_PG_DSN"),
 		StalwartBaseURL:       l.String("EMAIL_SERVICE_STALWART_BASE_URL", "http://127.0.0.1:8090"),
 		PublicBaseURL:         l.RequireURL("EMAIL_SERVICE_STALWART_PUBLIC_BASE_URL"),
-		ResendAPIKey:          l.RequireString("EMAIL_SERVICE_RESEND_API_KEY"),
+		ResendAPIKey:          l.RequireCredential("resend-api-key"),
 		StalwartAdminUsername: l.RequireString("EMAIL_SERVICE_STALWART_ADMIN_USERNAME"),
-		StalwartAdminPassword: l.RequireString("EMAIL_SERVICE_STALWART_ADMIN_PASSWORD"),
+		StalwartAdminPassword: l.RequireCredential("stalwart-admin-password"),
 		ResendFromName:        l.String("EMAIL_SERVICE_RESEND_FROM_NAME", "verself"),
 		SyncDiscoveryInterval: l.Duration("EMAIL_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),
 		SyncReconcileInterval: l.Duration("EMAIL_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),

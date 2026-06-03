@@ -73,6 +73,29 @@ func TestInstallConfigSkipsSystemdWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestValidateResolvesRelativeNftBinForNomadArtifact(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	mustWrite(t, filepath.Join(root, "local", "verself-artifacts", "nftables-runtime", "bin", "nft"), "#!/bin/sh\n")
+
+	cfg := config{
+		artifactRoot:    filepath.Join("local", "verself-artifacts", "nftables-runtime"),
+		nftBin:          filepath.Join("local", "verself-artifacts", "nftables-runtime", "bin", "nft"),
+		destRoot:        "/",
+		hostRuntimeRoot: "/opt/verself/nftables",
+		manageSystemd:   true,
+	}
+
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	wantNftBin := filepath.Join(root, "local", "verself-artifacts", "nftables-runtime", "bin", "nft")
+	if cfg.nftBin != wantNftBin {
+		t.Fatalf("nftBin = %s, want %s", cfg.nftBin, wantNftBin)
+	}
+}
+
 func TestCopyManagedFileRequiresHeader(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source")

@@ -40,6 +40,7 @@ job "notifications-service" {
         command = "local/bin/notifications-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         NOTIFICATIONS_EMAIL_FROM_ADDRESS = "__VERSELF_EMAIL_FROM_ADDRESS__"
         NOTIFICATIONS_EMAIL_FROM_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
         NOTIFICATIONS_OPERATIONS_ALERT_EMAIL = "integrations.anveio@gmail.com"
@@ -64,11 +65,10 @@ job "notifications-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {
@@ -110,6 +110,7 @@ EOT
         command = "local/bin/notifications-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         NOTIFICATIONS_EMAIL_FROM_ADDRESS = "__VERSELF_EMAIL_FROM_ADDRESS__"
         NOTIFICATIONS_EMAIL_FROM_ORG_ID = "org_B7HWGKW0SH7G4EXW9XT8TCT60C"
         NOTIFICATIONS_OPERATIONS_ALERT_EMAIL = "integrations.anveio@gmail.com"
@@ -134,11 +135,10 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {

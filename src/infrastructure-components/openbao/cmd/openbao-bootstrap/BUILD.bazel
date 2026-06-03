@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "openbao-bootstrap_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/openbao/cmd/openbao-bootstrap",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@org_golang_x_crypto//chacha20poly1305",
+        "@org_golang_x_crypto//scrypt",
+    ],
+)
+
+go_binary(
+    name = "openbao-bootstrap",
+    embed = [":openbao-bootstrap_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "openbao-bootstrap_test",
+    srcs = ["main_test.go"],
+    embed = [":openbao-bootstrap_lib"],
+)

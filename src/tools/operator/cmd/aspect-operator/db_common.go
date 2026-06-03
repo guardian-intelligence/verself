@@ -73,6 +73,14 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
+func requirePGPassword(command string) (string, error) {
+	value := os.Getenv("PGPASSWORD")
+	if value == "" {
+		return "", errors.New(command + ": PGPASSWORD is required")
+	}
+	return value, nil
+}
+
 func envIntOr(name string, fallback int) int {
 	value := os.Getenv(name)
 	if value == "" {

@@ -72,7 +72,7 @@
 
 - name: Write temporary password file for initdb
   ansible.builtin.copy:
-    content: "{{ postgresql_admin_password }}"
+    content: "{{ lookup('ansible.builtin.password', '/dev/null length=64 chars=ascii_letters,digits') }}"
     dest: /tmp/.pg_initdb_pw
     owner: postgres
     group: postgres
@@ -149,19 +149,6 @@
   become: true
   become_user: postgres
   changed_when: false
-
-# --- Set admin password (idempotent — always update to match credential file) ---
-
-- name: Set postgres superuser password
-  community.postgresql.postgresql_user:
-    name: postgres
-    password: "{{ postgresql_admin_password }}"
-    login_unix_socket: /var/run/postgresql
-    login_user: postgres
-    trust_input: false
-  become: true
-  become_user: postgres
-  no_log: true
 
 # --- Local service databases ---
 

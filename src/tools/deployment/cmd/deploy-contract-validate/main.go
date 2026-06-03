@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/verself/deployment-tools/internal/deploycontract"
+	"github.com/verself/deployment-service/deploycontract"
 )
 
 func main() {

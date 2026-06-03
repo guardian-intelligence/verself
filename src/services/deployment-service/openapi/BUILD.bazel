@@ -1,0 +1,7 @@
+load("//src/smithy/build:openapi.bzl", "verself_openapi_specs")
+
+verself_openapi_specs(
+    name = "deployment_openapi",
+    public_projection = "deployment-public",
+    public_service = "Deployment",
+)

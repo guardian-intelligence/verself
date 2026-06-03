@@ -1,0 +1,33 @@
+name: Gamma Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gamma-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy main to gamma
+    if: github.repository == 'guardian-intelligence/verself' && github.ref == 'refs/heads/main'
+    runs-on: verself-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: guardian-intelligence/verself/.github/actions/checkout@main
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Deploy
+        run: aspect deploy --site=gamma --sha="$GITHUB_SHA"

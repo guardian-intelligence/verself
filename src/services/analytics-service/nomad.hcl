@@ -35,6 +35,7 @@ job "analytics-service" {
         command = "local/bin/analytics-service"
       }
       env {
+        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         ANALYTICS_ALLOWED_EVENT_PREFIXES = "build."
         ANALYTICS_DEFAULT_DATASET_ID = "build"
         ANALYTICS_DEFAULT_ENVIRONMENT = "prod"
@@ -55,11 +56,10 @@ job "analytics-service" {
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience.env"
+        destination = "secrets/auth-audience"
         perms = "0600"
-        env = true
         data = <<-EOT
-VERSELF_CRED_VALUE_AUTH_AUDIENCE={{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value | toJSON }}{{ end }}
+{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       resources {

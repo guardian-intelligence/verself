@@ -6,3 +6,66 @@ http_file(
     sha256 = "02dff22237bb600d947de302ae21d5463ebffbee302e18e423fd417cb4064bdf",
     url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/h/haproxy-awslc/haproxy-awslc_3.3.7-0+ha33+ubuntu24.04u1_amd64.deb",
 )
+
+http_file(
+    name = "haproxy_tool_libcrypt1_deb",
+    downloaded_file_path = "libcrypt1_4.4.36-4build1_amd64.deb",
+    sha256 = "9474785cd6f398512bf8c305c3901dbb111569dccb6f5832002373c0a8ac5832",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcrypt/libcrypt1_4.4.36-4build1_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libgcc_s1_deb",
+    downloaded_file_path = "libgcc-s1_14-20240412-0ubuntu1_amd64.deb",
+    sha256 = "a39efdcaa2245f026dc3254ce14fcff255fc430a17064632b6ba7c5da974a912",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libgcc-s1_14-20240412-0ubuntu1_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libjemalloc2_deb",
+    downloaded_file_path = "libjemalloc2_5.3.0-2build1_amd64.deb",
+    sha256 = "0cccf7701765b5a633b964ed551c2bd1c074cad17daea8fa20a4e9cad0adb5a8",
+    url = "https://archive.ubuntu.com/ubuntu/pool/universe/j/jemalloc/libjemalloc2_5.3.0-2build1_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_liblua5_4_0_deb",
+    downloaded_file_path = "liblua5.4-0_5.4.6-3build2_amd64.deb",
+    sha256 = "6a520259e5b06e86191a25af6d448387cdd2b3d291a0aa956ce272e84d071260",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/l/lua5.4/liblua5.4-0_5.4.6-3build2_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libopentracing1_deb",
+    downloaded_file_path = "libopentracing1_1.6.0-4_amd64.deb",
+    sha256 = "ef83c05e024987bca1752089b9c9d08892bc44871732d39a4802b6101a419c3f",
+    url = "https://archive.ubuntu.com/ubuntu/pool/universe/o/opentracing-cpp/libopentracing1_1.6.0-4_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libopentracing_c_wrapper_deb",
+    downloaded_file_path = "libopentracing-c-wrapper0t64_1.1.3-3.1build1_amd64.deb",
+    sha256 = "d0ad644cdc8a21448c9344e07ffaecda49ff8d97dcc0a603cbc1fc4e9a5ff26e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/universe/o/opentracing-c-wrapper/libopentracing-c-wrapper0t64_1.1.3-3.1build1_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libpcre2_8_0_deb",
+    downloaded_file_path = "libpcre2-8-0_10.42-4ubuntu2_amd64.deb",
+    sha256 = "bb38c38adb4ef548f2851b5cf7f70bbdbcb27d582c17550aa053edb9e4098d84",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/pcre2/libpcre2-8-0_10.42-4ubuntu2_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libssl_awslc_deb",
+    downloaded_file_path = "libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+    sha256 = "e75ceefa692bb002ae76d2e04ad88c344e524f28aeabf8b165c7bab922474b5c",
+    url = "https://www.haproxy.com/download/haproxy/performance/ubuntu/ha33/pool/main/a/awslc/libssl-awslc_3.3.0-0+ha33+ubuntu24.04u1_amd64.deb",
+)
+
+http_file(
+    name = "haproxy_tool_libstdcpp6_deb",
+    downloaded_file_path = "libstdc++6_14-20240412-0ubuntu1_amd64.deb",
+    sha256 = "4863e880d6ee538e4734c430c5579c1ac933b88a42c25bc9980d0f148c54b21e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-14/libstdc++6_14-20240412-0ubuntu1_amd64.deb",
+)

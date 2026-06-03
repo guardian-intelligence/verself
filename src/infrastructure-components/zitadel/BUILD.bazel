@@ -47,7 +47,10 @@ nomad_component(
     job_id = "zitadel",
     job_spec = "nomad.hcl",
     provides = ["zitadel:http"],
-    requires = ["postgres:server"],
+    requires = [
+        "email:resend-sending-key",
+        "postgres:server",
+    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

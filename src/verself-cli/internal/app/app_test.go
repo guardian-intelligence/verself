@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -132,10 +132,7 @@ func TestUpgradeInstallsVerifiedDistributionArtifact(t *testing.T) {
 	}
 }
 
-func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
-	requireTool(t, "age-keygen")
-	requireTool(t, "sops")
-
+func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 	xdgRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
@@ -153,38 +150,23 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 		"--cli-name", "guardian",
 	)
 
-	t.Setenv("LATITUDESH_AUTH_TOKEN", "lat_test_guardian")
-	runCLI(t, nil, "company", "options", "add", "guardian", "latitude.api_token", "--from-env", "LATITUDESH_AUTH_TOKEN")
+	runCLIWithInput(t, nil, "lat_test_guardian\n", "company", "options", "add", "guardian", "latitude.api_token", "--stdin")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.project_id", "--value", "proj_guardian")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.region", "--value", "ASH")
 	runCLI(t, nil, "company", "options", "set", "guardian", "latitude.plan", "--value", "f4-metal-medium")
 
-	t.Setenv("STRIPE_SECRET_KEY", "sk_test_guardian")
-	runCLI(t, nil, "company", "options", "add", "guardian", "stripe.secret_key", "--from-env", "STRIPE_SECRET_KEY")
+	runCLIWithInput(t, nil, "sk_test_guardian\n", "company", "options", "add", "guardian", "stripe.secret_key", "--stdin")
 	runCLI(t, nil, "company", "options", "set", "guardian", "stripe.publishable_key", "--value", "pk_test_guardian")
 
 	repoRoot := t.TempDir()
 	runCLI(t, nil, "bootstrap", "--company", "guardian", "--repo-root", repoRoot, "--json")
 
-	var out bytes.Buffer
-	runCLI(t, &out,
-		"env", "get", rootSOPSKeyName,
-		"--org", "guardianintelligence.org",
-		"--project", "verself",
-		"--environment", "bootstrap",
-		"--reveal-secret",
-	)
-	identity := strings.TrimSpace(out.String())
-	if !strings.HasPrefix(identity, "AGE-SECRET-KEY-") {
-		t.Fatalf("env get returned non-Age identity: %q", identity)
-	}
-
 	assertFileContains(t, filepath.Join(repoRoot, ".verself", "bootstrap", "manifest.yaml"), []string{
 		`owner_email: "shovon@guardianintelligence.org"`,
 		`organization_name: "guardianintelligence.org"`,
-		`recipient: "age1`,
 		`decoupled_from_verself_sh: true`,
 		`render_targets:`,
+		`openbao://kv-runtime/secret/org/latitude.api_token`,
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "src", "host", "sites", "prod", "vars.yml"), []string{
 		`service_discovery_canary_org_slug: "guardian"`,
@@ -192,54 +174,12 @@ func TestBootstrapRendersEncryptedCompanySiteArtifacts(t *testing.T) {
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "README.md"), []string{
 		"bazelisk build //src/guardian-cli:guardian",
-		"guardian env get VERSELF_SOPS_AGE_IDENTITY --org guardianintelligence.org --project verself --environment bootstrap",
 		"aspect deploy --site=prod --sha=HEAD",
 	})
 
-	provisioningBag := filepath.Join(repoRoot, "src", "host", "sites", "prod", "secrets", "provisioning.sops.yml")
-	raw := readFile(t, provisioningBag)
-	if strings.Contains(raw, "lat_test_guardian") {
-		t.Fatalf("encrypted provisioning bag contains plaintext Latitude token")
-	}
-	plain := decryptSOPS(t, repoRoot, provisioningBag, identity)
-	for _, want := range []string{
-		`latitude_api_token: lat_test_guardian`,
-	} {
-		if !strings.Contains(plain, want) {
-			t.Fatalf("decrypted provisioning bag missing %q:\n%s", want, plain)
-		}
-	}
-
-	hostBag := filepath.Join(repoRoot, "src", "host", "sites", "prod", "secrets", "host.sops.yml")
-	hostPlain := decryptSOPS(t, repoRoot, hostBag, identity)
-	for _, want := range []string{
-		"zitadel_initial_admin_password:",
-		"forgejo_initial_admin_password:",
-	} {
-		if !strings.Contains(hostPlain, want) {
-			t.Fatalf("decrypted host bag missing %q:\n%s", want, hostPlain)
-		}
-	}
-
-	externalBag := filepath.Join(repoRoot, "src", "host", "sites", "prod", "secrets", "external.sops.yml")
-	externalRaw := readFile(t, externalBag)
-	if strings.Contains(externalRaw, "sk_test_guardian") {
-		t.Fatalf("encrypted external bag contains plaintext Stripe secret")
-	}
-	externalPlain := decryptSOPS(t, repoRoot, externalBag, identity)
-	for _, want := range []string{
-		`stripe_secret_key: sk_test_guardian`,
-		`stripe_publishable_key: pk_test_guardian`,
-		"billing_cookie_signing_key:",
-		"stripe_webhook_secret:",
-	} {
-		if !strings.Contains(externalPlain, want) {
-			t.Fatalf("decrypted external bag missing %q:\n%s", want, externalPlain)
-		}
-	}
-
-	if found, path := treeContains(t, repoRoot, "AGE-SECRET-KEY-"); found {
-		t.Fatalf("rendered repository contains private Age identity in %s", path)
+	obsoleteSeedDir := filepath.Join(repoRoot, ".verself", "site-bootstrap")
+	if _, err := os.Stat(obsoleteSeedDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rendered obsolete local secret directory at %s: %v", obsoleteSeedDir, err)
 	}
 	if found, path := treeContains(t, repoRoot, "verself-cred://"); found {
 		t.Fatalf("rendered repository contains local credential ref in %s", path)
@@ -788,14 +728,13 @@ func TestEnvCommandsUseSecretsSDKBackedAPI(t *testing.T) {
 
 	t.Setenv("VERSELF_TOKEN", "tok_secret")
 	t.Setenv("VERSELF_SECRETS_API_URL", server.URL)
-	t.Setenv("API_TOKEN_VALUE", "tok_live")
 
-	runCLI(t, nil,
+	runCLIWithInput(t, nil, "tok_live\n",
 		"env", "add", "API_TOKEN",
 		"--org", "guardian",
 		"--project", "proj_1",
 		"--environment", "production",
-		"--from-env", "API_TOKEN_VALUE",
+		"--stdin",
 		"--idempotency-key", "secret:add",
 	)
 	if putKey != "secret:add" {
@@ -1442,9 +1381,6 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 }
 
 func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {
-	requireTool(t, "age-keygen")
-	requireTool(t, "sops")
-
 	xdgRoot := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
@@ -1524,66 +1460,6 @@ func testReleaseTar(t *testing.T, binaryName string, body string) []byte {
 
 func testDistributionTargetJSON(serverURL, packageName, channelName, digest string) string {
 	return `{"resourceName":"urn:verself:test:distribution/packages/` + packageName + `/channels/` + channelName + `/targets/` + strings.Replace(digest, ":", "-", 1) + `","package_name":"` + packageName + `","channel_name":"` + channelName + `","platform_os":"` + runtime.GOOS + `","platform_arch":"` + runtime.GOARCH + `","artifact_digest":"` + digest + `","artifact_digest_ref":"` + strings.Replace(digest, ":", "-", 1) + `","package_version":"0.2.0","state":"published","public_oci_reference":"oci.verself.sh/verself/` + packageName + `@` + digest + `","download_url":"` + serverURL + `/v2/verself/` + packageName + `/manifests/` + digest + `","published_at":"2026-05-25T12:00:00Z"}`
-}
-
-func requireTool(t *testing.T, name string) {
-	t.Helper()
-	envName := ""
-	runfile := ""
-	switch name {
-	case "age-keygen":
-		envName = "VERSELF_AGE_KEYGEN_BIN"
-		runfile = "src/tools/dev/binaries/age-keygen"
-	case "sops":
-		envName = "VERSELF_SOPS_BIN"
-		runfile = "src/tools/dev/binaries/sops"
-	}
-	if envName != "" && os.Getenv(envName) != "" {
-		return
-	}
-	if runfile != "" {
-		if path := findRunfile(runfile); path != "" {
-			t.Setenv(envName, path)
-			return
-		}
-	}
-	path, err := exec.LookPath(name)
-	if err != nil {
-		t.Skipf("%s is required for bootstrap render verification: %v", name, err)
-	}
-	if envName != "" {
-		t.Setenv(envName, path)
-	}
-}
-
-func decryptSOPS(t *testing.T, repoRoot, path, identity string) string {
-	t.Helper()
-	cmd := exec.Command(toolBinary("VERSELF_SOPS_BIN", "sops"), "-d", path)
-	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "SOPS_AGE_KEY="+identity)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("sops -d %s: %v\n%s", path, err, string(out))
-	}
-	return string(out)
-}
-
-func findRunfile(rel string) string {
-	testSrcDir := os.Getenv("TEST_SRCDIR")
-	if testSrcDir == "" {
-		return ""
-	}
-	candidates := []string{}
-	if workspace := os.Getenv("TEST_WORKSPACE"); workspace != "" {
-		candidates = append(candidates, filepath.Join(testSrcDir, workspace, rel))
-	}
-	candidates = append(candidates, filepath.Join(testSrcDir, "_main", rel), filepath.Join(testSrcDir, rel))
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
 }
 
 func assertFileContains(t *testing.T, path string, values []string) {
