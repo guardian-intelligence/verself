@@ -2,13 +2,17 @@ package sitebootstrap
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/verself/deployment-service/deployengine"
 )
 
-func TestBootstrapDeployChecksArtifactPublishingBeforeRemoteAccess(t *testing.T) {
+func TestBootstrapDeployReadsInventoryBeforeRemoteAccess(t *testing.T) {
 	root := t.TempDir()
 	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
 		Site:          "gamma",
@@ -16,142 +20,84 @@ func TestBootstrapDeployChecksArtifactPublishingBeforeRemoteAccess(t *testing.T)
 		RepoRoot:      root,
 		InventoryPath: filepath.Join(root, "missing-inventory.ini"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "--cloudflare-control-plane-binary") {
+	if err == nil || !strings.Contains(err.Error(), "read inventory") {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(err.Error(), "inventory") || strings.Contains(err.Error(), "OpenBao site root key") {
-		t.Fatalf("bootstrap deploy reached remote-facing checks before local artifact publishing validation: %v", err)
 	}
 }
 
-func TestBootstrapDeployChecksR2PublisherBeforeRemoteAccess(t *testing.T) {
-	root := t.TempDir()
-	cloudflareBinary := filepath.Join(root, "cloudflare-control-plane")
-	if err := os.WriteFile(cloudflareBinary, []byte("binary"), 0o700); err != nil {
+func TestVerifyArtifactCandidateChecksBodyDigest(t *testing.T) {
+	body := []byte("artifact-bytes")
+	err := verifyArtifactCandidate(deployengine.ArtifactPublishCandidate{
+		Output: "runtime",
+		SHA256: testSHA256(body),
+		Body:   body,
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
-		Site:             "gamma",
-		SHA:              "0123456789abcdef0123456789abcdef01234567",
-		RepoRoot:         root,
-		InventoryPath:    filepath.Join(root, "missing-inventory.ini"),
-		CloudflareBinary: cloudflareBinary,
+	err = verifyArtifactCandidate(deployengine.ArtifactPublishCandidate{
+		Output: "runtime",
+		SHA256: strings.Repeat("0", 64),
+		Body:   body,
 	})
-	if err == nil || !strings.Contains(err.Error(), "--r2-control-plane-binary") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(err.Error(), "inventory") || strings.Contains(err.Error(), "OpenBao site root key") {
-		t.Fatalf("bootstrap deploy reached remote-facing checks before local R2 validation: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "does not match expected") {
+		t.Fatalf("error = %v, want digest mismatch", err)
 	}
 }
 
-func TestBootstrapDeployChecksOpenBaoBeforeRemoteAccess(t *testing.T) {
-	root := t.TempDir()
-	cloudflareBinary := filepath.Join(root, "cloudflare-control-plane")
-	if err := os.WriteFile(cloudflareBinary, []byte("binary"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	r2Binary := filepath.Join(root, "cloudflare-r2-control-plane")
-	if err := os.WriteFile(r2Binary, []byte("binary"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
-		Site:                 "gamma",
-		SHA:                  "0123456789abcdef0123456789abcdef01234567",
-		RepoRoot:             root,
-		InventoryPath:        filepath.Join(root, "missing-inventory.ini"),
-		CloudflareBinary:     cloudflareBinary,
-		R2ControlPlaneBinary: r2Binary,
-	})
-	if err == nil || !strings.Contains(err.Error(), "--openbao-addr") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if strings.Contains(err.Error(), "inventory") || strings.Contains(err.Error(), "OpenBao site root key") {
-		t.Fatalf("bootstrap deploy reached remote-facing checks before OpenBao validation: %v", err)
-	}
-}
-
-func TestBootstrapR2ControlPlaneCommandUsesCredentialFiles(t *testing.T) {
-	root := t.TempDir()
-	r2Binary := filepath.Join(root, "cloudflare-r2-control-plane")
-	if err := os.WriteFile(r2Binary, []byte("binary"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	cloudflareBinary := filepath.Join(root, "cloudflare-control-plane")
-	if err := os.WriteFile(cloudflareBinary, []byte("binary"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	openBaoTokenFile := filepath.Join(root, "openbao-token")
-	if err := os.WriteFile(openBaoTokenFile, []byte("openbao-token"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	opts := normalizeBootstrapDeployOptions(BootstrapDeployOptions{
-		Site:                 "gamma",
-		RepoRoot:             root,
-		R2ControlPlaneBinary: r2Binary,
-		CloudflareBinary:     cloudflareBinary,
-		OpenBaoAddr:          "https://controller-openbao.internal",
-		OpenBaoTokenFile:     openBaoTokenFile,
-	})
-	publisher := bootstrapPublisherCredential{
-		AccessKeyID:     "publisher-token-id",
-		SecretAccessKey: "publisher-secret",
-		TokenID:         "publisher-token-id",
-	}
-	cmd, cleanup, err := startBootstrapR2ControlPlane(context.Background(), opts, "127.0.0.1:18732", "r2bootstrap_token", publisher)
+func TestLocalArtifactUploadPathWritesBody(t *testing.T) {
+	body := []byte("bundle")
+	path, cleanup, err := localArtifactUploadPath(deployengine.ArtifactPublishCandidate{Output: "bundle", Body: body})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cleanup()
+	if got := readFile(t, path); got != string(body) {
+		t.Fatalf("temporary artifact body = %q", got)
+	}
+}
+
+func TestSCPCommandUsesUppercasePortFlag(t *testing.T) {
+	cmd := scpCommand(context.Background(), inventoryTarget{Host: "2001:db8::1", User: "ubuntu", Port: 2222}, "/tmp/local", "/tmp/remote")
 	args := strings.Join(cmd.Args, "\n")
-	for _, want := range []string{
-		"--action=serve",
-		"--site=gamma",
-		"--repo-root=" + root,
-		"--listen=127.0.0.1:18732",
-		"--credential-source=" + bootstrapR2CredentialSource,
-	} {
+	for _, want := range []string{"-P", "2222", "ubuntu@[2001:db8::1]:/tmp/remote"} {
 		if !strings.Contains(args, want) {
-			t.Fatalf("R2 control-plane args missing %q:\n%s", want, args)
-		}
-	}
-	for _, prefix := range []string{"--auth-token-file=", "--parent-access-key-id-file=", "--parent-secret-access-key-file="} {
-		if argValue(cmd.Args, prefix) == "" {
-			t.Fatalf("R2 control-plane args missing %s:\n%s", prefix, args)
-		}
-	}
-	for path, want := range map[string]string{
-		argValue(cmd.Args, "--auth-token-file="):               "r2bootstrap_token",
-		argValue(cmd.Args, "--parent-access-key-id-file="):     "publisher-token-id",
-		argValue(cmd.Args, "--parent-secret-access-key-file="): "publisher-secret",
-	} {
-		if got := strings.TrimSpace(readFile(t, path)); got != want {
-			t.Fatalf("credential file %s = %q, want %q", path, got, want)
+			t.Fatalf("scp args missing %q:\n%s", want, args)
 		}
 	}
 }
 
-func TestCloudflareBootstrapPublisherArgsUseOpenBaoFiles(t *testing.T) {
-	root := t.TempDir()
-	opts := normalizeBootstrapDeployOptions(BootstrapDeployOptions{
-		Site:              "gamma",
-		RepoRoot:          root,
-		OpenBaoAddr:       "https://controller-openbao.internal/",
-		OpenBaoCACertFile: "ca.pem",
-		OpenBaoTokenFile:  "token",
+func TestRemoteArtifactFileUsesDigestAndSafeSegments(t *testing.T) {
+	got := remoteArtifactFile("/var/lib/verself/bootstrap/artifacts", "..", ".", deployengine.ArtifactPublishCandidate{
+		Output: "../service/runtime",
+		SHA256: strings.Repeat("a", 64),
 	})
 
-	args := strings.Join(cloudflareOpenBaoArgs(opts), "\n")
-	for _, want := range []string{
-		"--openbao-addr=https://controller-openbao.internal",
-		"--openbao-ca-cert=" + filepath.Join(root, "ca.pem"),
-		"--openbao-token-file=" + filepath.Join(root, "token"),
-	} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("OpenBao args missing %q:\n%s", want, args)
-		}
+	if strings.Contains(got, "/../") || strings.Contains(got, "/./") {
+		t.Fatalf("remote artifact path is not sanitized: %s", got)
+	}
+	if !strings.Contains(got, "/_/_/") || !strings.Contains(got, strings.Repeat("a", 64)+"-.._service_runtime.tar") {
+		t.Fatalf("remote artifact path missing digest-safe output name: %s", got)
+	}
+}
+
+func TestParseRemotePasswdEntry(t *testing.T) {
+	identity, err := parseRemotePasswdEntry("deployment_service", "deployment_service:x:990:984::/home/deployment_service:/usr/sbin/nologin\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.UID != 990 || identity.GID != 984 {
+		t.Fatalf("identity = uid:%d gid:%d, want uid:990 gid:984", identity.UID, identity.GID)
+	}
+}
+
+func TestParseRemotePasswdEntryRejectsMalformedOutput(t *testing.T) {
+	err := func() error {
+		_, err := parseRemotePasswdEntry("deployment_service", "deployment_service:x:not-a-uid:984\n")
+		return err
+	}()
+	if err == nil || !strings.Contains(err.Error(), "parse remote uid") {
+		t.Fatalf("error = %v, want parse remote uid error", err)
 	}
 }
 
@@ -178,15 +124,6 @@ func TestWriteInventory(t *testing.T) {
 	}
 }
 
-func argValue(args []string, prefix string) string {
-	for _, arg := range args {
-		if strings.HasPrefix(arg, prefix) {
-			return strings.TrimPrefix(arg, prefix)
-		}
-	}
-	return ""
-}
-
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	body, err := os.ReadFile(path)
@@ -194,4 +131,9 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(body)
+}
+
+func testSHA256(body []byte) string {
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])
 }

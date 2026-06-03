@@ -11,8 +11,6 @@ NomadComponentInfo = provider(
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
         "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names kept as build outputs.",
-        "provides": "Logical resources this component provides.",
-        "requires": "Logical resources this component requires.",
     },
 )
 
@@ -101,14 +99,9 @@ def _nomad_component_impl(ctx):
     digest_input_files, digest_inputs = _digest_input_records(ctx.attr.digest_inputs)
     descriptor_inputs.extend(digest_input_files)
 
-    requires = list(ctx.attr.requires)
-    provides = list(ctx.attr.provides)
-    if not provides:
-        provides = ["nomad:job:" + ctx.attr.job_id]
-
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 6,
+        "schema_version": 7,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "deploy_phase": ctx.attr.deploy_phase,
@@ -118,8 +111,6 @@ def _nomad_component_impl(ctx):
         "job_spec_path": job_spec.path,
         "label": _repo_label(ctx.label),
         "pre_artifacts": pre_artifacts,
-        "provides": provides,
-        "requires": requires,
         "sites": ctx.attr.sites,
         "unit_id": ctx.attr.job_id,
     }
@@ -136,8 +127,6 @@ def _nomad_component_impl(ctx):
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
             pre_artifacts = ctx.attr.pre_artifacts,
-            provides = provides,
-            requires = requires,
         ),
         OutputGroupInfo(nomad_descriptor = depset([descriptor])),
     ]
@@ -173,12 +162,6 @@ nomad_component = rule(
             allow_single_file = True,
             mandatory = True,
             doc = "Authored owner-local Nomad job spec.",
-        ),
-        "provides": attr.string_list(
-            doc = "Logical resources this component provides. Defaults to nomad:job:<job_id>.",
-        ),
-        "requires": attr.string_list(
-            doc = "Logical resources this component requires.",
         ),
         "sites": attr.string_list(
             doc = "Sites where this component participates. Empty means all sites.",

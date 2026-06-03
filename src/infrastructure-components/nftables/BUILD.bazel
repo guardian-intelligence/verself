@@ -88,6 +88,5 @@ nomad_component(
     deploy_phase = "pre_artifact",
     job_id = "nftables",
     job_spec = "nomad.hcl",
-    provides = ["host:firewall"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

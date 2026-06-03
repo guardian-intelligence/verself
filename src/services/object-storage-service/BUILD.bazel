@@ -43,10 +43,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "object-storage-service",
     job_spec = "nomad.hcl",
-    requires = [
-        "nomad:job:secrets-service",
-        "openbao:api",
-        "postgres:server",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

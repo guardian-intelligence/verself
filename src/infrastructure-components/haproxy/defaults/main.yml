@@ -2,7 +2,6 @@
 haproxy_config_dir: /etc/haproxy
 haproxy_nomad_upstreams_config: "{{ haproxy_config_dir }}/nomad-upstreams.cfg"
 haproxy_cert_dir: /etc/haproxy/certs
-haproxy_public_certificate_projection_dir: "{{ playbook_dir }}/../../../../.verself/bootstrap/{{ verself_site | default('prod') }}/tls/haproxy"
 haproxy_map_dir: /etc/haproxy/maps
 haproxy_log_dir: /var/log/haproxy
 haproxy_shm_stats_file: /var/lib/haproxy/edge-stats.shm

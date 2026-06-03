@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-func TestBootstrapModeCanUseR2ControlPlanePublishing(t *testing.T) {
-	exec := execution{Options: Options{Bootstrap: true}}
-	if !exec.bootstrapMode() {
-		t.Fatal("explicit bootstrap run should use bootstrap Nomad sequencing")
-	}
-}
-
 func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	root := t.TempDir()
 	writeDeployEngineTestFile(t, root, "src/integrations/cloudflare/account.json", `{

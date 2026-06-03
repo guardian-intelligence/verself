@@ -29,11 +29,9 @@ pkg_tar(
     out = "deployment-service.tar",
     files = {
         ":deployment-service": "bin/deployment-service",
-        "//src/tools/deployment/cmd/nomad-chown-exec:nomad-chown-exec": "bin/nomad-chown-exec",
     },
     modes = {
         "bin/deployment-service": "0755",
-        "bin/nomad-chown-exec": "0755",
     },
     visibility = ["//visibility:public"],
 )

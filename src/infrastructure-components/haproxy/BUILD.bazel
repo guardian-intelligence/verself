@@ -172,14 +172,5 @@ nomad_component(
     ],
     job_id = "haproxy-upstreams",
     job_spec = "nomad.hcl",
-    requires = [
-        "auth:control-plane",
-        "forgejo:http",
-        "grafana:http",
-        "host:firewall",
-        "stalwart:http",
-        "verdaccio:http",
-        "zitadel:http",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

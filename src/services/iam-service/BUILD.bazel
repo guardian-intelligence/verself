@@ -28,12 +28,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "iam-service",
     job_spec = "nomad.hcl",
-    requires = [
-        "auth:control-plane",
-        "nomad:job:secrets-service",
-        "nomad:job:spicedb",
-        "openbao:api",
-        "postgres:server",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -18,7 +18,6 @@ bootstrap_exceptions:
       - controller_openbao
     allowed_uses:
       - reconcile hosted-zone DNS records
-      - issue and project site TLS certificates
       - create site-scoped R2 deployment artifact child tokens
       - create site-scoped R2 object-storage child tokens
       - create recovery R2 child tokens
@@ -42,7 +41,7 @@ integrations:
     owner: src/integrations/cloudflare
     purpose: dns_and_tls
     controller: prod
-    gamma_policy: DNS and TLS automation runs from prod Cloudflare control-plane authority; gamma receives only derived DNS state and certificate projections.
+    gamma_policy: DNS reconciliation and R2 child-token automation run from prod Cloudflare control-plane authority; public-edge certificate issuance is explicit and outside host bootstrap.
   - key: billing.stripe
     provider: stripe
     replacement: keep_provider_native

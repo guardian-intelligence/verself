@@ -60,8 +60,20 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--dns-concurrency=" + str(ctx.args.dns_concurrency))
     if ctx.args.dry_run:
         args_list.append("--dry-run")
-    if ctx.args.certificate_projection_dir != "":
-        args_list.append("--certificate-projection-dir=" + (ctx.args.certificate_projection_dir if ctx.args.certificate_projection_dir.startswith("/") else ws_path(ctx, ctx.args.certificate_projection_dir)))
+    if ctx.args.provider != "":
+        args_list.append("--provider=" + ctx.args.provider)
+    if ctx.args.cloudflare_api_token_file != "":
+        args_list.append("--cloudflare-api-token-file=" + (ctx.args.cloudflare_api_token_file if ctx.args.cloudflare_api_token_file.startswith("/") else ws_path(ctx, ctx.args.cloudflare_api_token_file)))
+    if ctx.args.certificate_output_dir != "":
+        args_list.append("--certificate-output-dir=" + (ctx.args.certificate_output_dir if ctx.args.certificate_output_dir.startswith("/") else ws_path(ctx, ctx.args.certificate_output_dir)))
+    if ctx.args.tls_product_domain != "":
+        args_list.append("--tls-product-domain=" + ctx.args.tls_product_domain)
+    if ctx.args.tls_company_domain != "":
+        args_list.append("--tls-company-domain=" + ctx.args.tls_company_domain)
+    if ctx.args.tls_product_zone != "":
+        args_list.append("--tls-product-zone=" + ctx.args.tls_product_zone)
+    if ctx.args.tls_company_zone != "":
+        args_list.append("--tls-company-zone=" + ctx.args.tls_company_zone)
     if ctx.args.acme_directory_url != "":
         args_list.append("--acme-directory-url=" + ctx.args.acme_directory_url)
     if ctx.args.acme_contact_email != "":
@@ -95,10 +107,10 @@ cloudflare_control_plane = task(
     implementation = _cloudflare_control_plane_impl,
     name = "cloudflare-control-plane",
     group = ["integrations"],
-    summary = "Provision target-site Cloudflare resources from prod global account authority.",
+    summary = "Manage Cloudflare DNS/R2 resources and public-edge certificate issuance.",
     args = {
         "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, provision-site-bootstrap, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
         "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
         "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot A."),
@@ -113,11 +125,17 @@ cloudflare_control_plane = task(
         "dns_inventory": args.string(default = "", description = "Site inventory used for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini."),
         "dns_concurrency": args.int(default = 8, description = "Maximum parallel Cloudflare DNS write requests for reconcile-dns."),
         "dry_run": args.boolean(default = False, description = "Report the DNS diff without applying writes for reconcile-dns."),
-        "certificate_projection_dir": args.string(default = "", description = "Local directory to receive HAProxy public certificate PEM projections. Defaults to .verself/bootstrap/<site>/tls/haproxy."),
+        "provider": args.string(default = "", description = "Provider for direct certificate issuance. Supported value: cloudflare."),
+        "cloudflare_api_token_file": args.string(default = "", description = "File containing the Cloudflare API token for issue-site-certificates."),
+        "certificate_output_dir": args.string(default = "", description = "Directory to receive HAProxy public certificate PEM files."),
+        "tls_product_domain": args.string(default = "", description = "Product domain for public TLS issuance."),
+        "tls_company_domain": args.string(default = "", description = "Company domain for public TLS issuance."),
+        "tls_product_zone": args.string(default = "", description = "Cloudflare DNS zone for the product domain."),
+        "tls_company_zone": args.string(default = "", description = "Cloudflare DNS zone for the company domain."),
         "acme_directory_url": args.string(default = "", description = "ACME directory URL for public certificate issuance."),
         "acme_contact_email": args.string(default = "", description = "ACME account contact email for issue-site-certificates."),
         "acme_dns_propagation_wait": args.string(default = "", description = "Maximum wait for ACME DNS-01 TXT propagation."),
-        "certificate_renew_before": args.string(default = "", description = "Renew projected certificates expiring before this duration."),
+        "certificate_renew_before": args.string(default = "", description = "Renew certificates expiring before this duration."),
         "test_prefix": args.string(default = "control-plane-verification/", description = "R2 prefix used for live verification objects."),
         "inventory_prefix": args.string(default = "", description = "R2 object prefix for --action=inventory."),
         "inventory_depth": args.int(default = 2, description = "Prefix depth for --action=inventory summaries."),

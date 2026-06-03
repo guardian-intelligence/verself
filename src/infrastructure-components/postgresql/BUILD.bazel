@@ -72,6 +72,5 @@ nomad_component(
     deploy_phase = "pre_artifact",
     job_id = "postgresql",
     job_spec = "nomad.hcl",
-    provides = ["postgres:server"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

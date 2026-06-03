@@ -4,18 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/verself/deployment-service/internal/nomadclient"
-)
-
-const (
-	controlPlaneReadyTimeout = 3 * time.Minute
-	controlPlaneApplyTimeout = 5 * time.Minute
 )
 
 type NomadRegisterResult struct {
@@ -38,23 +32,12 @@ func registerNomadJobs(ctx context.Context, exec execution, inputs *deployInputs
 	if err := publishArtifacts(ctx, exec, inputs); err != nil {
 		return nomadApplyResult{}, err
 	}
-	jobs, err := prepareNomadJobsForSite(ctx, client, exec.RepoRoot, inputs.SiteModel, inputs.Bindings, inputs.Components)
+	jobs, err := prepareNomadJobsForSite(ctx, client, exec.RepoRoot, inputs.SiteModel, inputs.Bindings, inputs.Components, exec.TaskUserResolver)
 	if err != nil {
 		return nomadApplyResult{}, err
 	}
 	result := nomadApplyResult{Jobs: make([]NomadRegisterResult, 0, len(jobs))}
-	if !exec.bootstrapMode() {
-		return registerNomadJobsNormal(ctx, exec, client, inputs, jobs, result)
-	}
-	return registerNomadJobsBootstrap(ctx, exec, client, inputs, jobs, result)
-}
-
-func registerNomadJobsNormal(ctx context.Context, exec execution, client *nomadclient.Client, inputs *deployInputs, jobs []nomadJob, result nomadApplyResult) (nomadApplyResult, error) {
-	controlPlaneJobs, runtimeJobs, err := splitControlPlaneHandoff(jobs)
-	if err != nil {
-		return result, err
-	}
-	for _, job := range controlPlaneJobs {
+	for _, job := range jobs {
 		submitted, err := registerNomadJob(ctx, exec, client, job)
 		if err != nil {
 			return result, err
@@ -68,183 +51,12 @@ func registerNomadJobsNormal(ctx context.Context, exec execution, client *nomadc
 	if dispatched != nil {
 		result.DispatchedJobs++
 	}
-	for _, job := range runtimeJobs {
-		submitted, err := registerNomadJob(ctx, exec, client, job)
-		if err != nil {
-			return result, err
-		}
-		result.add(submitted)
-	}
 	return result, nil
-}
-
-func registerNomadJobsBootstrap(ctx context.Context, exec execution, client *nomadclient.Client, inputs *deployInputs, jobs []nomadJob, result nomadApplyResult) (nomadApplyResult, error) {
-	controlPlaneJobs, runtimeJobs, err := splitControlPlaneHandoff(jobs)
-	if err != nil {
-		return result, err
-	}
-	for _, job := range controlPlaneJobs {
-		submitted, err := registerNomadJob(ctx, exec, client, job)
-		if err != nil {
-			return result, err
-		}
-		result.add(submitted)
-	}
-	if err := waitForControlPlanePrereqs(ctx, client); err != nil {
-		return result, err
-	}
-	dispatched, err := dispatchControlPlane(ctx, exec, client, inputs)
-	if err != nil {
-		return result, err
-	}
-	if dispatched != nil {
-		result.DispatchedJobs++
-		if err := client.WaitForBatchComplete(ctx, dispatched.DispatchedJobID, controlPlaneApplyTimeout); err != nil {
-			return result, err
-		}
-		if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s completed\n", dispatched.DispatchedJobID); err != nil {
-			return result, fmt.Errorf("write substrate control-plane completion: %w", err)
-		}
-	}
-	blockingBatchJobs := blockingRuntimeBatchJobs(runtimeJobs)
-	for _, job := range runtimeJobs {
-		if blockingBatchJobs[job.JobID] {
-			if err := purgeBlockingBatchJob(ctx, exec, client, job.JobID); err != nil {
-				return result, err
-			}
-		}
-		submitted, err := registerNomadJob(ctx, exec, client, job)
-		if err != nil {
-			return result, err
-		}
-		result.add(submitted)
-		if !blockingBatchJobs[job.JobID] {
-			continue
-		}
-		if err := client.WaitForBatchComplete(ctx, job.JobID, controlPlaneApplyTimeout); err != nil {
-			return result, err
-		}
-		if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s completed\n", job.JobID); err != nil {
-			return result, fmt.Errorf("write batch completion: %w", err)
-		}
-	}
-	return result, nil
-}
-
-func purgeBlockingBatchJob(ctx context.Context, exec execution, client *nomadclient.Client, jobID string) error {
-	purged, err := client.PurgeJob(ctx, jobID)
-	if err != nil {
-		return err
-	}
-	if purged == nil {
-		return nil
-	}
-	if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s purged eval_id=%s\n", purged.JobID, purged.EvalID); err != nil {
-		return fmt.Errorf("%s: write purged job status: %w", purged.JobID, err)
-	}
-	return nil
 }
 
 func (r *nomadApplyResult) add(job NomadRegisterResult) {
 	r.Jobs = append(r.Jobs, job)
 	r.SubmittedJobs++
-}
-
-func waitForControlPlanePrereqs(ctx context.Context, client *nomadclient.Client) error {
-	if err := client.WaitForTasks(ctx, "openbao", []nomadclient.TaskExpectation{
-		{Name: "bootstrap", State: "dead", ExitCode: ptr(0)},
-		{Name: "server", State: "running"},
-	}, controlPlaneReadyTimeout); err != nil {
-		return err
-	}
-	if err := client.WaitForTasks(ctx, "postgresql", []nomadclient.TaskExpectation{
-		{Name: "setup", State: "dead", ExitCode: ptr(0)},
-		{Name: "server", State: "running"},
-	}, controlPlaneReadyTimeout); err != nil {
-		return err
-	}
-	return nil
-}
-
-func ptr(value int) *int {
-	return &value
-}
-
-func splitControlPlaneHandoff(jobs []nomadJob) ([]nomadJob, []nomadJob, error) {
-	requiredOrder := []string{"openbao", "postgresql", "substrate-control-plane"}
-	byID := make(map[string]nomadJob, len(jobs))
-	for _, job := range jobs {
-		byID[job.JobID] = job
-	}
-	controlPlaneJobs := make([]nomadJob, 0, len(requiredOrder))
-	required := make(map[string]bool, len(requiredOrder))
-	for _, jobID := range requiredOrder {
-		job, ok := byID[jobID]
-		if !ok {
-			return nil, nil, fmt.Errorf("required control-plane handoff job %q is missing", jobID)
-		}
-		controlPlaneJobs = append(controlPlaneJobs, job)
-		required[jobID] = true
-	}
-	runtimeJobs := make([]nomadJob, 0, len(jobs)-len(controlPlaneJobs))
-	for _, job := range jobs {
-		if required[job.JobID] {
-			continue
-		}
-		runtimeJobs = append(runtimeJobs, job)
-	}
-	return controlPlaneJobs, runtimeJobs, nil
-}
-
-func blockingRuntimeBatchJobs(jobs []nomadJob) map[string]bool {
-	required := resourcesRequiredByNonBatchJobs(jobs)
-	blocking := make(map[string]bool)
-	for {
-		changed := false
-		for _, job := range jobs {
-			if !isBatchJob(job) || blocking[job.JobID] || !providesRequiredResource(job, required) {
-				continue
-			}
-			blocking[job.JobID] = true
-			for _, resource := range job.Requires {
-				if required[resource] {
-					continue
-				}
-				required[resource] = true
-				changed = true
-			}
-		}
-		if !changed {
-			break
-		}
-	}
-	return blocking
-}
-
-func resourcesRequiredByNonBatchJobs(jobs []nomadJob) map[string]bool {
-	required := make(map[string]bool)
-	for _, job := range jobs {
-		if isBatchJob(job) {
-			continue
-		}
-		for _, resource := range job.Requires {
-			required[resource] = true
-		}
-	}
-	return required
-}
-
-func isBatchJob(job nomadJob) bool {
-	return job.Job != nil && job.Job.Type != nil && *job.Job.Type == "batch"
-}
-
-func providesRequiredResource(job nomadJob, required map[string]bool) bool {
-	for _, resource := range job.Provides {
-		if required[resource] {
-			return true
-		}
-	}
-	return false
 }
 
 func registerNomadJob(ctx context.Context, exec execution, client *nomadclient.Client, job nomadJob) (NomadRegisterResult, error) {

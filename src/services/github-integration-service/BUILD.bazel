@@ -50,10 +50,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "github-integration",
     job_spec = "nomad.hcl",
-    requires = [
-        "openbao:api",
-        "postgres:server",
-        "sandbox-rental:service",
-    ],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -136,6 +136,32 @@ func TestApplyCompletedArtifactSourcesBindsDownloadURLs(t *testing.T) {
 	}
 }
 
+func TestApplyArtifactGetterSourcesAcceptsBootstrapFileURLs(t *testing.T) {
+	inputs := &deployInputs{
+		Bindings: map[string]artifactBinding{
+			"openbao-runtime": {
+				Artifact: deploymodel.Artifact{Output: "openbao-runtime"},
+			},
+		},
+		ControlPlaneObject: objectArtifact{
+			Artifact: deploymodel.Artifact{Output: controlPlaneBundleOutput},
+		},
+	}
+	err := applyArtifactGetterSources(inputs, map[string]string{
+		"openbao-runtime":        "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/openbao-runtime.tar",
+		controlPlaneBundleOutput: "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/substrate-control-plane-bundle.tar",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inputs.Bindings["openbao-runtime"].Artifact.GetterSource; !strings.HasPrefix(got, "file:///") {
+		t.Fatalf("getter source = %q", got)
+	}
+	if got := inputs.ControlPlaneObject.Artifact.GetterSource; !strings.HasPrefix(got, "file:///") {
+		t.Fatalf("control-plane getter source = %q", got)
+	}
+}
+
 func testExecution() execution {
 	return execution{Options: Options{Site: "gamma", Tracer: otel.Tracer("deployengine-test")}}
 }

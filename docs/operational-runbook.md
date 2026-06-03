@@ -54,17 +54,17 @@ cd /home/ubuntu/Projects/verself-sh
 git pull --ff-only
 ```
 
-`provision-site-bootstrap` ensures the deployment artifact bucket and verifies a
-temporary bootstrap publisher. `aspect site bootstrap-deploy` mints a
-short-lived R2 publisher credential in memory through the Cloudflare control
-plane, uses it for the initial artifact publication, and revokes it before
-returning. Runtime Cloudflare child credentials for deployment publication,
-recovery, and object-storage-service are written to OpenBao by their rotation
-actions after provider verification. Product provider credentials such as Stripe
-and GitHub App private material may be absent during substrate bootstrap; if
-absent, the owning service or gate fails when it consumes that runtime secret.
-Resend sending credentials are created by `email-service` after site OpenBao is
-available.
+`aspect site converge-host` configures the OS, installs host tools, starts
+Nomad, and installs the operator-provided OpenBao site root key. It skips the
+public edge. `aspect site bootstrap-deploy` builds locally, copies every
+deployment artifact to the target host over SSH, registers the Nomad jobs
+through a temporary SSH tunnel, and exits. Runtime Cloudflare child credentials
+for deployment publication, recovery, and object-storage-service are written to
+OpenBao by their rotation actions after provider verification. Product provider
+credentials such as Stripe and GitHub App private material may be absent during
+substrate bootstrap; if absent, the owning service or gate fails when it
+consumes that runtime secret. Resend sending credentials are created by
+`email-service` after site OpenBao is available.
 
 The site root key is the operator-held bootstrap key for OpenBao initialization, seal, and
 unseal. It is separate from the fresh-host SSH root password. Runtime DEKs and
@@ -87,9 +87,9 @@ Cloudflare account API tokens are stored only in prod controller OpenBao and are
 exposed only to the rotation/provisioning control plane. Controller-only
 bootstrap exceptions are imported into controller OpenBao.
 
-Prod owns global DNS and TLS/certificate control-plane operations for every
-Verself site. Target sites receive DNS records and certificate projections, not
-Cloudflare DNS API tokens.
+Prod owns global DNS and R2 control-plane operations for every Verself site.
+Target hosts do not receive Cloudflare account authority during host
+convergence.
 
 Provision two Cloudflare account admin API tokens before bootstrap. They are
 stored only in controller OpenBao at
@@ -142,14 +142,15 @@ aspect integrations cloudflare-control-plane \
 
 aspect integrations cloudflare-control-plane \
   --site=gamma \
-  --action=provision-site-bootstrap \
+  --action=ensure-bucket \
   --openbao-addr=<controller-openbao-addr> \
   --openbao-token-file=<controller-openbao-token-file>
 ```
 
 If prod controller OpenBao is not reachable during first-site recovery, recover
-or establish controller OpenBao before running Cloudflare DNS, TLS, or R2
-provisioning. The Cloudflare control plane does not accept static account-admin
+or establish controller OpenBao before running Cloudflare DNS or R2
+provisioning. TLS issuance is an explicit public-edge step outside host
+bootstrap. The Cloudflare control plane does not accept static account-admin
 secret files.
 
 Steady-state child rotation uses the prod controller OpenBao account-admin pair
@@ -197,21 +198,20 @@ URLs per deployment. Nomad downloads artifacts through object-scoped URLs
 returned after upload verification; it does not receive a host-wide R2
 credential.
 
-The initial artifact publisher is minted by the Cloudflare control plane for
-each `aspect site bootstrap-deploy` run. It is passed in memory to the local R2
-helper and revoked before the command exits. Nomad artifact downloads use
-per-object download sources returned by the site-local R2 control plane after
-upload verification.
+Bootstrap artifact delivery is SSH file copy to the target host. Nomad artifact
+downloads use `file://` sources for that first deployment. Steady-state
+deployments use per-object download sources returned by the site-local R2
+control plane after upload verification.
 
 Runtime deployment publisher, object-storage, and recovery credentials are
 OpenBao entries.
 
-Daily Cloudflare rotation is controller-owned:
+Daily Cloudflare DNS/R2 rotation is controller-owned:
 
 ```text
 verify cloudflare.account_admin
   -> rotate the account-admin pair through the peer token
-  -> reconcile DNS and certificate state from prod control-plane authority
+  -> reconcile DNS state from prod control-plane authority
   -> create new R2 child token generation for each R2 capability
   -> write runtime child generations to OpenBao
   -> verify real R2 access for every child generation
@@ -256,7 +256,7 @@ aspect site root-handoff \
   --force-inventory
 ```
 
-Then materialize, converge, publish DNS, and deploy:
+Then materialize provider state, publish DNS, converge the host, and deploy:
 
 OpenBao initialization uses the root token returned by `bao operator init` only
 inside the first bootstrap transaction. The token is not stored in `/etc`,
@@ -266,12 +266,12 @@ with an auditable reason and no persistence in repo files, generated artifacts,
 shell history, or logs.
 
 ```shell
-aspect integrations cloudflare-control-plane --site=gamma --action=provision-site-bootstrap
+aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns --dry-run
+aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns
+aspect integrations cloudflare-control-plane --site=gamma --action=ensure-bucket
 aspect site converge-host \
   --site=gamma \
   --openbao-site-root-key-file="$BOOTSTRAP_SECRET_DIR/site-root-key"
-aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns --dry-run
-aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns
 aspect site bootstrap-deploy --site=gamma --sha="$(git rev-parse HEAD)"
 aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ```
@@ -280,14 +280,15 @@ aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 
 ```text
 external provider authority available through controller OpenBao
-  -> site root key is copied to the host as OpenBao bootstrap authority
+  -> site root key is provided as an explicit operator file
   -> host base converged
   -> OpenBao initialized and unsealed; unseal material is wrapped by the site root key
   -> Nomad starts with site-local OpenBao integration
-  -> bootstrap-deploy publishes initial R2 artifacts and tunnels to Nomad
+  -> bootstrap-deploy copies local artifacts over SSH and tunnels to Nomad
   -> substrate-control-plane creates generated runtime secrets through OpenBao transit/random and applies workload roles
   -> integration services or rotation commands project external runtime secrets into OpenBao
   -> Nomad deploys deployment-service and site-local control-plane jobs
+  -> public-edge certificates and HAProxy are converged after core services are healthy
   -> Pomerium operator access handoff is verified
   -> normal aspect deploy submits requests to deployment-service
 ```
@@ -302,10 +303,10 @@ Ansible.
 
 `aspect site bootstrap-deploy` is the only deployment-shaped bootstrap escape
 hatch. It runs from the controller, opens a temporary recovery SSH tunnel to the
-site Nomad API, asks `cloudflare-control-plane` to mint a short-lived scoped R2
-publisher, runs a local one-shot Cloudflare R2 control-plane with that
-credential in private temp files, publishes the initial immutable artifacts to
-R2, registers the Nomad jobs, revokes the publisher, and exits.
+site Nomad API, builds the deployment inputs locally, copies the artifact bytes
+to `/var/lib/verself/bootstrap/artifacts/<site>/<sha>/` on the host, rewrites
+the Nomad artifact sources to those host-local files, registers the Nomad jobs,
+and exits.
 
 Only two local host state classes remain after handoff:
 

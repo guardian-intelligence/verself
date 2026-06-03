@@ -77,6 +77,5 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "forgejo",
     job_spec = "nomad.hcl",
-    provides = ["forgejo:http"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

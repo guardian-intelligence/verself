@@ -10,14 +10,12 @@ load(
     "host_ansible_env",
     "host_ansible_playbook",
     "inventory_check",
+    "require_arg",
     "resolve_sha",
     "ws_path",
 )
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
-_CLOUDFLARE_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane"
-_CLOUDFLARE_R2_CONTROL_PLANE_TARGET = "//src/integrations/cloudflare/r2-control-plane/cmd/cloudflare-r2-control-plane:cloudflare-r2-control-plane"
-_HAPROXY_HOST_INSTALL_TARGET = "//src/infrastructure-components/haproxy:host_install_artifact"
 _HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
 _SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
 
@@ -28,11 +26,18 @@ def _abs(ctx, path):
         return path
     return ws_path(ctx, path)
 
-def _default_site_root_key(site):
-    return ".verself/bootstrap/" + site + "/site-root.key"
-
 def _default_inventory(site):
     return HOST_CONFIGURATION_DIR + "/sites/" + site + "/inventory.ini"
+
+def _require_existing_file(ctx, name, path):
+    resolved = _abs(ctx, path)
+    exists = (ctx.std.process.command("test")
+        .args(["-f", resolved])
+        .spawn().wait())
+    if exists.code != 0:
+        ctx.std.io.stderr.write("ERROR: --" + name + " file not found: " + path + "\n")
+        return False
+    return True
 
 def _inventory_write_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
@@ -130,14 +135,12 @@ root_handoff = task(
 
 def _converge_host_impl(ctx):
     site = ctx.args.site or DEFAULT_SITE
-    site_root_key = ctx.args.openbao_site_root_key_file or _default_site_root_key(site)
-    if inventory_check(ctx, site = site) != 0:
+    site_root_key = ctx.args.openbao_site_root_key_file
+    if not require_arg(ctx, "openbao-site-root-key-file", site_root_key):
         return 1
-    exists = (ctx.std.process.command("test")
-        .args(["-f", _abs(ctx, site_root_key)])
-        .spawn().wait())
-    if exists.code != 0:
-        ctx.std.io.stderr.write("ERROR: " + site_root_key + " not found. Create the site root key before host convergence.\n")
+    if not _require_existing_file(ctx, "openbao-site-root-key-file", site_root_key):
+        return 1
+    if inventory_check(ctx, site = site) != 0:
         return 1
     ansible_playbook = host_ansible_playbook(ctx)
     if ansible_playbook == "":
@@ -149,9 +152,6 @@ def _converge_host_impl(ctx):
     host_tools = bazel_output_file(ctx, _HOST_TOOLS_TARGET)
     if host_tools == "":
         return 1
-    haproxy_host_install = bazel_output_file(ctx, _HAPROXY_HOST_INSTALL_TARGET)
-    if haproxy_host_install == "":
-        return 1
     spire_registry = bazel_output_file(ctx, _SPIRE_IDENTITY_REGISTRY_TARGET)
     if spire_registry == "":
         return 1
@@ -159,12 +159,12 @@ def _converge_host_impl(ctx):
         "-i",
         ws_path(ctx, _default_inventory(site)),
         "playbooks/site.yml",
+        "--skip-tags",
+        "edge,haproxy",
         "-e",
         "verself_site=" + site,
         "-e",
         "verself_host_tools_artifact=" + host_tools,
-        "-e",
-        "haproxy_host_install_artifact=" + haproxy_host_install,
         "-e",
         "spire_registrations_file=" + spire_registry,
         "-e",
@@ -186,7 +186,7 @@ converge_host = task(
     summary = "Converge the minimum host foundation and Nomad substrate for a site.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
-        "openbao_site_root_key_file": args.string(default = "", description = "Site root key file. Defaults to .verself/bootstrap/<site>/site-root.key."),
+        "openbao_site_root_key_file": args.string(default = "", description = "Operator-held site root key file for OpenBao bootstrap."),
     },
 )
 
@@ -197,12 +197,6 @@ def _bootstrap_deploy_impl(ctx):
         return 1
     if inventory_check(ctx, site = site) != 0:
         return 1
-    r2_control_plane = bazel_output_file(ctx, _CLOUDFLARE_R2_CONTROL_PLANE_TARGET)
-    if r2_control_plane == "":
-        return 1
-    cloudflare_control_plane = bazel_output_file(ctx, _CLOUDFLARE_CONTROL_PLANE_TARGET)
-    if cloudflare_control_plane == "":
-        return 1
     args_list = [
         "bootstrap-deploy",
         "--site=" + site,
@@ -210,15 +204,7 @@ def _bootstrap_deploy_impl(ctx):
         "--repo-root=" + ws_path(ctx),
         "--inventory=" + ws_path(ctx, _default_inventory(site)),
         "--ssh-transport=" + ctx.args.ssh_transport,
-        "--r2-control-plane-binary=" + r2_control_plane,
-        "--cloudflare-control-plane-binary=" + cloudflare_control_plane,
     ]
-    if ctx.args.openbao_addr != "":
-        args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
-    if ctx.args.openbao_ca_cert != "":
-        args_list.append("--openbao-ca-cert=" + (ctx.args.openbao_ca_cert if ctx.args.openbao_ca_cert.startswith("/") else ws_path(ctx, ctx.args.openbao_ca_cert)))
-    if ctx.args.openbao_token_file != "":
-        args_list.append("--openbao-token-file=" + (ctx.args.openbao_token_file if ctx.args.openbao_token_file.startswith("/") else ws_path(ctx, ctx.args.openbao_token_file)))
     if ctx.args.timeout != "":
         args_list.append("--timeout=" + ctx.args.timeout)
     return bazel_run(
@@ -238,9 +224,6 @@ bootstrap_deploy = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or ref to deploy. Defaults to HEAD."),
         "ssh_transport": args.string(default = "recovery", description = "SSH transport for the bootstrap Nomad tunnel: recovery or inventory."),
-        "openbao_addr": args.string(default = "", description = "Controller OpenBao address."),
-        "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file."),
-        "openbao_token_file": args.string(default = "", description = "File containing the controller OpenBao token."),
         "timeout": args.string(default = "15m", description = "Bootstrap deploy timeout as a Go duration."),
     },
 )

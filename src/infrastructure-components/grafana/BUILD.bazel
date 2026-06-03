@@ -79,7 +79,5 @@ nomad_component(
     pre_artifacts = {
         ":runtime_artifact": "grafana-runtime",
     },
-    provides = ["grafana:http"],
-    requires = ["postgres:server"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

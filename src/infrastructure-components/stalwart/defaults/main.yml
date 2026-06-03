@@ -13,7 +13,7 @@ stalwart_spam_filter_version: "2.0.5"
 stalwart_spam_filter_sha256: "4ac035283240e5772ad1e422ba68a9cbcb985b8de86dc4c88dbb60061b51bd07"
 stalwart_spam_filter_local_path: "{{ stalwart_data_dir }}/spam-filter.toml"
 
-# TLS certificate paths populated by prod control-plane certificate projection.
+# TLS certificate paths managed by host bootstrap.
 stalwart_tls_cert_dir: /etc/stalwart/certs
 
 stalwart_db_name: stalwart

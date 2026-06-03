@@ -14,38 +14,6 @@ import (
 	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
 )
 
-func TestWriteBootstrapPublisherCredentialUsesFixedFD(t *testing.T) {
-	publisher := r2control.CreatedAPIToken{
-		ID:            "token-id",
-		S3AccessKeyID: "access-key-id",
-		S3SecretKey:   "publisher-secret",
-		ExpiresOn:     "2026-06-02T20:00:00Z",
-	}
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = reader.Close() }()
-	originalOutput := openBootstrapPublisherOutput
-	openBootstrapPublisherOutput = func() (*os.File, error) { return writer, nil }
-	defer func() {
-		openBootstrapPublisherOutput = originalOutput
-	}()
-
-	if err := writeBootstrapPublisherCredential(publisher); err != nil {
-		t.Fatal(err)
-	}
-
-	var got bootstrapPublisherCredential
-	err = json.NewDecoder(reader).Decode(&got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.AccessKeyID != publisher.S3AccessKeyID || got.SecretAccessKey != publisher.S3SecretKey || got.TokenID != publisher.ID || got.ExpiresOn != publisher.ExpiresOn {
-		t.Fatalf("credential = %#v", got)
-	}
-}
-
 func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 	if !retryableR2CredentialPropagation(r2control.StatusError{StatusCode: http.StatusUnauthorized}) {
 		t.Fatal("401 provider status should be retryable")
@@ -264,7 +232,6 @@ func validTestConfig() config {
 		keyPrefix:              "sha256",
 		region:                 "auto",
 		tempTTL:                15 * time.Minute,
-		uploadSessionTTL:       30 * time.Minute,
 		childTokenTTL:          7 * 24 * time.Hour,
 		accountAdminTTL:        7 * 24 * time.Hour,
 		inventoryDepth:         2,

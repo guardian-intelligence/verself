@@ -143,9 +143,9 @@ plaintext files.
 ## Cloudflare Control Plane
 
 Cloudflare account authority is a prod control-plane concern. Prod owns global
-Cloudflare DNS reconciliation and TLS certificate issuance for every Verself
-site. Target sites receive DNS records, certificate projections, and scoped R2
-credentials. They do not receive Cloudflare DNS API tokens.
+Cloudflare DNS reconciliation and scoped R2 credential creation for every
+Verself site. Target sites receive DNS records and scoped R2 credentials. Host
+bootstrap does not receive Cloudflare account authority.
 
 Cloudflare R2 credentials are account-scoped provider credentials. Verself keeps
 the Cloudflare account boundary in controller OpenBao and projects narrower
@@ -182,9 +182,8 @@ prod controller and applies the site's `cloudflare_dns_records` with the
 account-admin pair. It produces DNS records and operational evidence, not site
 credential material.
 
-TLS/certificate issuance uses the same prod Cloudflare authority. Certificate
-material is projected to target-site OpenBao/Nomad or host convergence outputs
-as derived secret material. Site hosts do not run Cloudflare DNS-01 issuers.
+TLS/certificate issuance is an explicit public-edge transition. The resulting
+HAProxy PEM is host runtime material and is not part of host bootstrap.
 
 R2 buckets are capability resources:
 

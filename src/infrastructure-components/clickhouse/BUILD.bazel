@@ -68,7 +68,6 @@ nomad_component(
     deploy_phase = "pre_artifact",
     job_id = "clickhouse-host-install",
     job_spec = "host-install.nomad.hcl",
-    provides = ["clickhouse:host-tools"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
@@ -81,8 +80,6 @@ nomad_component(
     deploy_phase = "platform",
     job_id = "clickhouse-migrations",
     job_spec = "nomad.hcl",
-    provides = ["clickhouse:migrations"],
-    requires = ["clickhouse:host-tools"],
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

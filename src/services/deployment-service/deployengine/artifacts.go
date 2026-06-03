@@ -164,6 +164,9 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 	if len(candidates) == 0 {
 		return nil
 	}
+	if exec.ArtifactPublisher != nil {
+		return publishArtifactsWithCustomPublisher(ctx, exec, inputs, candidates)
+	}
 	ctx, span := exec.Tracer.Start(ctx, "verself_deploy.artifacts.publish",
 		trace.WithAttributes(
 			attribute.String("verself.site", exec.Site),
@@ -179,13 +182,7 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 		Address:    inputs.SiteCfg.ArtifactDelivery.ControlPlaneAddr,
 		HTTPClient: exec.R2ControlPlaneHTTPClient,
 	}
-	if exec.bootstrapMode() {
-		token, err := bootstrapControlPlaneToken(exec.R2ControlPlaneBootstrapToken)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			return err
-		}
+	if token := strings.TrimSpace(exec.R2ControlPlaneBearerToken); token != "" {
 		clientCfg.BootstrapBearerToken = token
 	} else if exec.R2ControlPlaneHTTPClient == nil {
 		err := fmt.Errorf("R2 control-plane mTLS HTTP client is required")
@@ -272,8 +269,50 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 	return nil
 }
 
+func publishArtifactsWithCustomPublisher(ctx context.Context, exec execution, inputs *deployInputs, candidates []uploadCandidate) error {
+	ctx, span := exec.Tracer.Start(ctx, "verself_deploy.artifacts.publish_custom",
+		trace.WithAttributes(
+			attribute.String("verself.site", exec.Site),
+			attribute.String("verself.deploy_run_key", inputs.DeployRunKey),
+			attribute.String("verself.deploy_sha", inputs.SHA),
+			attribute.Int("verself.artifact_count", len(candidates)),
+		),
+	)
+	defer span.End()
+	req := ArtifactPublishRequest{
+		Site:         exec.Site,
+		SHA:          inputs.SHA,
+		DeployRunKey: inputs.DeployRunKey,
+		Artifacts:    make([]ArtifactPublishCandidate, 0, len(candidates)),
+	}
+	for _, candidate := range candidates {
+		req.Artifacts = append(req.Artifacts, ArtifactPublishCandidate{
+			Output:    candidate.Artifact.Output,
+			SHA256:    candidate.Artifact.SHA256,
+			LocalPath: candidate.LocalPath,
+			Body:      candidate.Body,
+			SizeBytes: candidate.SizeBytes,
+			Label:     candidate.Label,
+		})
+	}
+	result, err := exec.ArtifactPublisher.PublishDeploymentArtifacts(ctx, req)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := applyArtifactGetterSources(inputs, result.GetterSources); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	span.SetStatus(codes.Ok, "")
+	return nil
+}
+
 func applyCompletedArtifactSources(inputs *deployInputs, objects []r2controlplane.UploadObject) error {
 	byOutput := mapUploadObjects(objects)
+	sources := map[string]string{}
 	for output, binding := range inputs.Bindings {
 		object, ok := byOutput[output]
 		if !ok {
@@ -283,8 +322,7 @@ func applyCompletedArtifactSources(inputs *deployInputs, objects []r2controlplan
 		if err != nil {
 			return err
 		}
-		binding.Artifact.GetterSource = getterSource
-		inputs.Bindings[output] = binding
+		sources[output] = getterSource
 	}
 	if inputs.ControlPlaneObject.Artifact.Output != "" {
 		output := inputs.ControlPlaneObject.Artifact.Output
@@ -295,6 +333,26 @@ func applyCompletedArtifactSources(inputs *deployInputs, objects []r2controlplan
 		getterSource, err := completedArtifactGetterSource(output, object, inputs.ControlPlaneObject.Artifact.Bucket, inputs.ControlPlaneObject.Artifact.Key)
 		if err != nil {
 			return err
+		}
+		sources[output] = getterSource
+	}
+	return applyArtifactGetterSources(inputs, sources)
+}
+
+func applyArtifactGetterSources(inputs *deployInputs, sources map[string]string) error {
+	for output, binding := range inputs.Bindings {
+		getterSource := strings.TrimSpace(sources[output])
+		if getterSource == "" {
+			return fmt.Errorf("artifact publisher omitted getter source for %q", output)
+		}
+		binding.Artifact.GetterSource = getterSource
+		inputs.Bindings[output] = binding
+	}
+	if inputs.ControlPlaneObject.Artifact.Output != "" {
+		output := inputs.ControlPlaneObject.Artifact.Output
+		getterSource := strings.TrimSpace(sources[output])
+		if getterSource == "" {
+			return fmt.Errorf("artifact publisher omitted getter source for %q", output)
 		}
 		inputs.ControlPlaneObject.Artifact.GetterSource = getterSource
 	}
@@ -490,13 +548,6 @@ func mapUploadObjects(objects []r2controlplane.UploadObject) map[string]r2contro
 		out[object.Output] = object
 	}
 	return out
-}
-
-func bootstrapControlPlaneToken(explicit string) (string, error) {
-	if token := strings.TrimSpace(explicit); token != "" {
-		return token, nil
-	}
-	return "", fmt.Errorf("R2 control-plane bootstrap bearer token is required")
 }
 
 func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map[string]bool, error) {
