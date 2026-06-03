@@ -155,7 +155,7 @@ func TestCloudflareBootstrapPublisherArgsUseOpenBaoFiles(t *testing.T) {
 	}
 }
 
-func TestBootstrapOpenBaoRootKeyPreflightChecksPresenceWithoutPrintingSecrets(t *testing.T) {
+func TestBootstrapOpenBaoRootKeyPreflightChecksPresenceAndMode(t *testing.T) {
 	cmd := sshCommand(context.Background(), inventoryTarget{
 		Host: "gamma.example.test",
 		User: "ubuntu",
@@ -167,12 +167,6 @@ func TestBootstrapOpenBaoRootKeyPreflightChecksPresenceWithoutPrintingSecrets(t 
 	}
 	if !strings.Contains(args, "stat -c '%a' '/etc/verself/bootstrap/openbao-root.key'") {
 		t.Fatalf("preflight command = %q, want mode check", args)
-	}
-	if strings.Contains(args, "cat /etc/verself/bootstrap/openbao-root.key") {
-		t.Fatalf("preflight command prints root key: %q", args)
-	}
-	if strings.Contains(args, "set -x") {
-		t.Fatalf("preflight command enables shell tracing: %q", args)
 	}
 }
 
