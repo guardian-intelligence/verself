@@ -8,6 +8,8 @@ const (
 	ServiceAnalytics          = "analytics-service"
 	ServiceBilling            = "billing-service"
 	ServiceClickHouseOperator = "clickhouse-operator"
+	ServiceCloudflareR2       = "cloudflare-r2-control-plane"
+	ServiceDeployment         = "deployment-service"
 	ServiceDistribution       = "distribution-service"
 	ServiceGrafana            = "grafana"
 	ServiceGovernance         = "governance-service"

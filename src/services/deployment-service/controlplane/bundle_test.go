@@ -394,7 +394,7 @@ func TestReconcileGeneratedRuntimeSecretUsesOpenBaoTransit(t *testing.T) {
 	written := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/kv-runtime/data/secret/org/deployment-service.r2_control_plane_token":
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/kv-runtime/data/secret/org/example-service.generated_secret":
 			w.WriteHeader(http.StatusNotFound)
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/transit/random/4":
 			transitReads++
@@ -412,7 +412,7 @@ func TestReconcileGeneratedRuntimeSecretUsesOpenBaoTransit(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("encode transit response: %v", err)
 			}
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/kv-runtime/data/secret/org/deployment-service.r2_control_plane_token":
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/kv-runtime/data/secret/org/example-service.generated_secret":
 			kvWrites++
 			var body struct {
 				Data map[string]string `json:"data"`
@@ -433,7 +433,7 @@ func TestReconcileGeneratedRuntimeSecretUsesOpenBaoTransit(t *testing.T) {
 		token: "token",
 		http:  server.Client(),
 	}, RuntimeSecret{
-		Name: "deployment-service.r2_control_plane_token",
+		Name: "example-service.generated_secret",
 		Source: RuntimeSecretSource{
 			Kind:           RuntimeSecretSourceGenerated,
 			GeneratedBytes: len(random),

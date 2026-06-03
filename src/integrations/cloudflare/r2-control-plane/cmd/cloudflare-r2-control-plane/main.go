@@ -94,7 +94,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.parentSecretAccessKeyFile, "parent-secret-access-key-file", "", "File containing the R2 publisher S3 secret.")
 	fs.StringVar(&cfg.parentSessionTokenFile, "parent-session-token-file", "", "Optional file containing the R2 publisher session token.")
 	fs.StringVar(&cfg.listenAddr, "listen", "127.0.0.1:18732", "HTTP listen address for --action=serve.")
-	fs.StringVar(&cfg.authTokenFile, "auth-token-file", "", "File containing the --action=serve bearer token.")
+	fs.StringVar(&cfg.authTokenFile, "auth-token-file", "", "Bootstrap-only file containing the --action=serve bearer token.")
 	fs.StringVar(&cfg.testPrefix, "test-prefix", "control-plane-verification/", "R2 object prefix used for live verification.")
 	fs.StringVar(&cfg.inventoryPrefix, "inventory-prefix", "", "R2 object prefix for --action=inventory.")
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
@@ -220,9 +220,6 @@ func (cfg config) validate() error {
 	}
 	if cfg.inventoryDepth < 1 || cfg.inventoryDepth > 8 {
 		return fmt.Errorf("--inventory-depth must be between 1 and 8")
-	}
-	if cfg.action == "serve" && strings.TrimSpace(cfg.authTokenFile) == "" {
-		return fmt.Errorf("--auth-token-file is required for action=serve")
 	}
 	switch cfg.credentialSource {
 	case r2control.ParentCredentialSourceFiles:

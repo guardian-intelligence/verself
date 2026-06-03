@@ -129,10 +129,10 @@ func TestApplyCompletedArtifactSourcesBindsDownloadURLs(t *testing.T) {
 		t.Fatalf("apply completed artifact sources: %v", err)
 	}
 	if got := inputs.Bindings["deployment-service"].Artifact.GetterSource; got != "https://downloads.example.test/service.tar?X-Amz-Signature=abc" {
-		t.Fatalf("service getter source = %q", got)
+		t.Fatalf("service download source = %q", got)
 	}
 	if got := inputs.ControlPlaneObject.Artifact.GetterSource; got != "https://downloads.example.test/control-plane.tar?X-Amz-Signature=def" {
-		t.Fatalf("control-plane getter source = %q", got)
+		t.Fatalf("control-plane download source = %q", got)
 	}
 }
 

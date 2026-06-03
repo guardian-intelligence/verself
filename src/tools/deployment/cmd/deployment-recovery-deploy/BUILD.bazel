@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//src/services/deployment-service/deployengine",
         "//src/services/service-runtime/go/envconfig",
+        "//src/services/service-runtime/go/workload",
     ],
 )
 

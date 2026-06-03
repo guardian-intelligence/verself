@@ -155,21 +155,6 @@ func TestCloudflareBootstrapPublisherArgsUseOpenBaoFiles(t *testing.T) {
 	}
 }
 
-func TestBootstrapOpenBaoRootKeyPreflightChecksPresenceAndMode(t *testing.T) {
-	cmd := sshCommand(context.Background(), inventoryTarget{
-		Host: "gamma.example.test",
-		User: "ubuntu",
-		Port: 2222,
-	}, openBaoRootKeyPreflightCommand())
-	args := strings.Join(cmd.Args, " ")
-	if !strings.Contains(args, "test -s '/etc/verself/bootstrap/openbao-root.key'") {
-		t.Fatalf("preflight command = %q, want root key presence check", args)
-	}
-	if !strings.Contains(args, "stat -c '%a' '/etc/verself/bootstrap/openbao-root.key'") {
-		t.Fatalf("preflight command = %q, want mode check", args)
-	}
-}
-
 func TestWriteInventory(t *testing.T) {
 	root := t.TempDir()
 	out := filepath.Join(root, "inventory.ini")

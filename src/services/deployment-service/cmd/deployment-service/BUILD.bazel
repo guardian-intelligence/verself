@@ -11,6 +11,7 @@ go_library(
         "//src/services/deployment-service/migrations",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
+        "//src/services/service-runtime/go/workload",
         "//src/tools/observability/go/otel",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",

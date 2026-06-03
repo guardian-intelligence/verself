@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -18,17 +19,18 @@ const tracerName = "github.com/verself/deployment-service/deployengine"
 var gitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 type Options struct {
-	Site                string
-	SHA                 string
-	DeployRunKey        string
-	RepoRoot            string
-	R2ControlPlaneToken string
-	R2ControlPlaneAddr  string
-	NomadAddr           string
-	BazelBuildFlags     []string
-	Bootstrap           bool
-	Tracer              trace.Tracer
-	Stdout              io.Writer
+	Site                         string
+	SHA                          string
+	DeployRunKey                 string
+	RepoRoot                     string
+	R2ControlPlaneBootstrapToken string
+	R2ControlPlaneAddr           string
+	R2ControlPlaneHTTPClient     *http.Client
+	NomadAddr                    string
+	BazelBuildFlags              []string
+	Bootstrap                    bool
+	Tracer                       trace.Tracer
+	Stdout                       io.Writer
 }
 
 type Result struct {

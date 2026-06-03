@@ -247,3 +247,54 @@ func TestWaitForDeploymentTerminalRecoversAfterTransientStatusOutage(t *testing.
 		t.Fatalf("status calls = %d, want 3", calls)
 	}
 }
+
+func TestWaitForDeploymentTerminalRefreshesUnauthorizedBearer(t *testing.T) {
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-request-token")
+	var statusCalls int
+	var oidcCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oidc":
+			oidcCalls++
+			if r.Header.Get("Authorization") != "Bearer oidc-request-token" {
+				t.Fatalf("oidc request authorization = %q", r.Header.Get("Authorization"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"value":"fresh-token"}`))
+		case "/api/v1/deployments/dep_test":
+			statusCalls++
+			w.Header().Set("Content-Type", "application/json")
+			if statusCalls == 1 {
+				if r.Header.Get("Authorization") != "Bearer stale-token" {
+					t.Fatalf("first status authorization = %q", r.Header.Get("Authorization"))
+				}
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"status":401,"code":"deployment.unauthorized","detail":"unauthorized"}`))
+				return
+			}
+			if r.Header.Get("Authorization") != "Bearer fresh-token" {
+				t.Fatalf("refreshed status authorization = %q", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"succeeded","nomad_submitted_jobs":42,"nomad_dispatched_jobs":1},"traceparent":"00-00000000000000000000000000000003-0000000000000003-01"}`))
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", srv.URL+"/oidc")
+
+	record, _, err := waitForDeploymentTerminal(context.Background(), srv.URL, "stale-token", "dep_test", time.Second, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != "succeeded" {
+		t.Fatalf("record = %#v", record)
+	}
+	if oidcCalls != 1 {
+		t.Fatalf("oidc calls = %d, want 1", oidcCalls)
+	}
+	if statusCalls != 2 {
+		t.Fatalf("status calls = %d, want 2", statusCalls)
+	}
+}

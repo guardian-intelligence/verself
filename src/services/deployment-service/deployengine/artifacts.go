@@ -175,16 +175,25 @@ func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs)
 		),
 	)
 	defer span.End()
-	token, err := controlPlaneToken(exec.R2ControlPlaneToken)
-	if err != nil {
+	clientCfg := r2controlplane.Config{
+		Address:    inputs.SiteCfg.ArtifactDelivery.ControlPlaneAddr,
+		HTTPClient: exec.R2ControlPlaneHTTPClient,
+	}
+	if exec.bootstrapMode() {
+		token, err := bootstrapControlPlaneToken(exec.R2ControlPlaneBootstrapToken)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		clientCfg.BootstrapBearerToken = token
+	} else if exec.R2ControlPlaneHTTPClient == nil {
+		err := fmt.Errorf("R2 control-plane mTLS HTTP client is required")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	client, err := r2controlplane.New(r2controlplane.Config{
-		Address: inputs.SiteCfg.ArtifactDelivery.ControlPlaneAddr,
-		Token:   token,
-	})
+	client, err := r2controlplane.New(clientCfg)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -483,11 +492,11 @@ func mapUploadObjects(objects []r2controlplane.UploadObject) map[string]r2contro
 	return out
 }
 
-func controlPlaneToken(explicit string) (string, error) {
+func bootstrapControlPlaneToken(explicit string) (string, error) {
 	if token := strings.TrimSpace(explicit); token != "" {
 		return token, nil
 	}
-	return "", fmt.Errorf("R2 control-plane bearer token is required")
+	return "", fmt.Errorf("R2 control-plane bootstrap bearer token is required")
 }
 
 func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map[string]bool, error) {

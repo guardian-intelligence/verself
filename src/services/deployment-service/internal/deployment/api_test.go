@@ -231,7 +231,6 @@ func TestDependencyChecksReturnCanonicalS0ToS7Model(t *testing.T) {
 		"S2/recovery_ssh_ready",
 		"S3/bazelisk",
 		"S3/git",
-		"S4/openbao_runtime_secret_delivery",
 		"S5/substrate_control_plane_applied",
 		"S6/nomad",
 		"S7/postgres",
@@ -439,8 +438,7 @@ func TestDependencyChecksRunSlowProbesConcurrently(t *testing.T) {
 	started := time.Now()
 	checks := (&Service{Config: Config{
 		Site:                        "gamma",
-		R2ControlPlaneToken:         "token",
-		SubstrateControlPlaneMarker: "seed-imported",
+		SubstrateControlPlaneMarker: "substrate-marker",
 		NomadAddr:                   nomad.URL,
 		R2ControlPlaneAddr:          r2.URL,
 		NomadAllocID:                "alloc-1",

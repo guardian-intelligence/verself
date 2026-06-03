@@ -144,14 +144,14 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 		return err
 	}
 	_, err = deployengine.Run(ctx, deployengine.Options{
-		Site:                opts.Site,
-		SHA:                 opts.SHA,
-		DeployRunKey:        deployRunKey,
-		RepoRoot:            opts.RepoRoot,
-		R2ControlPlaneAddr:  r2ControlPlaneURL,
-		R2ControlPlaneToken: r2Token,
-		NomadAddr:           "http://127.0.0.1:" + strconv.Itoa(nomadPort),
-		Bootstrap:           true,
+		Site:                         opts.Site,
+		SHA:                          opts.SHA,
+		DeployRunKey:                 deployRunKey,
+		RepoRoot:                     opts.RepoRoot,
+		R2ControlPlaneAddr:           r2ControlPlaneURL,
+		R2ControlPlaneBootstrapToken: r2Token,
+		NomadAddr:                    "http://127.0.0.1:" + strconv.Itoa(nomadPort),
+		Bootstrap:                    true,
 	})
 	if err != nil {
 		return err
@@ -334,7 +334,7 @@ func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptio
 	cleanup := func() {
 		_ = os.RemoveAll(credentialDir)
 	}
-	authTokenFile, err := writeBootstrapCredentialFile(credentialDir, "r2-control-plane-token", token)
+	authTokenFile, err := writeBootstrapCredentialFile(credentialDir, "bootstrap-auth-token", token)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

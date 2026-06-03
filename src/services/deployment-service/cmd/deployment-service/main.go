@@ -20,6 +20,7 @@ import (
 	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 const (
@@ -74,8 +75,7 @@ func run() error {
 	nomadAddr := cfg.String("VERSELF_NOMAD_ADDR", "http://127.0.0.1:4646")
 	nomadAllocID := cfg.String("NOMAD_ALLOC_ID", "")
 	recoverySSHReady := cfg.String("VERSELF_RECOVERY_SSH_READY", "")
-	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", "http://127.0.0.1:18732")
-	r2ControlPlaneToken := cfg.RequireCredential("r2-control-plane-token")
+	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", workloadauth.InternalURL(workloadauth.ServiceCloudflareR2))
 	substrateControlPlaneMarker := cfg.RequireCredential("substrate-control-plane-marker")
 	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
@@ -113,12 +113,25 @@ func run() error {
 	if verifier == nil {
 		return fmt.Errorf("deployment auth requires GitHub OIDC allow-lists")
 	}
+	spiffeSource, err := workloadauth.Source(ctx, "")
+	if err != nil {
+		return fmt.Errorf("deployment-service spiffe source: %w", err)
+	}
+	defer func() { _ = spiffeSource.Close() }()
+	r2HTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceCloudflareR2, nil, workloadauth.ServiceClientTimeouts{
+		Dial:           500 * time.Millisecond,
+		TLSHandshake:   time.Second,
+		ResponseHeader: 2 * time.Minute,
+		Total:          2 * time.Minute,
+	})
+	if err != nil {
+		return fmt.Errorf("deployment-service R2 control-plane mtls: %w", err)
+	}
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
 		Config: deploymentapi.Config{
 			Site:                        site,
 			RepoRoot:                    repoRoot,
-			R2ControlPlaneToken:         r2ControlPlaneToken,
 			SubstrateControlPlaneMarker: substrateControlPlaneMarker,
 			R2ControlPlaneAddr:          r2ControlPlaneAddr,
 			NomadAddr:                   nomadAddr,
@@ -126,6 +139,7 @@ func run() error {
 			RecoverySSHReady:            recoverySSHReady,
 			BazelJobs:                   bazelJobs,
 		},
+		R2ControlPlaneHTTPClient: r2HTTPClient,
 	}
 	if err := svc.Store.Ready(ctx); err != nil {
 		return fmt.Errorf("deployment postgres readiness: %w", err)

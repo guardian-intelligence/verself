@@ -289,6 +289,13 @@ func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testi
 func TestValidateRepoRequiresOpenBaoTransitForGeneratedRuntimeSecrets(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
+openbao_runtime_secret_declarations:
+  - name: example-service.generated.secret
+    generated:
+      bytes: 32
+      encoding: base64url
+`)
 	write(t, root, "src/services/deployment-service/controlplane/apply.go", `package controlplane
 
 func generate() {}
@@ -332,11 +339,6 @@ func writeBootstrapRuntimeContracts(t *testing.T, root string) {
 	t.Helper()
 	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
-  - name: deployment-service.r2_control_plane_token
-    consumer_job_ids: [cloudflare-r2-control-plane]
-    generated:
-      bytes: 32
-      encoding: base64url
   - name: deployment-service.substrate_control_plane_marker
     produced_by_job: substrate-control-plane
 `)
@@ -352,12 +354,6 @@ job "deployment-service" {
   group "deployment-service" {
     task "deployment-service" {
       template {
-        destination = "secrets/r2-control-plane-token"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
         destination = "secrets/substrate-control-plane-marker"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
@@ -370,6 +366,11 @@ EOT
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", `
 job "cloudflare-r2-control-plane" {
   group "cloudflare-r2-control-plane" {
+    network {
+      port "internal_https" {
+        host_network = "loopback"
+      }
+    }
     task "cloudflare-r2-control-plane" {
       config {
         args = [
@@ -377,8 +378,11 @@ job "cloudflare-r2-control-plane" {
           "--credential-source=files",
           "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
           "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
-          "--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
+          "--listen=127.0.0.1:$${NOMAD_PORT_internal_https}",
         ]
+      }
+      env {
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
       }
       template {
         destination = "secrets/r2-publisher-token-id"
@@ -392,12 +396,10 @@ job "cloudflare-r2-control-plane" {
 {{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 		EOT
 		      }
-      template {
-        destination = "secrets/r2-control-plane-token"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-		EOT
-		      }
+      service {
+        name = "cloudflare-r2-control-plane-internal-https"
+        port = "internal_https"
+      }
 		    }
 		  }
 		}

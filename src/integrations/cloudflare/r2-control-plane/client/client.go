@@ -14,15 +14,16 @@ import (
 )
 
 type Client struct {
-	base  *url.URL
-	http  *http.Client
-	token string
+	base                 *url.URL
+	http                 *http.Client
+	bootstrapBearerToken string
 }
 
 type Config struct {
-	Address string
-	Token   string
-	Timeout time.Duration
+	Address              string
+	HTTPClient           *http.Client
+	BootstrapBearerToken string
+	Timeout              time.Duration
 }
 
 func New(cfg Config) (*Client, error) {
@@ -40,17 +41,18 @@ func New(cfg Config) (*Client, error) {
 	if base.Host == "" {
 		return nil, fmt.Errorf("R2 control-plane address requires a host")
 	}
-	if strings.TrimSpace(cfg.Token) == "" {
-		return nil, fmt.Errorf("R2 control-plane bearer token is required")
-	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 2 * time.Minute
 	}
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: timeout}
+	}
 	return &Client{
-		base:  base,
-		http:  &http.Client{Timeout: timeout},
-		token: strings.TrimSpace(cfg.Token),
+		base:                 base,
+		http:                 httpClient,
+		bootstrapBearerToken: strings.TrimSpace(cfg.BootstrapBearerToken),
 	}, nil
 }
 
@@ -90,8 +92,8 @@ func (c *Client) doJSON(ctx context.Context, method, rel string, in any, out any
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.bootstrapBearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bootstrapBearerToken)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

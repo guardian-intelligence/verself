@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,12 +11,30 @@ import (
 	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
 )
 
-func TestLoadServerAuthTokenReadsFile(t *testing.T) {
+func TestServeValidationAllowsSpiffeMTLSMode(t *testing.T) {
+	err := config{
+		action:             "serve",
+		accountID:          strings.Repeat("a", 32),
+		bucket:             "verself-deployment-artifacts",
+		keyPrefix:          "sha256",
+		region:             "auto",
+		credentialSource:   r2control.ParentCredentialSourceFiles,
+		tempTTL:            time.Minute,
+		uploadSessionTTL:   time.Minute,
+		downloadURLTTL:     time.Minute,
+		inventoryDepth:     1,
+	}.validate()
+	if err != nil {
+		t.Fatalf("validate serve mode: %v", err)
+	}
+}
+
+func TestLoadBootstrapAuthTokenReadsFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(path, []byte("from-file\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	token, err := loadServerAuthToken(config{authTokenFile: path})
+	token, err := loadBootstrapAuthToken(config{authTokenFile: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,27 +43,10 @@ func TestLoadServerAuthTokenReadsFile(t *testing.T) {
 	}
 }
 
-func TestLoadServerAuthTokenRejectsMissingToken(t *testing.T) {
-	_, err := loadServerAuthToken(config{})
+func TestLoadBootstrapAuthTokenRejectsMissingToken(t *testing.T) {
+	_, err := loadBootstrapAuthToken(config{})
 	if err == nil || !strings.Contains(err.Error(), "auth token file is required") {
 		t.Fatalf("error = %v, want missing token refusal", err)
-	}
-}
-
-func TestUploadServerRequiresBearerToken(t *testing.T) {
-	server := uploadServer{authToken: "expected"}
-	if server.authorized(httptest.NewRequest("POST", "/", nil)) {
-		t.Fatal("request without bearer token was authorized")
-	}
-	rawTokenReq := httptest.NewRequest("POST", "/", nil)
-	rawTokenReq.Header.Set("Authorization", "expected")
-	if server.authorized(rawTokenReq) {
-		t.Fatal("request without bearer scheme was authorized")
-	}
-	req := httptest.NewRequest("POST", "/", nil)
-	req.Header.Set("Authorization", "Bearer expected")
-	if !server.authorized(req) {
-		t.Fatal("request with bearer token was not authorized")
 	}
 }
 

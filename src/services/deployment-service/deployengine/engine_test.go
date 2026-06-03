@@ -29,7 +29,7 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
   "artifact_delivery": {
     "kind": "cloudflare_r2_control_plane",
     "key_prefix": "sha256",
-    "control_plane_addr": "http://127.0.0.1:18732",
+    "control_plane_addr": "https://cloudflare-r2-control-plane-internal-https",
     "checksum_algorithm": "sha256",
     "public": false
   },

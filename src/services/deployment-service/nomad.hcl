@@ -74,7 +74,6 @@ job "deployment-service" {
         args = [
           "--user=deployment_service",
           "--group=deployment_service",
-          "--chown=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
           "--chown=$${NOMAD_SECRETS_DIR}/substrate-control-plane-marker",
           "--",
           "local/bin/deployment-service",
@@ -89,6 +88,7 @@ job "deployment-service" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "deployment-service"
         PATH = "/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         TMPDIR = "/var/lib/verself/deployment-service/tmp"
         USER = "deployment_service"
         VERSELF_DEPLOY_BAZEL_JOBS = "4"
@@ -103,19 +103,11 @@ job "deployment-service" {
         VERSELF_NOMAD_ADDR = "http://127.0.0.1:4646"
         VERSELF_PG_DSN = "postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "4"
-        VERSELF_R2_CONTROL_PLANE_ADDR = "http://127.0.0.1:18732"
+        VERSELF_R2_CONTROL_PLANE_ADDR = "https://cloudflare-r2-control-plane-internal-https"
         VERSELF_RECOVERY_SSH_READY = "true"
         VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
         XDG_CACHE_HOME = "/var/lib/verself/deployment-service/.cache"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/r2-control-plane-token"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
       template {
         change_mode = "restart"

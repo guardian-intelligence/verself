@@ -13,6 +13,7 @@ import (
 
 	"github.com/verself/deployment-service/deployengine"
 	"github.com/verself/service-runtime/envconfig"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type options struct {
@@ -43,7 +44,6 @@ func run(ctx context.Context, args []string) error {
 	opts.repoRoot = requiredString(cfg, opts.repoRoot, "VERSELF_DEPLOY_REPO_ROOT")
 	opts.r2Addr = requiredString(cfg, opts.r2Addr, "VERSELF_R2_CONTROL_PLANE_ADDR")
 	opts.nomadAddr = requiredString(cfg, opts.nomadAddr, "VERSELF_NOMAD_ADDR")
-	r2Token := cfg.RequireCredential("r2-control-plane-token")
 	if opts.bazelJobs == 0 {
 		opts.bazelJobs, err = parsePositiveInt("VERSELF_DEPLOY_BAZEL_JOBS", cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS"))
 		if err != nil {
@@ -62,6 +62,20 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	spiffeSource, err := workloadauth.Source(ctx, "")
+	if err != nil {
+		return fmt.Errorf("recovery deploy spiffe source: %w", err)
+	}
+	defer func() { _ = spiffeSource.Close() }()
+	r2HTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceCloudflareR2, nil, workloadauth.ServiceClientTimeouts{
+		Dial:           500 * time.Millisecond,
+		TLSHandshake:   time.Second,
+		ResponseHeader: 2 * time.Minute,
+		Total:          2 * time.Minute,
+	})
+	if err != nil {
+		return fmt.Errorf("recovery deploy R2 control-plane mtls: %w", err)
+	}
 	runCtx := ctx
 	cancel := func() {}
 	if opts.timeout > 0 {
@@ -69,14 +83,14 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer cancel()
 	result, err := deployengine.Run(runCtx, deployengine.Options{
-		Site:                opts.site,
-		SHA:                 opts.sha,
-		DeployRunKey:        opts.deployRunKey,
-		RepoRoot:            opts.repoRoot,
-		R2ControlPlaneToken: r2Token,
-		R2ControlPlaneAddr:  opts.r2Addr,
-		NomadAddr:           opts.nomadAddr,
-		BazelBuildFlags:     []string{fmt.Sprintf("--jobs=%d", opts.bazelJobs)},
+		Site:                     opts.site,
+		SHA:                      opts.sha,
+		DeployRunKey:             opts.deployRunKey,
+		RepoRoot:                 opts.repoRoot,
+		R2ControlPlaneAddr:       opts.r2Addr,
+		R2ControlPlaneHTTPClient: r2HTTPClient,
+		NomadAddr:                opts.nomadAddr,
+		BazelBuildFlags:          []string{fmt.Sprintf("--jobs=%d", opts.bazelJobs)},
 	})
 	if err != nil {
 		return err

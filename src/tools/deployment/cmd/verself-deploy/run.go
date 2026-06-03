@@ -60,6 +60,7 @@ type githubOIDCResponse struct {
 const (
 	deploymentFollowTimeout      = 20 * time.Minute
 	deploymentFollowPollInterval = time.Second
+	deploymentBearerRefreshEvery = 2 * time.Minute
 )
 
 type problemDetails struct {
@@ -301,9 +302,41 @@ func waitForDeploymentTerminal(ctx context.Context, baseURL string, token string
 	var last deploymentRecord
 	var lastTraceparent string
 	var lastStatusErr error
+	nextTokenRefresh := time.Now().Add(deploymentBearerRefreshEvery)
 	for {
+		if time.Now().After(nextTokenRefresh) {
+			refreshed, err := deploymentBearerToken(followCtx, baseURL)
+			if err != nil {
+				lastStatusErr = fmt.Errorf("deployment bearer refresh failed: %w", err)
+				select {
+				case <-followCtx.Done():
+					return last, lastTraceparent, deploymentFollowTimeoutError(followCtx.Err(), deploymentID, last.State, lastStatusErr)
+				case <-time.After(pollInterval):
+					continue
+				}
+			}
+			token = refreshed
+			nextTokenRefresh = time.Now().Add(deploymentBearerRefreshEvery)
+		}
 		record, traceparent, err := getDeployment(followCtx, baseURL, token, deploymentID)
 		if err != nil {
+			var statusErr deploymentStatusError
+			if errors.As(err, &statusErr) && statusErr.status == http.StatusUnauthorized {
+				refreshed, refreshErr := deploymentBearerToken(followCtx, baseURL)
+				if refreshErr != nil {
+					lastStatusErr = fmt.Errorf("deployment bearer refresh failed after unauthorized status: %w", refreshErr)
+				} else {
+					token = refreshed
+					nextTokenRefresh = time.Now().Add(deploymentBearerRefreshEvery)
+					lastStatusErr = err
+				}
+				select {
+				case <-followCtx.Done():
+					return last, lastTraceparent, deploymentFollowTimeoutError(followCtx.Err(), deploymentID, last.State, lastStatusErr)
+				case <-time.After(pollInterval):
+					continue
+				}
+			}
 			if transientDeploymentStatusError(err) {
 				lastStatusErr = err
 				select {

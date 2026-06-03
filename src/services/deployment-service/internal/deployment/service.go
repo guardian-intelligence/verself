@@ -29,7 +29,6 @@ const deploymentStateUpdateRetryInterval = 500 * time.Millisecond
 type Config struct {
 	Site                        string
 	RepoRoot                    string
-	R2ControlPlaneToken         string
 	SubstrateControlPlaneMarker string
 	R2ControlPlaneAddr          string
 	NomadAddr                   string
@@ -39,8 +38,9 @@ type Config struct {
 }
 
 type Service struct {
-	Store  Store
-	Config Config
+	Store                    Store
+	Config                   Config
+	R2ControlPlaneHTTPClient *http.Client
 
 	mu      sync.Mutex
 	running bool
@@ -76,14 +76,15 @@ func (s *Service) DependencyChecks(ctx context.Context) []DependencyCheck {
 		{Stage: "S2", Name: "recovery_ssh_ready", Run: func(context.Context) DependencyCheck { return s2RecoverySSHReady(s.Config.RecoverySSHReady) }},
 		{Stage: "S3", Name: "bazelisk", Run: func(context.Context) DependencyCheck { return s3Bazelisk() }},
 		{Stage: "S3", Name: "git", Run: func(context.Context) DependencyCheck { return s3Git() }},
-		{Stage: "S4", Name: "openbao_runtime_secret_delivery", Run: func(context.Context) DependencyCheck { return s4OpenBaoToken(s.Config.R2ControlPlaneToken) }},
 		{Stage: "S5", Name: "substrate_control_plane_applied", Run: func(context.Context) DependencyCheck {
 			return s5SubstrateControlPlane(s.Config.SubstrateControlPlaneMarker)
 		}},
 		{Stage: "S6", Name: "nomad", Run: func(ctx context.Context) DependencyCheck { return s6Nomad(ctx, s.Config.NomadAddr) }},
 		{Stage: "S7", Name: "postgres", Run: func(ctx context.Context) DependencyCheck { return s7Postgres(ctx, s.Store) }},
 		{Stage: "S7", Name: "repo_root", Run: func(ctx context.Context) DependencyCheck { return s7RepoRoot(ctx, s.Config.RepoRoot) }},
-		{Stage: "S7", Name: "r2_control_plane", Run: func(ctx context.Context) DependencyCheck { return s7R2ControlPlane(ctx, s.Config.R2ControlPlaneAddr) }},
+		{Stage: "S7", Name: "r2_control_plane", Run: func(ctx context.Context) DependencyCheck {
+			return s7R2ControlPlane(ctx, s.Config.R2ControlPlaneAddr, s.R2ControlPlaneHTTPClient)
+		}},
 	}
 	return runDependencyProbes(ctx, probes, dependencyProbeDeadline)
 }
@@ -185,14 +186,14 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 		return
 	}
 	result, err := deployengine.Run(ctx, deployengine.Options{
-		Site:                record.Site,
-		SHA:                 record.SHA,
-		DeployRunKey:        record.DeployRunKey,
-		RepoRoot:            s.Config.RepoRoot,
-		R2ControlPlaneToken: s.Config.R2ControlPlaneToken,
-		R2ControlPlaneAddr:  s.Config.R2ControlPlaneAddr,
-		NomadAddr:           s.Config.NomadAddr,
-		BazelBuildFlags:     bazelBuildFlags(s.Config.BazelJobs),
+		Site:                     record.Site,
+		SHA:                      record.SHA,
+		DeployRunKey:             record.DeployRunKey,
+		RepoRoot:                 s.Config.RepoRoot,
+		R2ControlPlaneAddr:       s.Config.R2ControlPlaneAddr,
+		R2ControlPlaneHTTPClient: s.R2ControlPlaneHTTPClient,
+		NomadAddr:                s.Config.NomadAddr,
+		BazelBuildFlags:          bazelBuildFlags(s.Config.BazelJobs),
 	})
 	if err != nil {
 		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
@@ -409,13 +410,6 @@ func s3Git() DependencyCheck {
 	return dependency("S3", "git", err)
 }
 
-func s4OpenBaoToken(token string) DependencyCheck {
-	if strings.TrimSpace(token) != "" {
-		return dependencyOK("S4", "openbao_runtime_secret_delivery")
-	}
-	return dependencyFailed("S4", "openbao_runtime_secret_delivery", "deployment-service.r2_control_plane_token was not delivered")
-}
-
 func s5SubstrateControlPlane(token string) DependencyCheck {
 	if strings.TrimSpace(token) != "" {
 		return dependencyOK("S5", "substrate_control_plane_applied")
@@ -444,9 +438,12 @@ func s6Nomad(ctx context.Context, addr string) DependencyCheck {
 	return dependency("S6", "nomad", nil)
 }
 
-func s7R2ControlPlane(ctx context.Context, addr string) DependencyCheck {
+func s7R2ControlPlane(ctx context.Context, addr string, client *http.Client) DependencyCheck {
 	if strings.TrimSpace(addr) == "" {
 		return dependencyFailed("S7", "r2_control_plane", "VERSELF_R2_CONTROL_PLANE_ADDR is required")
+	}
+	if client == nil {
+		client = http.DefaultClient
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
@@ -454,7 +451,7 @@ func s7R2ControlPlane(ctx context.Context, addr string) DependencyCheck {
 	if err != nil {
 		return dependency("S7", "r2_control_plane", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return dependency("S7", "r2_control_plane", err)
 	}

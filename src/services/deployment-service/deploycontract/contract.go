@@ -409,7 +409,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		rel := v.rel(deploymentSecretsPath)
 		var doc RuntimeSecretsFile
 		if v.decode(rel, deploymentSecretsPath, &doc) {
-			v.requireGeneratedSecret(rel, doc, "deployment-service.r2_control_plane_token", 32, "base64url", "cloudflare-r2-control-plane")
 			v.requireProducedSecret(rel, doc, "deployment-service.substrate_control_plane_marker", "substrate-control-plane")
 		}
 	}
@@ -456,13 +455,11 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		}
 	}
 	v.requireNomadRuntimeSecretReferences("src/services/deployment-service/nomad.hcl", []string{
-		"deployment-service.r2_control_plane_token",
 		"deployment-service.substrate_control_plane_marker",
 	})
 	v.requireNomadRuntimeSecretReferences("src/integrations/cloudflare/r2-control-plane/nomad.hcl", []string{
 		"cloudflare-r2-control-plane.publisher_token_id",
 		"cloudflare-r2-control-plane.publisher_secret_access_key",
-		"deployment-service.r2_control_plane_token",
 	})
 	v.requireR2ControlPlaneServeBoundary("src/integrations/cloudflare/r2-control-plane/nomad.hcl")
 	if v.generatedRuntimeSecrets {
@@ -494,20 +491,6 @@ func (v *Validator) validateNoToolLayerDeployEngine() {
 		} else if err != nil && !os.IsNotExist(err) {
 			v.add(rel, "inspect: "+err.Error())
 		}
-	}
-}
-
-func (v *Validator) requireGeneratedSecret(rel string, doc RuntimeSecretsFile, name string, bytes int, encoding string, consumerJobID string) {
-	declaration, ok := runtimeDeclarationByName(doc, name)
-	if !ok {
-		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s is required", name))
-		return
-	}
-	if declaration.Generated.Bytes != bytes || strings.TrimSpace(declaration.Generated.Encoding) != encoding || strings.TrimSpace(declaration.ProducedByJob) != "" || declaration.ExternalOpenBao {
-		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must be generated with %d %s bytes", name, bytes, encoding))
-	}
-	if consumerJobID != "" && !stringSliceContains(declaration.ConsumerJobIDs, consumerJobID) {
-		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must declare consumer_job_ids: [%s]", name, consumerJobID))
 	}
 }
 
@@ -567,7 +550,9 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 		`"--credential-source=files"`,
 		`"--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id"`,
 		`"--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key"`,
-		`"--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token"`,
+		`"--listen=127.0.0.1:$${NOMAD_PORT_internal_https}"`,
+		`SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"`,
+		`name = "cloudflare-r2-control-plane-internal-https"`,
 	} {
 		if !strings.Contains(text, required) {
 			v.add(rel, fmt.Sprintf("R2 control-plane runtime must declare %s", required))

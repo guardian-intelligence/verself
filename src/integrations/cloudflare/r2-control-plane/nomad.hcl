@@ -8,6 +8,9 @@ job "cloudflare-r2-control-plane" {
 
     network {
       mode = "host"
+      port "internal_https" {
+        host_network = "loopback"
+      }
     }
 
     task "cloudflare-r2-control-plane" {
@@ -34,11 +37,10 @@ job "cloudflare-r2-control-plane" {
       config {
         command = "local/bin/nomad-chown-exec"
         args = [
-          "--user=nobody",
-          "--group=nogroup",
+          "--user=cloudflare_r2_control_plane",
+          "--group=cloudflare_r2_control_plane",
           "--chown=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
           "--chown=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
-          "--chown=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
           "--",
           "local/bin/cloudflare-r2-control-plane",
           "--action=serve",
@@ -49,8 +51,7 @@ job "cloudflare-r2-control-plane" {
           "--credential-source=files",
           "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
           "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
-          "--listen=127.0.0.1:18732",
-          "--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
+          "--listen=127.0.0.1:$${NOMAD_PORT_internal_https}",
         ]
       }
 
@@ -58,6 +59,7 @@ job "cloudflare-r2-control-plane" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "cloudflare-r2-control-plane"
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_SUPERVISOR = "nomad"
       }
 
@@ -77,15 +79,6 @@ EOT
 {{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
-      template {
-        change_mode = "restart"
-        destination = "secrets/r2-control-plane-token"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-
       resources {
         cpu = 100
         memory = 128
@@ -96,6 +89,19 @@ EOT
         delay = "15s"
         interval = "300s"
         mode = "delay"
+      }
+      service {
+        name = "cloudflare-r2-control-plane-internal-https"
+        port = "internal_https"
+        provider = "nomad"
+        address_mode = "auto"
+        check {
+          name = "cloudflare-r2-control-plane-tcp-internal_https"
+          type = "tcp"
+          port = "internal_https"
+          interval = "1s"
+          timeout = "3s"
+        }
       }
     }
 

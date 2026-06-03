@@ -16,8 +16,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	r2client "github.com/verself/integrations/cloudflare/r2-control-plane/client"
 	"github.com/verself/integrations/cloudflare/r2-control-plane/internal/r2control"
+	workloadauth "github.com/verself/service-runtime/workload"
 )
 
 type uploadSession struct {
@@ -56,9 +58,13 @@ func serveUploadAPI(ctx context.Context, cfg config, publisher r2control.ParentC
 	if strings.TrimSpace(publisher.SecretAccessKey) == "" {
 		return fmt.Errorf("publisher Cloudflare R2 secret access key is required for upload sessions")
 	}
-	token, err := loadServerAuthToken(cfg)
-	if err != nil {
-		return err
+	token := ""
+	if strings.TrimSpace(cfg.authTokenFile) != "" {
+		var err error
+		token, err = loadBootstrapAuthToken(cfg)
+		if err != nil {
+			return err
+		}
 	}
 	srv := &uploadServer{
 		cfg:       cfg,
@@ -67,14 +73,38 @@ func serveUploadAPI(ctx context.Context, cfg config, publisher r2control.ParentC
 		authToken: token,
 		sessions:  map[string]uploadSession{},
 	}
+	handler := http.Handler(srv)
 	httpServer := &http.Server{
 		Addr:              cfg.listenAddr,
-		Handler:           srv,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+	serve := httpServer.ListenAndServe
+	if token == "" {
+		source, err := workloadauth.Source(ctx, "")
+		if err != nil {
+			return fmt.Errorf("R2 control-plane spiffe source: %w", err)
+		}
+		defer func() { _ = source.Close() }()
+		deploymentServiceID, err := workloadauth.PeerIDForSource(source, workloadauth.ServiceDeployment)
+		if err != nil {
+			return fmt.Errorf("R2 control-plane deployment-service peer id: %w", err)
+		}
+		tlsConfig, err := workloadauth.MTLSServerConfigForAny(source, deploymentServiceID)
+		if err != nil {
+			return fmt.Errorf("R2 control-plane mTLS config: %w", err)
+		}
+		allowlist, err := workloadauth.ServerPeerAllowlistMiddleware([]spiffeid.ID{deploymentServiceID}, handler)
+		if err != nil {
+			return fmt.Errorf("R2 control-plane mTLS allowlist: %w", err)
+		}
+		httpServer.Handler = allowlist
+		httpServer.TLSConfig = tlsConfig
+		serve = func() error { return httpServer.ListenAndServeTLS("", "") }
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- httpServer.ListenAndServe()
+		errCh <- serve()
 	}()
 	select {
 	case <-ctx.Done():
@@ -95,7 +125,7 @@ func (s *uploadServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if !s.authorized(r) {
+	if s.authToken != "" && !s.authorized(r) {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
@@ -385,17 +415,17 @@ func isSHA256Hex(value string) bool {
 	return true
 }
 
-func loadServerAuthToken(cfg config) (string, error) {
+func loadBootstrapAuthToken(cfg config) (string, error) {
 	path := strings.TrimSpace(cfg.authTokenFile)
 	if path == "" {
-		return "", errors.New("auth token file is required")
+		return "", errors.New("bootstrap auth token file is required")
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read auth token file: %w", err)
+		return "", fmt.Errorf("read bootstrap auth token file: %w", err)
 	}
 	if token := strings.TrimSpace(string(body)); token != "" {
 		return token, nil
 	}
-	return "", errors.New("auth token file is empty")
+	return "", errors.New("bootstrap auth token file is empty")
 }

@@ -62,6 +62,7 @@ type listEventsResponse struct {
 type deploymentStatusError struct {
 	err       error
 	transient bool
+	status    int
 }
 
 func (e deploymentStatusError) Error() string {
@@ -168,6 +169,7 @@ func getDeployment(ctx context.Context, baseURL string, token string, deployment
 		return deploymentRecord{}, "", deploymentStatusError{
 			err:       httpProblem("deployment_status_failed", resp.StatusCode, body),
 			transient: resp.StatusCode >= 500,
+			status:    resp.StatusCode,
 		}
 	}
 	var out getDeploymentResponse
