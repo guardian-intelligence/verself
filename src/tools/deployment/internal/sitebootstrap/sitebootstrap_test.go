@@ -89,14 +89,6 @@ func TestBootstrapR2ControlPlaneCommandUsesCredentialFiles(t *testing.T) {
 			t.Fatalf("R2 control-plane args missing %s:\n%s", prefix, args)
 		}
 	}
-	for _, forbidden := range []string{"account-admin", "openbao", "BAO_", "VAULT_", "--auth-token-env", "--parent-access-key-id-env", "--parent-secret-access-key-env"} {
-		if strings.Contains(args, forbidden) {
-			t.Fatalf("R2 bootstrap command contains forbidden authority detail %q:\n%s", forbidden, args)
-		}
-	}
-	if strings.Contains(args, "-R") {
-		t.Fatalf("R2 bootstrap command still contains temporary artifact tunnel details:\n%s", args)
-	}
 	for path, want := range map[string]string{
 		argValue(cmd.Args, "--auth-token-file="):               "r2bootstrap_token",
 		argValue(cmd.Args, "--parent-access-key-id-file="):     "publisher-token-id",

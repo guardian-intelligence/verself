@@ -342,22 +342,10 @@ openbao_runtime_secret_declarations:
 	}
 }
 
-func TestOpenBaoClientIgnoresManualBootstrapTokenEnv(t *testing.T) {
-	t.Setenv("BAO_TOKEN", "manual-token")
-	t.Setenv("VAULT_TOKEN", "")
+func TestOpenBaoClientAcceptsConfiguredWorkloadToken(t *testing.T) {
 	cfg := ApplyConfig{}.withDefaults()
 	cfg.OpenBaoCACert = ""
-
-	if _, err := newBaoClient(cfg); err == nil || !strings.Contains(err.Error(), "VAULT_TOKEN") {
-		t.Fatalf("expected VAULT_TOKEN requirement, got %v", err)
-	}
-}
-
-func TestOpenBaoClientAcceptsNomadWorkloadToken(t *testing.T) {
-	t.Setenv("BAO_TOKEN", "")
-	t.Setenv("VAULT_TOKEN", "nomad-workload-token")
-	cfg := ApplyConfig{}.withDefaults()
-	cfg.OpenBaoCACert = ""
+	cfg.OpenBaoToken = "nomad-workload-token"
 
 	client, err := newBaoClient(cfg)
 	if err != nil {

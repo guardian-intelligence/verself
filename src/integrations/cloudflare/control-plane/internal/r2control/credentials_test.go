@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -50,12 +52,13 @@ func TestWriteParentCredentialsToOpenBao(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{}}`))
 	}))
 	defer server.Close()
-	t.Setenv("BAO_TOKEN", "openbao-token")
+	tokenFile := writeCredentialTestFile(t, "openbao-token", "openbao-token\n")
 
 	err := WriteParentCredentialsToOpenBao(context.Background(), ParentCredentialConfig{
-		OpenBaoAddr: server.URL,
-		OpenBaoPath: secretPath,
-		Timeout:     time.Second,
+		OpenBaoAddr:      server.URL,
+		OpenBaoPath:      secretPath,
+		OpenBaoTokenFile: tokenFile,
+		Timeout:          time.Second,
 	}, map[string]string{
 		"api_token": "parent-token",
 		"token_id":  "parent-token-id",
@@ -104,14 +107,14 @@ func TestLoadParentCredentialsFromOpenBaoDerivesAccessKeyIDFromAPIToken(t *testi
 	oldBase := cloudflareAPIBase
 	cloudflareAPIBase = cloudflare.URL
 	t.Cleanup(func() { cloudflareAPIBase = oldBase })
-	t.Setenv("BAO_TOKEN", "openbao-token")
+	tokenFile := writeCredentialTestFile(t, "openbao-token", "openbao-token\n")
 
 	creds, err := LoadParentCredentials(context.Background(), ParentCredentialConfig{
-		AccountID:       accountID,
-		OpenBaoAddr:     openBao.URL,
-		OpenBaoPath:     secretPath,
-		OpenBaoTokenEnv: "BAO_TOKEN",
-		Timeout:         time.Second,
+		AccountID:        accountID,
+		OpenBaoAddr:      openBao.URL,
+		OpenBaoPath:      secretPath,
+		OpenBaoTokenFile: tokenFile,
+		Timeout:          time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -122,4 +125,13 @@ func TestLoadParentCredentialsFromOpenBaoDerivesAccessKeyIDFromAPIToken(t *testi
 	if creds.SecretAccessKey == "" || strings.Contains(creds.SecretAccessKey, "token-value") {
 		t.Fatalf("secret access key was not derived safely: %q", creds.SecretAccessKey)
 	}
+}
+
+func writeCredentialTestFile(t *testing.T, name, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

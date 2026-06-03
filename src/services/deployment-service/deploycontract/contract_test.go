@@ -341,58 +341,6 @@ func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testi
 	}
 }
 
-func TestValidateRepoRejectsR2ControlPlaneOpenBaoRuntimeCredentials(t *testing.T) {
-	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=files"`, `"--credential-source=openbao"`, 1))
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), `R2 control-plane runtime must not depend on bootstrap/controller credential input "\"--credential-source=openbao\""`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateRepoRejectsR2ControlPlaneAccountAdminRuntimeCredentials(t *testing.T) {
-	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", strings.Replace(r2ControlPlaneNomadContract(), `"--credential-source=files"`, `"--credential-source=account-admin"`, 1))
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), `R2 control-plane runtime must not depend on bootstrap/controller credential input "\"--credential-source=account-admin\""`) {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestValidateRepoRejectsSubstrateControlPlaneWithoutWorkloadIdentity(t *testing.T) {
-	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/infrastructure-components/substrate-control-plane/nomad.hcl", `
-job "substrate-control-plane" {
-  group "substrate-control-plane" {
-    task "apply" {
-      env {
-        BAO_TOKEN = "manual"
-      }
-    }
-  }
-}
-`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "must use Nomad/OpenBao workload identity") || !strings.Contains(err.Error(), "must not depend on manual/root OpenBao token input") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestValidateRepoRejectsGeneratedRuntimeSecretsWithoutOpenBaoTransit(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)

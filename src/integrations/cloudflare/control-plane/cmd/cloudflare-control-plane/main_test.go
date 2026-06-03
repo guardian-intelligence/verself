@@ -75,14 +75,13 @@ func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	cfg.openBaoAddr = "https://openbao.internal"
 	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
 	cfg.openBaoCACertFile = "/openbao/ca.pem"
-	cfg.openBaoTokenEnv = "BAO_TOKEN"
 	cfg.openBaoTokenFile = "/run/openbao/token"
 
 	got := cfg.parentCredentialConfig()
 	if got.Source != r2control.ParentCredentialSourceOpenBao {
 		t.Fatalf("source = %q", got.Source)
 	}
-	if got.OpenBaoAddr != cfg.openBaoAddr || got.OpenBaoPath != cfg.openBaoPath || got.OpenBaoCACertFile != cfg.openBaoCACertFile || got.OpenBaoTokenEnv != cfg.openBaoTokenEnv || got.OpenBaoTokenFile != cfg.openBaoTokenFile {
+	if got.OpenBaoAddr != cfg.openBaoAddr || got.OpenBaoPath != cfg.openBaoPath || got.OpenBaoCACertFile != cfg.openBaoCACertFile || got.OpenBaoTokenFile != cfg.openBaoTokenFile {
 		t.Fatalf("OpenBao config = %+v", got)
 	}
 }
@@ -154,12 +153,16 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{}}`))
 	}))
 	defer server.Close()
-	t.Setenv("BAO_TOKEN", "openbao-token")
+	tokenFile := filepath.Join(t.TempDir(), "openbao-token")
+	if err := os.WriteFile(tokenFile, []byte("openbao-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	err := writeRuntimeSecrets(context.Background(), config{
-		openBaoAddr:        "http://controller-openbao.invalid",
-		runtimeOpenBaoAddr: server.URL,
-		timeout:            time.Second,
+		openBaoAddr:             "http://controller-openbao.invalid",
+		runtimeOpenBaoAddr:      server.URL,
+		runtimeOpenBaoTokenFile: tokenFile,
+		timeout:                 time.Second,
 	}, map[string]string{
 		"cloudflare-r2-control-plane.publisher_token_id":    "publisher-id",
 		"object-storage-service.r2.proxy_secret_access_key": "proxy-secret",

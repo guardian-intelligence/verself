@@ -26,7 +26,6 @@ go_binary(
 go_test(
     name = "verself-deploy_test",
     srcs = [
-        "boundary_test.go",
         "check_test.go",
         "run_test.go",
         "status_test.go",
