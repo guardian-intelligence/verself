@@ -12,6 +12,7 @@ import (
 )
 
 const pgUniqueViolation = "23505"
+const pgCannotConnectNow = "57P03"
 
 type Store struct {
 	PG *pgxpool.Pool
@@ -350,7 +351,7 @@ func scanRecord(row recordRow) (Record, error) {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Record{}, ErrNotFound
 		}
-		return Record{}, fmt.Errorf("scan deployment request: %w", err)
+		return Record{}, datastoreError("scan deployment request", err)
 	}
 	convertedAttempt, err := uint32FromInt32(attempt, "provider_run_attempt")
 	if err != nil {
@@ -368,6 +369,22 @@ func scanRecord(row recordRow) (Record, error) {
 	record.NomadSubmittedJobs = convertedSubmittedJobs
 	record.NomadDispatchedJobs = convertedDispatchedJobs
 	return record, nil
+}
+
+func datastoreError(operation string, err error) error {
+	if postgresUnavailable(err) {
+		return coded("deployment.datastore_unavailable", fmt.Errorf("%w: %s: %w", ErrUnavailable, operation, err))
+	}
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func postgresUnavailable(err error) bool {
+	var connectErr *pgconn.ConnectError
+	if errors.As(err, &connectErr) {
+		return true
+	}
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgCannotConnectNow
 }
 
 func int32FromUint32(value uint32, field string) (int32, error) {

@@ -211,3 +211,39 @@ func TestWaitForDeploymentTerminalReturnsFailedState(t *testing.T) {
 		t.Fatalf("status calls = %d, want 2", calls)
 	}
 }
+
+func TestWaitForDeploymentTerminalRecoversAfterTransientStatusOutage(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/deployments/dep_test" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		switch calls {
+		case 1:
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"running"},"traceparent":"00-00000000000000000000000000000001-0000000000000001-01"}`))
+		case 2:
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":503,"code":"deployment.datastore_unavailable","detail":"postgres is restarting"}`))
+		default:
+			_, _ = w.Write([]byte(`{"deployment":{"deployment_id":"dep_test","site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","state":"succeeded","nomad_submitted_jobs":42,"nomad_dispatched_jobs":1},"traceparent":"00-00000000000000000000000000000003-0000000000000003-01"}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	record, traceparent, err := waitForDeploymentTerminal(context.Background(), srv.URL, "token", "dep_test", time.Second, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != "succeeded" || record.NomadSubmittedJobs != 42 || record.NomadDispatchedJobs != 1 {
+		t.Fatalf("record = %#v", record)
+	}
+	if traceparent != "00-00000000000000000000000000000003-0000000000000003-01" {
+		t.Fatalf("traceparent = %q", traceparent)
+	}
+	if calls != 3 {
+		t.Fatalf("status calls = %d, want 3", calls)
+	}
+}

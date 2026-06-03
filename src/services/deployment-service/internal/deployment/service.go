@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,6 +22,9 @@ import (
 var gitSHARegex = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 const dependencyProbeDeadline = 900 * time.Millisecond
+const deploymentStateUpdateRetryDeadline = 30 * time.Second
+const deploymentStateUpdateAttemptTimeout = 5 * time.Second
+const deploymentStateUpdateRetryInterval = 500 * time.Millisecond
 
 type Config struct {
 	Site                        string
@@ -175,7 +179,9 @@ func (s *Service) Submit(ctx context.Context, req SubmitRequest, source Source) 
 
 func (s *Service) runDeployment(ctx context.Context, record Record) {
 	defer s.release()
-	if err := s.Store.MarkRunning(ctx, record.DeploymentID); err != nil {
+	if !s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateRunning, func(attemptCtx context.Context) error {
+		return s.Store.MarkRunning(attemptCtx, record.DeploymentID)
+	}) {
 		return
 	}
 	result, err := deployengine.Run(ctx, deployengine.Options{
@@ -189,14 +195,48 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 		BazelBuildFlags:     bazelBuildFlags(s.Config.BazelJobs),
 	})
 	if err != nil {
-		_ = s.Store.MarkFailed(ctx, record.DeploymentID, err)
+		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
+			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
+		})
 		return
 	}
-	_ = s.Store.MarkSucceeded(ctx, record.DeploymentID, DeploymentResult{
-		ControlPlaneBundleSHA256: result.ControlPlaneSHA256,
-		NomadSubmittedJobs:       result.NomadSubmittedJobs,
-		NomadDispatchedJobs:      result.NomadDispatchedJobs,
+	_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateSucceeded, func(attemptCtx context.Context) error {
+		return s.Store.MarkSucceeded(attemptCtx, record.DeploymentID, DeploymentResult{
+			ControlPlaneBundleSHA256: result.ControlPlaneSHA256,
+			NomadSubmittedJobs:       result.NomadSubmittedJobs,
+			NomadDispatchedJobs:      result.NomadDispatchedJobs,
+		})
 	})
+}
+
+func (s *Service) updateDeploymentStateWithRetry(ctx context.Context, deploymentID string, state string, update func(context.Context) error) bool {
+	deadline := time.Now().Add(deploymentStateUpdateRetryDeadline)
+	var attempts uint32
+	for {
+		attemptCtx, cancel := context.WithTimeout(ctx, deploymentStateUpdateAttemptTimeout)
+		err := update(attemptCtx)
+		cancel()
+		if err == nil {
+			if attempts > 0 {
+				slog.InfoContext(ctx, "deployment state update recovered", "deployment_id", deploymentID, "state", state, "attempts", attempts+1)
+			}
+			return true
+		}
+		attempts++
+		if attempts == 1 {
+			slog.WarnContext(ctx, "deployment state update failed; retrying", "deployment_id", deploymentID, "state", state, "error", err)
+		}
+		if time.Now().After(deadline) {
+			slog.ErrorContext(ctx, "deployment state update failed permanently", "deployment_id", deploymentID, "state", state, "attempts", attempts, "error", err)
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			slog.ErrorContext(ctx, "deployment state update canceled", "deployment_id", deploymentID, "state", state, "attempts", attempts, "error", ctx.Err())
+			return false
+		case <-time.After(deploymentStateUpdateRetryInterval):
+		}
+	}
 }
 
 func (s *Service) validateRequest(req SubmitRequest, source Source) error {

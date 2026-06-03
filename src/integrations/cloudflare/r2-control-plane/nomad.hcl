@@ -101,7 +101,8 @@ EOT
 
     update {
       max_parallel = 1
-      canary = 1
+      # This singleton binds a fixed host loopback port; canary rollout would start a second listener.
+      canary = 0
       health_check = "task_states"
       min_healthy_time = "3s"
       healthy_deadline = "120s"

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -56,6 +57,27 @@ type getDeploymentResponse struct {
 type listEventsResponse struct {
 	Events      []deploymentEvent `json:"events"`
 	Traceparent string            `json:"traceparent"`
+}
+
+type deploymentStatusError struct {
+	err       error
+	transient bool
+}
+
+func (e deploymentStatusError) Error() string {
+	if e.err == nil {
+		return "deployment_status_failed"
+	}
+	return e.err.Error()
+}
+
+func (e deploymentStatusError) Unwrap() error {
+	return e.err
+}
+
+func transientDeploymentStatusError(err error) bool {
+	var statusErr deploymentStatusError
+	return errors.As(err, &statusErr) && statusErr.transient
 }
 
 func runStatus(args []string) int {
@@ -132,7 +154,10 @@ func getDeployment(ctx context.Context, baseURL string, token string, deployment
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return deploymentRecord{}, "", fmt.Errorf("deployment_status_failed: %w", err)
+		return deploymentRecord{}, "", deploymentStatusError{
+			err:       fmt.Errorf("deployment_status_failed: %w", err),
+			transient: true,
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -140,7 +165,10 @@ func getDeployment(ctx context.Context, baseURL string, token string, deployment
 		return deploymentRecord{}, "", fmt.Errorf("deployment_status_failed: read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return deploymentRecord{}, "", httpProblem("deployment_status_failed", resp.StatusCode, body)
+		return deploymentRecord{}, "", deploymentStatusError{
+			err:       httpProblem("deployment_status_failed", resp.StatusCode, body),
+			transient: resp.StatusCode >= 500,
+		}
 	}
 	var out getDeploymentResponse
 	if err := json.Unmarshal(body, &out); err != nil {

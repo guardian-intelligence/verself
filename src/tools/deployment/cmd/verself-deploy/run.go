@@ -300,23 +300,41 @@ func waitForDeploymentTerminal(ctx context.Context, baseURL string, token string
 	defer cancel()
 	var last deploymentRecord
 	var lastTraceparent string
+	var lastStatusErr error
 	for {
 		record, traceparent, err := getDeployment(followCtx, baseURL, token, deploymentID)
 		if err != nil {
+			if transientDeploymentStatusError(err) {
+				lastStatusErr = err
+				select {
+				case <-followCtx.Done():
+					return last, lastTraceparent, deploymentFollowTimeoutError(followCtx.Err(), deploymentID, last.State, lastStatusErr)
+				case <-time.After(pollInterval):
+					continue
+				}
+			}
 			return deploymentRecord{}, "", fmt.Errorf("deployment_follow_failed: %w", err)
 		}
 		last = record
 		lastTraceparent = traceparent
+		lastStatusErr = nil
 		switch record.State {
 		case "succeeded", "failed":
 			return record, traceparent, nil
 		}
 		select {
 		case <-followCtx.Done():
-			return last, lastTraceparent, fmt.Errorf("deployment_follow_failed: %w: deployment_id=%s last_state=%s", followCtx.Err(), deploymentID, last.State)
+			return last, lastTraceparent, deploymentFollowTimeoutError(followCtx.Err(), deploymentID, last.State, lastStatusErr)
 		case <-time.After(pollInterval):
 		}
 	}
+}
+
+func deploymentFollowTimeoutError(err error, deploymentID string, lastState string, lastStatusErr error) error {
+	if lastStatusErr != nil {
+		return fmt.Errorf("deployment_follow_failed: %w: deployment_id=%s last_state=%s last_status_error=%v", err, deploymentID, lastState, lastStatusErr)
+	}
+	return fmt.Errorf("deployment_follow_failed: %w: deployment_id=%s last_state=%s", err, deploymentID, lastState)
 }
 
 func httpProblem(prefix string, status int, body []byte) error {
