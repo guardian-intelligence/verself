@@ -234,6 +234,12 @@ def _bootstrap_deploy_impl(ctx):
         "--r2-control-plane-binary=" + r2_control_plane,
         "--cloudflare-control-plane-binary=" + cloudflare_control_plane,
     ]
+    if ctx.args.openbao_addr != "":
+        args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
+    if ctx.args.openbao_ca_cert != "":
+        args_list.append("--openbao-ca-cert=" + (ctx.args.openbao_ca_cert if ctx.args.openbao_ca_cert.startswith("/") else ws_path(ctx, ctx.args.openbao_ca_cert)))
+    if ctx.args.openbao_token_file != "":
+        args_list.append("--openbao-token-file=" + (ctx.args.openbao_token_file if ctx.args.openbao_token_file.startswith("/") else ws_path(ctx, ctx.args.openbao_token_file)))
     if ctx.args.timeout != "":
         args_list.append("--timeout=" + ctx.args.timeout)
     return bazel_run(
@@ -253,6 +259,9 @@ bootstrap_deploy = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or ref to deploy. Defaults to HEAD."),
         "ssh_transport": args.string(default = "recovery", description = "SSH transport for the bootstrap Nomad tunnel: recovery or inventory."),
+        "openbao_addr": args.string(default = "", description = "Controller OpenBao address."),
+        "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file."),
+        "openbao_token_file": args.string(default = "", description = "File containing the controller OpenBao token."),
         "timeout": args.string(default = "15m", description = "Bootstrap deploy timeout as a Go duration."),
     },
 )

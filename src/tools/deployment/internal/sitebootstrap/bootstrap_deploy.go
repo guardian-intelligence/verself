@@ -35,6 +35,9 @@ type BootstrapDeployOptions struct {
 	SSHTransport         string
 	R2ControlPlaneBinary string
 	CloudflareBinary     string
+	OpenBaoAddr          string
+	OpenBaoCACertFile    string
+	OpenBaoTokenFile     string
 	Timeout              time.Duration
 }
 
@@ -167,6 +170,9 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	opts.SSHTransport = strings.TrimSpace(opts.SSHTransport)
 	opts.R2ControlPlaneBinary = strings.TrimSpace(opts.R2ControlPlaneBinary)
 	opts.CloudflareBinary = strings.TrimSpace(opts.CloudflareBinary)
+	opts.OpenBaoAddr = strings.TrimRight(strings.TrimSpace(opts.OpenBaoAddr), "/")
+	opts.OpenBaoCACertFile = strings.TrimSpace(opts.OpenBaoCACertFile)
+	opts.OpenBaoTokenFile = strings.TrimSpace(opts.OpenBaoTokenFile)
 	if opts.Timeout == 0 {
 		opts.Timeout = 15 * time.Minute
 	}
@@ -176,6 +182,8 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	if opts.RepoRoot != "" && opts.Site != "" {
 		opts.R2ControlPlaneBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.R2ControlPlaneBinary)
 		opts.CloudflareBinary = resolveLocalBootstrapPath(opts.RepoRoot, opts.CloudflareBinary)
+		opts.OpenBaoCACertFile = resolveLocalBootstrapPath(opts.RepoRoot, opts.OpenBaoCACertFile)
+		opts.OpenBaoTokenFile = resolveLocalBootstrapPath(opts.RepoRoot, opts.OpenBaoTokenFile)
 	}
 	return opts
 }
@@ -203,6 +211,20 @@ func checkBootstrapArtifactPublishingInput(opts BootstrapDeployOptions) error {
 	if err := checkLocalExecutable(opts.R2ControlPlaneBinary, "Cloudflare R2 control-plane binary"); err != nil {
 		return err
 	}
+	if opts.OpenBaoAddr == "" {
+		return errors.New("bootstrap deploy requires --openbao-addr")
+	}
+	if opts.OpenBaoTokenFile == "" {
+		return errors.New("bootstrap deploy requires --openbao-token-file")
+	}
+	if err := checkLocalFile(opts.OpenBaoTokenFile, "OpenBao token file"); err != nil {
+		return err
+	}
+	if opts.OpenBaoCACertFile != "" {
+		if err := checkLocalFile(opts.OpenBaoCACertFile, "OpenBao CA certificate file"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -212,11 +234,12 @@ func mintBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions) (b
 		return bootstrapPublisherCredential{}, fmt.Errorf("create bootstrap publisher pipe: %w", err)
 	}
 	defer func() { _ = reader.Close() }()
-	cmd := exec.CommandContext(ctx, opts.CloudflareBinary,
+	args := append([]string{
 		"--action=mint-bootstrap-publisher",
-		"--site="+opts.Site,
-		"--repo-root="+opts.RepoRoot,
-	)
+		"--site=" + opts.Site,
+		"--repo-root=" + opts.RepoRoot,
+	}, cloudflareOpenBaoArgs(opts)...)
+	cmd := exec.CommandContext(ctx, opts.CloudflareBinary, args...)
 	cmd.ExtraFiles = []*os.File{writer}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -259,12 +282,13 @@ func revokeBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions, 
 	if err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, opts.CloudflareBinary,
+	args := append([]string{
 		"--action=revoke-bootstrap-publisher",
-		"--site="+opts.Site,
-		"--repo-root="+opts.RepoRoot,
-		"--bootstrap-publisher-token-id-file="+tokenIDFile,
-	)
+		"--site=" + opts.Site,
+		"--repo-root=" + opts.RepoRoot,
+		"--bootstrap-publisher-token-id-file=" + tokenIDFile,
+	}, cloudflareOpenBaoArgs(opts)...)
+	cmd := exec.CommandContext(ctx, opts.CloudflareBinary, args...)
 	cmd.Env = os.Environ()
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -342,6 +366,17 @@ func startBootstrapR2ControlPlane(ctx context.Context, opts BootstrapDeployOptio
 	return cmd, cleanup, nil
 }
 
+func cloudflareOpenBaoArgs(opts BootstrapDeployOptions) []string {
+	args := []string{
+		"--openbao-addr=" + opts.OpenBaoAddr,
+		"--openbao-token-file=" + opts.OpenBaoTokenFile,
+	}
+	if opts.OpenBaoCACertFile != "" {
+		args = append(args, "--openbao-ca-cert="+opts.OpenBaoCACertFile)
+	}
+	return args
+}
+
 func writeBootstrapCredentialFile(dir, name, value string) (string, error) {
 	if strings.TrimSpace(value) == "" {
 		return "", fmt.Errorf("bootstrap credential %s is empty", name)
@@ -366,6 +401,20 @@ func checkLocalExecutable(path, label string) error {
 	}
 	if info.Mode().Perm()&0o111 == 0 {
 		return fmt.Errorf("bootstrap deploy requires local %s at %s to be executable", label, path)
+	}
+	return nil
+}
+
+func checkLocalFile(path, label string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("bootstrap deploy requires local %s at %s", label, path)
+		}
+		return fmt.Errorf("inspect local %s at %s: %w", label, path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("bootstrap deploy requires local %s at %s to be a regular file", label, path)
 	}
 	return nil
 }

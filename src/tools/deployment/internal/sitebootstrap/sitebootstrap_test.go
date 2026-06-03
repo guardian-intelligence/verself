@@ -46,6 +46,33 @@ func TestBootstrapDeployChecksR2PublisherBeforeRemoteAccess(t *testing.T) {
 	}
 }
 
+func TestBootstrapDeployChecksOpenBaoBeforeRemoteAccess(t *testing.T) {
+	root := t.TempDir()
+	cloudflareBinary := filepath.Join(root, "cloudflare-control-plane")
+	if err := os.WriteFile(cloudflareBinary, []byte("binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r2Binary := filepath.Join(root, "cloudflare-r2-control-plane")
+	if err := os.WriteFile(r2Binary, []byte("binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
+		Site:                 "gamma",
+		SHA:                  "0123456789abcdef0123456789abcdef01234567",
+		RepoRoot:             root,
+		InventoryPath:        filepath.Join(root, "missing-inventory.ini"),
+		CloudflareBinary:     cloudflareBinary,
+		R2ControlPlaneBinary: r2Binary,
+	})
+	if err == nil || !strings.Contains(err.Error(), "--openbao-addr") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(err.Error(), "inventory") || strings.Contains(err.Error(), "OpenBao site root key") {
+		t.Fatalf("bootstrap deploy reached remote-facing checks before OpenBao validation: %v", err)
+	}
+}
+
 func TestBootstrapR2ControlPlaneCommandUsesCredentialFiles(t *testing.T) {
 	root := t.TempDir()
 	r2Binary := filepath.Join(root, "cloudflare-r2-control-plane")
@@ -56,11 +83,17 @@ func TestBootstrapR2ControlPlaneCommandUsesCredentialFiles(t *testing.T) {
 	if err := os.WriteFile(cloudflareBinary, []byte("binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	openBaoTokenFile := filepath.Join(root, "openbao-token")
+	if err := os.WriteFile(openBaoTokenFile, []byte("openbao-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	opts := normalizeBootstrapDeployOptions(BootstrapDeployOptions{
 		Site:                 "gamma",
 		RepoRoot:             root,
 		R2ControlPlaneBinary: r2Binary,
 		CloudflareBinary:     cloudflareBinary,
+		OpenBaoAddr:          "https://controller-openbao.internal",
+		OpenBaoTokenFile:     openBaoTokenFile,
 	})
 	publisher := bootstrapPublisherCredential{
 		AccessKeyID:     "publisher-token-id",
@@ -96,6 +129,28 @@ func TestBootstrapR2ControlPlaneCommandUsesCredentialFiles(t *testing.T) {
 	} {
 		if got := strings.TrimSpace(readFile(t, path)); got != want {
 			t.Fatalf("credential file %s = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestCloudflareBootstrapPublisherArgsUseOpenBaoFiles(t *testing.T) {
+	root := t.TempDir()
+	opts := normalizeBootstrapDeployOptions(BootstrapDeployOptions{
+		Site:              "gamma",
+		RepoRoot:          root,
+		OpenBaoAddr:       "https://controller-openbao.internal/",
+		OpenBaoCACertFile: "ca.pem",
+		OpenBaoTokenFile:  "token",
+	})
+
+	args := strings.Join(cloudflareOpenBaoArgs(opts), "\n")
+	for _, want := range []string{
+		"--openbao-addr=https://controller-openbao.internal",
+		"--openbao-ca-cert=" + filepath.Join(root, "ca.pem"),
+		"--openbao-token-file=" + filepath.Join(root, "token"),
+	} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("OpenBao args missing %q:\n%s", want, args)
 		}
 	}
 }
