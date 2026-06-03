@@ -103,14 +103,22 @@
   register: nomad_cpuinfo
 
 - name: Derive x86-64 psABI level from CPU flags
+  vars:
+    nomad_cpu_flags: "{{ ((nomad_cpuinfo.content | b64decode).split('\n') | select('match', '^flags') | list | first | default('')).split() }}"
+    nomad_x86_64_v4_flags: [avx512f, avx512bw, avx512cd, avx512dq, avx512vl]
+    nomad_x86_64_v3_flags: [avx2, bmi1, bmi2, fma, f16c, movbe]
+    nomad_x86_64_v2_flags: [sse4_2, sse4_1, ssse3, popcnt]
   ansible.builtin.set_fact:
     nomad_node_cpu_isa_level: >-
-      {%- set flags = ((nomad_cpuinfo.content | b64decode).split('\n') | select('match', '^flags') | list | first | default('')).split() -%}
-      {%- if 'avx512f' in flags and 'avx512bw' in flags and 'avx512cd' in flags and 'avx512dq' in flags and 'avx512vl' in flags -%}x86-64-v4
-      {%- elif 'avx2' in flags and 'bmi1' in flags and 'bmi2' in flags and 'fma' in flags and 'f16c' in flags and 'movbe' in flags -%}x86-64-v3
-      {%- elif 'sse4_2' in flags and 'sse4_1' in flags and 'ssse3' in flags and 'popcnt' in flags -%}x86-64-v2
-      {%- else -%}x86-64-v1
-      {%- endif -%}
+      {{
+        'x86-64-v4'
+        if (nomad_x86_64_v4_flags | difference(nomad_cpu_flags) | length) == 0
+        else 'x86-64-v3'
+        if (nomad_x86_64_v3_flags | difference(nomad_cpu_flags) | length) == 0
+        else 'x86-64-v2'
+        if (nomad_x86_64_v2_flags | difference(nomad_cpu_flags) | length) == 0
+        else 'x86-64-v1'
+      }}
 
 - name: Deploy Nomad agent configuration
   ansible.builtin.template:

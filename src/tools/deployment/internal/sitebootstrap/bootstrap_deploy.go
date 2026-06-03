@@ -251,7 +251,7 @@ func mintBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions) (b
 	body, readErr := io.ReadAll(io.LimitReader(reader, 1<<20))
 	waitErr := cmd.Wait()
 	if waitErr != nil {
-		return bootstrapPublisherCredential{}, fmt.Errorf("Cloudflare bootstrap publisher mint failed: %w", waitErr)
+		return bootstrapPublisherCredential{}, fmt.Errorf("cloudflare bootstrap publisher mint failed: %w", waitErr)
 	}
 	if readErr != nil {
 		return bootstrapPublisherCredential{}, fmt.Errorf("read Cloudflare bootstrap publisher credential: %w", readErr)
@@ -261,7 +261,7 @@ func mintBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions) (b
 		return bootstrapPublisherCredential{}, fmt.Errorf("decode Cloudflare bootstrap publisher credential: %w", err)
 	}
 	if strings.TrimSpace(out.AccessKeyID) == "" || strings.TrimSpace(out.SecretAccessKey) == "" || strings.TrimSpace(out.TokenID) == "" {
-		return bootstrapPublisherCredential{}, errors.New("Cloudflare bootstrap publisher credential is incomplete")
+		return bootstrapPublisherCredential{}, errors.New("cloudflare bootstrap publisher credential is incomplete")
 	}
 	return out, nil
 }
@@ -269,7 +269,7 @@ func mintBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions) (b
 func revokeBootstrapPublisher(ctx context.Context, opts BootstrapDeployOptions, tokenID string) error {
 	tokenID = strings.TrimSpace(tokenID)
 	if tokenID == "" {
-		return errors.New("Cloudflare bootstrap publisher token ID is required for revoke")
+		return errors.New("cloudflare bootstrap publisher token ID is required for revoke")
 	}
 	credentialDir, err := os.MkdirTemp("", "verself-bootstrap-r2-revoke-")
 	if err != nil {
