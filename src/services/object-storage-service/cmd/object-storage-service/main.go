@@ -85,7 +85,7 @@ func run() error {
 	pgDSN := shared.RequireString("VERSELF_PG_DSN")
 	secretKeyHex := shared.RequireCredential("credential-kek")
 	spiffeEndpoint := shared.String(workloadauth.EndpointSocketEnv, "")
-	environment := shared.String("OBJECT_STORAGE_ENVIRONMENT", "single-node")
+	site := shared.RequireString("VERSELF_SITE")
 	writerInstanceID := shared.String("OBJECT_STORAGE_WRITER_INSTANCE_ID", hostname())
 	providerKind := shared.String("OBJECT_STORAGE_PROVIDER", objectstorage.ProviderCloudflareR2)
 	proxyRegion := shared.String("OBJECT_STORAGE_S3_REGION", "auto")
@@ -120,7 +120,7 @@ func run() error {
 	}
 	baseConfig := objectstorage.Config{
 		ServiceName:      role.serviceName(),
-		Environment:      environment,
+		Site:             site,
 		ServiceVersion:   serviceVersion,
 		WriterInstanceID: writerInstanceID,
 		Provider:         providerKind,
@@ -148,6 +148,7 @@ func runAdmin(
 	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
 	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
 	authAudience := l.RequireCredential("auth-audience")
+	deploymentArtifactsBucket := l.RequireString("OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET")
 	provider, proxyAccessKeyID, err := newBucketProviderFromEnv(ctx, l, cfg)
 	if err := l.Err(); err != nil {
 		return err
@@ -156,7 +157,7 @@ func runAdmin(
 		return err
 	}
 
-	adminClientIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceObjectStorageAdmin)
+	adminClientIDs, err := workloadauth.PeerIDsForSource(spiffeSource, workloadauth.ServiceObjectStorageAdmin, workloadauth.ServiceDeployment)
 	if err != nil {
 		return err
 	}
@@ -169,6 +170,7 @@ func runAdmin(
 		return fmt.Errorf("object-storage iam client: %w", err)
 	}
 	cfg.ProxyAccessKeyID = proxyAccessKeyID
+	cfg.DeploymentArtifactsBucket = deploymentArtifactsBucket
 
 	objectstorageapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	svc := &objectstorage.Service{
@@ -283,6 +285,9 @@ func objectStorageAdminHandler(public http.Handler, protected http.Handler) http
 
 func isUnauthenticatedObjectStorageAdminPath(path string) bool {
 	if path == "/healthz" || path == "/readyz" {
+		return true
+	}
+	if strings.HasPrefix(path, "/internal/") {
 		return true
 	}
 	return strings.HasPrefix(path, "/openapi")

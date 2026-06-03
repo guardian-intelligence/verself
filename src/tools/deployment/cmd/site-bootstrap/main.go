@@ -40,6 +40,7 @@ func bootstrapDeploy(args []string) error {
 	sha := fs.String("sha", "", "Git SHA to bootstrap deploy.")
 	repoRoot := fs.String("repo-root", "", "Repository root.")
 	inventory := fs.String("inventory", "", "Site inventory path.")
+	openBaoSiteRootTokenFile := fs.String("openbao-site-root-token-file", "", "Single-use OpenBao site root token file.")
 	sshTransport := fs.String("ssh-transport", "recovery", "SSH transport for the Nomad tunnel: recovery or inventory.")
 	timeout := fs.Duration("timeout", 15*time.Minute, "Bootstrap deploy timeout.")
 	if err := fs.Parse(args); err != nil {
@@ -60,12 +61,13 @@ func bootstrapDeploy(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	return sitebootstrap.RunBootstrapDeploy(ctx, sitebootstrap.BootstrapDeployOptions{
-		Site:          *site,
-		SHA:           *sha,
-		RepoRoot:      root,
-		InventoryPath: inventoryPath,
-		SSHTransport:  *sshTransport,
-		Timeout:       *timeout,
+		Site:                     *site,
+		SHA:                      *sha,
+		RepoRoot:                 root,
+		InventoryPath:            inventoryPath,
+		OpenBaoSiteRootTokenFile: *openBaoSiteRootTokenFile,
+		SSHTransport:             *sshTransport,
+		Timeout:                  *timeout,
 	})
 }
 

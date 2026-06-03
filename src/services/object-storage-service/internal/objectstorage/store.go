@@ -363,6 +363,113 @@ func (s *Store) RevokeCredentialByID(ctx context.Context, credentialID uuid.UUID
 	return nil
 }
 
+func (s *Store) CreateWriteSession(ctx context.Context, session ObjectWriteSession) error {
+	if len(session.Objects) == 0 {
+		return fmt.Errorf("create write session: at least one object is required")
+	}
+	if s == nil || s.pool == nil {
+		return fmt.Errorf("object-storage store unavailable")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin create write session: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.queries.WithTx(tx)
+	err = q.CreateWriteSession(ctx, storegen.CreateWriteSessionParams{
+		SessionID:      session.SessionID,
+		Site:           session.Site,
+		Capability:     session.Capability,
+		Namespace:      session.Namespace,
+		BucketID:       session.BucketID,
+		IdempotencyKey: session.IdempotencyKey,
+		Status:         session.Status,
+		ExpiresAt:      pgTimestamptz(session.ExpiresAt),
+		CreatedAt:      pgTimestamptz(session.CreatedAt),
+		CreatedBy:      session.CreatedBy,
+		CompletedAt:    pgNullableTimestamptz(session.CompletedAt),
+	})
+	if err != nil {
+		return classifyStoreError("create write session", err)
+	}
+	for _, object := range session.Objects {
+		if err := q.CreateWriteSessionObject(ctx, storegen.CreateWriteSessionObjectParams{
+			SessionID: session.SessionID,
+			Name:      object.Name,
+			ObjectKey: object.ObjectKey,
+			Sha256:    object.SHA256,
+			SizeBytes: object.SizeBytes,
+			Action:    object.Action,
+			CreatedAt: pgTimestamptz(session.CreatedAt),
+		}); err != nil {
+			return classifyStoreError("create write session object", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit create write session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) WriteSessionByID(ctx context.Context, site, sessionID string) (ObjectWriteSession, error) {
+	q, err := s.readyQueries()
+	if err != nil {
+		return ObjectWriteSession{}, err
+	}
+	row, err := q.WriteSessionByID(ctx, storegen.WriteSessionByIDParams{Site: site, SessionID: sessionID})
+	if err != nil {
+		return ObjectWriteSession{}, classifyLookupError("write session by id", err)
+	}
+	return s.writeSessionFromRowWithObjects(ctx, q, row)
+}
+
+func (s *Store) WriteSessionByIdempotencyKey(ctx context.Context, site, capability, idempotencyKey string) (ObjectWriteSession, error) {
+	q, err := s.readyQueries()
+	if err != nil {
+		return ObjectWriteSession{}, err
+	}
+	row, err := q.WriteSessionByIdempotencyKey(ctx, storegen.WriteSessionByIdempotencyKeyParams{
+		Site:           site,
+		Capability:     capability,
+		IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
+		return ObjectWriteSession{}, classifyLookupError("write session by idempotency key", err)
+	}
+	return s.writeSessionFromRowWithObjects(ctx, q, row)
+}
+
+func (s *Store) CompleteWriteSession(ctx context.Context, site, sessionID string, completedAt time.Time) (ObjectWriteSession, error) {
+	q, err := s.readyQueries()
+	if err != nil {
+		return ObjectWriteSession{}, err
+	}
+	row, err := q.CompleteWriteSession(ctx, storegen.CompleteWriteSessionParams{
+		CompletedStatus: ObjectWriteSessionStatusCompleted,
+		CompletedAt:     pgTimestamptz(completedAt),
+		Site:            site,
+		SessionID:       sessionID,
+		OpenStatus:      ObjectWriteSessionStatusOpen,
+	})
+	if err != nil {
+		return ObjectWriteSession{}, classifyMutationError("complete write session", err)
+	}
+	return s.writeSessionFromRowWithObjects(ctx, q, row)
+}
+
+func (s *Store) writeSessionFromRowWithObjects(ctx context.Context, q *storegen.Queries, row storegen.ObjectStorageWriteSession) (ObjectWriteSession, error) {
+	objects, err := q.WriteSessionObjectsBySession(ctx, storegen.WriteSessionObjectsBySessionParams{SessionID: row.SessionID})
+	if err != nil {
+		return ObjectWriteSession{}, fmt.Errorf("list write session objects: %w", err)
+	}
+	session := writeSessionFromRow(row)
+	session.Objects = make([]ObjectWriteSessionObject, 0, len(objects))
+	for _, object := range objects {
+		session.Objects = append(session.Objects, writeSessionObjectFromRow(object))
+	}
+	return session, nil
+}
+
 func (s *Store) readyQueries() (*storegen.Queries, error) {
 	if s == nil || s.pool == nil || s.queries == nil {
 		return nil, fmt.Errorf("object-storage store unavailable")
@@ -416,6 +523,33 @@ func credentialFromRow(row storegen.ObjectStorageCredential) Credential {
 		CreatedBy:         row.CreatedBy,
 		RevokedAt:         timePtrFromPG(row.RevokedAt),
 		RevokedBy:         row.RevokedBy,
+	}
+}
+
+func writeSessionFromRow(row storegen.ObjectStorageWriteSession) ObjectWriteSession {
+	return ObjectWriteSession{
+		SessionID:      row.SessionID,
+		Site:           row.Site,
+		Capability:     row.Capability,
+		Namespace:      row.Namespace,
+		BucketID:       row.BucketID,
+		IdempotencyKey: row.IdempotencyKey,
+		Status:         row.Status,
+		ExpiresAt:      timeFromPG(row.ExpiresAt),
+		CreatedAt:      timeFromPG(row.CreatedAt),
+		CreatedBy:      row.CreatedBy,
+		CompletedAt:    timePtrFromPG(row.CompletedAt),
+	}
+}
+
+func writeSessionObjectFromRow(row storegen.ObjectStorageWriteSessionObject) ObjectWriteSessionObject {
+	return ObjectWriteSessionObject{
+		SessionID: row.SessionID,
+		Name:      row.Name,
+		ObjectKey: row.ObjectKey,
+		SHA256:    row.Sha256,
+		SizeBytes: row.SizeBytes,
+		Action:    row.Action,
 	}
 }
 

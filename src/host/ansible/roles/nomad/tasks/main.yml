@@ -25,24 +25,6 @@
     group: "{{ nomad_group }}"
     mode: "0750"
 
-- name: Assert OpenBao site root key input
-  ansible.builtin.assert:
-    that:
-      - verself_openbao_site_root_key_file | default('', true) | length > 0
-    fail_msg: >-
-      OpenBao bootstrap requires verself_openbao_site_root_key_file. Provide
-      the site root key before host convergence.
-  no_log: true
-
-- name: Deploy OpenBao site root key
-  ansible.builtin.copy:
-    src: "{{ verself_openbao_site_root_key_file }}"
-    dest: "{{ nomad_openbao_root_key_dest }}"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-
 - name: Create Nomad state directory
   ansible.builtin.file:
     path: "{{ nomad_data_dir }}"

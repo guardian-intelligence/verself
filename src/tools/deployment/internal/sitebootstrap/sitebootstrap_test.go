@@ -57,6 +57,26 @@ func TestLocalArtifactUploadPathWritesBody(t *testing.T) {
 	}
 }
 
+func TestValidateLocalOpenBaoSiteRootTokenFileRequiresPrivateMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "site-root-token")
+	if err := os.WriteFile(path, []byte("token\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := validateLocalOpenBaoSiteRootTokenFile(path)
+	if err == nil || !strings.Contains(err.Error(), "readable only by the operator") {
+		t.Fatalf("error = %v, want private mode rejection", err)
+	}
+}
+
+func TestOpenBaoSiteRootTokenInstallCommandUsesRunPath(t *testing.T) {
+	command := openBaoSiteRootTokenInstallCommand("/tmp/root-token", openBaoSiteRootTokenPath)
+	for _, want := range []string{"/run/verself/bootstrap/openbao-site-root.token", "install -d", "-m 0700", "-m 0600", "trap 'rm -f \"$tmp\"' EXIT"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("install command missing %q:\n%s", want, command)
+		}
+	}
+}
+
 func TestSCPCommandUsesUppercasePortFlag(t *testing.T) {
 	cmd := scpCommand(context.Background(), inventoryTarget{Host: "2001:db8::1", User: "ubuntu", Port: 2222}, "/tmp/local", "/tmp/remote")
 	args := strings.Join(cmd.Args, "\n")

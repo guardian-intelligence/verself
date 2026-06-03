@@ -29,7 +29,7 @@ func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.openBaoAddr = "https://openbao.internal"
-	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
 	cfg.openBaoCACertFile = "/openbao/ca.pem"
 	cfg.openBaoTokenFile = "/run/openbao/token"
 
@@ -80,14 +80,14 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 		runtimeOpenBaoTokenFile: tokenFile,
 		timeout:                 time.Second,
 	}, map[string]string{
-		"cloudflare-r2-control-plane.publisher_token_id":    "publisher-id",
+		"object-storage-service.r2.admin_access_key_id":     "admin-id",
 		"object-storage-service.r2.proxy_secret_access_key": "proxy-secret",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if writes["kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id"] != "publisher-id" {
-		t.Fatalf("publisher write = %#v", writes)
+	if writes["kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id"] != "admin-id" {
+		t.Fatalf("admin write = %#v", writes)
 	}
 	if writes["kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key"] != "proxy-secret" {
 		t.Fatalf("proxy write = %#v", writes)
@@ -177,14 +177,6 @@ cloudflare_dns_records:
 func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	root := t.TempDir()
 	writeCloudflareAccountConfig(t, root)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
-  "artifact_delivery": {
-    "kind": "cloudflare_r2_control_plane",
-    "key_prefix": "sha256",
-    "checksum_algorithm": "sha256",
-    "public": false
-  }
-}`)
 
 	cfg, err := loadSiteConfig(root, "gamma")
 	if err != nil {
@@ -198,28 +190,6 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	}
 	if cfg.SitePrefix != "gamma" {
 		t.Fatalf("site prefix = %q", cfg.SitePrefix)
-	}
-}
-
-func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
-	root := t.TempDir()
-	writeCloudflareAccountConfig(t, root)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
-  "artifact_delivery": {
-    "kind": "cloudflare_r2_control_plane",
-    "bucket": "verself-deployment-artifacts",
-    "key_prefix": "sha256",
-    "checksum_algorithm": "sha256",
-    "public": false
-  }
-}`)
-
-	err := validLoadSiteConfigError(root, "gamma")
-	if err == nil {
-		t.Fatal("expected site Cloudflare global rejection")
-	}
-	if !strings.Contains(err.Error(), "artifact_delivery.bucket belongs to src/integrations/cloudflare/account.json") {
-		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -262,9 +232,4 @@ func writeCloudflareAccountConfig(t *testing.T, root string) {
     "recovery_bucket": "verself-recovery"
   }
 }`)
-}
-
-func validLoadSiteConfigError(root, site string) error {
-	_, err := loadSiteConfig(root, site)
-	return err
 }

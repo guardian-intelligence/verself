@@ -212,7 +212,7 @@ func TestBootstrapCheckReturnsTypedDependencyCodes(t *testing.T) {
 func TestDependencyCheckFailureCountSaturates(t *testing.T) {
 	checks := make([]DependencyCheck, int(^uint16(0))+1)
 	for i := range checks {
-		checks[i] = dependencyFailed("S7", "r2_control_plane", "failed")
+		checks[i] = dependencyFailed("S7", "object_storage", "failed")
 	}
 	if got := dependencyCheckFailureCount(checks); got != ^uint16(0) {
 		t.Fatalf("failure count = %d, want saturated uint16", got)
@@ -234,7 +234,7 @@ func TestDependencyChecksReturnCanonicalS0ToS7Model(t *testing.T) {
 		"S6/nomad",
 		"S7/postgres",
 		"S7/repo_root",
-		"S7/r2_control_plane",
+		"S7/object_storage",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("checks = %v, want %v", got, want)
@@ -431,16 +431,16 @@ func TestDependencyChecksRunSlowProbesConcurrently(t *testing.T) {
 	}
 	nomad := httptest.NewServer(http.HandlerFunc(slowOK))
 	t.Cleanup(nomad.Close)
-	r2 := httptest.NewServer(http.HandlerFunc(slowOK))
-	t.Cleanup(r2.Close)
+	objectStorage := httptest.NewServer(http.HandlerFunc(slowOK))
+	t.Cleanup(objectStorage.Close)
 
 	started := time.Now()
 	checks := (&Service{Config: Config{
-		Site:               "gamma",
-		NomadAddr:          nomad.URL,
-		R2ControlPlaneAddr: r2.URL,
-		NomadAllocID:       "alloc-1",
-		RecoverySSHReady:   "true",
+		Site:              "gamma",
+		NomadAddr:         nomad.URL,
+		ObjectStorageAddr: objectStorage.URL,
+		NomadAllocID:      "alloc-1",
+		RecoverySSHReady:  "true",
 	}}).DependencyChecks(context.Background())
 	elapsed := time.Since(started)
 	if elapsed > 350*time.Millisecond {
@@ -465,11 +465,11 @@ func TestDependencyChecksDeadlineReturnsTypedFailureForNonCooperativeProbe(t *te
 		},
 		{
 			Stage: "S7",
-			Name:  "r2_control_plane",
+			Name:  "object_storage",
 			Run: func(context.Context) DependencyCheck {
 				time.Sleep(80 * time.Millisecond)
 				close(slowDone)
-				return dependencyOK("S7", "r2_control_plane")
+				return dependencyOK("S7", "object_storage")
 			},
 		},
 	}, 10*time.Millisecond)
@@ -480,7 +480,7 @@ func TestDependencyChecksDeadlineReturnsTypedFailureForNonCooperativeProbe(t *te
 	if checks[0].Code != "ok" {
 		t.Fatalf("first check = %+v, want ok", checks[0])
 	}
-	if checks[1].OK || checks[1].Code != "deployment.bootstrap.s7.r2_control_plane" || checks[1].Detail != "deadline exceeded" {
+	if checks[1].OK || checks[1].Code != "deployment.bootstrap.s7.object_storage" || checks[1].Detail != "deadline exceeded" {
 		t.Fatalf("slow check = %+v, want typed deadline failure", checks[1])
 	}
 }

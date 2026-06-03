@@ -6,17 +6,10 @@ import (
 	"path/filepath"
 )
 
-type ArtifactDelivery struct {
-	Kind   string `json:"kind"`
-	Bucket string `json:"bucket"`
-}
-
 type Artifact struct {
 	Output       string `json:"output"`
 	LocalPath    string `json:"local_path,omitempty"`
 	SHA256       string `json:"sha256"`
-	Bucket       string `json:"bucket"`
-	Key          string `json:"key"`
 	GetterSource string `json:"getter_source"`
 }
 

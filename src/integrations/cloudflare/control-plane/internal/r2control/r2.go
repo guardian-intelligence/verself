@@ -86,7 +86,7 @@ func NewR2Client(cfg R2ClientConfig) (*R2Client, error) {
 			AccessKeyID:     strings.TrimSpace(cfg.AccessKeyID),
 			SecretAccessKey: strings.TrimSpace(cfg.SecretAccessKey),
 			SessionToken:    strings.TrimSpace(cfg.SessionToken),
-			Source:          firstNonEmpty(cfg.Source, "cloudflare-r2-control-plane"),
+			Source:          firstNonEmpty(cfg.Source, "cloudflare-control-plane"),
 		},
 	}, nil
 }

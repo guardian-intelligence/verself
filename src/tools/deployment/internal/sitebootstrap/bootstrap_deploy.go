@@ -25,17 +25,18 @@ import (
 const (
 	defaultNomadRemoteAddr   = "127.0.0.1:4646"
 	bootstrapArtifactRoot    = "/var/lib/verself/bootstrap/artifacts"
-	openBaoRootKeyPath       = "/etc/verself/bootstrap/openbao-root.key"
+	openBaoSiteRootTokenPath = "/run/verself/bootstrap/openbao-site-root.token"
 	bootstrapRemoteTmpPrefix = "/tmp/verself-bootstrap-artifacts-"
 )
 
 type BootstrapDeployOptions struct {
-	Site          string
-	SHA           string
-	RepoRoot      string
-	InventoryPath string
-	SSHTransport  string
-	Timeout       time.Duration
+	Site                     string
+	SHA                      string
+	RepoRoot                 string
+	InventoryPath            string
+	OpenBaoSiteRootTokenFile string
+	SSHTransport             string
+	Timeout                  time.Duration
 }
 
 type inventoryTarget struct {
@@ -75,13 +76,16 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err != nil {
 		return err
 	}
+	if err := validateLocalOpenBaoSiteRootTokenFile(opts.OpenBaoSiteRootTokenFile); err != nil {
+		return err
+	}
 	nomadPort, err := freeLoopbackPort()
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
-	if err := checkRemoteOpenBaoRootKey(ctx, target); err != nil {
+	if err := stageRemoteOpenBaoSiteRootToken(ctx, target, opts.OpenBaoSiteRootTokenFile); err != nil {
 		return err
 	}
 
@@ -99,14 +103,23 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err != nil {
 		return err
 	}
-	_, err = deployengine.Run(ctx, deployengine.Options{
-		Site:              opts.Site,
-		SHA:               opts.SHA,
-		DeployRunKey:      deployRunKey,
-		RepoRoot:          opts.RepoRoot,
-		ArtifactPublisher: remoteBootstrapArtifactPublisher{target: target, root: bootstrapArtifactRoot},
-		NomadAddr:         "http://127.0.0.1:" + strconv.Itoa(nomadPort),
-		TaskUserResolver:  remoteTaskUserResolver(target),
+	labels, err := deployengine.QueryNomadComponentLabels(ctx, opts.RepoRoot)
+	if err != nil {
+		return err
+	}
+	descriptors, err := deployengine.BuildNomadComponentDescriptors(ctx, opts.RepoRoot, labels)
+	if err != nil {
+		return err
+	}
+	_, err = deployengine.Submit(ctx, deployengine.Options{
+		Site:                      opts.Site,
+		ArtifactNamespace:         opts.SHA,
+		DeployRunKey:              deployRunKey,
+		RepoRoot:                  opts.RepoRoot,
+		NomadComponentDescriptors: descriptors,
+		ArtifactPublisher:         remoteBootstrapArtifactPublisher{target: target, root: bootstrapArtifactRoot},
+		NomadAddr:                 "http://127.0.0.1:" + strconv.Itoa(nomadPort),
+		TaskUserResolver:          remoteTaskUserResolver(target),
 	})
 	if err != nil {
 		return err
@@ -125,8 +138,8 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 	if strings.TrimSpace(req.Site) == "" {
 		return deployengine.ArtifactPublishResult{}, errors.New("site is required")
 	}
-	if strings.TrimSpace(req.SHA) == "" {
-		return deployengine.ArtifactPublishResult{}, errors.New("sha is required")
+	if strings.TrimSpace(req.ArtifactNamespace) == "" {
+		return deployengine.ArtifactPublishResult{}, errors.New("artifact namespace is required")
 	}
 	sources := map[string]string{}
 	for _, artifact := range req.Artifacts {
@@ -151,7 +164,7 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 		if err := copyLocalFileToRemote(ctx, p.target, localPath, remoteTmp); err != nil {
 			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
 		}
-		remoteFile := remoteArtifactFile(root, req.Site, req.SHA, artifact)
+		remoteFile := remoteArtifactFile(root, req.Site, req.ArtifactNamespace, artifact)
 		if err := installRemoteArtifact(ctx, p.target, remoteTmp, remoteFile); err != nil {
 			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
 		}
@@ -358,6 +371,7 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	opts.SHA = strings.TrimSpace(opts.SHA)
 	opts.RepoRoot = strings.TrimSpace(opts.RepoRoot)
 	opts.InventoryPath = strings.TrimSpace(opts.InventoryPath)
+	opts.OpenBaoSiteRootTokenFile = strings.TrimSpace(opts.OpenBaoSiteRootTokenFile)
 	opts.SSHTransport = strings.TrimSpace(opts.SSHTransport)
 	if opts.Timeout == 0 {
 		opts.Timeout = 15 * time.Minute
@@ -390,21 +404,60 @@ func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int
 	return cmd
 }
 
-func checkRemoteOpenBaoRootKey(ctx context.Context, target inventoryTarget) error {
-	cmd := sshCommand(ctx, target, openBaoRootKeyPreflightCommand())
-	if output, err := cmd.CombinedOutput(); err != nil {
-		detail := strings.TrimSpace(string(output))
-		if detail != "" {
-			detail = ": " + detail
-		}
-		return fmt.Errorf("bootstrap deploy requires the OpenBao site root key on the host at %s; rerun host convergence with the site root key first%s", openBaoRootKeyPath, detail)
+func validateLocalOpenBaoSiteRootTokenFile(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return errors.New("openbao site root token file is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("inspect openbao site root token file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("openbao site root token file %s must be a regular file", path)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("openbao site root token file %s is empty", path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("openbao site root token file %s must be readable only by the operator", path)
 	}
 	return nil
 }
 
-func openBaoRootKeyPreflightCommand() string {
-	path := shellQuote(openBaoRootKeyPath)
-	return "sudo -n test -s " + path + " && test \"$(sudo -n stat -c '%a' " + path + ")\" = 600"
+func stageRemoteOpenBaoSiteRootToken(ctx context.Context, target inventoryTarget, localPath string) error {
+	remoteTmp, err := remoteTempSecretPath("openbao-site-root")
+	if err != nil {
+		return err
+	}
+	if err := copyLocalFileToRemote(ctx, target, localPath, remoteTmp); err != nil {
+		return fmt.Errorf("stage openbao site root token: %w", err)
+	}
+	if err := installRemoteOpenBaoSiteRootToken(ctx, target, remoteTmp, openBaoSiteRootTokenPath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func remoteTempSecretPath(name string) (string, error) {
+	id, err := randomPrefixedID("secret")
+	if err != nil {
+		return "", err
+	}
+	return "/tmp/verself-bootstrap-" + id + "-" + safeRemoteArtifactName(name), nil
+}
+
+func installRemoteOpenBaoSiteRootToken(ctx context.Context, target inventoryTarget, remoteTmp, remoteFile string) error {
+	command := openBaoSiteRootTokenInstallCommand(remoteTmp, remoteFile)
+	cmd := sshCommand(ctx, target, command)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("install remote openbao site root token: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func openBaoSiteRootTokenInstallCommand(remoteTmp, remoteFile string) string {
+	return "tmp=" + shellQuote(remoteTmp) + "; dest=" + shellQuote(remoteFile) + "; dir=$(dirname \"$dest\"); trap 'rm -f \"$tmp\"' EXIT; sudo -n install -d -o root -g root -m 0700 \"$dir\"; sudo -n install -o root -g root -m 0600 \"$tmp\" \"$dest\"; sudo -n test -s \"$dest\""
 }
 
 func sshCommand(ctx context.Context, target inventoryTarget, remoteCommand string) *exec.Cmd {

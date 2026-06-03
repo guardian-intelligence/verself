@@ -156,8 +156,8 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
-	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
+	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and site vars.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")
@@ -166,7 +166,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.accountAdminAOpenBaoPath, "account-admin-a-openbao-path", accountAdminAOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot A.")
 	fs.StringVar(&cfg.accountAdminBOpenBaoPath, "account-admin-b-openbao-path", accountAdminBOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot B.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address.")
-	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", "Controller OpenBao KV path for R2 credentials.")
+	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao token.")
 	fs.StringVar(&cfg.runtimeOpenBaoAddr, "runtime-openbao-addr", "", "Runtime OpenBao address for service-required secret projection. Defaults to --openbao-addr.")
@@ -310,7 +310,7 @@ func run(args []string) error {
 			AccessKeyID:     temp.AccessKeyID,
 			SecretAccessKey: temp.SecretAccessKey,
 			SessionToken:    temp.SessionToken,
-			Source:          "cloudflare-r2-control-plane-temp",
+			Source:          "cloudflare-control-plane-temp",
 			Timeout:         cfg.timeout,
 		})
 		if err != nil {
@@ -378,7 +378,7 @@ func certificateOnlyAction(action string) bool {
 
 func isChildProvisioningAction(action string) bool {
 	switch action {
-	case "ensure-bucket", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 		return true
 	default:
 		return false
@@ -404,9 +404,9 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
 	}
 	if !certificateOnlyAction(cfg.action) {
 		if !r2control.IsCloudflareAccountID(cfg.accountID) {
@@ -682,14 +682,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 			return err
 		}
 	}
-	if cfg.action == "ensure-publisher" || cfg.action == "rotate-publisher" {
-		if err := preflightOpenBaoPersistence(cfg.parentCredentialConfig(), "deployment publisher capability persistence"); err != nil {
-			return err
-		}
-		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath("cloudflare-r2-control-plane.publisher_token_id")), "deployment publisher runtime secret projection"); err != nil {
-			return err
-		}
-	}
 	if cfg.action == "rotate-object-storage-provider" {
 		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath("object-storage-service.r2.admin_access_key_id")), "object-storage provider runtime secret projection"); err != nil {
 			return err
@@ -703,10 +695,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	parentClient, err := accountAdminR2Client(cfg, accountAdmin, "cloudflare-r2-control-plane-account-admin-verification")
-	if err != nil {
-		return err
-	}
 	out := baseReport(cfg, accountAdmin.Source)
 	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
 	out.BucketExisted = existed
@@ -714,8 +702,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	switch cfg.action {
 	case "ensure-bucket":
 		err = nil
-	case "ensure-publisher", "rotate-publisher":
-		err = provisionPublisherCredential(ctx, cfg, accountAdmin, parentClient, &out)
 	case "ensure-recovery", "rotate-recovery":
 		err = provisionRecoveryCredential(ctx, cfg, accountAdmin, &out)
 	case "rotate-object-storage-provider":
@@ -762,18 +748,6 @@ func ensureR2BucketWithAccountAdmin(ctx context.Context, cfg config, apiClient *
 		return false, false, err
 	}
 	return existed, created, nil
-}
-
-func accountAdminR2Client(cfg config, parent r2control.ParentCredentials, source string) (*r2control.R2Client, error) {
-	return r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     parent.AccessKeyID,
-		SecretAccessKey: parent.SecretAccessKey,
-		SessionToken:    parent.SessionToken,
-		Source:          source,
-		Timeout:         cfg.timeout,
-	})
 }
 
 func accountAdminAOpenBaoPath(cfg config) string {
@@ -885,63 +859,6 @@ func verifyObjectRoundTripOnce(ctx context.Context, client *r2control.R2Client, 
 	return nil
 }
 
-func provisionPublisherCredential(ctx context.Context, cfg config, parent r2control.ParentCredentials, parentClient *r2control.R2Client, out *report) (err error) {
-	if strings.TrimSpace(parent.APIToken) == "" {
-		return fmt.Errorf("r2 publisher provisioning requires the parent cloudflare API token value")
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	tokenName := "verself-" + cfg.site + "-nomad-artifact-publisher-" + time.Now().UTC().Format("20060102T150405Z")
-	publisher, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, tokenName, []string{
-		r2control.PermissionR2BucketItemRead,
-		r2control.PermissionR2BucketItemWrite,
-	}, time.Now().UTC().Add(cfg.childTokenTTL))
-	if err != nil {
-		return err
-	}
-	persisted := false
-	defer func() {
-		if !persisted {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, publisher)
-		}
-	}()
-	publisherClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     publisher.S3AccessKeyID,
-		SecretAccessKey: publisher.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-publisher-verification",
-		Timeout:         cfg.timeout,
-	})
-	if err != nil {
-		return err
-	}
-	if _, _, err := parentClient.EnsureBucket(ctx, cfg.bucket); err != nil {
-		return err
-	}
-	if err := verifyObjectRoundTrip(ctx, publisherClient, cfg, "publisher", out); err != nil {
-		return err
-	}
-	if err := writeCapabilityCredential(ctx, cfg, capabilityOpenBaoPath("deployment-publisher"), "deployment-publisher", publisher); err != nil {
-		return err
-	}
-	runtimeValues := publisherRuntimeSecretValues(publisher)
-	if err := writeRuntimeSecrets(ctx, cfg, runtimeValues); err != nil {
-		return err
-	}
-	persisted = true
-	out.ChildCredentialPermission = publisher.PermissionGroup
-	out.ChildCredentialName = publisher.Name
-	out.ChildCredentialExpiresOn = publisher.ExpiresOn
-	out.ChildAccessKeyIDFingerprint = r2control.Fingerprint(publisher.S3AccessKeyID)
-	out.ChildSecretKeyFingerprint = r2control.Fingerprint(publisher.S3SecretKey)
-	out.RuntimeSecretFingerprints = fingerprintMap(runtimeValues)
-	out.VerificationObjectGetStatus = out.TestObjectGetStatus
-	return nil
-}
-
 func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, parent r2control.ParentCredentials, out *report) (err error) {
 	if strings.TrimSpace(parent.APIToken) == "" {
 		return fmt.Errorf("object-storage R2 provider provisioning requires the account-admin Cloudflare API token value")
@@ -983,7 +900,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 		Region:          cfg.region,
 		AccessKeyID:     adminToken.S3AccessKeyID,
 		SecretAccessKey: adminToken.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-object-storage-admin-verification",
+		Source:          "cloudflare-control-plane-object-storage-admin-verification",
 		Timeout:         cfg.timeout,
 	})
 	if err != nil {
@@ -997,7 +914,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 		Region:          cfg.region,
 		AccessKeyID:     proxyToken.S3AccessKeyID,
 		SecretAccessKey: proxyToken.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-object-storage-proxy-verification",
+		Source:          "cloudflare-control-plane-object-storage-proxy-verification",
 		Timeout:         cfg.timeout,
 	})
 	if err != nil {
@@ -1049,7 +966,7 @@ func provisionRecoveryCredential(ctx context.Context, cfg config, parent r2contr
 		Region:          cfg.region,
 		AccessKeyID:     recovery.S3AccessKeyID,
 		SecretAccessKey: recovery.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-recovery-verification",
+		Source:          "cloudflare-control-plane-recovery-verification",
 		Timeout:         cfg.timeout,
 	})
 	if err != nil {
@@ -1551,13 +1468,6 @@ func objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[str
 	}
 }
 
-func publisherRuntimeSecretValues(publisher r2control.CreatedAPIToken) map[string]string {
-	return map[string]string{
-		"cloudflare-r2-control-plane.publisher_token_id":          publisher.S3AccessKeyID,
-		"cloudflare-r2-control-plane.publisher_secret_access_key": publisher.S3SecretKey,
-	}
-}
-
 func fingerprintMap(values map[string]string) map[string]string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -1577,7 +1487,7 @@ func verificationObject(site, prefix string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("generate verification nonce: %w", err)
 	}
 	key := normalizedPrefix(prefix) + site + "/" + time.Now().UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(nonce) + ".txt"
-	body := []byte("verself cloudflare-r2-control-plane verification\nsite=" + site + "\nkey=" + key + "\n")
+	body := []byte("verself cloudflare-control-plane verification\nsite=" + site + "\nkey=" + key + "\n")
 	return key, body, nil
 }
 

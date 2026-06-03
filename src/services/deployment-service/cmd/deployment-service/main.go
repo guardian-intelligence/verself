@@ -75,7 +75,7 @@ func run() error {
 	nomadAddr := cfg.String("VERSELF_NOMAD_ADDR", "http://127.0.0.1:4646")
 	nomadAllocID := cfg.String("NOMAD_ALLOC_ID", "")
 	recoverySSHReady := cfg.String("VERSELF_RECOVERY_SSH_READY", "")
-	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", workloadauth.InternalURL(workloadauth.ServiceCloudflareR2))
+	objectStorageAddr := cfg.String("VERSELF_OBJECT_STORAGE_ADDR", workloadauth.InternalURL(workloadauth.ServiceObjectStorageAdmin))
 	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
 	githubRepositories := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES", "")
@@ -117,27 +117,27 @@ func run() error {
 		return fmt.Errorf("deployment-service spiffe source: %w", err)
 	}
 	defer func() { _ = spiffeSource.Close() }()
-	r2HTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceCloudflareR2, nil, workloadauth.ServiceClientTimeouts{
+	objectStorageHTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceObjectStorageAdmin, nil, workloadauth.ServiceClientTimeouts{
 		Dial:           500 * time.Millisecond,
 		TLSHandshake:   time.Second,
 		ResponseHeader: 2 * time.Minute,
 		Total:          2 * time.Minute,
 	})
 	if err != nil {
-		return fmt.Errorf("deployment-service R2 control-plane mtls: %w", err)
+		return fmt.Errorf("deployment-service object-storage mtls: %w", err)
 	}
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
 		Config: deploymentapi.Config{
-			Site:               site,
-			RepoRoot:           repoRoot,
-			R2ControlPlaneAddr: r2ControlPlaneAddr,
-			NomadAddr:          nomadAddr,
-			NomadAllocID:       nomadAllocID,
-			RecoverySSHReady:   recoverySSHReady,
-			BazelJobs:          bazelJobs,
+			Site:              site,
+			RepoRoot:          repoRoot,
+			ObjectStorageAddr: objectStorageAddr,
+			NomadAddr:         nomadAddr,
+			NomadAllocID:      nomadAllocID,
+			RecoverySSHReady:  recoverySSHReady,
+			BazelJobs:         bazelJobs,
 		},
-		R2ControlPlaneHTTPClient: r2HTTPClient,
+		ObjectStorageHTTPClient: objectStorageHTTPClient,
 	}
 	if err := svc.Store.Ready(ctx); err != nil {
 		return fmt.Errorf("deployment postgres readiness: %w", err)

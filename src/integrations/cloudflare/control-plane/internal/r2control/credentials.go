@@ -42,7 +42,7 @@ func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 		cfg.Source = ParentCredentialSourceOpenBao
 	}
 	if cfg.OpenBaoPath == "" {
-		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second

@@ -84,7 +84,6 @@ spire_identity_registry(
         "//src/infrastructure-components/nomad-observer:spiffe_identity",
         "//src/infrastructure-components/otelcol:spiffe_identity",
         "//src/infrastructure-components/temporal-platform:spiffe_identity_server",
-        "//src/integrations/cloudflare/r2-control-plane:spiffe_identity",
         "//src/services/analytics-service:spiffe_identity",
         "//src/services/billing-service:spiffe_identity",
         "//src/services/deployment-service:spiffe_identity",

@@ -404,15 +404,6 @@ func csvSet(raw string) map[string]struct{} {
 }
 
 func (v *Validator) validateBootstrapRuntimeSecretContracts() {
-	r2SecretsPath := filepath.Join(v.root, "src", "integrations", "cloudflare", "r2-control-plane", "deploy", "runtime-secrets.yml")
-	if _, err := os.Stat(r2SecretsPath); err == nil {
-		rel := v.rel(r2SecretsPath)
-		var doc RuntimeSecretsFile
-		if v.decode(rel, r2SecretsPath, &doc) {
-			v.requireExternalOpenBaoSecret(rel, doc, "cloudflare-r2-control-plane.publisher_token_id")
-			v.requireExternalOpenBaoSecret(rel, doc, "cloudflare-r2-control-plane.publisher_secret_access_key")
-		}
-	}
 	emailSecretsPath := filepath.Join(v.root, "src", "services", "email-service", "deploy", "runtime-secrets.yml")
 	if _, err := os.Stat(emailSecretsPath); err == nil {
 		rel := v.rel(emailSecretsPath)
@@ -446,11 +437,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 			v.requireExternalOpenBaoSecret(rel, doc, "auth-control-plane.github_login.oauth_client_secret")
 		}
 	}
-	v.requireNomadRuntimeSecretReferences("src/integrations/cloudflare/r2-control-plane/nomad.hcl", []string{
-		"cloudflare-r2-control-plane.publisher_token_id",
-		"cloudflare-r2-control-plane.publisher_secret_access_key",
-	})
-	v.requireR2ControlPlaneServeBoundary("src/integrations/cloudflare/r2-control-plane/nomad.hcl")
 }
 
 func (v *Validator) validateNoToolLayerDeployEngine() {
@@ -494,50 +480,6 @@ func (v *Validator) requireExternalOpenBaoSecret(rel string, doc RuntimeSecretsF
 	}
 	if !declaration.ExternalOpenBao || strings.TrimSpace(declaration.ProducedByJob) != "" || declaration.Generated.Bytes != 0 {
 		v.add(rel, fmt.Sprintf("bootstrap runtime secret %s must be external_openbao", name))
-	}
-}
-
-func (v *Validator) requireNomadRuntimeSecretReferences(rel string, secrets []string) {
-	path := filepath.Join(v.root, filepath.FromSlash(rel))
-	body, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return
-	}
-	if err != nil {
-		v.add(rel, "read: "+err.Error())
-		return
-	}
-	text := string(body)
-	for _, secret := range secrets {
-		if !strings.Contains(text, "kv-runtime/data/secret/org/"+secret) {
-			v.add(rel, fmt.Sprintf("bootstrap Nomad job must render OpenBao runtime secret %s", secret))
-		}
-	}
-}
-
-func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
-	path := filepath.Join(v.root, filepath.FromSlash(rel))
-	body, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return
-	}
-	if err != nil {
-		v.add(rel, "read: "+err.Error())
-		return
-	}
-	text := string(body)
-	for _, required := range []string{
-		`"--action=serve"`,
-		`"--credential-source=files"`,
-		`"--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id"`,
-		`"--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key"`,
-		`"--listen=127.0.0.1:$${NOMAD_PORT_internal_https}"`,
-		`SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"`,
-		`name = "cloudflare-r2-control-plane-internal-https"`,
-	} {
-		if !strings.Contains(text, required) {
-			v.add(rel, fmt.Sprintf("R2 control-plane runtime must declare %s", required))
-		}
 	}
 }
 

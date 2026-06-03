@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "client",
-    srcs = ["transport.go"],
+    srcs = [
+        "internal_write_sessions.go",
+        "transport.go",
+    ],
     importpath = "github.com/verself/object-storage-service/client",
     visibility = ["//visibility:public"],
 )

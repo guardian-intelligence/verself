@@ -19,6 +19,8 @@ deployment_github_allowed_repositories: ""
 deployment_github_allowed_refs: ""
 deployment_github_allowed_workflow_refs: ""
 deployment_repo_url: https://github.com/guardian-intelligence/verself.git
+object_storage_s3_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
+object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 distribution_service_subdomain: distribution.api
 distribution_service_domain: "{{ distribution_service_subdomain }}.{{ verself_domain }}"
 forgejo_subdomain: git

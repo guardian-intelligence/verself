@@ -17,6 +17,16 @@ const (
 
 	CredentialStatusActive  = "active"
 	CredentialStatusRevoked = "revoked"
+
+	ObjectStorageCapabilityDeploymentArtifacts = "deployment_artifacts"
+	ObjectStorageCapabilityProductObjects      = "product_objects"
+	ObjectStorageCapabilityRecovery            = "recovery"
+
+	ObjectWriteSessionStatusOpen      = "open"
+	ObjectWriteSessionStatusCompleted = "completed"
+
+	ObjectWriteActionPresent = "present"
+	ObjectWriteActionPut     = "put"
 )
 
 type Bucket struct {
@@ -67,6 +77,56 @@ type ProviderBucket struct {
 	LifecycleRules json.RawMessage
 }
 
+type ObjectWriteRequest struct {
+	Name      string
+	SHA256    string
+	SizeBytes int64
+}
+
+type S3CompatibleObject struct {
+	Method    string
+	URL       string
+	Headers   map[string]string
+	ExpiresAt time.Time
+	SHA256    string
+}
+
+type ObjectWriteSession struct {
+	SessionID      string
+	Site           string
+	Capability     string
+	Namespace      string
+	BucketID       uuid.UUID
+	IdempotencyKey string
+	Status         string
+	ExpiresAt      time.Time
+	CreatedAt      time.Time
+	CreatedBy      string
+	CompletedAt    *time.Time
+	Objects        []ObjectWriteSessionObject
+}
+
+type ObjectWriteSessionObject struct {
+	SessionID string
+	Name      string
+	ObjectKey string
+	SHA256    string
+	SizeBytes int64
+	Action    string
+	Write     *S3CompatibleObject
+	Read      *S3CompatibleObject
+}
+
+type CreateObjectWriteSessionInput struct {
+	IdempotencyKey string
+	Site           string
+	Capability     string
+	Namespace      string
+	Objects        []ObjectWriteRequest
+	TTL            time.Duration
+	Actor          string
+}
+
 type BucketProviderInput struct {
 	Name          string
 	QuotaBytes    *int64
@@ -87,6 +147,11 @@ type BucketProvider interface {
 	CreateBucket(ctx context.Context, input BucketProviderInput) (ProviderBucket, error)
 	UpdateBucket(ctx context.Context, input BucketProviderUpdate) (ProviderBucket, error)
 	DeleteBucket(ctx context.Context, providerBucketID string) error
+}
+
+type ObjectTransferProvider interface {
+	PresignObject(ctx context.Context, method, bucketName, objectKey, payloadSHA256 string, ttl time.Duration) (S3CompatibleObject, error)
+	VerifyObject(ctx context.Context, bucketName, objectKey, expectedSHA256 string, expectedSizeBytes int64) error
 }
 
 type GarageBucket struct {

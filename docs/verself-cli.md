@@ -658,14 +658,14 @@ verself company options set guardian stripe.default_currency --value usd
 
 Token-valued command-line flags are avoided because shells record argv in
 history and process listings. Secret-valued options use `--stdin`, a
-credential-store prompt, or controller OpenBao import.
+credential-store prompt, or approved secrets-service import.
 
 `company configure` writes the shared local store:
 
 - company records under `$XDG_DATA_HOME/verself/companies/<company>.json`;
 - active company pointer under `$XDG_CONFIG_HOME/verself/config.json`;
 - credential references in the company record;
-- secret values in the credential store or controller OpenBao import when
+- secret values in the credential store or approved secrets-service import when
   explicitly requested.
 
 For Guardian, the company record derives these seeding inputs:
@@ -749,7 +749,7 @@ Initial option catalog:
 | Area | Options | Required by |
 | --- | --- | --- |
 | Compute | Latitude.sh API token, project ID, region, plan, SSH key policy | Checked-in provisioning task before `aspect deploy` |
-| DNS and TLS | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent | Prod control-plane DNS reconciliation; explicit public-edge certificate issuance |
+| DNS, TLS, R2, and Email Routing | Cloudflare account-admin pair, account ID, hosted-zone names, DNS zone intent, R2 capability policy, Email Routing intent | `cloudflare-integration-service` reconciliation for DNS, ACME DNS-01, Email Routing, and R2 provider capability lifecycle; object-byte sessions through `object-storage-service`; explicit public-edge certificate issuance |
 | Backups | AWS S3 access key ID, secret access key, region, bucket, prefix, retention policy | Backup verification and scheduled backup jobs |
 | Billing | Stripe secret key, publishable key, webhook signing secret, account mode, price/catalog mapping | Billing service payment and webhook handling |
 | Outbound email | Email-service provider secret, sender domain, default sender address | Email verification, invites, notifications, and company addresses |
@@ -764,9 +764,12 @@ Secret-valued options store metadata and a local `value_ref` only for operator
 handoff. Runtime plaintext lives in catalog-approved OpenBao targets.
 
 Site root keys and unseal material are scoped to the target site. Global
-provider authorities such as Cloudflare DNS/TLS live in the prod controller and
-project derived state to target sites. Runtime services authenticate to OpenBao
-with SPIFFE JWT-SVIDs mapped to scoped policies.
+provider authorities such as Cloudflare DNS, TLS, R2 provider credentials, and
+Email Routing live behind `cloudflare-integration-service` and are stored
+through `secrets-service`. Object-byte sessions for deployment artifacts,
+product object storage, and recovery are issued by `object-storage-service`.
+Runtime services authenticate to OpenBao with SPIFFE JWT-SVIDs mapped to scoped
+policies.
 
 ## Derivation Rules [DESCOPED]
 
@@ -824,7 +827,7 @@ Derived locally:
 
 Resolved by later provisioning and reconciliation commands:
 
-- Cloudflare zone IDs;
+- Cloudflare zone IDs and R2 capability metadata;
 - Latitude.sh server IDs and public IP addresses;
 - runtime integration account metadata when a local verify command explicitly
   validates an option;

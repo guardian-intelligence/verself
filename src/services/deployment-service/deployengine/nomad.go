@@ -24,7 +24,7 @@ type nomadApplyResult struct {
 }
 
 func registerNomadJobs(ctx context.Context, exec execution, inputs *deployInputs) (nomadApplyResult, error) {
-	client, err := nomadclient.New(inputs.SiteCfg.NomadAddr)
+	client, err := nomadclient.New(inputs.NomadAddr)
 	if err != nil {
 		return nomadApplyResult{}, err
 	}

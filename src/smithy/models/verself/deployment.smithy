@@ -317,7 +317,7 @@ operation SubmitDeployment {
         DeploymentBootstrapS6NomadError,
         DeploymentBootstrapS7PostgresError,
         DeploymentBootstrapS7RepoRootError,
-        DeploymentBootstrapS7R2ControlPlaneError,
+        DeploymentBootstrapS7ObjectStorageError,
         DeploymentBusyError,
         DeploymentDuplicateError,
         DeploymentSiteRequiredError,
@@ -569,8 +569,8 @@ structure DeploymentBootstrapS7RepoRootError with [ProblemDetails] {}
 
 @error("server")
 @httpError(503)
-@problem(type: "urn:verself:problem:deployment:bootstrap:s7:r2_control_plane", code: "deployment.bootstrap.s7.r2_control_plane")
-structure DeploymentBootstrapS7R2ControlPlaneError with [ProblemDetails] {}
+@problem(type: "urn:verself:problem:deployment:bootstrap:s7:object_storage", code: "deployment.bootstrap.s7.object_storage")
+structure DeploymentBootstrapS7ObjectStorageError with [ProblemDetails] {}
 
 @error("server")
 @httpError(503)

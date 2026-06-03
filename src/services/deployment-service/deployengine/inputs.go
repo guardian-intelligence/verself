@@ -11,7 +11,6 @@ import (
 
 	"github.com/hashicorp/nomad/api"
 
-	"github.com/verself/deployment-service/deploycontract"
 	"github.com/verself/deployment-service/internal/deploymodel"
 	"github.com/verself/deployment-service/internal/siteinject"
 	"github.com/verself/deployment-service/siteconfig"
@@ -28,34 +27,21 @@ const (
 )
 
 type deployInputs struct {
-	SHA                string
-	DeployRunKey       string
-	SiteCfg            siteConfig
-	SiteModel          siteconfig.Model
-	Components         []nomadComponentDescriptor
-	Artifacts          []deploymodel.Artifact
-	Bindings           map[string]artifactBinding
+	ArtifactNamespace string
+	DeployRunKey      string
+	NomadAddr         string
+	SiteModel         siteconfig.Model
+	Components        []nomadComponentDescriptor
+	Artifacts         []deploymodel.Artifact
+	Bindings          map[string]artifactBinding
 }
 
 type siteConfig struct {
-	NomadAddr        string
-	ArtifactDelivery artifactDeliveryPolicy
+	NomadAddr string
 }
 
 type rawSiteConfig struct {
-	ArtifactDelivery artifactDeliveryPolicy `json:"artifact_delivery"`
-	NomadAddr        string                 `json:"nomad_addr"`
-}
-
-type artifactDeliveryPolicy struct {
-	deploymodel.ArtifactDelivery
-	KeyPrefix              string `json:"key_prefix"`
-	SitePrefix             string `json:"site_prefix"`
-	ChecksumAlgorithm      string `json:"checksum_algorithm"`
-	Public                 *bool  `json:"public"`
-	CloudflareAccountID    string `json:"cloudflare_account_id"`
-	CloudflareAccountIDEnv string `json:"cloudflare_account_id_env"`
-	ControlPlaneAddr       string `json:"control_plane_addr"`
+	NomadAddr string `json:"nomad_addr"`
 }
 
 type nomadComponentDescriptor struct {
@@ -95,10 +81,10 @@ type authoredNomadSpecParser interface {
 	ParseJobHCL(context.Context, []byte, string) (*api.Job, error)
 }
 
-func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, error) {
+func buildDeployInputs(exec execution) (*deployInputs, error) {
 	repoRoot := exec.RepoRoot
 	site := exec.Site
-	sha := exec.SHA
+	artifactNamespace := exec.ArtifactNamespace
 	deployRunKey := exec.DeployRunKey
 	cfg, err := loadSiteConfig(repoRoot, site)
 	if err != nil {
@@ -107,36 +93,26 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 	if strings.TrimSpace(exec.NomadAddr) != "" {
 		cfg.NomadAddr = strings.TrimSpace(exec.NomadAddr)
 	}
-	if strings.TrimSpace(exec.R2ControlPlaneAddr) != "" {
-		cfg.ArtifactDelivery.ControlPlaneAddr = strings.TrimSpace(exec.R2ControlPlaneAddr)
-	}
 	model, err := siteconfig.Load(repoRoot, site)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := deploycontract.ValidateRepo(repoRoot); err != nil {
-		return nil, err
-	}
-	_, descriptorPaths, err := buildNomadComponentDescriptors(ctx, repoRoot, exec.BazelBuildFlags...)
+	descriptors, err := loadNomadComponentDescriptors(site, exec.NomadComponentDescriptors)
 	if err != nil {
 		return nil, err
 	}
-	descriptors, err := loadNomadComponentDescriptors(site, descriptorPaths)
-	if err != nil {
-		return nil, err
-	}
-	bindings, artifacts, err := bindNomadArtifacts(repoRoot, cfg.ArtifactDelivery, descriptors)
+	bindings, artifacts, err := bindNomadArtifacts(repoRoot, descriptors)
 	if err != nil {
 		return nil, err
 	}
 	return &deployInputs{
-		SHA:          sha,
-		DeployRunKey: deployRunKey,
-		SiteCfg:      cfg,
-		SiteModel:    model,
-		Components:   descriptors,
-		Artifacts:    artifacts,
-		Bindings:     bindings,
+		ArtifactNamespace: artifactNamespace,
+		DeployRunKey:      deployRunKey,
+		NomadAddr:         cfg.NomadAddr,
+		SiteModel:         model,
+		Components:        descriptors,
+		Artifacts:         artifacts,
+		Bindings:          bindings,
 	}, nil
 }
 
@@ -150,42 +126,10 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return siteConfig{}, fmt.Errorf("decode %s: %w", path, err)
 	}
-	if raw.ArtifactDelivery.Kind != "cloudflare_r2_control_plane" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_control_plane", path)
-	}
-	if raw.ArtifactDelivery.Public == nil || *raw.ArtifactDelivery.Public {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.public must be false", path)
-	}
-	if strings.TrimSpace(raw.ArtifactDelivery.Bucket) != "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.bucket belongs to src/integrations/cloudflare/account.json", path)
-	}
-	if strings.TrimSpace(raw.ArtifactDelivery.CloudflareAccountID) != "" || strings.TrimSpace(raw.ArtifactDelivery.CloudflareAccountIDEnv) != "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery.cloudflare_account_id belongs to src/integrations/cloudflare/account.json", path)
-	}
-	if raw.ArtifactDelivery.KeyPrefix == "" {
-		return siteConfig{}, fmt.Errorf("%s: artifact_delivery requires key_prefix", path)
-	}
-	sitePrefix, err := artifactSitePrefix(site)
-	if err != nil {
-		return siteConfig{}, fmt.Errorf("%s: %w", path, err)
-	}
-	cloudflare, err := siteconfig.LoadCloudflareProvider(repoRoot)
-	if err != nil {
-		return siteConfig{}, err
-	}
-	raw.ArtifactDelivery.CloudflareAccountID = cloudflare.AccountID
-	raw.ArtifactDelivery.Bucket = cloudflare.DeploymentArtifactsBucket
-	raw.ArtifactDelivery.SitePrefix = sitePrefix
-	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
-		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
-	}
-	if strings.TrimSpace(raw.ArtifactDelivery.ControlPlaneAddr) == "" {
-		raw.ArtifactDelivery.ControlPlaneAddr = "http://127.0.0.1:18732"
-	}
 	if raw.NomadAddr == "" {
 		raw.NomadAddr = "http://127.0.0.1:4646"
 	}
-	return siteConfig{NomadAddr: raw.NomadAddr, ArtifactDelivery: raw.ArtifactDelivery}, nil
+	return siteConfig(raw), nil
 }
 
 func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponentDescriptor, error) {
@@ -322,30 +266,14 @@ var deployPhaseValues = []string{
 	deployPhaseEdge,
 }
 
-var deployPhaseRank = map[string]int{
-	deployPhasePreArtifact: 0,
-	deployPhasePlatform:    1,
-	deployPhaseProduct:     2,
-	deployPhaseEdge:        3,
+var deployPhaseSet = map[string]struct{}{
+	deployPhasePreArtifact: {},
+	deployPhasePlatform:    {},
+	deployPhaseProduct:     {},
+	deployPhaseEdge:        {},
 }
 
 func validDeployPhase(value string) bool {
-	_, ok := deployPhaseRank[value]
+	_, ok := deployPhaseSet[value]
 	return ok
-}
-
-func artifactSitePrefix(site string) (string, error) {
-	site = strings.TrimSpace(site)
-	if site == "" {
-		return "", errors.New("site is required for artifact object prefix")
-	}
-	if site == "." || site == ".." || strings.Contains(site, "/") || strings.Contains(site, "\\") {
-		return "", fmt.Errorf("site %q cannot be used as an artifact object prefix segment", site)
-	}
-	for _, r := range site {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
-			return "", fmt.Errorf("site %q cannot be used as an artifact object prefix segment", site)
-		}
-	}
-	return site, nil
 }

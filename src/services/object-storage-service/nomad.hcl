@@ -44,6 +44,7 @@ job "object-storage-service" {
         VERSELF_PG_DSN = "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
+        VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
@@ -91,6 +92,7 @@ job "object-storage-service" {
         VERSELF_PG_DSN = "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
+        VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
@@ -108,7 +110,7 @@ job "object-storage-service" {
         destination = "secrets/r2.env"
         perms = "0600"
         data = <<-EOT
-OBJECT_STORAGE_S3_URLS=__VERSELF_CLOUDFLARE_R2_ENDPOINT__
+OBJECT_STORAGE_S3_URLS=__VERSELF_OBJECT_STORAGE_S3_ENDPOINT__
 EOT
         env = true
       }
@@ -197,8 +199,9 @@ EOT
       env {
         OBJECT_STORAGE_ADMIN_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_admin_http}"
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
+        OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET = "__VERSELF_OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET__"
         OBJECT_STORAGE_PROVIDER = "cloudflare_r2"
-        OBJECT_STORAGE_R2_ENDPOINT = "__VERSELF_CLOUDFLARE_R2_ENDPOINT__"
+        OBJECT_STORAGE_R2_ENDPOINT = "__VERSELF_OBJECT_STORAGE_S3_ENDPOINT__"
         OBJECT_STORAGE_ROLE = "admin"
         OBJECT_STORAGE_S3_REGION = "auto"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
@@ -211,6 +214,7 @@ EOT
         VERSELF_PG_DSN = "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
+        VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
       }
       template {
@@ -256,7 +260,7 @@ EOT
         mode = "delay"
       }
       service {
-        name = "object-storage-service-admin-http"
+        name = "object-storage-admin-internal-https"
         port = "admin_http"
         provider = "nomad"
         address_mode = "auto"

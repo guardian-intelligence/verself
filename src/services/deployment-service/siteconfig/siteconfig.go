@@ -1,7 +1,6 @@
 package siteconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -12,81 +11,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const cloudflareAccountConfigVersion = "verself.cloudflare.account.v1"
-
-type CloudflareProvider struct {
-	ControlPlaneSite          string
-	AccountID                 string
-	R2Endpoint                string
-	DeploymentArtifactsBucket string
-	RecoveryBucket            string
-}
-
 type Model struct {
-	Site                    string
-	ProductDomain           string
-	CompanyDomain           string
-	ZitadelDomain           string
-	SpiffeTrustDomain       string
-	InstallationID          string
-	GitHubAppID             string
-	GitHubAppSlug           string
-	GitHubOAuthClientID     string
-	GitHubAppSettingsURL    string
-	GitHubRunnerClassPrefix string
-	DeployGitHubRepos       string
-	DeployGitHubRefs        string
-	DeployGitHubWorkflows   string
-	DeployRepoURL           string
-	CloudflareAccountID     string
-	CloudflareR2Endpoint    string
-	NomadArtifactBucket     string
-	Domains                 map[string]string
-}
-
-func LoadCloudflareProvider(repoRoot string) (CloudflareProvider, error) {
-	path := filepath.Join(repoRoot, "src", "integrations", "cloudflare", "account.json")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return CloudflareProvider{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	var raw struct {
-		Version          string `json:"version"`
-		ControlPlaneSite string `json:"control_plane_site"`
-		AccountID        string `json:"account_id"`
-		R2               struct {
-			DeploymentArtifactsBucket string `json:"deployment_artifacts_bucket"`
-			RecoveryBucket            string `json:"recovery_bucket"`
-		} `json:"r2"`
-	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return CloudflareProvider{}, fmt.Errorf("decode %s: %w", path, err)
-	}
-	if raw.Version != cloudflareAccountConfigVersion {
-		return CloudflareProvider{}, fmt.Errorf("%s: version must be %s", path, cloudflareAccountConfigVersion)
-	}
-	if raw.ControlPlaneSite != "prod" {
-		return CloudflareProvider{}, fmt.Errorf("%s: control_plane_site must be prod", path)
-	}
-	accountID := strings.ToLower(strings.TrimSpace(raw.AccountID))
-	if !isCloudflareAccountID(accountID) {
-		return CloudflareProvider{}, fmt.Errorf("%s: account_id must be a 32-character hex Cloudflare account ID", path)
-	}
-	deploymentBucket := strings.TrimSpace(raw.R2.DeploymentArtifactsBucket)
-	if !isR2BucketName(deploymentBucket) {
-		return CloudflareProvider{}, fmt.Errorf("%s: r2.deployment_artifacts_bucket must be a valid lowercase R2 bucket name", path)
-	}
-	recoveryBucket := strings.TrimSpace(raw.R2.RecoveryBucket)
-	if !isR2BucketName(recoveryBucket) {
-		return CloudflareProvider{}, fmt.Errorf("%s: r2.recovery_bucket must be a valid lowercase R2 bucket name", path)
-	}
-	return CloudflareProvider{
-		ControlPlaneSite:          raw.ControlPlaneSite,
-		AccountID:                 accountID,
-		R2Endpoint:                "https://" + accountID + ".r2.cloudflarestorage.com",
-		DeploymentArtifactsBucket: deploymentBucket,
-		RecoveryBucket:            recoveryBucket,
-	}, nil
+	Site                                   string
+	ProductDomain                          string
+	CompanyDomain                          string
+	ZitadelDomain                          string
+	SpiffeTrustDomain                      string
+	InstallationID                         string
+	GitHubAppID                            string
+	GitHubAppSlug                          string
+	GitHubOAuthClientID                    string
+	GitHubAppSettingsURL                   string
+	GitHubRunnerClassPrefix                string
+	DeployGitHubRepos                      string
+	DeployGitHubRefs                       string
+	DeployGitHubWorkflows                  string
+	DeployRepoURL                          string
+	ObjectStorageS3Endpoint                string
+	ObjectStorageDeploymentArtifactsBucket string
+	Domains                                map[string]string
 }
 
 func Load(repoRoot, site string) (Model, error) {
@@ -117,10 +60,6 @@ func Load(repoRoot, site string) (Model, error) {
 	}
 	if model.Site != site {
 		return Model{}, fmt.Errorf("%s: verself_site=%q does not match selected site %q", path, model.Site, site)
-	}
-	cloudflare, err := LoadCloudflareProvider(repoRoot)
-	if err != nil {
-		return Model{}, err
 	}
 	if err := validateDNSName("verself_domain", model.ProductDomain); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
@@ -166,9 +105,14 @@ func Load(repoRoot, site string) (Model, error) {
 	model.DeployGitHubRefs = resolveString(values, "deployment_github_allowed_refs")
 	model.DeployGitHubWorkflows = resolveString(values, "deployment_github_allowed_workflow_refs")
 	model.DeployRepoURL = resolveString(values, "deployment_repo_url")
-	model.CloudflareAccountID = cloudflare.AccountID
-	model.CloudflareR2Endpoint = cloudflare.R2Endpoint
-	model.NomadArtifactBucket = cloudflare.DeploymentArtifactsBucket
+	model.ObjectStorageS3Endpoint = resolveString(values, "object_storage_s3_endpoint")
+	if err := validateHTTPSURL("object_storage_s3_endpoint", model.ObjectStorageS3Endpoint); err != nil {
+		return Model{}, fmt.Errorf("%s: %w", path, err)
+	}
+	model.ObjectStorageDeploymentArtifactsBucket = resolveString(values, "object_storage_deployment_artifacts_bucket")
+	if !isS3BucketName(model.ObjectStorageDeploymentArtifactsBucket) {
+		return Model{}, fmt.Errorf("%s: object_storage_deployment_artifacts_bucket must be a valid lowercase S3 bucket name", path)
+	}
 	return model, nil
 }
 
@@ -240,19 +184,22 @@ func validateDNSName(field, value string) error {
 	return nil
 }
 
-func isCloudflareAccountID(value string) bool {
-	if len(value) != 32 {
-		return false
+func validateHTTPSURL(field, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s is required", field)
 	}
-	for _, r := range value {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return false
-		}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return fmt.Errorf("%s=%q must be an HTTPS URL: %w", field, value, err)
 	}
-	return true
+	if parsed.Scheme != "https" || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%s=%q must be an HTTPS URL without query or fragment", field, value)
+	}
+	return nil
 }
 
-func isR2BucketName(value string) bool {
+func isS3BucketName(value string) bool {
 	if len(value) < 3 || len(value) > 63 {
 		return false
 	}
@@ -272,32 +219,31 @@ func (m Model) TokenMap() map[string]string {
 	companyBase := "https://" + m.CompanyDomain
 	stalwartBase := "https://" + m.domain("stalwart")
 	tokens := map[string]string{
-		"__VERSELF_SITE__":                                m.Site,
-		"__VERSELF_PRODUCT_DOMAIN__":                      m.ProductDomain,
-		"__VERSELF_COMPANY_DOMAIN__":                      m.CompanyDomain,
-		"__VERSELF_PRODUCT_BASE_URL__":                    productBase,
-		"__VERSELF_COMPANY_BASE_URL__":                    companyBase,
-		"__VERSELF_ZITADEL_DOMAIN__":                      m.ZitadelDomain,
-		"__VERSELF_AUTH_ISSUER_URL__":                     "https://" + m.ZitadelDomain,
-		"__VERSELF_CLOUDFLARE_ACCOUNT_ID__":               m.CloudflareAccountID,
-		"__VERSELF_SPIFFE_TRUST_DOMAIN__":                 m.SpiffeTrustDomain,
-		"__VERSELF_SPIFFE_SERVICE_PREFIX__":               "spiffe://" + m.SpiffeTrustDomain + "/svc",
-		"__VERSELF_INSTALLATION_ID__":                     m.InstallationID,
-		"__VERSELF_AGENT_SENDER_ADDRESS__":                "agents@" + m.CompanyDomain,
-		"__VERSELF_BILLING_RETURN_ORIGINS__":              productBase,
-		"__VERSELF_EMAIL_FROM_ADDRESS__":                  "noreply@" + m.domain("resend"),
-		"__VERSELF_STALWART_PUBLIC_BASE_URL__":            stalwartBase,
-		"__VERSELF_STALWART_DOMAIN__":                     m.domain("stalwart"),
-		"__VERSELF_SOURCE_PUBLIC_BASE_URL__":              "https://" + m.domain("source_code_hosting_service"),
-		"__VERSELF_GITHUB_OAUTH_REDIRECT_URL__":           "https://" + m.domain("github_integration_service") + "/api/v1/github/user-authorizations/complete",
-		"__VERSELF_ANALYTICS_GITHUB_OIDC_AUDIENCE__":      "https://" + m.domain("analytics_service"),
-		"__VERSELF_CLOUDFLARE_R2_ENDPOINT__":              m.CloudflareR2Endpoint,
-		"__VERSELF_NOMAD_ARTIFACT_BUCKET__":               m.NomadArtifactBucket,
-		"__VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES__":  m.DeployGitHubRepos,
-		"__VERSELF_DEPLOY_GITHUB_ALLOWED_REFS__":          m.DeployGitHubRefs,
-		"__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__": m.DeployGitHubWorkflows,
-		"__VERSELF_DEPLOY_REPO_URL__":                     m.DeployRepoURL,
-		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":           "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
+		"__VERSELF_SITE__":                                       m.Site,
+		"__VERSELF_PRODUCT_DOMAIN__":                             m.ProductDomain,
+		"__VERSELF_COMPANY_DOMAIN__":                             m.CompanyDomain,
+		"__VERSELF_PRODUCT_BASE_URL__":                           productBase,
+		"__VERSELF_COMPANY_BASE_URL__":                           companyBase,
+		"__VERSELF_ZITADEL_DOMAIN__":                             m.ZitadelDomain,
+		"__VERSELF_AUTH_ISSUER_URL__":                            "https://" + m.ZitadelDomain,
+		"__VERSELF_SPIFFE_TRUST_DOMAIN__":                        m.SpiffeTrustDomain,
+		"__VERSELF_SPIFFE_SERVICE_PREFIX__":                      "spiffe://" + m.SpiffeTrustDomain + "/svc",
+		"__VERSELF_INSTALLATION_ID__":                            m.InstallationID,
+		"__VERSELF_AGENT_SENDER_ADDRESS__":                       "agents@" + m.CompanyDomain,
+		"__VERSELF_BILLING_RETURN_ORIGINS__":                     productBase,
+		"__VERSELF_EMAIL_FROM_ADDRESS__":                         "noreply@" + m.domain("resend"),
+		"__VERSELF_STALWART_PUBLIC_BASE_URL__":                   stalwartBase,
+		"__VERSELF_STALWART_DOMAIN__":                            m.domain("stalwart"),
+		"__VERSELF_SOURCE_PUBLIC_BASE_URL__":                     "https://" + m.domain("source_code_hosting_service"),
+		"__VERSELF_GITHUB_OAUTH_REDIRECT_URL__":                  "https://" + m.domain("github_integration_service") + "/api/v1/github/user-authorizations/complete",
+		"__VERSELF_ANALYTICS_GITHUB_OIDC_AUDIENCE__":             "https://" + m.domain("analytics_service"),
+		"__VERSELF_OBJECT_STORAGE_S3_ENDPOINT__":                 m.ObjectStorageS3Endpoint,
+		"__VERSELF_OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET__": m.ObjectStorageDeploymentArtifactsBucket,
+		"__VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES__":         m.DeployGitHubRepos,
+		"__VERSELF_DEPLOY_GITHUB_ALLOWED_REFS__":                 m.DeployGitHubRefs,
+		"__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__":        m.DeployGitHubWorkflows,
+		"__VERSELF_DEPLOY_REPO_URL__":                            m.DeployRepoURL,
+		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":                  "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
 	}
 	if m.GitHubAppID != "" && m.GitHubAppID != "0" {
 		tokens["__VERSELF_GITHUB_APP_ID__"] = m.GitHubAppID

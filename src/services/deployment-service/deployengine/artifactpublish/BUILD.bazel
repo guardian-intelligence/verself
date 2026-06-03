@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "artifactpublish",
+    srcs = ["publisher.go"],
+    importpath = "github.com/verself/deployment-service/deployengine/artifactpublish",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/services/deployment-service/deployengine",
+        "//src/services/object-storage-service/client",
+    ],
+)
+
+go_test(
+    name = "artifactpublish_test",
+    srcs = ["publisher_test.go"],
+    embed = [":artifactpublish"],
+    deps = [
+        "//src/services/deployment-service/deployengine",
+        "//src/services/object-storage-service/client",
+    ],
+)

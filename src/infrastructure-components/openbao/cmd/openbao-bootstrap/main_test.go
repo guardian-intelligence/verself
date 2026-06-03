@@ -39,12 +39,12 @@ func TestWrappedKeyRejectsWrongRootKey(t *testing.T) {
 	}
 }
 
-func TestReadRootKeyRequiresPrivateMode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "site-root.key")
+func TestReadSiteRootTokenRequiresPrivateMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "site-root-token")
 	if err := os.WriteFile(path, []byte("root"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := readRootKey(path)
+	_, err := readSiteRootToken(path)
 	if err == nil || !strings.Contains(err.Error(), "readable only by root") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -99,5 +99,18 @@ func TestWriteSecretFileUsesPrivateMode(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o", info.Mode().Perm())
+	}
+}
+
+func TestRemoveSiteRootTokenFileDeletesConsumedToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "site-root-token")
+	if err := os.WriteFile(path, []byte("token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeSiteRootTokenFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("site root token still exists: %v", err)
 	}
 }

@@ -31,13 +31,13 @@ const (
 )
 
 type config struct {
-	bao         string
-	stateDir    string
-	rootKeyFile string
-	keyShares   int
-	threshold   int
-	addr        string
-	caCert      string
+	bao               string
+	stateDir          string
+	siteRootTokenFile string
+	keyShares         int
+	threshold         int
+	addr              string
+	caCert            string
 
 	action              string
 	rootTokenOutputFile string
@@ -79,7 +79,7 @@ func main() {
 	fs.StringVar(&cfg.action, "action", "bootstrap", "action: bootstrap or generate-root-token")
 	fs.StringVar(&cfg.bao, "bao", "bao", "bao binary path")
 	fs.StringVar(&cfg.stateDir, "state-dir", "/var/lib/verself/bootstrap/openbao", "OpenBao bootstrap state directory")
-	fs.StringVar(&cfg.rootKeyFile, "root-key-file", "/etc/verself/bootstrap/openbao-root.key", "site root key file")
+	fs.StringVar(&cfg.siteRootTokenFile, "site-root-token-file", "/run/verself/bootstrap/openbao-site-root.token", "site root token file")
 	fs.IntVar(&cfg.keyShares, "key-shares", defaultKeyShares, "OpenBao operator init key shares")
 	fs.IntVar(&cfg.threshold, "key-threshold", defaultThreshold, "OpenBao operator init key threshold")
 	fs.StringVar(&cfg.addr, "addr", firstNonEmpty(os.Getenv("BAO_ADDR"), "https://127.0.0.1:8200"), "OpenBao API address")
@@ -107,10 +107,6 @@ func run(ctx context.Context, cfg config) error {
 	default:
 		return fmt.Errorf("unsupported action %q", cfg.action)
 	}
-	rootKey, err := readRootKey(cfg.rootKeyFile)
-	if err != nil {
-		return err
-	}
 	if err := os.MkdirAll(cfg.stateDir, 0o700); err != nil {
 		return fmt.Errorf("create OpenBao bootstrap state dir: %w", err)
 	}
@@ -120,6 +116,14 @@ func run(ctx context.Context, cfg config) error {
 	status, err := waitStatus(ctx, cfg)
 	if err != nil {
 		return err
+	}
+	var rootKey []byte
+	if !status.Initialized || status.Sealed {
+		var err error
+		rootKey, err = readSiteRootToken(cfg.siteRootTokenFile)
+		if err != nil {
+			return err
+		}
 	}
 	rootToken := ""
 	if !status.Initialized {
@@ -164,14 +168,14 @@ func run(ctx context.Context, cfg config) error {
 			return err
 		}
 	}
-	return nil
+	return removeSiteRootTokenFile(cfg.siteRootTokenFile)
 }
 
 func normalizeConfig(cfg config) config {
 	cfg.action = strings.TrimSpace(cfg.action)
 	cfg.bao = strings.TrimSpace(cfg.bao)
 	cfg.stateDir = strings.TrimSpace(cfg.stateDir)
-	cfg.rootKeyFile = strings.TrimSpace(cfg.rootKeyFile)
+	cfg.siteRootTokenFile = strings.TrimSpace(cfg.siteRootTokenFile)
 	cfg.addr = strings.TrimSpace(cfg.addr)
 	cfg.caCert = strings.TrimSpace(cfg.caCert)
 	cfg.rootTokenOutputFile = strings.TrimSpace(cfg.rootTokenOutputFile)
@@ -198,35 +202,46 @@ func (l *stringList) Set(value string) error {
 	return nil
 }
 
-func readRootKey(path string) ([]byte, error) {
+func readSiteRootToken(path string) ([]byte, error) {
 	if path == "" {
-		return nil, errors.New("site root key file is required")
+		return nil, errors.New("site root token file is required")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("site root key file %s is required before OpenBao bootstrap", path)
+			return nil, fmt.Errorf("site root token file %s is required before OpenBao bootstrap", path)
 		}
-		return nil, fmt.Errorf("inspect site root key file %s: %w", path, err)
+		return nil, fmt.Errorf("inspect site root token file %s: %w", path, err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("site root key file %s must be a regular file", path)
+		return nil, fmt.Errorf("site root token file %s must be a regular file", path)
 	}
 	if info.Size() == 0 {
-		return nil, fmt.Errorf("site root key file %s is empty", path)
+		return nil, fmt.Errorf("site root token file %s is empty", path)
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("site root key file %s must be readable only by root", path)
+		return nil, fmt.Errorf("site root token file %s must be readable only by root", path)
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read site root key file %s: %w", path, err)
+		return nil, fmt.Errorf("read site root token file %s: %w", path, err)
 	}
 	key := bytes.TrimSpace(body)
 	if len(key) == 0 {
-		return nil, fmt.Errorf("site root key file %s is empty", path)
+		return nil, fmt.Errorf("site root token file %s is empty", path)
 	}
 	return key, nil
+}
+
+func removeSiteRootTokenFile(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove consumed site root token file %s: %w", path, err)
+	}
+	return nil
 }
 
 func waitStatus(ctx context.Context, cfg config) (baoStatus, error) {
@@ -452,7 +467,7 @@ func decryptUnsealKey(rootKey []byte, envelope wrappedKey) (string, error) {
 	}
 	plaintext, err := aead.Open(nil, nonce, ciphertext, []byte(wrappedKeyVersion))
 	if err != nil {
-		return "", errors.New("decrypt wrapped unseal key with site root key")
+		return "", errors.New("decrypt wrapped unseal key with site root token")
 	}
 	return string(plaintext), nil
 }
@@ -559,7 +574,7 @@ func recoveryUnsealKeys(cfg config) ([]string, error) {
 		}
 		return keys, nil
 	}
-	rootKey, err := readRootKey(cfg.rootKeyFile)
+	rootKey, err := readSiteRootToken(cfg.siteRootTokenFile)
 	if err != nil {
 		return nil, err
 	}

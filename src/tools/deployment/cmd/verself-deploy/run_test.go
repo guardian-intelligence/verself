@@ -17,7 +17,6 @@ import (
 func TestRunSubmitsToDeploymentServiceHTTPBoundary(t *testing.T) {
 	const sha = "0123456789abcdef0123456789abcdef01234567"
 	repoRoot := t.TempDir()
-	writeRunTestCloudflareAccountConfig(t, repoRoot)
 	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
@@ -25,6 +24,8 @@ company_domain: gamma.guardianintelligence.test
 spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
 deployment_service_domain: deployments.api.gamma.verself.test
+object_storage_s3_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
+object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 `)
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.test/oidc")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-request-token")
@@ -100,7 +101,7 @@ func TestBootstrapCheckPreservesProblemCode(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = w.Write([]byte(`{"status":503,"code":"deployment.bootstrap.s7.r2_control_plane","detail":"r2 control plane unavailable","traceparent":"00-00000000000000000000000000000001-0000000000000001-01"}`))
+		_, _ = w.Write([]byte(`{"status":503,"code":"deployment.bootstrap.s7.object_storage","detail":"object-storage unavailable","traceparent":"00-00000000000000000000000000000001-0000000000000001-01"}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -109,7 +110,7 @@ func TestBootstrapCheckPreservesProblemCode(t *testing.T) {
 		t.Fatal("bootstrap check unexpectedly succeeded")
 	}
 	text := err.Error()
-	for _, want := range []string{"deployment.bootstrap.s7.r2_control_plane", "r2 control plane unavailable", "traceparent=00-00000000000000000000000000000001-0000000000000001-01"} {
+	for _, want := range []string{"deployment.bootstrap.s7.object_storage", "object-storage unavailable", "traceparent=00-00000000000000000000000000000001-0000000000000001-01"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("error %q missing %q", text, want)
 		}
@@ -140,19 +141,6 @@ func writeRunTestFile(t *testing.T, root, rel, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func writeRunTestCloudflareAccountConfig(t *testing.T, root string) {
-	t.Helper()
-	writeRunTestFile(t, root, "src/integrations/cloudflare/account.json", `{
-  "version": "verself.cloudflare.account.v1",
-  "control_plane_site": "prod",
-  "account_id": "0123456789abcdef0123456789abcdef",
-  "r2": {
-    "deployment_artifacts_bucket": "verself-deployment-artifacts",
-    "recovery_bucket": "verself-recovery"
-  }
-}`)
 }
 
 func TestSubmitDeploymentPreservesAdmissionProblemCode(t *testing.T) {

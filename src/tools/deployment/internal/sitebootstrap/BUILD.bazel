@@ -19,4 +19,5 @@ go_test(
     name = "sitebootstrap_test",
     srcs = ["sitebootstrap_test.go"],
     embed = [":sitebootstrap"],
+    deps = ["//src/services/deployment-service/deployengine"],
 )

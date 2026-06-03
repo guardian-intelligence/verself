@@ -74,3 +74,37 @@ CREATE UNIQUE INDEX object_storage_credentials_access_key_active_idx
 CREATE UNIQUE INDEX object_storage_credentials_access_key_nonempty_idx
     ON object_storage_credentials (access_key_id)
     WHERE access_key_id <> '';
+
+CREATE TABLE object_storage_write_sessions (
+    session_id      TEXT        PRIMARY KEY,
+    site            TEXT        NOT NULL,
+    capability      TEXT        NOT NULL CHECK (capability IN ('deployment_artifacts', 'product_objects', 'recovery')),
+    namespace       TEXT        NOT NULL,
+    bucket_id       UUID        NOT NULL REFERENCES object_storage_buckets(bucket_id) ON DELETE RESTRICT,
+    idempotency_key TEXT        NOT NULL,
+    status          TEXT        NOT NULL CHECK (status IN ('open', 'completed')),
+    expires_at      TIMESTAMPTZ NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL,
+    created_by      TEXT        NOT NULL,
+    completed_at    TIMESTAMPTZ NULL
+);
+
+CREATE UNIQUE INDEX object_storage_write_sessions_idempotency_idx
+    ON object_storage_write_sessions (site, capability, idempotency_key);
+
+CREATE INDEX object_storage_write_sessions_site_created_idx
+    ON object_storage_write_sessions (site, created_at DESC);
+
+CREATE TABLE object_storage_write_session_objects (
+    session_id TEXT        NOT NULL REFERENCES object_storage_write_sessions(session_id) ON DELETE CASCADE,
+    name       TEXT        NOT NULL,
+    object_key TEXT        NOT NULL,
+    sha256     TEXT        NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    size_bytes BIGINT      NOT NULL CHECK (size_bytes > 0),
+    action     TEXT        NOT NULL CHECK (action IN ('present', 'put')),
+    created_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (session_id, name)
+);
+
+CREATE INDEX object_storage_write_session_objects_key_idx
+    ON object_storage_write_session_objects (object_key);

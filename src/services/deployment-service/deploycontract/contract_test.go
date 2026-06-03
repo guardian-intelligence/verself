@@ -39,7 +39,7 @@ bootstrap_exceptions:
     isolation: controller_only
     credential_keys: [cloudflare_account_admin_api_token_a, cloudflare_account_admin_api_token_b]
     storage_targets: [controller_openbao]
-    allowed_uses: [global DNS and R2 control-plane provisioning]
+    allowed_uses: [global DNS and R2 provisioning]
     reason: Cloudflare account authority stays controller-only.
 integrations:
   - key: edge.cloudflare_dns
@@ -265,30 +265,15 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 
 func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
+	write(t, root, "src/services/example-service/README.md", `example`)
 
 	if _, err := ValidateRepo(root); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testing.T) {
-	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", `job "cloudflare-r2-control-plane" {}`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "must render OpenBao runtime secret cloudflare-r2-control-plane.publisher_token_id") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestValidateRepoRejectsToolLayerDeploymentEngine(t *testing.T) {
 	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
 	write(t, root, "src/tools/deployment/deployengine/engine.go", `package deployengine`)
 
 	_, err := ValidateRepo(root)
@@ -309,58 +294,6 @@ func write(t *testing.T, root, rel, body string) {
 	if err := os.WriteFile(path, []byte(strings.TrimSpace(body)+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func writeBootstrapRuntimeContracts(t *testing.T, root string) {
-	t.Helper()
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_declarations:
-  - name: cloudflare-r2-control-plane.publisher_token_id
-    external_openbao: true
-  - name: cloudflare-r2-control-plane.publisher_secret_access_key
-    external_openbao: true
-`)
-	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", `
-job "cloudflare-r2-control-plane" {
-  group "cloudflare-r2-control-plane" {
-    network {
-      port "internal_https" {
-        host_network = "loopback"
-      }
-    }
-    task "cloudflare-r2-control-plane" {
-      config {
-        args = [
-          "--action=serve",
-          "--credential-source=files",
-          "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
-          "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
-          "--listen=127.0.0.1:$${NOMAD_PORT_internal_https}",
-        ]
-      }
-      env {
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-      }
-      template {
-        destination = "secrets/r2-publisher-token-id"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
-		EOT
-		      }
-      template {
-        destination = "secrets/r2-publisher-secret-access-key"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
-		EOT
-		      }
-      service {
-        name = "cloudflare-r2-control-plane-internal-https"
-        port = "internal_https"
-      }
-		    }
-		  }
-		}
-	`)
 }
 
 func gammaDeployWorkflow() string {

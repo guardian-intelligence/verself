@@ -12,7 +12,6 @@ func TestLoadResolvesSiteTokens(t *testing.T) {
 	if err := os.MkdirAll(siteDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	writeCloudflareAccountConfig(t, root)
 	vars := []byte(`---
 verself_site: gamma
 verself_domain: gamma.verself.sh
@@ -31,6 +30,8 @@ github_integration_service_github_runner_class_prefix: verself-gamma-
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main
+object_storage_s3_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
+object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 `)
 	if err := os.WriteFile(filepath.Join(siteDir, "vars.yml"), vars, 0o644); err != nil {
 		t.Fatalf("write vars: %v", err)
@@ -67,34 +68,10 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 	if tokens["__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__"] != "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main" {
 		t.Fatalf("deploy workflow refs token = %q", tokens["__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__"])
 	}
-	if tokens["__VERSELF_CLOUDFLARE_ACCOUNT_ID__"] != "0123456789abcdef0123456789abcdef" {
-		t.Fatalf("cloudflare account id token = %q", tokens["__VERSELF_CLOUDFLARE_ACCOUNT_ID__"])
+	if tokens["__VERSELF_OBJECT_STORAGE_S3_ENDPOINT__"] != "https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com" {
+		t.Fatalf("object-storage S3 endpoint token = %q", tokens["__VERSELF_OBJECT_STORAGE_S3_ENDPOINT__"])
 	}
-	if tokens["__VERSELF_CLOUDFLARE_R2_ENDPOINT__"] != "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com" {
-		t.Fatalf("cloudflare r2 endpoint token = %q", tokens["__VERSELF_CLOUDFLARE_R2_ENDPOINT__"])
-	}
-	if tokens["__VERSELF_NOMAD_ARTIFACT_BUCKET__"] != "verself-deployment-artifacts" {
-		t.Fatalf("artifact bucket token = %q", tokens["__VERSELF_NOMAD_ARTIFACT_BUCKET__"])
-	}
-}
-
-func writeCloudflareAccountConfig(t *testing.T, root string) {
-	t.Helper()
-	path := filepath.Join(root, "src", "integrations", "cloudflare", "account.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir cloudflare config: %v", err)
-	}
-	body := []byte(`{
-  "version": "verself.cloudflare.account.v1",
-  "control_plane_site": "prod",
-  "account_id": "0123456789abcdef0123456789abcdef",
-  "r2": {
-    "deployment_artifacts_bucket": "verself-deployment-artifacts",
-    "recovery_bucket": "verself-recovery"
-  }
-}
-`)
-	if err := os.WriteFile(path, body, 0o644); err != nil {
-		t.Fatalf("write cloudflare config: %v", err)
+	if tokens["__VERSELF_OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET__"] != "verself-deployment-artifacts" {
+		t.Fatalf("deployment artifacts bucket token = %q", tokens["__VERSELF_OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET__"])
 	}
 }

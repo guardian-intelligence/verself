@@ -7,6 +7,8 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/services/deployment-service/deployengine",
+        "//src/services/deployment-service/deployengine/artifactpublish",
+        "//src/services/object-storage-service/client",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/workload",
     ],

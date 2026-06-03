@@ -15,7 +15,7 @@ const (
 	nomadComponentsQuery = `kind("nomad_component rule", //src/...)`
 )
 
-func queryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, error) {
+func QueryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "bazelisk", "query", nomadComponentsQuery)
 	cmd.Dir = repoRoot
 	var stderr bytes.Buffer
@@ -38,14 +38,13 @@ func queryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, 
 	return labels, nil
 }
 
-func buildNomadComponentDescriptors(ctx context.Context, repoRoot string, extraBuildFlags ...string) ([]string, []string, error) {
-	labels, err := queryNomadComponentLabels(ctx, repoRoot)
-	if err != nil {
-		return nil, nil, err
+func BuildNomadComponentDescriptors(ctx context.Context, repoRoot string, labels []string, extraBuildFlags ...string) ([]string, error) {
+	if len(labels) == 0 {
+		return nil, fmt.Errorf("at least one Nomad component label is required")
 	}
 	build, err := bazelbuild.Build(ctx, repoRoot, labels, extraBuildFlags...)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	descriptorPaths := make([]string, 0, len(labels))
 	outputGroup := "default"
@@ -58,15 +57,15 @@ func buildNomadComponentDescriptors(ctx context.Context, repoRoot string, extraB
 	for _, label := range labels {
 		outputs, err := build.Stream.ResolveOutputGroup(label, outputGroup, repoRoot)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolve %s outputs: %w", label, err)
+			return nil, fmt.Errorf("resolve %s outputs: %w", label, err)
 		}
 		descriptorPath, err := selectBazelOutput(label, outputs, ".nomad_component.json")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		descriptorPaths = append(descriptorPaths, descriptorPath)
 	}
-	return labels, descriptorPaths, nil
+	return descriptorPaths, nil
 }
 
 func selectBazelOutput(label string, outputs []string, suffix string) (string, error) {

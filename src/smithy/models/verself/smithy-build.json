@@ -3,6 +3,7 @@
   "sources": [
     "analytics.smithy",
     "billing.smithy",
+    "cloudflare_integration.smithy",
     "common.smithy",
     "deployment.smithy",
     "distribution.smithy",
@@ -98,6 +99,26 @@
             "/servers": [
               {
                 "url": "https://127.0.0.1:4261"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "cloudflare-integration-internal": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.cloudflare.v1#CloudflareIntegration",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4279"
               }
             ]
           }
@@ -358,6 +379,26 @@
             "/servers": [
               {
                 "url": "https://object-storage.api.verself.sh"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "object-storage-internal": {
+      "plugins": {
+        "openapi": {
+          "service": "verself.objectstorage.v1#ObjectStorageInternal",
+          "protocol": "aws.protocols#restJson1",
+          "version": "3.1.0",
+          "tags": true,
+          "useIntegerType": true,
+          "useJsonName": true,
+          "onErrorStatusConflict": "oneOf",
+          "jsonAdd": {
+            "/servers": [
+              {
+                "url": "https://127.0.0.1:4264"
               }
             ]
           }

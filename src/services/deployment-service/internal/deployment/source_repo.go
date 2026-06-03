@@ -8,7 +8,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+const sourceCheckoutTimeout = 2 * time.Minute
 
 type SourceRepositoryConfig struct {
 	RepoRoot string
@@ -41,6 +44,48 @@ func EnsureSourceRepository(ctx context.Context, cfg SourceRepositoryConfig) err
 	return ensureOrigin(ctx, repoRoot, repoURL)
 }
 
+func CheckoutSourceSHA(ctx context.Context, repoRoot, sha string) error {
+	repoRoot = strings.TrimSpace(repoRoot)
+	sha = strings.ToLower(strings.TrimSpace(sha))
+	if repoRoot == "" {
+		return fmt.Errorf("deployment source repo root is required")
+	}
+	if sha == "" {
+		return fmt.Errorf("deployment source sha is required")
+	}
+	if err := gitRun(ctx, repoRoot, "rev-parse", "--is-inside-work-tree"); err != nil {
+		return err
+	}
+	if err := ensureCleanSourceWorktree(ctx, repoRoot); err != nil {
+		return err
+	}
+	current, err := gitOutput(ctx, repoRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(current, sha) {
+		return nil
+	}
+	checkoutCtx, cancel := context.WithTimeout(ctx, sourceCheckoutTimeout)
+	defer cancel()
+	if err := gitRun(checkoutCtx, repoRoot, "fetch", "--no-tags", "--depth=1", "origin", sha); err != nil {
+		if fallbackErr := gitRun(checkoutCtx, repoRoot, "fetch", "--no-tags", "origin"); fallbackErr != nil {
+			return fmt.Errorf("%w; fallback fetch failed: %v", err, fallbackErr)
+		}
+	}
+	if err := gitRun(checkoutCtx, repoRoot, "checkout", "--detach", sha); err != nil {
+		return err
+	}
+	current, err = gitOutput(ctx, repoRoot, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(current, sha) {
+		return fmt.Errorf("deployment source checkout resolved %s, expected %s", current, sha)
+	}
+	return nil
+}
+
 func ensureEmptyOrMissing(path string) error {
 	entries, err := os.ReadDir(path)
 	if os.IsNotExist(err) {
@@ -66,6 +111,10 @@ func ensureOrigin(ctx context.Context, repoRoot, repoURL string) error {
 	if err := gitRun(ctx, repoRoot, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return err
 	}
+	return ensureCleanSourceWorktree(ctx, repoRoot)
+}
+
+func ensureCleanSourceWorktree(ctx context.Context, repoRoot string) error {
 	status, err := gitOutput(ctx, repoRoot, "status", "--porcelain")
 	if err != nil {
 		return err

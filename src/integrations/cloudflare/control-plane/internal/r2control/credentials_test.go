@@ -32,7 +32,7 @@ func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
 }
 
 func TestWriteParentCredentialsToOpenBao(t *testing.T) {
-	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
 	var gotBody struct {
 		Data map[string]string `json:"data"`
 	}
@@ -73,7 +73,7 @@ func TestWriteParentCredentialsToOpenBao(t *testing.T) {
 
 func TestLoadParentCredentialsFromOpenBaoDerivesAccessKeyIDFromAPIToken(t *testing.T) {
 	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
-	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
 	openBao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/"+secretPath {
 			t.Fatalf("openbao path = %s", r.URL.Path)

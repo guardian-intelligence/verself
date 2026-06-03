@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"regexp"
 	"strings"
 
 	"go.opentelemetry.io/otel"
@@ -16,19 +14,14 @@ import (
 
 const tracerName = "github.com/verself/deployment-service/deployengine"
 
-var gitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
-
 type Options struct {
 	Site                      string
-	SHA                       string
+	ArtifactNamespace         string
 	DeployRunKey              string
 	RepoRoot                  string
+	NomadComponentDescriptors []string
 	ArtifactPublisher         ArtifactPublisher
-	R2ControlPlaneBearerToken string
-	R2ControlPlaneAddr        string
-	R2ControlPlaneHTTPClient  *http.Client
 	NomadAddr                 string
-	BazelBuildFlags           []string
 	TaskUserResolver          TaskUserResolver
 	Tracer                    trace.Tracer
 	Stdout                    io.Writer
@@ -36,7 +29,6 @@ type Options struct {
 
 type Result struct {
 	Site               string
-	SHA                string
 	DeployRunKey       string
 	NomadJobs          []NomadRegisterResult
 	NomadSubmittedJobs uint32
@@ -47,10 +39,10 @@ type ArtifactPublisher interface {
 }
 
 type ArtifactPublishRequest struct {
-	Site         string
-	SHA          string
-	DeployRunKey string
-	Artifacts    []ArtifactPublishCandidate
+	Site              string
+	ArtifactNamespace string
+	DeployRunKey      string
+	Artifacts         []ArtifactPublishCandidate
 }
 
 type ArtifactPublishCandidate struct {
@@ -70,15 +62,12 @@ type execution struct {
 	Options
 }
 
-func Run(ctx context.Context, opts Options) (Result, error) {
+func Submit(ctx context.Context, opts Options) (Result, error) {
 	exec, err := newExecution(opts)
 	if err != nil {
 		return Result{}, err
 	}
-	if err := prepareSource(ctx, exec); err != nil {
-		return Result{}, err
-	}
-	inputs, err := buildDeployInputs(ctx, exec)
+	inputs, err := buildDeployInputs(exec)
 	if err != nil {
 		return Result{}, err
 	}
@@ -88,7 +77,6 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	return Result{
 		Site:               exec.Site,
-		SHA:                exec.SHA,
 		DeployRunKey:       exec.DeployRunKey,
 		NomadJobs:          nomadResult.Jobs,
 		NomadSubmittedJobs: nomadResult.SubmittedJobs,
@@ -97,17 +85,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 func newExecution(opts Options) (execution, error) {
 	opts.Site = strings.TrimSpace(opts.Site)
-	opts.SHA = strings.ToLower(strings.TrimSpace(opts.SHA))
+	opts.ArtifactNamespace = strings.TrimSpace(opts.ArtifactNamespace)
 	opts.DeployRunKey = strings.TrimSpace(opts.DeployRunKey)
 	opts.RepoRoot = strings.TrimSpace(opts.RepoRoot)
 	if opts.Site == "" {
 		return execution{}, errors.New("site is required")
 	}
-	if opts.SHA == "" {
-		return execution{}, errors.New("sha is required")
-	}
-	if !gitSHARE.MatchString(opts.SHA) {
-		return execution{}, errors.New("sha must be a 40-character git commit sha")
+	if opts.ArtifactNamespace == "" {
+		return execution{}, errors.New("artifact namespace is required")
 	}
 	if opts.DeployRunKey == "" {
 		return execution{}, errors.New("deploy run key is required")
@@ -118,6 +103,12 @@ func newExecution(opts Options) (execution, error) {
 			return execution{}, fmt.Errorf("repo root: %w", err)
 		}
 		opts.RepoRoot = cwd
+	}
+	if len(opts.NomadComponentDescriptors) == 0 {
+		return execution{}, errors.New("at least one Nomad component descriptor is required")
+	}
+	if opts.ArtifactPublisher == nil {
+		return execution{}, errors.New("artifact publisher is required")
 	}
 	if opts.Tracer == nil {
 		opts.Tracer = otel.Tracer(tracerName)

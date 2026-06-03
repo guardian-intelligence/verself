@@ -9,11 +9,11 @@ func TestConfigPathUsesControllerRootEnv(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "controller")
 	t.Setenv(RootEnv, root)
 
-	got, err := ConfigPath("/unused/repo", "r2-control-plane/gamma.token")
+	got, err := ConfigPath("/unused/repo", "object-storage/gamma.token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "r2-control-plane", "gamma.token")
+	want := filepath.Join(root, "object-storage", "gamma.token")
 	if got != want {
 		t.Fatalf("ConfigPath() = %q, want %q", got, want)
 	}
@@ -22,18 +22,18 @@ func TestConfigPathUsesControllerRootEnv(t *testing.T) {
 func TestConfigPathDefaultsToRepoControllerState(t *testing.T) {
 	repo := t.TempDir()
 
-	got, err := ConfigPath(repo, "r2-control-plane/gamma.token")
+	got, err := ConfigPath(repo, "object-storage/gamma.token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(repo, ".verself", "controller", "r2-control-plane", "gamma.token")
+	want := filepath.Join(repo, ".verself", "controller", "object-storage", "gamma.token")
 	if got != want {
 		t.Fatalf("ConfigPath() = %q, want %q", got, want)
 	}
 }
 
 func TestConfigPathRejectsCheckoutRelativeControllerPaths(t *testing.T) {
-	if _, err := ConfigPath(t.TempDir(), ".verself/controller/r2-control-plane/gamma.token"); err == nil {
+	if _, err := ConfigPath(t.TempDir(), ".verself/controller/object-storage/gamma.token"); err == nil {
 		t.Fatal("expected checked-out .verself path to fail")
 	}
 }

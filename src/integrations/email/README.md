@@ -52,30 +52,25 @@ ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
     -e verself_site=prod src/integrations/email/provision-email-domains.yml
 ```
 
-The playbook registers and verifies every Resend sending domain, then enables
-Cloudflare Email Routing for the operator mailboxes. It runs on the controller
-against the Resend and Cloudflare APIs and is idempotent. The controller process
-must supply `resend_full_access_api_key` and Cloudflare authority from OpenBao.
-The playbook does not create or deliver the runtime Resend sending key.
+The playbook registers and verifies every Resend sending domain, then requests
+Cloudflare Email Routing reconciliation for the operator mailboxes. It runs on
+the controller against Resend and the Cloudflare integration API and is
+idempotent. The controller process must supply `resend_full_access_api_key`;
+Cloudflare authority is resolved by `cloudflare-integration-service` through
+`secrets-service`. The playbook does not create or deliver the runtime Resend
+sending key.
 
-### Cloudflare Credentials
+### Cloudflare Authority
 
-Cloudflare DNS mutations run from the prod Cloudflare control-plane authority.
-The controller may pass one account-admin token as
-`cloudflare_account_admin_api_token` when provisioning Resend verification DNS.
-That token is never written to generated artifacts, Nomad jobs, Ansible host
-vars, or runtime service environments.
+Cloudflare DNS and Email Routing mutations run through
+`cloudflare-integration-service`. The service owns the account-admin pair,
+loads it through `secrets-service` only for the provider operation, and records
+token fingerprints in provider evidence. The playbook must not receive or stage
+Cloudflare API token values.
 
-`cloudflare_company_api_token` is an explicit Email-Routing-scoped credential
-for the Email Routing role. It needs, on `guardianintelligence.org`: Zone DNS
-edit, Zone Email Routing Rules edit, and account-level Email Routing Addresses
-edit.
-
-A token missing Zone Email Routing Rules edit returns 403 on rule list/create.
-Email Routing destination addresses are an account-level resource: a strictly
-zone-scoped token returns 403 there, which the role accepts — add and verify the
-destination in the dashboard (Account → Email Routing → Destination addresses)
-instead.
+Email Routing destination addresses are a provider-side account resource.
+`cloudflare-integration-service` records whether destination address creation
+was accepted or requires manual provider verification.
 
 ### Destination verification
 

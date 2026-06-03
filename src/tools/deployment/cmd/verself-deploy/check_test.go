@@ -72,7 +72,6 @@ func TestBootstrapCheckIsReadOnly(t *testing.T) {
 
 func TestCheckRunsBootstrapReadinessByDefault(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeRunTestCloudflareAccountConfig(t, repoRoot)
 	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
@@ -80,6 +79,8 @@ company_domain: gamma.guardianintelligence.test
 spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
 deployment_service_domain: deployments.api.gamma.verself.test
+object_storage_s3_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
+object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 `)
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.test/oidc")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-request-token")
@@ -126,7 +127,6 @@ deployment_service_domain: deployments.api.gamma.verself.test
 
 func TestCheckRequiresDeploymentAuthBeforeReadinessRequest(t *testing.T) {
 	repoRoot := t.TempDir()
-	writeRunTestCloudflareAccountConfig(t, repoRoot)
 	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
@@ -134,6 +134,8 @@ company_domain: gamma.guardianintelligence.test
 spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
 deployment_service_domain: deployments.api.gamma.verself.test
+object_storage_s3_endpoint: https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com
+object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 `)
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/verself/deployment-service/deployengine"
+	"github.com/verself/deployment-service/deployengine/artifactpublish"
+	objectstorageclient "github.com/verself/object-storage-service/client"
 )
 
 var gitSHARegex = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -27,19 +29,19 @@ const deploymentStateUpdateAttemptTimeout = 5 * time.Second
 const deploymentStateUpdateRetryInterval = 500 * time.Millisecond
 
 type Config struct {
-	Site               string
-	RepoRoot           string
-	R2ControlPlaneAddr string
-	NomadAddr          string
-	NomadAllocID       string
-	RecoverySSHReady   string
-	BazelJobs          int
+	Site              string
+	RepoRoot          string
+	ObjectStorageAddr string
+	NomadAddr         string
+	NomadAllocID      string
+	RecoverySSHReady  string
+	BazelJobs         int
 }
 
 type Service struct {
-	Store                    Store
-	Config                   Config
-	R2ControlPlaneHTTPClient *http.Client
+	Store                   Store
+	Config                  Config
+	ObjectStorageHTTPClient *http.Client
 
 	mu      sync.Mutex
 	running bool
@@ -78,8 +80,8 @@ func (s *Service) DependencyChecks(ctx context.Context) []DependencyCheck {
 		{Stage: "S6", Name: "nomad", Run: func(ctx context.Context) DependencyCheck { return s6Nomad(ctx, s.Config.NomadAddr) }},
 		{Stage: "S7", Name: "postgres", Run: func(ctx context.Context) DependencyCheck { return s7Postgres(ctx, s.Store) }},
 		{Stage: "S7", Name: "repo_root", Run: func(ctx context.Context) DependencyCheck { return s7RepoRoot(ctx, s.Config.RepoRoot) }},
-		{Stage: "S7", Name: "r2_control_plane", Run: func(ctx context.Context) DependencyCheck {
-			return s7R2ControlPlane(ctx, s.Config.R2ControlPlaneAddr, s.R2ControlPlaneHTTPClient)
+		{Stage: "S7", Name: "object_storage", Run: func(ctx context.Context) DependencyCheck {
+			return s7ObjectStorage(ctx, s.Config.ObjectStorageAddr, s.ObjectStorageHTTPClient)
 		}},
 	}
 	return runDependencyProbes(ctx, probes, dependencyProbeDeadline)
@@ -181,15 +183,45 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 	}) {
 		return
 	}
-	result, err := deployengine.Run(ctx, deployengine.Options{
-		Site:                     record.Site,
-		SHA:                      record.SHA,
-		DeployRunKey:             record.DeployRunKey,
-		RepoRoot:                 s.Config.RepoRoot,
-		R2ControlPlaneAddr:       s.Config.R2ControlPlaneAddr,
-		R2ControlPlaneHTTPClient: s.R2ControlPlaneHTTPClient,
-		NomadAddr:                s.Config.NomadAddr,
-		BazelBuildFlags:          bazelBuildFlags(s.Config.BazelJobs),
+	if err := CheckoutSourceSHA(ctx, s.Config.RepoRoot, record.SHA); err != nil {
+		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
+			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
+		})
+		return
+	}
+	labels, err := deployengine.QueryNomadComponentLabels(ctx, s.Config.RepoRoot)
+	if err != nil {
+		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
+			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
+		})
+		return
+	}
+	descriptors, err := deployengine.BuildNomadComponentDescriptors(ctx, s.Config.RepoRoot, labels, bazelBuildFlags(s.Config.BazelJobs)...)
+	if err != nil {
+		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
+			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
+		})
+		return
+	}
+	clientOptions := []objectstorageclient.ClientOption{}
+	if s.ObjectStorageHTTPClient != nil {
+		clientOptions = append(clientOptions, objectstorageclient.WithHTTPClient(s.ObjectStorageHTTPClient))
+	}
+	objectStorageClient, err := objectstorageclient.NewClient(s.Config.ObjectStorageAddr, clientOptions...)
+	if err != nil {
+		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
+			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
+		})
+		return
+	}
+	result, err := deployengine.Submit(ctx, deployengine.Options{
+		Site:                      record.Site,
+		ArtifactNamespace:         record.SHA,
+		DeployRunKey:              record.DeployRunKey,
+		RepoRoot:                  s.Config.RepoRoot,
+		NomadComponentDescriptors: descriptors,
+		ArtifactPublisher:         artifactpublish.Publisher{Client: objectStorageClient},
+		NomadAddr:                 s.Config.NomadAddr,
 	})
 	if err != nil {
 		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
@@ -425,9 +457,9 @@ func s6Nomad(ctx context.Context, addr string) DependencyCheck {
 	return dependency("S6", "nomad", nil)
 }
 
-func s7R2ControlPlane(ctx context.Context, addr string, client *http.Client) DependencyCheck {
+func s7ObjectStorage(ctx context.Context, addr string, client *http.Client) DependencyCheck {
 	if strings.TrimSpace(addr) == "" {
-		return dependencyFailed("S7", "r2_control_plane", "VERSELF_R2_CONTROL_PLANE_ADDR is required")
+		return dependencyFailed("S7", "object_storage", "VERSELF_OBJECT_STORAGE_ADDR is required")
 	}
 	if client == nil {
 		client = http.DefaultClient
@@ -436,17 +468,17 @@ func s7R2ControlPlane(ctx context.Context, addr string, client *http.Client) Dep
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, strings.TrimRight(addr, "/")+"/healthz", http.NoBody)
 	if err != nil {
-		return dependency("S7", "r2_control_plane", err)
+		return dependency("S7", "object_storage", err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return dependency("S7", "r2_control_plane", err)
+		return dependency("S7", "object_storage", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return dependency("S7", "r2_control_plane", fmt.Errorf("status %d", resp.StatusCode))
+		return dependency("S7", "object_storage", fmt.Errorf("status %d", resp.StatusCode))
 	}
-	return dependency("S7", "r2_control_plane", nil)
+	return dependency("S7", "object_storage", nil)
 }
 
 func dependency(stage, name string, err error) DependencyCheck {
