@@ -43,6 +43,14 @@ const (
 	bootstrapPublisherTTL           = time.Hour
 )
 
+var openBootstrapPublisherOutput = func() (*os.File, error) {
+	f := os.NewFile(uintptr(bootstrapPublisherOutputFD), "bootstrap-publisher-credential")
+	if f == nil {
+		return nil, fmt.Errorf("bootstrap publisher credential fd %d is not open", bootstrapPublisherOutputFD)
+	}
+	return f, nil
+}
+
 type config struct {
 	action                        string
 	repoRoot                      string
@@ -1813,9 +1821,9 @@ func writeBootstrapPublisherCredential(publisher r2control.CreatedAPIToken) erro
 	if strings.TrimSpace(credential.AccessKeyID) == "" || strings.TrimSpace(credential.SecretAccessKey) == "" || strings.TrimSpace(credential.TokenID) == "" {
 		return fmt.Errorf("bootstrap publisher credential is incomplete")
 	}
-	f := os.NewFile(uintptr(bootstrapPublisherOutputFD), "bootstrap-publisher-credential")
-	if f == nil {
-		return fmt.Errorf("bootstrap publisher credential fd %d is not open", bootstrapPublisherOutputFD)
+	f, err := openBootstrapPublisherOutput()
+	if err != nil {
+		return err
 	}
 	defer func() { _ = f.Close() }()
 	if err := json.NewEncoder(f).Encode(credential); err != nil {

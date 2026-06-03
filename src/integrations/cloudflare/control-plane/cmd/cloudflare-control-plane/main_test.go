@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -27,26 +26,15 @@ func TestWriteBootstrapPublisherCredentialUsesFixedFD(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = reader.Close() }()
-	savedFD, saveErr := syscall.Dup(bootstrapPublisherOutputFD)
-	if saveErr != nil {
-		savedFD = -1
-	}
-	if err := syscall.Dup2(int(writer.Fd()), bootstrapPublisherOutputFD); err != nil {
-		t.Fatal(err)
-	}
+	originalOutput := openBootstrapPublisherOutput
+	openBootstrapPublisherOutput = func() (*os.File, error) { return writer, nil }
 	defer func() {
-		if savedFD >= 0 {
-			_ = syscall.Dup2(savedFD, bootstrapPublisherOutputFD)
-			_ = syscall.Close(savedFD)
-		} else {
-			_ = syscall.Close(bootstrapPublisherOutputFD)
-		}
+		openBootstrapPublisherOutput = originalOutput
 	}()
 
 	if err := writeBootstrapPublisherCredential(publisher); err != nil {
 		t.Fatal(err)
 	}
-	_ = writer.Close()
 
 	var got bootstrapPublisherCredential
 	err = json.NewDecoder(reader).Decode(&got)

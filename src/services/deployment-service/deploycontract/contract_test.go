@@ -445,44 +445,6 @@ job "cloudflare-r2-control-plane" {
 	)
 }
 
-func r2ControlPlaneNomadContract() string {
-	return `
-job "cloudflare-r2-control-plane" {
-  group "cloudflare-r2-control-plane" {
-    task "cloudflare-r2-control-plane" {
-      config {
-        args = [
-          "--action=serve",
-          "--credential-source=files",
-          "--parent-access-key-id-file=$${NOMAD_SECRETS_DIR}/r2-publisher-token-id",
-          "--parent-secret-access-key-file=$${NOMAD_SECRETS_DIR}/r2-publisher-secret-access-key",
-          "--auth-token-file=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
-        ]
-      }
-      template {
-        destination = "secrets/r2-publisher-token-id"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        destination = "secrets/r2-publisher-secret-access-key"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        destination = "secrets/r2-control-plane-token"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.r2_control_plane_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-    }
-  }
-	}
-	`
-}
-
 func substrateControlPlaneNomadContract() string {
 	return `
 job "substrate-control-plane" {
