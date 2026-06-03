@@ -12,12 +12,11 @@ import (
 )
 
 type siteArtifactConfig struct {
-	AccountID          string
-	Bucket             string
-	KeyPrefix          string
-	SitePrefix         string
-	GetterSourcePrefix string
-	Region             string
+	AccountID  string
+	Bucket     string
+	KeyPrefix  string
+	SitePrefix string
+	Region     string
 }
 
 const cloudflareAccountConfigVersion = "verself.cloudflare.account.v1"
@@ -36,14 +35,13 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	}
 	var raw struct {
 		ArtifactDelivery struct {
-			Kind                   string            `json:"kind"`
-			Bucket                 string            `json:"bucket"`
-			KeyPrefix              string            `json:"key_prefix"`
-			CloudflareAccountID    string            `json:"cloudflare_account_id"`
-			CloudflareAccountIDEnv string            `json:"cloudflare_account_id_env"`
-			GetterOptions          map[string]string `json:"getter_options"`
-			ChecksumAlgorithm      string            `json:"checksum_algorithm"`
-			Public                 *bool             `json:"public"`
+			Kind                   string `json:"kind"`
+			Bucket                 string `json:"bucket"`
+			KeyPrefix              string `json:"key_prefix"`
+			CloudflareAccountID    string `json:"cloudflare_account_id"`
+			CloudflareAccountIDEnv string `json:"cloudflare_account_id_env"`
+			ChecksumAlgorithm      string `json:"checksum_algorithm"`
+			Public                 *bool  `json:"public"`
 		} `json:"artifact_delivery"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -65,10 +63,6 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	if err != nil {
 		return siteArtifactConfig{}, err
 	}
-	region := strings.TrimSpace(raw.ArtifactDelivery.GetterOptions["region"])
-	if region == "" {
-		region = "auto"
-	}
 	keyPrefix := strings.Trim(raw.ArtifactDelivery.KeyPrefix, "/")
 	if keyPrefix == "" {
 		keyPrefix = "sha256"
@@ -78,12 +72,11 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 		return siteArtifactConfig{}, err
 	}
 	return siteArtifactConfig{
-		AccountID:          cloudflare.AccountID,
-		Bucket:             cloudflare.DeploymentArtifactsBucket,
-		KeyPrefix:          keyPrefix,
-		SitePrefix:         sitePrefix,
-		GetterSourcePrefix: "s3::https://" + cloudflare.AccountID + ".r2.cloudflarestorage.com/" + cloudflare.DeploymentArtifactsBucket,
-		Region:             region,
+		AccountID:  cloudflare.AccountID,
+		Bucket:     cloudflare.DeploymentArtifactsBucket,
+		KeyPrefix:  keyPrefix,
+		SitePrefix: sitePrefix,
+		Region:     "auto",
 	}, nil
 }
 

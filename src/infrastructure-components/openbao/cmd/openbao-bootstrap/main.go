@@ -38,11 +38,25 @@ type config struct {
 	threshold   int
 	addr        string
 	caCert      string
+
+	action              string
+	rootTokenOutputFile string
+	unsealKeyFiles      stringList
 }
 
 type baoStatus struct {
 	Initialized bool `json:"initialized"`
 	Sealed      bool `json:"sealed"`
+}
+
+type generateRootStatus struct {
+	Nonce            string `json:"nonce"`
+	Started          bool   `json:"started"`
+	Progress         int    `json:"progress"`
+	Required         int    `json:"required"`
+	Complete         bool   `json:"complete"`
+	EncodedToken     string `json:"encoded_token"`
+	EncodedRootToken string `json:"encoded_root_token"`
 }
 
 type initResponse struct {
@@ -62,6 +76,7 @@ type wrappedKey struct {
 func main() {
 	fs := flag.NewFlagSet("openbao-bootstrap", flag.ExitOnError)
 	cfg := config{}
+	fs.StringVar(&cfg.action, "action", "bootstrap", "action: bootstrap or generate-root-token")
 	fs.StringVar(&cfg.bao, "bao", "bao", "bao binary path")
 	fs.StringVar(&cfg.stateDir, "state-dir", "/var/lib/verself/bootstrap/openbao", "OpenBao bootstrap state directory")
 	fs.StringVar(&cfg.rootKeyFile, "root-key-file", "/etc/verself/bootstrap/openbao-root.key", "site root key file")
@@ -69,6 +84,8 @@ func main() {
 	fs.IntVar(&cfg.threshold, "key-threshold", defaultThreshold, "OpenBao operator init key threshold")
 	fs.StringVar(&cfg.addr, "addr", firstNonEmpty(os.Getenv("BAO_ADDR"), "https://127.0.0.1:8200"), "OpenBao API address")
 	fs.StringVar(&cfg.caCert, "ca-cert", os.Getenv("BAO_CACERT"), "OpenBao CA certificate")
+	fs.StringVar(&cfg.rootTokenOutputFile, "root-token-output-file", "", "0600 file to receive a generated temporary root token")
+	fs.Var(&cfg.unsealKeyFiles, "unseal-key-file", "unseal key file for action=generate-root-token; repeat to satisfy the threshold")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "openbao-bootstrap: %v\n", err)
 		os.Exit(2)
@@ -83,6 +100,13 @@ func main() {
 
 func run(ctx context.Context, cfg config) error {
 	cfg = normalizeConfig(cfg)
+	switch cfg.action {
+	case "bootstrap":
+	case "generate-root-token":
+		return generateRootToken(ctx, cfg)
+	default:
+		return fmt.Errorf("unsupported action %q", cfg.action)
+	}
 	rootKey, err := readRootKey(cfg.rootKeyFile)
 	if err != nil {
 		return err
@@ -144,11 +168,13 @@ func run(ctx context.Context, cfg config) error {
 }
 
 func normalizeConfig(cfg config) config {
+	cfg.action = strings.TrimSpace(cfg.action)
 	cfg.bao = strings.TrimSpace(cfg.bao)
 	cfg.stateDir = strings.TrimSpace(cfg.stateDir)
 	cfg.rootKeyFile = strings.TrimSpace(cfg.rootKeyFile)
 	cfg.addr = strings.TrimSpace(cfg.addr)
 	cfg.caCert = strings.TrimSpace(cfg.caCert)
+	cfg.rootTokenOutputFile = strings.TrimSpace(cfg.rootTokenOutputFile)
 	if cfg.keyShares == 0 {
 		cfg.keyShares = defaultKeyShares
 	}
@@ -156,6 +182,20 @@ func normalizeConfig(cfg config) config {
 		cfg.threshold = defaultThreshold
 	}
 	return cfg
+}
+
+type stringList []string
+
+func (l *stringList) String() string {
+	return strings.Join(*l, ",")
+}
+
+func (l *stringList) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		*l = append(*l, value)
+	}
+	return nil
 }
 
 func readRootKey(path string) ([]byte, error) {
@@ -247,9 +287,22 @@ func baoCommand(ctx context.Context, cfg config, args ...string) error {
 	cmd := exec.CommandContext(ctx, cfg.bao, args...)
 	cmd.Env = baoEnv(cfg, "")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("bao %s: %w: %s", strings.Join(args, " "), err, sanitizeCommandOutput(out))
+		return fmt.Errorf("%s: %w: %s", baoCommandLabel(args), err, sanitizeCommandOutput(out))
 	}
 	return nil
+}
+
+func baoOutput(ctx context.Context, cfg config, stdin string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, cfg.bao, args...)
+	cmd.Env = baoEnv(cfg, "")
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, commandError(baoCommandLabel(args), err)
+	}
+	return out, nil
 }
 
 func revokeRootToken(ctx context.Context, cfg config, rootToken string) error {
@@ -279,6 +332,26 @@ func commandError(op string, err error) error {
 		return fmt.Errorf("%s: %w: %s", op, err, sanitizeCommandOutput(exit.Stderr))
 	}
 	return fmt.Errorf("%s: %w", op, err)
+}
+
+func baoCommandLabel(args []string) string {
+	redacted := make([]string, 0, len(args))
+	for index, arg := range args {
+		if index == 2 && len(args) >= 3 && args[0] == "operator" && args[1] == "unseal" {
+			redacted = append(redacted, "[redacted]")
+			continue
+		}
+		if strings.HasPrefix(arg, "-otp=") {
+			redacted = append(redacted, "-otp=[redacted]")
+			continue
+		}
+		if strings.HasPrefix(arg, "-decode=") && arg != "-decode=-" {
+			redacted = append(redacted, "-decode=[redacted]")
+			continue
+		}
+		redacted = append(redacted, arg)
+	}
+	return "bao " + strings.Join(redacted, " ")
 }
 
 func sanitizeCommandOutput(out []byte) string {
@@ -397,6 +470,133 @@ func wrappedKeyPath(stateDir string, index int) string {
 	return filepath.Join(stateDir, fmt.Sprintf("unseal-key-%d.wrapped.json", index))
 }
 
+func generateRootToken(ctx context.Context, cfg config) error {
+	if cfg.rootTokenOutputFile == "" {
+		return errors.New("--root-token-output-file is required for action=generate-root-token")
+	}
+	keys, err := recoveryUnsealKeys(cfg)
+	if err != nil {
+		return err
+	}
+	otpOut, err := baoOutput(ctx, cfg, "", "operator", "generate-root", "-generate-otp")
+	if err != nil {
+		return err
+	}
+	otp := strings.TrimSpace(string(otpOut))
+	if otp == "" {
+		return errors.New("bao operator generate-root -generate-otp returned an empty OTP")
+	}
+	started := false
+	defer func() {
+		if started {
+			cancelCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = baoCommand(cancelCtx, cfg, "operator", "generate-root", "-cancel")
+		}
+	}()
+	initOut, err := baoOutput(ctx, cfg, "", "operator", "generate-root", "-init", "-otp="+otp, "-format=json")
+	if err != nil {
+		return err
+	}
+	started = true
+	status, err := decodeGenerateRootStatus(initOut)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(status.Nonce) == "" {
+		return errors.New("bao operator generate-root init did not return a nonce")
+	}
+	required := status.Required
+	if required <= 0 {
+		required = cfg.threshold
+	}
+	if len(keys) < required {
+		return fmt.Errorf("generate-root requires %d unseal keys, got %d", required, len(keys))
+	}
+	encoded := firstNonEmpty(status.EncodedRootToken, status.EncodedToken)
+	for i := 0; encoded == "" && i < required; i++ {
+		out, err := baoOutput(ctx, cfg, keys[i], "operator", "generate-root", "-nonce="+status.Nonce, "-otp="+otp, "-format=json", "-")
+		if err != nil {
+			return err
+		}
+		status, err = decodeGenerateRootStatus(out)
+		if err != nil {
+			return err
+		}
+		encoded = firstNonEmpty(status.EncodedRootToken, status.EncodedToken)
+	}
+	if encoded == "" {
+		return errors.New("bao operator generate-root did not return an encoded token after threshold keys")
+	}
+	tokenOut, err := baoOutput(ctx, cfg, encoded, "operator", "generate-root", "-decode=-", "-otp="+otp)
+	if err != nil {
+		return err
+	}
+	token := strings.TrimSpace(string(tokenOut))
+	if token == "" {
+		return errors.New("bao operator generate-root decode returned an empty token")
+	}
+	if err := writeSecretFile(cfg.rootTokenOutputFile, token); err != nil {
+		return err
+	}
+	started = false
+	return nil
+}
+
+func recoveryUnsealKeys(cfg config) ([]string, error) {
+	if len(cfg.unsealKeyFiles) > 0 {
+		keys := make([]string, 0, len(cfg.unsealKeyFiles))
+		for _, path := range cfg.unsealKeyFiles {
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("read unseal key file %s: %w", path, err)
+			}
+			key := strings.TrimSpace(string(body))
+			if key == "" {
+				return nil, fmt.Errorf("unseal key file %s is empty", path)
+			}
+			keys = append(keys, key)
+		}
+		return keys, nil
+	}
+	rootKey, err := readRootKey(cfg.rootKeyFile)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, cfg.threshold)
+	for index := 1; index <= cfg.threshold; index++ {
+		key, err := readWrappedKey(cfg.stateDir, rootKey, index)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
+func decodeGenerateRootStatus(out []byte) (generateRootStatus, error) {
+	var status generateRootStatus
+	if err := json.Unmarshal(bytes.TrimSpace(out), &status); err != nil {
+		return generateRootStatus{}, fmt.Errorf("decode bao operator generate-root response: %w", err)
+	}
+	return status, nil
+}
+
+func writeSecretFile(path, value string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create secret output directory: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(strings.TrimSpace(value)+"\n"), 0o600); err != nil {
+		return fmt.Errorf("write temporary secret output file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("replace secret output file: %w", err)
+	}
+	return os.Chmod(path, 0o600)
+}
+
 func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string) error {
 	client, err := apiClient(cfg)
 	if err != nil {
@@ -411,6 +611,14 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	}
 	if _, ok := dataMap(mounts)["kv-runtime/"]; !ok {
 		if _, err := api(http.MethodPost, "sys/mounts/kv-runtime", map[string]any{
+			"type":    "kv",
+			"options": map[string]any{"version": "2"},
+		}, http.StatusNoContent); err != nil {
+			return err
+		}
+	}
+	if _, ok := dataMap(mounts)["kv-controller/"]; !ok {
+		if _, err := api(http.MethodPost, "sys/mounts/kv-controller", map[string]any{
 			"type":    "kv",
 			"options": map[string]any{"version": "2"},
 		}, http.StatusNoContent); err != nil {

@@ -52,7 +52,6 @@ job "deployment-service" {
     }
     task "deployment-service" {
       driver = "raw_exec"
-      user = "deployment_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       vault {
@@ -71,7 +70,15 @@ job "deployment-service" {
         chown = true
       }
       config {
-        command = "local/bin/deployment-service"
+        command = "local/bin/nomad-chown-exec"
+        args = [
+          "--user=deployment_service",
+          "--group=deployment_service",
+          "--chown=$${NOMAD_SECRETS_DIR}/r2-control-plane-token",
+          "--chown=$${NOMAD_SECRETS_DIR}/substrate-control-plane-marker",
+          "--",
+          "local/bin/deployment-service",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"

@@ -5,4 +5,3 @@ nomad_config_dir: /etc/nomad
 nomad_data_dir: /var/lib/nomad
 nomad_expected_version: 1.11.3
 nomad_openbao_root_key_dest: /etc/verself/bootstrap/openbao-root.key
-nomad_artifact_region: auto

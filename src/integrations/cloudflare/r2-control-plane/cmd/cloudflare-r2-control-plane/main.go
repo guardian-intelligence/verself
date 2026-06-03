@@ -41,6 +41,7 @@ type config struct {
 	inventoryDepth            int
 	tempTTL                   time.Duration
 	uploadSessionTTL          time.Duration
+	downloadURLTTL            time.Duration
 	timeout                   time.Duration
 	verifyTempCredentials     bool
 }
@@ -99,6 +100,7 @@ func run(args []string) error {
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
 	fs.DurationVar(&cfg.tempTTL, "temp-ttl", 15*time.Minute, "TTL for Cloudflare temporary scoped R2 verification credentials.")
 	fs.DurationVar(&cfg.uploadSessionTTL, "upload-session-ttl", 30*time.Minute, "TTL for deployment artifact upload sessions.")
+	fs.DurationVar(&cfg.downloadURLTTL, "download-url-ttl", 7*24*time.Hour, "TTL for presigned deployment artifact download URLs returned to Nomad.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
 	if err := fs.Parse(args); err != nil {
@@ -212,6 +214,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.uploadSessionTTL < time.Minute || cfg.uploadSessionTTL > 7*24*time.Hour {
 		return fmt.Errorf("--upload-session-ttl must be between 1 minute and 7 days")
+	}
+	if cfg.downloadURLTTL < time.Minute || cfg.downloadURLTTL > 7*24*time.Hour {
+		return fmt.Errorf("--download-url-ttl must be between 1 minute and 7 days")
 	}
 	if cfg.inventoryDepth < 1 || cfg.inventoryDepth > 8 {
 		return fmt.Errorf("--inventory-depth must be between 1 and 8")

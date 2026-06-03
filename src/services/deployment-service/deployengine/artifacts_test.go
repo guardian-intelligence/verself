@@ -46,7 +46,7 @@ func TestUploadArtifactStreamsLocalFile(t *testing.T) {
 			SHA256:       digest,
 			Bucket:       "artifacts",
 			Key:          "gamma/deploy/" + digest + "/large-runtime.tar",
-			GetterSource: "s3::example/large-runtime.tar",
+			GetterSource: "https://artifacts.example.test/large-runtime.tar",
 		},
 		LocalPath: path,
 		SizeBytes: size,
@@ -78,7 +78,7 @@ func TestUploadArtifactRejectsDigestMismatchBeforePut(t *testing.T) {
 			SHA256:       strings.Repeat("0", len(digest)),
 			Bucket:       "artifacts",
 			Key:          "gamma/deploy/" + digest + "/large-runtime.tar",
-			GetterSource: "s3::example/large-runtime.tar",
+			GetterSource: "https://artifacts.example.test/large-runtime.tar",
 		},
 		LocalPath: path,
 		SizeBytes: size,
@@ -89,6 +89,50 @@ func TestUploadArtifactRejectsDigestMismatchBeforePut(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 0 {
 		t.Fatalf("PUT calls = %d, want 0", got)
+	}
+}
+
+func TestApplyCompletedArtifactSourcesBindsDownloadURLs(t *testing.T) {
+	inputs := &deployInputs{
+		Bindings: map[string]artifactBinding{
+			"deployment-service": {
+				Artifact: deploymodel.Artifact{
+					Output: "deployment-service",
+					Bucket: "verself-deployment-artifacts",
+					Key:    "gamma/sha256/service.tar",
+				},
+			},
+		},
+		ControlPlaneObject: objectArtifact{
+			Artifact: deploymodel.Artifact{
+				Output: controlPlaneBundleOutput,
+				Bucket: "verself-deployment-artifacts",
+				Key:    "gamma/sha256/control-plane.tar",
+			},
+		},
+	}
+	err := applyCompletedArtifactSources(inputs, []r2controlplane.UploadObject{
+		{
+			Output:       "deployment-service",
+			Bucket:       "verself-deployment-artifacts",
+			Key:          "gamma/sha256/service.tar",
+			GetterSource: "https://downloads.example.test/service.tar?X-Amz-Signature=abc",
+		},
+		{
+			Output:       controlPlaneBundleOutput,
+			Bucket:       "verself-deployment-artifacts",
+			Key:          "gamma/sha256/control-plane.tar",
+			GetterSource: "https://downloads.example.test/control-plane.tar?X-Amz-Signature=def",
+		},
+	})
+	if err != nil {
+		t.Fatalf("apply completed artifact sources: %v", err)
+	}
+	if got := inputs.Bindings["deployment-service"].Artifact.GetterSource; got != "https://downloads.example.test/service.tar?X-Amz-Signature=abc" {
+		t.Fatalf("service getter source = %q", got)
+	}
+	if got := inputs.ControlPlaneObject.Artifact.GetterSource; got != "https://downloads.example.test/control-plane.tar?X-Amz-Signature=def" {
+		t.Fatalf("control-plane getter source = %q", got)
 	}
 }
 
