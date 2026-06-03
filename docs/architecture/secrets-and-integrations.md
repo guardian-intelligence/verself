@@ -217,7 +217,6 @@ are invalid state transitions.
 
 | Class | Stored in | Consumed by | Rule |
 | --- | --- | --- | --- |
-| `bootstrap_session` | Operator or privileged-agent process memory | Initial import command | Secret-zero values only. Do not persist. |
 | `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
 | `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning tools | Pre-host source of truth for site bootstrap inputs. |
 | `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
@@ -343,10 +342,11 @@ variable exported by `stripe projects env --pull`:
 
 2. Choose the storage class.
 
-   Use `bootstrap_session` for secret-zero values before any OpenBao exists,
-   `controller_openbao` for pre-host site bootstrap inputs, `site_openbao` for
-   durable site material, `runtime_secret` for OpenBao runtime values, and
-   `product_kv` for customer or org-managed values after deploy.
+   Use `controller_openbao` for pre-host site bootstrap inputs, `site_openbao`
+   for durable site material, `runtime_secret` for OpenBao runtime values, and
+   `product_kv` for customer or org-managed values after deploy. Secret-zero
+   values for the first controller exist only in the authenticated bootstrap
+   process and are not catalog storage targets.
 
 3. Add or update the catalog entry.
 

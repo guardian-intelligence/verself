@@ -31,7 +31,7 @@ integrations:
     purpose: bare_metal_provisioning
     credentials:
       - key: infrastructure.latitude.auth_token
-        source: bootstrap_session
+        source: provider_dashboard
         target: provisioning_bootstrap
         target_store: controller_openbao
         openbao_name: infrastructure.latitude.auth_token
