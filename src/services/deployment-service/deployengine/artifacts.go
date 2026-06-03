@@ -2,11 +2,9 @@ package deployengine
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,7 +25,6 @@ import (
 )
 
 const taskArtifactRoot = "local/verself-artifacts"
-const controlPlaneBundleOutput = "substrate-control-plane-bundle"
 
 type artifactBinding struct {
 	Artifact deploymodel.Artifact
@@ -118,42 +115,6 @@ func fileSHA256(filePath string) (string, error) {
 
 func artifactKey(policy artifactDeliveryPolicy, digest, output string) string {
 	return path.Join(policy.SitePrefix, strings.Trim(policy.KeyPrefix, "/"), digest, output+".tar")
-}
-
-func bindControlPlaneBundleArtifact(policy artifactDeliveryPolicy, bundle any) (objectArtifact, error) {
-	raw, err := json.Marshal(bundle)
-	if err != nil {
-		return objectArtifact{}, fmt.Errorf("encode substrate control-plane bundle: %w", err)
-	}
-	body, err := gzipPayload(raw)
-	if err != nil {
-		return objectArtifact{}, fmt.Errorf("compress substrate control-plane bundle: %w", err)
-	}
-	digest := deploymodel.SHA256(body)
-	key := artifactKey(policy, digest, controlPlaneBundleOutput)
-	return objectArtifact{
-		Artifact: deploymodel.Artifact{
-			Output: controlPlaneBundleOutput,
-			SHA256: digest,
-			Bucket: policy.Bucket,
-			Key:    key,
-		},
-		Body:  body,
-		Label: "substrate-control-plane bundle",
-	}, nil
-}
-
-func gzipPayload(body []byte) ([]byte, error) {
-	var out bytes.Buffer
-	zw := gzip.NewWriter(&out)
-	if _, err := zw.Write(body); err != nil {
-		_ = zw.Close()
-		return nil, err
-	}
-	if err := zw.Close(); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
 }
 
 func publishArtifacts(ctx context.Context, exec execution, inputs *deployInputs) error {
@@ -324,18 +285,6 @@ func applyCompletedArtifactSources(inputs *deployInputs, objects []r2controlplan
 		}
 		sources[output] = getterSource
 	}
-	if inputs.ControlPlaneObject.Artifact.Output != "" {
-		output := inputs.ControlPlaneObject.Artifact.Output
-		object, ok := byOutput[output]
-		if !ok {
-			return fmt.Errorf("R2 control-plane completed response omitted artifact %q", output)
-		}
-		getterSource, err := completedArtifactGetterSource(output, object, inputs.ControlPlaneObject.Artifact.Bucket, inputs.ControlPlaneObject.Artifact.Key)
-		if err != nil {
-			return err
-		}
-		sources[output] = getterSource
-	}
 	return applyArtifactGetterSources(inputs, sources)
 }
 
@@ -347,14 +296,6 @@ func applyArtifactGetterSources(inputs *deployInputs, sources map[string]string)
 		}
 		binding.Artifact.GetterSource = getterSource
 		inputs.Bindings[output] = binding
-	}
-	if inputs.ControlPlaneObject.Artifact.Output != "" {
-		output := inputs.ControlPlaneObject.Artifact.Output
-		getterSource := strings.TrimSpace(sources[output])
-		if getterSource == "" {
-			return fmt.Errorf("artifact publisher omitted getter source for %q", output)
-		}
-		inputs.ControlPlaneObject.Artifact.GetterSource = getterSource
 	}
 	return nil
 }
@@ -375,8 +316,7 @@ func completedArtifactGetterSource(output string, object r2controlplane.UploadOb
 }
 
 func uploadCandidates(inputs *deployInputs, repoRoot string) ([]uploadCandidate, error) {
-	candidates := make([]uploadCandidate, 0, len(inputs.Artifacts)+1)
-	seen := map[string]bool{}
+	candidates := make([]uploadCandidate, 0, len(inputs.Artifacts))
 	for _, artifact := range inputs.Artifacts {
 		localPath := artifact.ResolveLocalPath(repoRoot)
 		info, err := os.Stat(localPath)
@@ -387,18 +327,6 @@ func uploadCandidates(inputs *deployInputs, repoRoot string) ([]uploadCandidate,
 			return nil, fmt.Errorf("artifact %s is not a regular file", artifact.Output)
 		}
 		candidates = append(candidates, uploadCandidate{Artifact: artifact, LocalPath: localPath, SizeBytes: info.Size(), Label: artifact.Output})
-		seen[artifact.Output] = true
-	}
-	if inputs.ControlPlaneObject.Artifact.Output != "" {
-		if seen[inputs.ControlPlaneObject.Artifact.Output] {
-			return nil, fmt.Errorf("artifact output %q is reserved for the substrate control-plane bundle", inputs.ControlPlaneObject.Artifact.Output)
-		}
-		candidates = append(candidates, uploadCandidate{
-			Artifact:  inputs.ControlPlaneObject.Artifact,
-			Body:      inputs.ControlPlaneObject.Body,
-			SizeBytes: int64(len(inputs.ControlPlaneObject.Body)),
-			Label:     inputs.ControlPlaneObject.Label,
-		})
 	}
 	return candidates, nil
 }
@@ -516,7 +444,8 @@ func uploadArtifact(ctx context.Context, exec execution, candidate uploadCandida
 
 func candidateSHA256(candidate uploadCandidate) (string, error) {
 	if candidate.Body != nil {
-		return deploymodel.SHA256(candidate.Body), nil
+		sum := sha256.Sum256(candidate.Body)
+		return hex.EncodeToString(sum[:]), nil
 	}
 	if candidate.LocalPath == "" {
 		return "", fmt.Errorf("artifact %s has no local path", candidate.Artifact.Output)

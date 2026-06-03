@@ -70,7 +70,7 @@ host    all       all   127.0.0.1/32 scram-sha-256
 host    all       all   ::1/128      scram-sha-256
 PGHBA
 
-# substrate-control-plane owns service peer mappings; Postgres only seeds bootstrap auth.
+# Postgres only seeds bootstrap auth; services own later access changes.
 if [ ! -e /etc/postgresql/verself/pg_ident.conf ]; then
   cat >/etc/postgresql/verself/pg_ident.conf <<PGIDENT
 verself_services      postgres            postgres

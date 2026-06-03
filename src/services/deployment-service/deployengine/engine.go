@@ -35,13 +35,11 @@ type Options struct {
 }
 
 type Result struct {
-	Site                string
-	SHA                 string
-	DeployRunKey        string
-	ControlPlaneSHA256  string
-	NomadJobs           []NomadRegisterResult
-	NomadSubmittedJobs  uint32
-	NomadDispatchedJobs uint32
+	Site               string
+	SHA                string
+	DeployRunKey       string
+	NomadJobs          []NomadRegisterResult
+	NomadSubmittedJobs uint32
 }
 
 type ArtifactPublisher interface {
@@ -89,13 +87,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	return Result{
-		Site:                exec.Site,
-		SHA:                 exec.SHA,
-		DeployRunKey:        exec.DeployRunKey,
-		ControlPlaneSHA256:  inputs.ControlPlaneSHA256,
-		NomadJobs:           nomadResult.Jobs,
-		NomadSubmittedJobs:  nomadResult.SubmittedJobs,
-		NomadDispatchedJobs: nomadResult.DispatchedJobs,
+		Site:               exec.Site,
+		SHA:                exec.SHA,
+		DeployRunKey:       exec.DeployRunKey,
+		NomadJobs:          nomadResult.Jobs,
+		NomadSubmittedJobs: nomadResult.SubmittedJobs,
 	}, nil
 }
 

@@ -65,7 +65,7 @@ through a temporary SSH tunnel, and exits. Runtime Cloudflare child credentials
 for deployment publication, recovery, and object-storage-service are written to
 OpenBao by their rotation actions after provider verification. Product provider
 credentials such as Stripe and GitHub App private material may be absent during
-substrate bootstrap; if absent, the owning service or gate fails when it
+site bootstrap; if absent, the owning service or gate fails when it
 consumes that runtime secret. Resend sending credentials are created by
 `email-service` after site OpenBao is available.
 
@@ -302,9 +302,9 @@ external provider authority available through controller OpenBao
   -> OpenBao initialized and unsealed; unseal material is wrapped by the site root key
   -> Nomad starts with site-local OpenBao integration
   -> bootstrap-deploy copies local artifacts over SSH and tunnels to Nomad
-  -> substrate-control-plane creates generated runtime secrets through OpenBao transit/random and applies workload roles
-  -> integration services or rotation commands project external runtime secrets into OpenBao
-  -> Nomad deploys deployment-service and site-local control-plane jobs
+  -> bootstrap-deploy registers the minimum Nomad jobs needed for the site
+  -> service-owned jobs or rotation commands project runtime secrets into OpenBao
+  -> Nomad deploys deployment-service and site-local services
   -> public-edge certificates and HAProxy are converged after core services are healthy
   -> Pomerium operator access handoff is verified
   -> normal aspect deploy submits requests to deployment-service
@@ -313,8 +313,8 @@ external provider authority available through controller OpenBao
 Deployment-service-managed deploys require S0-S7 to pass in under one second:
 S0 site metadata, S1 Nomad allocation evidence, S2 recovery SSH bootstrap
 handoff declaration, S3 `bazelisk` and `git`, S4 OpenBao runtime secret
-delivery, S5 substrate-control-plane import marker, S6 Nomad, and S7 Postgres,
-deployment repo, and site-local R2 control-plane. `aspect deploy` reports
+delivery, S6 Nomad, and S7 Postgres, deployment repo, and site-local R2
+control-plane. `aspect deploy` reports
 `deployment_service_unavailable` with the failed stage and does not SSH or run
 Ansible.
 

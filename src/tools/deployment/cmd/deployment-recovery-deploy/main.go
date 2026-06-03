@@ -95,13 +95,11 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("recovery_deploy_id=%s site=%s sha=%s control_plane_bundle_sha256=%s nomad_submitted_jobs=%d nomad_dispatched_jobs=%d\n",
+	fmt.Printf("recovery_deploy_id=%s site=%s sha=%s nomad_submitted_jobs=%d\n",
 		opts.deployRunKey,
 		result.Site,
 		result.SHA,
-		result.ControlPlaneSHA256,
 		result.NomadSubmittedJobs,
-		result.NomadDispatchedJobs,
 	)
 	return nil
 }

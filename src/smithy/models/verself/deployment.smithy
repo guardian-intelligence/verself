@@ -183,30 +183,22 @@ structure DeploymentRecord {
 
     @required
     @protoField(number: 16)
-    control_plane_bundle_sha256: String
-
-    @required
-    @protoField(number: 17)
     nomad_submitted_jobs: NomadJobCount
 
     @required
-    @protoField(number: 18)
-    nomad_dispatched_jobs: NomadJobCount
-
-    @required
-    @protoField(number: 19)
+    @protoField(number: 17)
     created_at: DateTime
 
     @required
-    @protoField(number: 20)
+    @protoField(number: 18)
     updated_at: DateTime
 
     @required
-    @protoField(number: 21)
+    @protoField(number: 19)
     started_at: DateTime
 
     @required
-    @protoField(number: 22)
+    @protoField(number: 20)
     finished_at: DateTime
 }
 
@@ -322,7 +314,6 @@ operation SubmitDeployment {
         DeploymentBootstrapS3BazeliskError,
         DeploymentBootstrapS3GitError,
         DeploymentBootstrapS4OpenBaoRuntimeSecretDeliveryError,
-        DeploymentBootstrapS5SubstrateControlPlaneAppliedError,
         DeploymentBootstrapS6NomadError,
         DeploymentBootstrapS7PostgresError,
         DeploymentBootstrapS7RepoRootError,
@@ -560,11 +551,6 @@ structure DeploymentBootstrapS3GitError with [ProblemDetails] {}
 @httpError(503)
 @problem(type: "urn:verself:problem:deployment:bootstrap:s4:openbao_runtime_secret_delivery", code: "deployment.bootstrap.s4.openbao_runtime_secret_delivery")
 structure DeploymentBootstrapS4OpenBaoRuntimeSecretDeliveryError with [ProblemDetails] {}
-
-@error("server")
-@httpError(503)
-@problem(type: "urn:verself:problem:deployment:bootstrap:s5:substrate_control_plane_applied", code: "deployment.bootstrap.s5.substrate_control_plane_applied")
-structure DeploymentBootstrapS5SubstrateControlPlaneAppliedError with [ProblemDetails] {}
 
 @error("server")
 @httpError(503)

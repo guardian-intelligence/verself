@@ -404,14 +404,6 @@ func csvSet(raw string) map[string]struct{} {
 }
 
 func (v *Validator) validateBootstrapRuntimeSecretContracts() {
-	deploymentSecretsPath := filepath.Join(v.root, "src", "services", "deployment-service", "deploy", "runtime-secrets.yml")
-	if _, err := os.Stat(deploymentSecretsPath); err == nil {
-		rel := v.rel(deploymentSecretsPath)
-		var doc RuntimeSecretsFile
-		if v.decode(rel, deploymentSecretsPath, &doc) {
-			v.requireProducedSecret(rel, doc, "deployment-service.substrate_control_plane_marker", "substrate-control-plane")
-		}
-	}
 	r2SecretsPath := filepath.Join(v.root, "src", "integrations", "cloudflare", "r2-control-plane", "deploy", "runtime-secrets.yml")
 	if _, err := os.Stat(r2SecretsPath); err == nil {
 		rel := v.rel(r2SecretsPath)
@@ -454,21 +446,11 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 			v.requireExternalOpenBaoSecret(rel, doc, "auth-control-plane.github_login.oauth_client_secret")
 		}
 	}
-	v.requireNomadRuntimeSecretReferences("src/services/deployment-service/nomad.hcl", []string{
-		"deployment-service.substrate_control_plane_marker",
-	})
 	v.requireNomadRuntimeSecretReferences("src/integrations/cloudflare/r2-control-plane/nomad.hcl", []string{
 		"cloudflare-r2-control-plane.publisher_token_id",
 		"cloudflare-r2-control-plane.publisher_secret_access_key",
 	})
 	v.requireR2ControlPlaneServeBoundary("src/integrations/cloudflare/r2-control-plane/nomad.hcl")
-	if v.generatedRuntimeSecrets {
-		v.requireOpenBaoTransitRuntimeGeneration(
-			"src/infrastructure-components/openbao/cmd/openbao-bootstrap/main.go",
-			"src/services/deployment-service/controlplane/apply.go",
-		)
-	}
-	v.requireSubstrateControlPlaneWorkloadIdentity("src/infrastructure-components/substrate-control-plane/nomad.hcl")
 }
 
 func (v *Validator) validateNoToolLayerDeployEngine() {
@@ -476,7 +458,6 @@ func (v *Validator) validateNoToolLayerDeployEngine() {
 		"src/tools/deployment/deployengine",
 		"src/tools/deployment/internal/bazelbuild",
 		"src/tools/deployment/internal/bep",
-		"src/tools/deployment/internal/controlplane",
 		"src/tools/deployment/internal/deploycontract",
 		"src/tools/deployment/internal/deploymodel",
 		"src/tools/deployment/internal/nomadclient",
@@ -584,76 +565,6 @@ func (v *Validator) requireEmailServiceResendKeyManagerBoundary(rel string) {
 		if !strings.Contains(text, required) {
 			v.add(rel, fmt.Sprintf("email-service Resend key manager must declare %s", required))
 		}
-	}
-}
-
-func (v *Validator) requireSubstrateControlPlaneWorkloadIdentity(rel string) {
-	path := filepath.Join(v.root, filepath.FromSlash(rel))
-	body, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return
-	}
-	if err != nil {
-		v.add(rel, "read: "+err.Error())
-		return
-	}
-	text := string(body)
-	for _, required := range []string{
-		`vault {`,
-		`role = "substrate-control-plane"`,
-		`env  = false`,
-		`identity {`,
-		`aud  = ["vault.io"]`,
-		`"--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token"`,
-	} {
-		if !strings.Contains(text, required) {
-			v.add(rel, fmt.Sprintf("substrate-control-plane must use Nomad/OpenBao workload identity via %s", required))
-		}
-	}
-}
-
-func (v *Validator) requireOpenBaoTransitRuntimeGeneration(openbaoBootstrapRel, controlPlaneApplyRel string) {
-	openbaoPath := filepath.Join(v.root, filepath.FromSlash(openbaoBootstrapRel))
-	openbaoBody, err := os.ReadFile(openbaoPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			v.add(openbaoBootstrapRel, "OpenBao bootstrap must configure transit before generated runtime secrets are reconciled")
-			return
-		}
-		v.add(openbaoBootstrapRel, "read: "+err.Error())
-		return
-	}
-	openbaoText := string(openbaoBody)
-	for _, required := range []string{
-		`"sys/mounts/transit"`,
-		`"type": "transit"`,
-		`path "transit/random/*"`,
-		`path "sys/mounts/transit"`,
-	} {
-		if !strings.Contains(openbaoText, required) {
-			v.add(openbaoBootstrapRel, fmt.Sprintf("OpenBao bootstrap must declare %s for generated runtime secrets", required))
-		}
-	}
-
-	applyPath := filepath.Join(v.root, filepath.FromSlash(controlPlaneApplyRel))
-	applyBody, err := os.ReadFile(applyPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			v.add(controlPlaneApplyRel, "substrate-control-plane must generate runtime secrets through OpenBao transit/random")
-			return
-		}
-		v.add(controlPlaneApplyRel, "read: "+err.Error())
-		return
-	}
-	applyText := string(applyBody)
-	if !strings.Contains(applyText, `"v1/transit/random/"`) {
-		v.add(controlPlaneApplyRel, "generated runtime secrets must be created through OpenBao transit/random")
-	}
-	if !strings.Contains(applyText, `path "transit/random/*"`) {
-		v.add(controlPlaneApplyRel, "substrate-control-plane runtime policy must retain OpenBao transit/random access")
-	}
-	if !strings.Contains(applyText, `"v1/sys/mounts/transit"`) || !strings.Contains(applyText, `path "sys/mounts/transit"`) {
-		v.add(controlPlaneApplyRel, "substrate-control-plane must ensure the OpenBao transit mount with a narrow sys/mounts policy")
 	}
 }
 

@@ -76,7 +76,6 @@ func run() error {
 	nomadAllocID := cfg.String("NOMAD_ALLOC_ID", "")
 	recoverySSHReady := cfg.String("VERSELF_RECOVERY_SSH_READY", "")
 	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", workloadauth.InternalURL(workloadauth.ServiceCloudflareR2))
-	substrateControlPlaneMarker := cfg.RequireCredential("substrate-control-plane-marker")
 	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
 	githubRepositories := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES", "")
@@ -130,14 +129,13 @@ func run() error {
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
 		Config: deploymentapi.Config{
-			Site:                        site,
-			RepoRoot:                    repoRoot,
-			SubstrateControlPlaneMarker: substrateControlPlaneMarker,
-			R2ControlPlaneAddr:          r2ControlPlaneAddr,
-			NomadAddr:                   nomadAddr,
-			NomadAllocID:                nomadAllocID,
-			RecoverySSHReady:            recoverySSHReady,
-			BazelJobs:                   bazelJobs,
+			Site:               site,
+			RepoRoot:           repoRoot,
+			R2ControlPlaneAddr: r2ControlPlaneAddr,
+			NomadAddr:          nomadAddr,
+			NomadAllocID:       nomadAllocID,
+			RecoverySSHReady:   recoverySSHReady,
+			BazelJobs:          bazelJobs,
 		},
 		R2ControlPlaneHTTPClient: r2HTTPClient,
 	}

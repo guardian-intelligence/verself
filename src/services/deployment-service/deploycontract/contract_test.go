@@ -286,30 +286,6 @@ func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testi
 	}
 }
 
-func TestValidateRepoRequiresOpenBaoTransitForGeneratedRuntimeSecrets(t *testing.T) {
-	root := t.TempDir()
-	writeBootstrapRuntimeContracts(t, root)
-	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_declarations:
-  - name: example-service.generated.secret
-    generated:
-      bytes: 32
-      encoding: base64url
-`)
-	write(t, root, "src/services/deployment-service/controlplane/apply.go", `package controlplane
-
-func generate() {}
-`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "must be created through OpenBao transit/random") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestValidateRepoRejectsToolLayerDeploymentEngine(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
@@ -337,31 +313,12 @@ func write(t *testing.T, root, rel, body string) {
 
 func writeBootstrapRuntimeContracts(t *testing.T, root string) {
 	t.Helper()
-	write(t, root, "src/services/deployment-service/deploy/runtime-secrets.yml", `
-openbao_runtime_secret_declarations:
-  - name: deployment-service.substrate_control_plane_marker
-    produced_by_job: substrate-control-plane
-`)
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
   - name: cloudflare-r2-control-plane.publisher_token_id
     external_openbao: true
   - name: cloudflare-r2-control-plane.publisher_secret_access_key
     external_openbao: true
-`)
-	write(t, root, "src/services/deployment-service/nomad.hcl", `
-job "deployment-service" {
-  group "deployment-service" {
-    task "deployment-service" {
-      template {
-        destination = "secrets/substrate-control-plane-marker"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-    }
-  }
-}
 `)
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", `
 job "cloudflare-r2-control-plane" {
@@ -404,52 +361,6 @@ job "cloudflare-r2-control-plane" {
 		  }
 		}
 	`)
-	write(t, root, "src/infrastructure-components/substrate-control-plane/nomad.hcl", substrateControlPlaneNomadContract())
-	write(t, root, "src/infrastructure-components/openbao/cmd/openbao-bootstrap/main.go",
-		"package main\n\n"+
-			"func configureWorkloadIdentity() {\n"+
-			"\t_ = \"sys/mounts/transit\"\n"+
-			"\t_ = `\"type\": \"transit\"`\n"+
-			"\t_ = `path \"transit/random/*\" {\n  capabilities = [\"update\"]\n}`\n"+
-			"\t_ = `path \"sys/mounts/transit\" {\n  capabilities = [\"create\", \"update\", \"read\", \"sudo\"]\n}`\n"+
-			"}\n",
-	)
-	write(t, root, "src/services/deployment-service/controlplane/apply.go",
-		"package controlplane\n\n"+
-			"func randomBytes() {\n"+
-			"\t_ = \"v1/transit/random/\"\n"+
-			"\t_ = \"v1/sys/mounts/transit\"\n"+
-			"\t_ = `path \"transit/random/*\" {\n  capabilities = [\"update\"]\n}`\n"+
-			"\t_ = `path \"sys/mounts/transit\" {\n  capabilities = [\"create\", \"update\", \"read\", \"sudo\"]\n}`\n"+
-			"}\n",
-	)
-}
-
-func substrateControlPlaneNomadContract() string {
-	return `
-job "substrate-control-plane" {
-  group "substrate-control-plane" {
-    task "apply" {
-      vault {
-        env  = false
-        role = "substrate-control-plane"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
-      config {
-        args = [
-          "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
-        ]
-      }
-    }
-  }
-}
-`
 }
 
 func gammaDeployWorkflow() string {

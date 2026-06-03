@@ -103,14 +103,6 @@ job "deployment-service" {
         VERSELF_SUPERVISOR = "nomad"
         XDG_CACHE_HOME = "/var/lib/verself/deployment-service/.cache"
       }
-      template {
-        change_mode = "restart"
-        destination = "secrets/substrate-control-plane-marker"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
       resources {
         cpu = 1500
         memory = 4096
