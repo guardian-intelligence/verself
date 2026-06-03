@@ -62,3 +62,42 @@ func TestDecodeStatusOutputAcceptsUninitializedSealedState(t *testing.T) {
 		t.Fatalf("sealed = false")
 	}
 }
+
+func TestBaoCommandLabelRedactsSecretArguments(t *testing.T) {
+	label := baoCommandLabel([]string{"operator", "unseal", "unseal-value"})
+	if strings.Contains(label, "unseal-value") {
+		t.Fatalf("label leaked unseal key: %s", label)
+	}
+	if !strings.Contains(label, "[redacted]") {
+		t.Fatalf("label did not mark redacted argument: %s", label)
+	}
+
+	label = baoCommandLabel([]string{"operator", "generate-root", "-init", "-otp=otp-value", "-format=json"})
+	if strings.Contains(label, "otp-value") {
+		t.Fatalf("label leaked OTP: %s", label)
+	}
+	if !strings.Contains(label, "-otp=[redacted]") {
+		t.Fatalf("label did not mark redacted OTP: %s", label)
+	}
+}
+
+func TestWriteSecretFileUsesPrivateMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secret")
+	if err := writeSecretFile(path, "token-value"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "token-value\n" {
+		t.Fatalf("body = %q", body)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %o", info.Mode().Perm())
+	}
+}
