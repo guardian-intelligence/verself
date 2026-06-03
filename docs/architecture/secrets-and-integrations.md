@@ -352,8 +352,8 @@ variable exported by `stripe projects env --pull`:
 
    Include owner path, provider, environment policy, sensitivity, source,
    storage target, consumer, rotation path, revocation path, and verification
-   evidence. Declare `bootstrap_shared` only when the provider cannot scope the
-   credential to the environment.
+   evidence. Use `site_scoped` for provider credentials constrained to one
+   Verself site.
 
 4. Add the consumer declaration.
 
@@ -466,7 +466,6 @@ The catalog validator should run in CI and before `aspect deploy`.
   rotation path.
 - Every environment-specific Nomad literal is represented as site vars or a
   cataloged variable.
-- `bootstrap_shared` credentials are denied as runtime secret sources.
 - `prod`, `gamma`, and `dev` provider resource IDs do not match unless the
   catalog marks the value as intentionally shared.
 - Credential values are never logged, printed in JSON, or committed in `.env`,
