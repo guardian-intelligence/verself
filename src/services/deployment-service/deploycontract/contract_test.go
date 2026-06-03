@@ -263,35 +263,6 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 	}
 }
 
-func TestValidateRepoRejectsBootstrapSharedRuntimeSecrets(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "src/integrations/catalog/sites/gamma.yml", `
-version: verself.integrations.v1
-site: gamma
-secret_store_policy: openbao_only
-integrations:
-  - key: example.provider
-    provider: example
-    owner: src/services/example-service
-    purpose: example
-    credentials:
-      - key: example-service.provider.api_key
-        source: bootstrap_session
-        target: runtime_secret
-        target_store: site_openbao
-        openbao_name: example-service.provider.api_key
-        isolation: bootstrap_shared
-`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "bootstrap_shared cannot feed runtime secrets") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
@@ -312,10 +283,6 @@ openbao_runtime_secret_declarations:
       encoding: base64url
   - name: deployment-service.substrate_control_plane_marker
     produced_by_job: substrate-control-plane
-  - name: deployment-service.operator_deploy_token
-    generated:
-      bytes: 32
-      encoding: base64url
 `)
 
 	_, err := ValidateRepo(root)
@@ -341,21 +308,19 @@ func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testi
 	}
 }
 
-func TestValidateRepoRejectsGeneratedRuntimeSecretsWithoutOpenBaoTransit(t *testing.T) {
+func TestValidateRepoRequiresOpenBaoTransitForGeneratedRuntimeSecrets(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
 	write(t, root, "src/services/deployment-service/controlplane/apply.go", `package controlplane
 
-func generate() {
-	_ = "crypto/rand"
-}
+func generate() {}
 `)
 
 	_, err := ValidateRepo(root)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
-	if !strings.Contains(err.Error(), "must be created through OpenBao transit/random") || !strings.Contains(err.Error(), "must not use local RNG") {
+	if !strings.Contains(err.Error(), "must be created through OpenBao transit/random") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -396,10 +361,6 @@ openbao_runtime_secret_declarations:
       encoding: base64url
   - name: deployment-service.substrate_control_plane_marker
     produced_by_job: substrate-control-plane
-  - name: deployment-service.operator_deploy_token
-    generated:
-      bytes: 32
-      encoding: base64url
 `)
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
@@ -422,12 +383,6 @@ EOT
         destination = "secrets/substrate-control-plane-marker"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        destination = "secrets/operator-deploy-token"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
     }

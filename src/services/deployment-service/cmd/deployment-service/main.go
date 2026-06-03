@@ -77,7 +77,6 @@ func run() error {
 	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", "http://127.0.0.1:18732")
 	r2ControlPlaneToken := cfg.RequireCredential("r2-control-plane-token")
 	substrateControlPlaneMarker := cfg.RequireCredential("substrate-control-plane-marker")
-	operatorToken := cfg.CredentialOr("operator-deploy-token", "")
 	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
 	githubRepositories := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES", "")
@@ -111,8 +110,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if !hasDeploymentAuth(operatorToken, verifier) {
-		return fmt.Errorf("deployment auth requires operator-deploy-token or GitHub OIDC allow-lists")
+	if verifier == nil {
+		return fmt.Errorf("deployment auth requires GitHub OIDC allow-lists")
 	}
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
@@ -143,7 +142,6 @@ func run() error {
 	deploymentapi.RegisterRoutes(mux, deploymentapi.API{
 		Service:         svc,
 		GitHub:          verifier,
-		OperatorToken:   operatorToken,
 		SubmitAdmission: make(chan struct{}, admissionConcurrency),
 	})
 	server := httpserver.New(listenAddr, otelhttp.NewHandler(mux, serviceName))
@@ -162,10 +160,6 @@ func githubVerifier(ctx context.Context, audience, repositories, refs, workflowR
 		return nil, fmt.Errorf("GitHub OIDC deployment auth requires audience, allowed repositories, allowed refs, and allowed workflow refs when enabled")
 	}
 	return deploymentapi.NewGitHubOIDCVerifier(ctx, githubIssuer, audience, repositories, refs, workflowRefs)
-}
-
-func hasDeploymentAuth(operatorToken string, verifier *deploymentapi.GitHubOIDCVerifier) bool {
-	return strings.TrimSpace(operatorToken) != "" || verifier != nil
 }
 
 func parsePositiveInt(name, raw string) (int, error) {

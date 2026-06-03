@@ -2,7 +2,7 @@ package deployment
 
 import (
 	"bytes"
-	"crypto/subtle"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,10 +14,13 @@ import (
 
 const maxRequestBody = 64 << 10
 
+type sourceVerifier interface {
+	SourceFromToken(context.Context, string) (Source, error)
+}
+
 type API struct {
 	Service         *Service
-	GitHub          *GitHubOIDCVerifier
-	OperatorToken   string
+	GitHub          sourceVerifier
 	SubmitAdmission chan struct{}
 }
 
@@ -159,25 +162,10 @@ func (a API) authenticate(r *http.Request) (Source, error) {
 	if token == "" {
 		return Source{}, fmtUnauthorized("missing bearer token")
 	}
-	if a.operatorTokenMatches(token) {
-		return Source{
-			Kind:    SourceOperatorBearer,
-			Subject: "operator:deployment-token",
-		}, nil
-	}
 	if a.GitHub == nil {
 		return Source{}, fmtUnauthorized("github oidc verifier unavailable")
 	}
 	return a.GitHub.SourceFromToken(r.Context(), token)
-}
-
-func (a API) operatorTokenMatches(token string) bool {
-	configured := strings.TrimSpace(a.OperatorToken)
-	got := strings.TrimSpace(token)
-	if configured == "" || got == "" || len(configured) != len(got) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(configured)) == 1
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, out any) bool {

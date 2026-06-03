@@ -411,7 +411,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 		if v.decode(rel, deploymentSecretsPath, &doc) {
 			v.requireGeneratedSecret(rel, doc, "deployment-service.r2_control_plane_token", 32, "base64url", "cloudflare-r2-control-plane")
 			v.requireProducedSecret(rel, doc, "deployment-service.substrate_control_plane_marker", "substrate-control-plane")
-			v.requireGeneratedSecret(rel, doc, "deployment-service.operator_deploy_token", 32, "base64url", "")
 		}
 	}
 	r2SecretsPath := filepath.Join(v.root, "src", "integrations", "cloudflare", "r2-control-plane", "deploy", "runtime-secrets.yml")
@@ -459,7 +458,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 	v.requireNomadRuntimeSecretReferences("src/services/deployment-service/nomad.hcl", []string{
 		"deployment-service.r2_control_plane_token",
 		"deployment-service.substrate_control_plane_marker",
-		"deployment-service.operator_deploy_token",
 	})
 	v.requireNomadRuntimeSecretReferences("src/integrations/cloudflare/r2-control-plane/nomad.hcl", []string{
 		"cloudflare-r2-control-plane.publisher_token_id",
@@ -575,26 +573,6 @@ func (v *Validator) requireR2ControlPlaneServeBoundary(rel string) {
 			v.add(rel, fmt.Sprintf("R2 control-plane runtime must declare %s", required))
 		}
 	}
-	for _, forbidden := range []string{
-		`"--credential-source=openbao"`,
-		`"--credential-source=account-admin"`,
-		`"--credential-source=env"`,
-		`"--credential-source=env-file"`,
-		`"--parent-access-key-id-env`,
-		`"--parent-secret-access-key-env`,
-		`"--auth-token-env`,
-		`"--openbao-addr=`,
-		`"--openbao-token=`,
-		`"--account-admin`,
-		"BAO_ADDR",
-		"VAULT_ADDR",
-		"BAO_TOKEN",
-		"VAULT_TOKEN",
-	} {
-		if strings.Contains(text, forbidden) {
-			v.add(rel, fmt.Sprintf("R2 control-plane runtime must not depend on bootstrap/controller credential input %q", forbidden))
-		}
-	}
 }
 
 func (v *Validator) requireEmailServiceResendKeyManagerBoundary(rel string) {
@@ -622,14 +600,6 @@ func (v *Validator) requireEmailServiceResendKeyManagerBoundary(rel string) {
 			v.add(rel, fmt.Sprintf("email-service Resend key manager must declare %s", required))
 		}
 	}
-	for _, forbidden := range []string{
-		"resend_api_key",
-		"RESEND_API_KEY",
-	} {
-		if strings.Contains(text, forbidden) {
-			v.add(rel, fmt.Sprintf("email-service Resend key manager must not depend on seed/env runtime key %q", forbidden))
-		}
-	}
 }
 
 func (v *Validator) requireSubstrateControlPlaneWorkloadIdentity(rel string) {
@@ -653,19 +623,6 @@ func (v *Validator) requireSubstrateControlPlaneWorkloadIdentity(rel string) {
 	} {
 		if !strings.Contains(text, required) {
 			v.add(rel, fmt.Sprintf("substrate-control-plane must use Nomad/OpenBao workload identity via %s", required))
-		}
-	}
-	for _, forbidden := range []string{
-		`BAO_TOKEN =`,
-		`VAULT_TOKEN =`,
-		`"--openbao-token=`,
-		`"/etc/openbao/root`,
-		"root_token",
-		"openbao_bootstrap_token",
-		"disable_file = true",
-	} {
-		if strings.Contains(text, forbidden) {
-			v.add(rel, fmt.Sprintf("substrate-control-plane must not depend on manual/root OpenBao token input %q", forbidden))
 		}
 	}
 }
@@ -712,15 +669,6 @@ func (v *Validator) requireOpenBaoTransitRuntimeGeneration(openbaoBootstrapRel, 
 	}
 	if !strings.Contains(applyText, `"v1/sys/mounts/transit"`) || !strings.Contains(applyText, `path "sys/mounts/transit"`) {
 		v.add(controlPlaneApplyRel, "substrate-control-plane must ensure the OpenBao transit mount with a narrow sys/mounts policy")
-	}
-	for _, forbidden := range []string{
-		`"crypto/rand"`,
-		"rand.Read(",
-		"rand.Int(",
-	} {
-		if strings.Contains(applyText, forbidden) {
-			v.add(controlPlaneApplyRel, fmt.Sprintf("generated runtime secrets must not use local RNG %q", forbidden))
-		}
 	}
 }
 

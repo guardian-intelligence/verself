@@ -21,24 +21,57 @@ func TestAuthenticateRejectsMissingBearerToken(t *testing.T) {
 	}
 }
 
-func TestAuthenticateAcceptsConfiguredOperatorToken(t *testing.T) {
+func TestAuthenticateUsesConfiguredGitHubVerifier(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments/bootstrap:check", nil)
 	req.Header.Set("Authorization", "Bearer expected-token")
-	source, err := (API{OperatorToken: "expected-token"}).authenticate(req)
+	source, err := (API{GitHub: testVerifier()}).authenticate(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.Kind != SourceOperatorBearer || source.Subject != "operator:deployment-token" {
-		t.Fatalf("source = %#v, want operator bearer", source)
+	if source.Kind != SourceGitHubActionsOIDC || source.Subject == "" {
+		t.Fatalf("source = %#v, want github actions oidc", source)
 	}
 }
 
-func TestAuthenticateDoesNotAcceptOperatorTokenWhenUnconfigured(t *testing.T) {
+func TestAuthenticateRejectsBearerTokenWhenVerifierUnavailable(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments/bootstrap:check", nil)
 	req.Header.Set("Authorization", "Bearer expected-token")
 	_, err := (API{}).authenticate(req)
 	if err == nil {
-		t.Fatal("unconfigured operator token authenticated")
+		t.Fatal("bearer token authenticated without a verifier")
+	}
+}
+
+type staticVerifier struct {
+	source Source
+	err    error
+}
+
+func (v staticVerifier) SourceFromToken(_ context.Context, token string) (Source, error) {
+	if v.err != nil {
+		return Source{}, v.err
+	}
+	if token != "expected-token" {
+		return Source{}, fmtUnauthorized("unexpected bearer token")
+	}
+	return v.source, nil
+}
+
+func testVerifier() staticVerifier {
+	return staticVerifier{source: testGitHubSource()}
+}
+
+func testGitHubSource() Source {
+	return Source{
+		Kind:           SourceGitHubActionsOIDC,
+		Subject:        "repo:guardian-intelligence/verself:ref:refs/heads/main",
+		Repository:     "guardian-intelligence/verself",
+		Ref:            "refs/heads/main",
+		SHA:            "0123456789abcdef0123456789abcdef01234567",
+		RunID:          "123456",
+		RunAttempt:     1,
+		Workflow:       "Gamma Deploy",
+		JobWorkflowRef: "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main",
 	}
 }
 
@@ -154,7 +187,7 @@ func TestBootstrapCheckReturnsTypedDependencyCodes(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/deployments/bootstrap:check", nil)
 	req.Header.Set("Authorization", "Bearer expected-token")
-	API{Service: &Service{}, OperatorToken: "expected-token"}.bootstrapCheck(rec, req)
+	API{Service: &Service{}, GitHub: testVerifier()}.bootstrapCheck(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
@@ -221,7 +254,7 @@ func TestSubmitAdmissionRejectsWhenFull(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", bytes.NewBufferString(`{"site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567"}`))
 	req.Header.Set("Authorization", "Bearer expected-token")
-	API{Service: &Service{}, OperatorToken: "expected-token", SubmitAdmission: gate}.submit(rec, req)
+	API{Service: &Service{}, GitHub: testVerifier(), SubmitAdmission: gate}.submit(rec, req)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusTooManyRequests)
 	}
@@ -235,13 +268,14 @@ func TestSubmitAdmissionRejectsWhenFull(t *testing.T) {
 }
 
 func TestSubmitAdmissionGateReleasesAfterFailure(t *testing.T) {
+	ctx, store := newTestStore(t)
 	gate := make(chan struct{}, 1)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", bytes.NewBufferString(`{"site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567"}`))
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/deployments", bytes.NewBufferString(`{"site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567"}`))
 	req.Header.Set("Authorization", "Bearer expected-token")
 	API{
-		Service:         &Service{Config: Config{Site: "gamma"}},
-		OperatorToken:   "expected-token",
+		Service:         &Service{Store: store, Config: Config{Site: "gamma"}},
+		GitHub:          testVerifier(),
 		SubmitAdmission: gate,
 	}.submit(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
@@ -274,12 +308,13 @@ func TestSubmitAuthenticatesBeforeAdmissionGate(t *testing.T) {
 }
 
 func TestSubmitReturnsBootstrapUnavailableWhenReadinessFails(t *testing.T) {
+	ctx, store := newTestStore(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", bytes.NewBufferString(`{"site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567"}`))
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/deployments", bytes.NewBufferString(`{"site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567"}`))
 	req.Header.Set("Authorization", "Bearer expected-token")
 	API{
-		Service:       &Service{Config: Config{Site: "gamma"}},
-		OperatorToken: "expected-token",
+		Service: &Service{Store: store, Config: Config{Site: "gamma"}},
+		GitHub:  testVerifier(),
 	}.submit(rec, req)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
@@ -353,7 +388,7 @@ func TestHandlersReturnTypedUnavailableWhenServiceIsMissing(t *testing.T) {
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
 			req.Header.Set("Authorization", "Bearer expected-token")
-			tc.handler(API{OperatorToken: "expected-token"}, rec, req)
+			tc.handler(API{GitHub: testVerifier()}, rec, req)
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 			}
@@ -372,8 +407,8 @@ func TestEventsReturnsNotFoundForMissingDeployment(t *testing.T) {
 	ctx, store := newTestStore(t)
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, API{
-		Service:       &Service{Store: store},
-		OperatorToken: "expected-token",
+		Service: &Service{Store: store},
+		GitHub:  testVerifier(),
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/deployments/dep_missing/events", nil)
@@ -403,13 +438,13 @@ func TestDependencyChecksRunSlowProbesConcurrently(t *testing.T) {
 
 	started := time.Now()
 	checks := (&Service{Config: Config{
-		Site:                "gamma",
-		R2ControlPlaneToken: "token",
-		SubstrateControlPlaneMarker:    "seed-imported",
-		NomadAddr:           nomad.URL,
-		R2ControlPlaneAddr:  r2.URL,
-		NomadAllocID:        "alloc-1",
-		RecoverySSHReady:    "true",
+		Site:                        "gamma",
+		R2ControlPlaneToken:         "token",
+		SubstrateControlPlaneMarker: "seed-imported",
+		NomadAddr:                   nomad.URL,
+		R2ControlPlaneAddr:          r2.URL,
+		NomadAllocID:                "alloc-1",
+		RecoverySSHReady:            "true",
 	}}).DependencyChecks(context.Background())
 	elapsed := time.Since(started)
 	if elapsed > 350*time.Millisecond {
@@ -567,8 +602,8 @@ func TestSubmitRejectsClientSuppliedRepository(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/deployments", bytes.NewBufferString(`{"site":"gamma","sha":"0123456789abcdef0123456789abcdef01234567","repository":"other/repo"}`))
 	req.Header.Set("Authorization", "Bearer expected-token")
 	API{
-		Service:       &Service{Config: Config{Site: "gamma"}},
-		OperatorToken: "expected-token",
+		Service: &Service{Config: Config{Site: "gamma"}},
+		GitHub:  testVerifier(),
 	}.submit(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)

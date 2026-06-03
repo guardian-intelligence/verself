@@ -28,16 +28,13 @@ func TestGitHubVerifierRequiresWorkflowRefsWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestDeploymentAuthConfigurationRequiresAtLeastOneMethod(t *testing.T) {
+func TestDeploymentAuthConfigurationRequiresGitHubOIDC(t *testing.T) {
 	verifier, err := githubVerifier(context.Background(), "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if verifier != nil {
 		t.Fatal("verifier should be nil without allow-lists")
-	}
-	if hasDeploymentAuth("", verifier) {
-		t.Fatal("empty operator token and disabled github verifier should not be considered authenticated")
 	}
 }
 

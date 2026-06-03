@@ -118,14 +118,6 @@ EOT
 {{ with secret "kv-runtime/data/secret/org/deployment-service.substrate_control_plane_marker" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
-      template {
-        change_mode = "restart"
-        destination = "secrets/operator-deploy-token"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/deployment-service.operator_deploy_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
       resources {
         cpu = 1500
         memory = 4096

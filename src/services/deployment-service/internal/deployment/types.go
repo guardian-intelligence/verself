@@ -11,7 +11,6 @@ const (
 	StateFailed    = "failed"
 
 	SourceGitHubActionsOIDC = "github_actions_oidc"
-	SourceOperatorBearer    = "operator_bearer"
 )
 
 type SubmitRequest struct {
