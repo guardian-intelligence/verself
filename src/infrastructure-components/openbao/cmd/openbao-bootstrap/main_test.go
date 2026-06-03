@@ -62,24 +62,3 @@ func TestDecodeStatusOutputAcceptsUninitializedSealedState(t *testing.T) {
 		t.Fatalf("sealed = false")
 	}
 }
-
-func TestWrapLegacyPlaintextKeysRemovesPlaintext(t *testing.T) {
-	dir := t.TempDir()
-	plain := filepath.Join(dir, "unseal-key-1")
-	if err := os.WriteFile(plain, []byte("legacy-unseal\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := wrapLegacyPlaintextKeys(dir, []byte("operator-root-secret")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(plain); !os.IsNotExist(err) {
-		t.Fatalf("legacy plaintext key still exists: %v", err)
-	}
-	got, err := readWrappedKey(dir, []byte("operator-root-secret"), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "legacy-unseal" {
-		t.Fatalf("wrapped key plaintext = %q", got)
-	}
-}

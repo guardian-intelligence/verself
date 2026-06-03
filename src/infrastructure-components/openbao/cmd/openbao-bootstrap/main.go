@@ -121,9 +121,6 @@ func run(ctx context.Context, cfg config) error {
 			return err
 		}
 	}
-	if err := wrapLegacyPlaintextKeys(cfg.stateDir, rootKey); err != nil {
-		return err
-	}
 	if status.Sealed {
 		for index := 1; index <= cfg.threshold; index++ {
 			key, err := readWrappedKey(cfg.stateDir, rootKey, index)
@@ -327,30 +324,6 @@ func readWrappedKey(stateDir string, rootKey []byte, index int) (string, error) 
 		return "", fmt.Errorf("decode wrapped unseal key %s: %w", path, err)
 	}
 	return decryptUnsealKey(rootKey, envelope)
-}
-
-func wrapLegacyPlaintextKeys(stateDir string, rootKey []byte) error {
-	for index := 1; index <= 10; index++ {
-		plainPath := filepath.Join(stateDir, fmt.Sprintf("unseal-key-%d", index))
-		body, err := os.ReadFile(plainPath)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("read legacy plaintext unseal key %s: %w", plainPath, err)
-		}
-		value := strings.TrimSpace(string(body))
-		if value == "" {
-			return fmt.Errorf("legacy plaintext unseal key %s is empty", plainPath)
-		}
-		if err := writeWrappedKey(stateDir, rootKey, index, value); err != nil {
-			return err
-		}
-		if err := os.Remove(plainPath); err != nil {
-			return fmt.Errorf("remove legacy plaintext unseal key %s: %w", plainPath, err)
-		}
-	}
-	return nil
 }
 
 func encryptUnsealKey(rootKey []byte, plaintext string) (wrappedKey, error) {

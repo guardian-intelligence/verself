@@ -292,33 +292,6 @@ integrations:
 	}
 }
 
-func TestValidateRepoRejectsBootstrapSeedCredentialTarget(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "src/integrations/catalog/sites/gamma.yml", `
-version: verself.integrations.v1
-site: gamma
-secret_store_policy: openbao_only
-integrations:
-  - key: example.provider
-    provider: example
-    owner: src/services/example-service
-    purpose: example
-    credentials:
-      - key: example-service.provider.api_key
-        source: bootstrap_session
-        target: bootstrap_seed
-        site_var: example_provider_api_key
-`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "target_store is required") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)

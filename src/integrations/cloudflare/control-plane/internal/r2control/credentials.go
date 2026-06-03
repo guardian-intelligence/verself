@@ -17,27 +17,17 @@ import (
 	"time"
 )
 
-const (
-	ParentCredentialSourceAuto    = "auto"
-	ParentCredentialSourceEnv     = "env"
-	ParentCredentialSourceEnvFile = "env-file"
-	ParentCredentialSourceOpenBao = "openbao"
-)
+const ParentCredentialSourceOpenBao = "openbao"
 
 type ParentCredentialConfig struct {
-	Source             string
-	AccountID          string
-	CredentialsFile    string
-	AccessKeyIDEnv     string
-	SecretAccessKeyEnv string
-	APITokenEnv        string
-	SessionTokenEnv    string
-	OpenBaoAddr        string
-	OpenBaoPath        string
-	OpenBaoCACertFile  string
-	OpenBaoTokenEnv    string
-	OpenBaoTokenFile   string
-	Timeout            time.Duration
+	Source            string
+	AccountID         string
+	OpenBaoAddr       string
+	OpenBaoPath       string
+	OpenBaoCACertFile string
+	OpenBaoTokenEnv   string
+	OpenBaoTokenFile  string
+	Timeout           time.Duration
 }
 
 type ParentCredentials struct {
@@ -51,18 +41,6 @@ type ParentCredentials struct {
 func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 	if cfg.Source == "" {
 		cfg.Source = ParentCredentialSourceOpenBao
-	}
-	if cfg.AccessKeyIDEnv == "" {
-		cfg.AccessKeyIDEnv = "CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"
-	}
-	if cfg.SecretAccessKeyEnv == "" {
-		cfg.SecretAccessKeyEnv = "CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY"
-	}
-	if cfg.APITokenEnv == "" {
-		cfg.APITokenEnv = "CLOUDFLARE_R2_ADMIN_API_TOKEN"
-	}
-	if cfg.SessionTokenEnv == "" {
-		cfg.SessionTokenEnv = "CLOUDFLARE_R2_ADMIN_SESSION_TOKEN"
 	}
 	if cfg.OpenBaoPath == "" {
 		cfg.OpenBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
@@ -79,72 +57,12 @@ func (cfg ParentCredentialConfig) WithDefaults() ParentCredentialConfig {
 func LoadParentCredentials(ctx context.Context, cfg ParentCredentialConfig) (ParentCredentials, error) {
 	cfg = cfg.WithDefaults()
 	switch strings.TrimSpace(cfg.Source) {
-	case ParentCredentialSourceEnv:
-		creds, err := loadParentCredentialsFromEnv(cfg)
-		return resolveParentCredentials(ctx, cfg, creds, err)
-	case ParentCredentialSourceEnvFile:
-		creds, err := loadParentCredentialsFromEnvFile(cfg)
-		return resolveParentCredentials(ctx, cfg, creds, err)
 	case ParentCredentialSourceOpenBao:
 		creds, err := loadParentCredentialsFromOpenBao(ctx, cfg)
 		return resolveParentCredentials(ctx, cfg, creds, err)
-	case ParentCredentialSourceAuto, "":
-		// Explicit auto is for one-time bootstrap diagnostics; steady state reads controller OpenBao.
-		if envHasParentCredentials(cfg) {
-			creds, err := loadParentCredentialsFromEnv(cfg)
-			return resolveParentCredentials(ctx, cfg, creds, err)
-		}
-		if cfg.CredentialsFile != "" {
-			creds, err := loadParentCredentialsFromEnvFile(cfg)
-			return resolveParentCredentials(ctx, cfg, creds, err)
-		}
-		if cfg.OpenBaoAddr != "" || cfg.OpenBaoTokenFile != "" || os.Getenv(cfg.OpenBaoTokenEnv) != "" || os.Getenv("BAO_TOKEN") != "" || os.Getenv("VAULT_TOKEN") != "" {
-			creds, err := loadParentCredentialsFromOpenBao(ctx, cfg)
-			return resolveParentCredentials(ctx, cfg, creds, err)
-		}
-		return ParentCredentials{}, fmt.Errorf("no R2 credentials found; set %s plus %s or %s, pass credentials file, or use OpenBao",
-			cfg.AccessKeyIDEnv, cfg.SecretAccessKeyEnv, cfg.APITokenEnv)
 	default:
-		return ParentCredentials{}, fmt.Errorf("unsupported R2 credential source %q", cfg.Source)
+		return ParentCredentials{}, fmt.Errorf("unsupported R2 credential source %q; use %q", cfg.Source, ParentCredentialSourceOpenBao)
 	}
-}
-
-func loadParentCredentialsFromEnv(cfg ParentCredentialConfig) (ParentCredentials, error) {
-	values := map[string]string{
-		"access_key_id":     strings.TrimSpace(os.Getenv(cfg.AccessKeyIDEnv)),
-		"secret_access_key": strings.TrimSpace(os.Getenv(cfg.SecretAccessKeyEnv)),
-		"api_token":         strings.TrimSpace(os.Getenv(cfg.APITokenEnv)),
-		"session_token":     strings.TrimSpace(os.Getenv(cfg.SessionTokenEnv)),
-	}
-	return parentCredentialsFromValues(values, "env:"+cfg.AccessKeyIDEnv)
-}
-
-func envHasParentCredentials(cfg ParentCredentialConfig) bool {
-	access := strings.TrimSpace(os.Getenv(cfg.AccessKeyIDEnv))
-	secret := strings.TrimSpace(os.Getenv(cfg.SecretAccessKeyEnv))
-	apiToken := strings.TrimSpace(os.Getenv(cfg.APITokenEnv))
-	return apiToken != "" || (access != "" && secret != "")
-}
-
-func loadParentCredentialsFromEnvFile(cfg ParentCredentialConfig) (ParentCredentials, error) {
-	if cfg.CredentialsFile == "" {
-		return ParentCredentials{}, errors.New("credentials file is required for env-file R2 credentials")
-	}
-	body, err := os.ReadFile(cfg.CredentialsFile)
-	if err != nil {
-		return ParentCredentials{}, fmt.Errorf("read credentials file: %w", err)
-	}
-	values, err := ParseEnvFile(body)
-	if err != nil {
-		return ParentCredentials{}, err
-	}
-	mapped := map[string]string{
-		"access_key_id":     values[cfg.AccessKeyIDEnv],
-		"secret_access_key": values[cfg.SecretAccessKeyEnv],
-		"api_token":         values[cfg.APITokenEnv],
-		"session_token":     values[cfg.SessionTokenEnv],
-	}
-	return parentCredentialsFromValues(mapped, "env-file:"+cfg.CredentialsFile)
 }
 
 func loadParentCredentialsFromOpenBao(ctx context.Context, cfg ParentCredentialConfig) (ParentCredentials, error) {
@@ -359,22 +277,6 @@ func parentCredentialsFromValues(values map[string]string, source string) (Paren
 		SessionToken:    strings.TrimSpace(values["session_token"]),
 		Source:          source,
 	}, nil
-}
-
-func ParseEnvFile(body []byte) (map[string]string, error) {
-	values := map[string]string{}
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, "=")
-		if !ok {
-			return nil, fmt.Errorf("invalid environment line %q", line)
-		}
-		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), "\"'")
-	}
-	return values, nil
 }
 
 func Fingerprint(value string) string {

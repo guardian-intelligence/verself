@@ -70,7 +70,7 @@ func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 	}
 }
 
-func TestParentCredentialsAlwaysComeFromOpenBao(t *testing.T) {
+func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.openBaoAddr = "https://openbao.internal"
 	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
@@ -81,9 +81,6 @@ func TestParentCredentialsAlwaysComeFromOpenBao(t *testing.T) {
 	got := cfg.parentCredentialConfig()
 	if got.Source != r2control.ParentCredentialSourceOpenBao {
 		t.Fatalf("source = %q", got.Source)
-	}
-	if got.CredentialsFile != "" || got.AccessKeyIDEnv != "" || got.SecretAccessKeyEnv != "" || got.APITokenEnv != "" || got.SessionTokenEnv != "" {
-		t.Fatalf("parent credential config still exposes static credential selectors: %+v", got)
 	}
 	if got.OpenBaoAddr != cfg.openBaoAddr || got.OpenBaoPath != cfg.openBaoPath || got.OpenBaoCACertFile != cfg.openBaoCACertFile || got.OpenBaoTokenEnv != cfg.openBaoTokenEnv || got.OpenBaoTokenFile != cfg.openBaoTokenFile {
 		t.Fatalf("OpenBao config = %+v", got)

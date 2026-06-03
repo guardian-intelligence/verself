@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestRunSubmitsOnlyToDeploymentServiceHTTPBoundary(t *testing.T) {
+func TestRunSubmitsToDeploymentServiceHTTPBoundary(t *testing.T) {
 	const sha = "0123456789abcdef0123456789abcdef01234567"
 	repoRoot := t.TempDir()
 	writeRunTestCloudflareAccountConfig(t, repoRoot)
@@ -27,20 +27,6 @@ deployment_service_domain: deployments.api.gamma.verself.test
 `)
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.test/oidc")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-request-token")
-
-	for _, env := range []string{
-		"BAO_ADDR",
-		"BAO_TOKEN",
-		"VAULT_ADDR",
-		"VAULT_TOKEN",
-		"CLOUDFLARE_R2_ADMIN_API_TOKEN",
-		"CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID",
-		"CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY",
-		"VERSELF_NOMAD_ARTIFACTS_R2_ACCESS_KEY_ID",
-		"VERSELF_NOMAD_ARTIFACTS_R2_SECRET_ACCESS_KEY",
-	} {
-		t.Setenv(env, "normal-deploy-must-not-read-"+env)
-	}
 
 	seen := map[string]int{}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

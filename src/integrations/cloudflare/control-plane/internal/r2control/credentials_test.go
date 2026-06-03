@@ -10,22 +10,6 @@ import (
 	"time"
 )
 
-func TestParseEnvFile(t *testing.T) {
-	values, err := ParseEnvFile([]byte(`
-CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID='abc'
-CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY="def"
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if values["CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"] != "abc" {
-		t.Fatalf("access key = %q", values["CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID"])
-	}
-	if values["CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY"] != "def" {
-		t.Fatalf("secret key = %q", values["CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY"])
-	}
-}
-
 func TestParentCredentialsDeriveS3SecretFromAPIToken(t *testing.T) {
 	creds, err := parentCredentialsFromValues(map[string]string{
 		"token_id":  "token-id",
@@ -84,9 +68,24 @@ func TestWriteParentCredentialsToOpenBao(t *testing.T) {
 	}
 }
 
-func TestLoadParentCredentialsDerivesAccessKeyIDFromAPIToken(t *testing.T) {
+func TestLoadParentCredentialsFromOpenBaoDerivesAccessKeyIDFromAPIToken(t *testing.T) {
 	const accountID = "c3eaeffaadf7d4847684d4775c16d598"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	const secretPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+	openBao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/"+secretPath {
+			t.Fatalf("openbao path = %s", r.URL.Path)
+		}
+		if r.Method != http.MethodGet {
+			t.Fatalf("openbao method = %s", r.Method)
+		}
+		if r.Header.Get("X-Vault-Token") != "openbao-token" {
+			t.Fatalf("openbao token header = %q", r.Header.Get("X-Vault-Token"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"data":{"api_token":"token-value"}}}`))
+	}))
+	defer openBao.Close()
+	cloudflare := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/accounts/"+accountID+"/tokens/verify" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
@@ -101,18 +100,18 @@ func TestLoadParentCredentialsDerivesAccessKeyIDFromAPIToken(t *testing.T) {
 			}
 		}`))
 	}))
-	defer server.Close()
+	defer cloudflare.Close()
 	oldBase := cloudflareAPIBase
-	cloudflareAPIBase = server.URL
+	cloudflareAPIBase = cloudflare.URL
 	t.Cleanup(func() { cloudflareAPIBase = oldBase })
-	t.Setenv("CLOUDFLARE_R2_ADMIN_ACCESS_KEY_ID", "")
-	t.Setenv("CLOUDFLARE_R2_ADMIN_SECRET_ACCESS_KEY", "")
-	t.Setenv("CLOUDFLARE_R2_ADMIN_API_TOKEN", "token-value")
+	t.Setenv("BAO_TOKEN", "openbao-token")
 
 	creds, err := LoadParentCredentials(context.Background(), ParentCredentialConfig{
-		Source:    ParentCredentialSourceEnv,
-		AccountID: accountID,
-		Timeout:   time.Second,
+		AccountID:       accountID,
+		OpenBaoAddr:     openBao.URL,
+		OpenBaoPath:     secretPath,
+		OpenBaoTokenEnv: "BAO_TOKEN",
+		Timeout:         time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
