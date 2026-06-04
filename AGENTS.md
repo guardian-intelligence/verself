@@ -11,9 +11,20 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 
 # Disaster Recovery
 
-Disaster recovery is the first and principle function of Verself. The most foundational invariant of the system is that is able to execute a `recovery` control loop over the built source code (which includes all binaries including `nomad`) and bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped.
+The most foundational invariant of the system is that is able to execute a `recovery` control loop over credentials and the built source code (which includes all binaries including `nomad`) and bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped.
 
-Every deployable unit, big or small component can declare a `recovery` Nomad task in its `nomad.hcl` file.
+The only ingredients necessary to recover the system are:
+
+0. Root credentials (human root user pw + API keys)
+1. The source code
+2. Network ingress to download pinned dependencies (including build tools + OCI images)
+3. Network egress to a node
+
+Disaster recovery from zero is fundamentally, therefore, figuring out where to resume the system from the following : clone repo -> configure secrets -> build repo -> point to any bare metal node -> upload built repo -> run `nomad run recovery` -> run `nomad run deploy`
+
+Recovery frequently means "restore data from offsite backups on S3-compatible object storage" but even if no backups are provided, a clean version of the system can be bootstrapped.
+
+Every deployable unit, big or small, can declare a `recovery` Nomad task in its `nomad.hcl` file:
 
 ```
 task "recover" {
@@ -32,8 +43,6 @@ task "recover" {
     # normal service
   }
 ```
-
-Offsite encrypted backups live in Cloudflare R2, scoped by site.
 
 ## Unhealthy Node
 
