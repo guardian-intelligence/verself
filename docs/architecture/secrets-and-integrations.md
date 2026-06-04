@@ -158,14 +158,15 @@ machines remain in `cloudflare-integration-service`.
 
 Cloudflare account authority is global and anchored to prod. Site names select
 target DNS records, R2 prefixes, runtime capability credentials, and evidence
-labels. Host bootstrap does not receive Cloudflare account authority.
+labels. Target hosts do not receive Cloudflare account authority during host
+bootstrap.
 
-The bootstrap account-admin credential is stored through `secrets-service` as a
-single Cloudflare API token:
-
-```text
-cloudflare.account_admin
-```
+For first-site bootstrap, the operator passes one local Cloudflare
+account-admin token through the `aspect bootstrap-deploy`
+`--bootstrap-credentials-file` handoff. Bootstrap uses that token to derive and
+verify bucket-scoped R2 child credentials, then imports only the runtime child
+credentials into site OpenBao. After the site is alive, steady-state
+Cloudflare authority is service-owned and stored through `secrets-service`.
 
 The account-admin credential has the minimal Cloudflare account permissions
 required to verify, create, update, and delete account-owned R2 capability

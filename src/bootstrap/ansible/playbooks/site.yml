@@ -65,6 +65,22 @@
         - nomad
         - scheduler
 
+- name: "ClickHouse bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - clickhouse
+    - observability
+  roles:
+    - role: clickhouse
+      tags:
+        - clickhouse
+        - observability
+
 - name: "Public edge bootstrap"
   hosts: infra
   become: true

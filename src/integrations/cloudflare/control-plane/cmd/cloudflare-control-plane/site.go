@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
+	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
 type siteArtifactConfig struct {

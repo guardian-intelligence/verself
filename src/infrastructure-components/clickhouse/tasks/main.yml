@@ -62,6 +62,7 @@
     mode: "0750"
   loop:
     - "{{ clickhouse_data_path }}"
+    - "{{ clickhouse_backup_path }}"
     - /var/log/clickhouse-server
 
 - name: Detect ClickHouse runtime paths with stale ownership
@@ -89,6 +90,7 @@
   changed_when: false
   loop:
     - "{{ clickhouse_data_path }}"
+    - "{{ clickhouse_backup_path }}"
     - /var/log/clickhouse-server
 
 - name: Converge ClickHouse runtime tree ownership
@@ -96,6 +98,7 @@
     cmd: >-
       chown -R {{ clickhouse_system_user }}:{{ clickhouse_system_group }}
       {{ clickhouse_data_path }}
+      {{ clickhouse_backup_path }}
       /var/log/clickhouse-server
   when: >-
     (clickhouse_runtime_ownership_probe.results
@@ -113,6 +116,7 @@
     mode: "0750"
   loop:
     - "{{ clickhouse_data_path }}"
+    - "{{ clickhouse_backup_path }}"
     - /var/log/clickhouse-server
 
 - name: Create ClickHouse operator directories

@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+
+go_library(
+    name = "postgresql-recovery_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/postgresql/cmd/postgresql-recovery",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "postgresql-recovery",
+    embed = [":postgresql-recovery_lib"],
+    visibility = ["//visibility:public"],
+)
+
+nomad_binary_artifact(
+    name = "postgresql-recovery_nomad_artifact",
+    binary = ":postgresql-recovery",
+    output = "postgresql-recovery",
+)

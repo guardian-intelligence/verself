@@ -59,7 +59,7 @@ func waitRemoteOpenBaoReady(ctx context.Context, target inventoryTarget) error {
 	}
 }
 
-func reconcileOpenBaoRuntime(ctx context.Context, target inventoryTarget, siteRootTokenFile string, secrets runtimeSecretCatalog, access runtimeAccessCatalog) (map[string]string, error) {
+func reconcileOpenBaoRuntime(ctx context.Context, target inventoryTarget, site string, siteRootTokenFile string, secrets runtimeSecretCatalog, access runtimeAccessCatalog, credentials bootstrapCredentialInput) (map[string]string, error) {
 	rootToken, caCert, err := temporaryOpenBaoRootToken(ctx, target, siteRootTokenFile)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func reconcileOpenBaoRuntime(ctx context.Context, target inventoryTarget, siteRo
 	if err := waitOpenBaoAPI(tunnelCtx, client, proc.done); err != nil {
 		return nil, err
 	}
-	values, reconcileErr := client.reconcileRuntime(tunnelCtx, secrets, access)
+	values, reconcileErr := client.reconcileRuntime(tunnelCtx, site, secrets, access, credentials)
 	revokeErr := client.revokeSelf(tunnelCtx)
 	clearBytes(rootToken)
 	if reconcileErr != nil {
@@ -94,6 +94,74 @@ func reconcileOpenBaoRuntime(ctx context.Context, target inventoryTarget, siteRo
 		return nil, revokeErr
 	}
 	return values, nil
+}
+
+func waitForOpenBaoRuntimeSecrets(ctx context.Context, target inventoryTarget, siteRootTokenFile string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	rootToken, caCert, err := temporaryOpenBaoRootToken(ctx, target, siteRootTokenFile)
+	if err != nil {
+		return err
+	}
+	port, err := freeLoopbackPort()
+	if err != nil {
+		clearBytes(rootToken)
+		return err
+	}
+	tunnelCtx, cancel := context.WithCancel(ctx)
+	tunnel := startTCPTunnel(tunnelCtx, target, port, openBaoRemoteAddr)
+	proc, err := startChildProcess(tunnel)
+	if err != nil {
+		cancel()
+		clearBytes(rootToken)
+		return fmt.Errorf("start OpenBao recovery tunnel: %w", err)
+	}
+	defer stopChildProcess(cancel, proc)
+	client, err := newOpenBaoClient("https://127.0.0.1:"+fmt.Sprint(port), rootToken, caCert)
+	if err != nil {
+		clearBytes(rootToken)
+		return err
+	}
+	if err := waitOpenBaoAPI(tunnelCtx, client, proc.done); err != nil {
+		clearBytes(rootToken)
+		return err
+	}
+	deadline := time.Now().Add(5 * time.Minute)
+	pending := map[string]struct{}{}
+	for _, name := range names {
+		pending[name] = struct{}{}
+	}
+	var last error
+	for len(pending) > 0 {
+		for name := range pending {
+			if _, ok, err := client.getRuntimeSecret(tunnelCtx, name); err != nil {
+				last = err
+			} else if ok {
+				delete(pending, name)
+			}
+		}
+		if len(pending) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			revokeErr := client.revokeSelf(tunnelCtx)
+			clearBytes(rootToken)
+			if revokeErr != nil {
+				return revokeErr
+			}
+			return fmt.Errorf("timed out waiting for produced OpenBao runtime secrets: %s: %v", strings.Join(sortedSetValues(pending), ", "), last)
+		}
+		select {
+		case <-tunnelCtx.Done():
+			clearBytes(rootToken)
+			return fmt.Errorf("wait for produced OpenBao runtime secrets: %w: %v", tunnelCtx.Err(), last)
+		case <-time.After(2 * time.Second):
+		}
+	}
+	revokeErr := client.revokeSelf(tunnelCtx)
+	clearBytes(rootToken)
+	return revokeErr
 }
 
 func temporaryOpenBaoRootToken(ctx context.Context, target inventoryTarget, siteRootTokenFile string) ([]byte, []byte, error) {
@@ -182,7 +250,27 @@ func waitOpenBaoAPI(ctx context.Context, client *openBaoClient, processDone <-ch
 	}
 }
 
-func (c *openBaoClient) reconcileRuntime(ctx context.Context, secrets runtimeSecretCatalog, access runtimeAccessCatalog) (map[string]string, error) {
+func (c *openBaoClient) reconcileRuntime(ctx context.Context, site string, secrets runtimeSecretCatalog, access runtimeAccessCatalog, credentials bootstrapCredentialInput) (map[string]string, error) {
+	imports := credentials.OpenBaoRuntimeSecrets
+	if credentials.Cloudflare != nil {
+		complete, err := c.hasObjectStorageR2RuntimeSecrets(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !complete {
+			generated, err := provisionBootstrapCloudflareObjectStorage(ctx, site, *credentials.Cloudflare)
+			if err != nil {
+				return nil, err
+			}
+			imports, err = mergeBootstrapRuntimeSecretImports(imports, generated)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := c.importRuntimeSecrets(ctx, secrets, imports); err != nil {
+		return nil, err
+	}
 	values := map[string]string{}
 	activeSecrets := activeRuntimeSecrets(secrets, access)
 	missingExternal := []string{}
@@ -222,10 +310,47 @@ func (c *openBaoClient) reconcileRuntime(ctx context.Context, secrets runtimeSec
 	return values, nil
 }
 
+func (c *openBaoClient) hasObjectStorageR2RuntimeSecrets(ctx context.Context) (bool, error) {
+	names := make([]string, 0, len(objectStorageR2RuntimeSecretNames))
+	for _, name := range objectStorageR2RuntimeSecretNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, ok, err := c.getRuntimeSecret(ctx, name); err != nil {
+			return false, err
+		} else if !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (c *openBaoClient) importRuntimeSecrets(ctx context.Context, secrets runtimeSecretCatalog, imports map[string]string) error {
+	names := make([]string, 0, len(imports))
+	for name := range imports {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		declaration, ok := secrets.ByName[name]
+		if !ok {
+			return fmt.Errorf("bootstrap credential input targets undeclared OpenBao runtime secret %s", name)
+		}
+		if !declaration.ExternalOpenBao {
+			return fmt.Errorf("bootstrap credential input targets non-external OpenBao runtime secret %s", name)
+		}
+		if err := c.putRuntimeSecret(ctx, name, imports[name]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func externalRuntimeSecretImportError(names []string) error {
 	names = append([]string(nil), names...)
 	sort.Strings(names)
-	return fmt.Errorf("external OpenBao runtime secrets are not imported: %s", strings.Join(names, ", "))
+	return fmt.Errorf("external OpenBao runtime secrets are not imported: %s; add them under openbao_runtime_secrets in --bootstrap-credentials-file or pre-seed OpenBao", strings.Join(names, ", "))
 }
 
 func activeRuntimeSecrets(secrets runtimeSecretCatalog, access runtimeAccessCatalog) []string {
@@ -245,9 +370,6 @@ func activeRuntimeSecrets(secrets runtimeSecretCatalog, access runtimeAccessCata
 
 func sortedRuntimeRoles(access runtimeAccessCatalog) []string {
 	roles := map[string]struct{}{}
-	for role := range access.Roles {
-		roles[role] = struct{}{}
-	}
 	for role, secrets := range access.RoleReads {
 		if len(secrets) > 0 {
 			roles[role] = struct{}{}
@@ -300,6 +422,19 @@ func (c *openBaoClient) getRuntimeSecret(ctx context.Context, name string) (stri
 		return "", false, fmt.Errorf("OpenBao runtime secret %s value is empty or non-string", name)
 	}
 	return value, true, nil
+}
+
+func (c *openBaoClient) putRuntimeSecret(ctx context.Context, name string, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("OpenBao runtime secret %s import value is empty", name)
+	}
+	if _, _, err := c.request(ctx, http.MethodPost, "kv-runtime/data/"+openBaoRuntimeSecretPrefix+url.PathEscape(name), map[string]any{
+		"data": map[string]string{"value": value},
+	}); err != nil {
+		return fmt.Errorf("write imported OpenBao runtime secret %s: %w", name, err)
+	}
+	return nil
 }
 
 func (c *openBaoClient) putPolicy(ctx context.Context, name, policy string) error {
@@ -377,6 +512,7 @@ func (c *openBaoClient) request(ctx context.Context, method, path string, body a
 
 func openBaoRolePolicy(role string, access runtimeAccessCatalog) string {
 	var b strings.Builder
+	writeOpenBaoPolicyBlock(&b, "auth/token/renew-self", []string{"update"})
 	for _, name := range sortedSetValues(access.RoleReads[role]) {
 		writeOpenBaoPolicyBlock(&b, "kv-runtime/data/"+openBaoRuntimeSecretPrefix+name, []string{"read"})
 	}

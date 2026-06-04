@@ -2,6 +2,8 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 POSTGRESQL_RUNTIME_ROOT = "opt/verself/postgresql"
 
+POSTGRESQL_RECOVERY_RUNTIME_ROOT = "opt/verself/postgresql-recovery"
+
 POSTGRESQL_MAJOR_VERSION = "16"
 
 filegroup(
@@ -22,6 +24,11 @@ filegroup(
     ),
     visibility = ["//src/infrastructure-components:__pkg__"],
 )
+
+exports_files([
+    "pitr-drill.nomad.hcl",
+    "recovery.nomad.hcl",
+])
 
 genrule(
     name = "postgresql_runtime",
@@ -55,6 +62,53 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
 """.format(
         major = POSTGRESQL_MAJOR_VERSION,
         root = POSTGRESQL_RUNTIME_ROOT,
+    ),
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "postgresql_recovery_runtime",
+    srcs = [
+        "@postgresql_tool_libpq5//file",
+        "@postgresql_tool_libssh2_1t64//file",
+        "@postgresql_tool_libxml2//file",
+        "@postgresql_tool_pgbackrest//file",
+        "@postgresql_tool_postgresql_16//file",
+        "@postgresql_tool_postgresql_client_16//file",
+    ],
+    outs = ["postgresql_recovery_runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libpq5//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libssh2_1t64//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libxml2//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_pgbackrest//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_postgresql_client_16//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_postgresql_16//file)" "$$tmp/extract"
+mkdir -p \
+  "$$tmp/{root}/usr/bin" \
+  "$$tmp/{root}/usr/lib/postgresql" \
+  "$$tmp/{root}/usr/share/postgresql" \
+  "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
+cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
+cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
+cp -L "$$tmp/extract/usr/bin/pgbackrest" "$$tmp/{root}/usr/bin/pgbackrest"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libpq.so.5" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libpq.so.5"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libssh2.so.1" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libssh2.so.1"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libxml2.so.2" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libxml2.so.2"
+rm -rf "$$tmp/extract"
+chmod -R a+rX "$$tmp"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .
+""".format(
+        major = POSTGRESQL_MAJOR_VERSION,
+        root = POSTGRESQL_RECOVERY_RUNTIME_ROOT,
     ),
     target_compatible_with = [
         "@platforms//cpu:x86_64",

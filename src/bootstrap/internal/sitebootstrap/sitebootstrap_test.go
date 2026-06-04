@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/verself/deployment-service/deployengine"
 )
@@ -15,13 +16,27 @@ import (
 func TestBootstrapDeployReadsInventoryBeforeRemoteAccess(t *testing.T) {
 	root := t.TempDir()
 	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
+		Site:                     "gamma",
+		SHA:                      "0123456789abcdef0123456789abcdef01234567",
+		RepoRoot:                 root,
+		InventoryPath:            filepath.Join(root, "missing-inventory.ini"),
+		BootstrapCredentialsFile: filepath.Join(root, "bootstrap-credentials.yaml"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "read inventory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBootstrapDeployRequiresBootstrapCredentialsFile(t *testing.T) {
+	root := t.TempDir()
+	err := RunBootstrapDeploy(context.Background(), BootstrapDeployOptions{
 		Site:          "gamma",
 		SHA:           "0123456789abcdef0123456789abcdef01234567",
 		RepoRoot:      root,
 		InventoryPath: filepath.Join(root, "missing-inventory.ini"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "read inventory") {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil || err.Error() != "bootstrap credentials file is required" {
+		t.Fatalf("error = %v, want bootstrap credentials file requirement", err)
 	}
 }
 
@@ -118,13 +133,136 @@ func TestRemoteArtifactGetterSourceUsesLoopbackHTTP(t *testing.T) {
 func TestExternalRuntimeSecretImportErrorListsAllMissingSecrets(t *testing.T) {
 	err := externalRuntimeSecretImportError([]string{"z.secret", "a.secret"})
 
-	want := "external OpenBao runtime secrets are not imported: a.secret, z.secret"
+	want := "external OpenBao runtime secrets are not imported: a.secret, z.secret; add them under openbao_runtime_secrets in --bootstrap-credentials-file or pre-seed OpenBao"
 	if err == nil || err.Error() != want {
 		t.Fatalf("error = %v, want %q", err, want)
 	}
 }
 
-func TestSortedRuntimeRolesIncludesVaultOnlyRoles(t *testing.T) {
+func TestLoadBootstrapCredentialImportsMapsDeclaredRuntimeSecrets(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: gamma
+openbao_runtime_secrets:
+  github-integration-service.github.private_key: private-key
+  github-integration-service.github.webhook_secret: github-webhook
+  github-integration-service.github.oauth_client_secret: github-oauth
+  auth-control-plane.github_login.oauth_client_secret: github-login
+  billing-service.stripe.secret_key: rk_test
+  billing-service.stripe.webhook_secret: whsec_test
+`)
+	imports, err := loadBootstrapCredentialImports("gamma", path, testRuntimeSecretCatalog(
+		"github-integration-service.github.private_key",
+		"github-integration-service.github.webhook_secret",
+		"github-integration-service.github.oauth_client_secret",
+		"auth-control-plane.github_login.oauth_client_secret",
+		"billing-service.stripe.secret_key",
+		"billing-service.stripe.webhook_secret",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if imports["github-integration-service.github.private_key"] != "private-key" || imports["billing-service.stripe.webhook_secret"] != "whsec_test" {
+		t.Fatalf("imports = %#v", imports)
+	}
+}
+
+func TestLoadBootstrapCredentialImportsRequiresSiteMatch(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: prod
+openbao_runtime_secrets:
+  billing-service.stripe.secret_key: rk_test
+  billing-service.stripe.webhook_secret: whsec_test
+`)
+	_, err := loadBootstrapCredentialImports("gamma", path, testRuntimeSecretCatalog(
+		"billing-service.stripe.secret_key",
+		"billing-service.stripe.webhook_secret",
+	))
+	if err == nil || !strings.Contains(err.Error(), `site "prod" does not match --site=gamma`) {
+		t.Fatalf("error = %v, want site mismatch", err)
+	}
+}
+
+func TestLoadBootstrapCredentialImportsRejectsLooseFileMode(t *testing.T) {
+	path := writeSecretInputFile(t, 0o644, `site: gamma
+openbao_runtime_secrets:
+  billing-service.stripe.secret_key: rk_test
+  billing-service.stripe.webhook_secret: whsec_test
+`)
+	_, err := loadBootstrapCredentialImports("gamma", path, testRuntimeSecretCatalog(
+		"billing-service.stripe.secret_key",
+		"billing-service.stripe.webhook_secret",
+	))
+	if err == nil || !strings.Contains(err.Error(), "mode 0600 or stricter") {
+		t.Fatalf("error = %v, want mode rejection", err)
+	}
+}
+
+func TestLoadBootstrapCredentialImportsRequiresDeclaredExternalSecret(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: gamma
+openbao_runtime_secrets:
+  billing-service.stripe.secret_key: rk_test
+  billing-service.stripe.webhook_secret: whsec_test
+`)
+	catalog := testRuntimeSecretCatalog("billing-service.stripe.secret_key")
+	catalog.ByName["billing-service.stripe.webhook_secret"] = runtimeSecretDeclaration{Name: "billing-service.stripe.webhook_secret"}
+	_, err := loadBootstrapCredentialImports("gamma", path, catalog)
+	if err == nil || !strings.Contains(err.Error(), "billing-service.stripe.webhook_secret is not marked external_openbao") {
+		t.Fatalf("error = %v, want external_openbao rejection", err)
+	}
+}
+
+func TestLoadBootstrapCredentialImportsRequiresCompleteGroups(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: gamma
+openbao_runtime_secrets:
+  billing-service.stripe.secret_key: rk_test
+`)
+	_, err := loadBootstrapCredentialImports("gamma", path, testRuntimeSecretCatalog(
+		"billing-service.stripe.secret_key",
+		"billing-service.stripe.webhook_secret",
+	))
+	if err == nil || !strings.Contains(err.Error(), "incomplete Stripe billing credential group") {
+		t.Fatalf("error = %v, want incomplete Stripe group", err)
+	}
+}
+
+func TestLoadBootstrapCredentialInputAcceptsCloudflareBlock(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: gamma
+cloudflare:
+  account_admin_api_token: token
+  account_id: c3eaeffaadf7d4847684d4775c16d598
+  object_storage_bucket: verself-deployment-artifacts
+  child_token_ttl: 168h
+`)
+	input, err := loadBootstrapCredentialInput("gamma", path, testRuntimeSecretCatalog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Cloudflare == nil || input.Cloudflare.AccountID != "c3eaeffaadf7d4847684d4775c16d598" || input.Cloudflare.ChildTokenTTL != 168*time.Hour {
+		t.Fatalf("cloudflare input = %#v", input.Cloudflare)
+	}
+}
+
+func TestLoadBootstrapCredentialInputRequiresCompleteCloudflareBlock(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: gamma
+cloudflare:
+  account_admin_api_token: token
+`)
+	_, err := loadBootstrapCredentialInput("gamma", path, testRuntimeSecretCatalog())
+	if err == nil || !strings.Contains(err.Error(), "missing cloudflare.account_id, cloudflare.object_storage_bucket, cloudflare.child_token_ttl") {
+		t.Fatalf("error = %v, want incomplete Cloudflare block", err)
+	}
+}
+
+func TestLoadBootstrapCredentialInputRejectsUnknownYAMLFields(t *testing.T) {
+	path := writeSecretInputFile(t, 0o600, `site: gamma
+cloudflare:
+  account_admin_api_key: token
+`)
+	_, err := loadBootstrapCredentialInput("gamma", path, testRuntimeSecretCatalog())
+	if err == nil || !strings.Contains(err.Error(), "field account_admin_api_key not found") {
+		t.Fatalf("error = %v, want unknown field rejection", err)
+	}
+}
+
+func TestSortedRuntimeRolesExcludesVaultOnlyRoles(t *testing.T) {
 	got := sortedRuntimeRoles(runtimeAccessCatalog{
 		Roles:     map[string]struct{}{"deployment-service-runtime": {}},
 		RoleReads: map[string]map[string]struct{}{},
@@ -133,9 +271,73 @@ func TestSortedRuntimeRolesIncludesVaultOnlyRoles(t *testing.T) {
 		},
 	})
 
-	want := []string{"deployment-service-runtime", "object-storage-runtime"}
+	want := []string{"object-storage-runtime"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("roles = %#v, want %#v", got, want)
+	}
+}
+
+func TestOpenBaoRolePolicyAllowsNomadTokenRenewal(t *testing.T) {
+	policy := openBaoRolePolicy("object-storage-runtime", runtimeAccessCatalog{
+		RoleReads: map[string]map[string]struct{}{
+			"object-storage-runtime": {"object-storage-service.r2.proxy_access_key_id": {}},
+		},
+	})
+
+	for _, want := range []string{
+		`path "auth/token/renew-self"`,
+		`capabilities = ["update"]`,
+		`path "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id"`,
+	} {
+		if !strings.Contains(policy, want) {
+			t.Fatalf("policy missing %q:\n%s", want, policy)
+		}
+	}
+}
+
+func TestMissingProducedRuntimeSecretsBlocksUntilProducerRuns(t *testing.T) {
+	secrets := testRuntimeSecretCatalog("ready")
+	secrets.Declarations = append(secrets.Declarations, runtimeSecretDeclaration{
+		Name:          "later",
+		ProducedByJob: "producer",
+	})
+	secrets.ByName["later"] = secrets.Declarations[len(secrets.Declarations)-1]
+	access := runtimeAccessCatalog{
+		JobReads: map[string]map[string]struct{}{
+			"consumer": {
+				"ready": {},
+				"later": {},
+			},
+		},
+	}
+
+	available := bootstrapAvailableRuntimeSecrets(secrets)
+	got := missingProducedRuntimeSecrets("consumer", access, secrets, available)
+	if strings.Join(got, ",") != "later" {
+		t.Fatalf("missing = %#v, want later", got)
+	}
+	available["later"] = struct{}{}
+	got = missingProducedRuntimeSecrets("consumer", access, secrets, available)
+	if len(got) != 0 {
+		t.Fatalf("missing after producer = %#v, want none", got)
+	}
+}
+
+func TestProducedRuntimeSecretsForJob(t *testing.T) {
+	secrets := testRuntimeSecretCatalog("ready")
+	secrets.Declarations = append(secrets.Declarations,
+		runtimeSecretDeclaration{Name: "a", ProducedByJob: "producer"},
+		runtimeSecretDeclaration{Name: "b", ProducedByJob: "other"},
+		runtimeSecretDeclaration{Name: "c", ProducedByJob: "producer"},
+	)
+	for _, declaration := range secrets.Declarations {
+		secrets.ByName[declaration.Name] = declaration
+	}
+
+	got := producedRuntimeSecretsForJob(secrets, "producer")
+	want := []string{"a", "c"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("produced = %#v, want %#v", got, want)
 	}
 }
 
@@ -194,4 +396,26 @@ func readFile(t *testing.T, path string) string {
 func testSHA256(body []byte) string {
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
+}
+
+func writeSecretInputFile(t *testing.T, mode os.FileMode, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "bootstrap-credentials.yaml")
+	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func testRuntimeSecretCatalog(names ...string) runtimeSecretCatalog {
+	catalog := runtimeSecretCatalog{ByName: map[string]runtimeSecretDeclaration{}}
+	for _, name := range names {
+		declaration := runtimeSecretDeclaration{Name: name, ExternalOpenBao: true}
+		catalog.Declarations = append(catalog.Declarations, declaration)
+		catalog.ByName[name] = declaration
+	}
+	return catalog
 }

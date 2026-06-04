@@ -4,7 +4,10 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
-exports_files(["tools.lock.json"])
+exports_files([
+    "recovery.nomad.hcl",
+    "tools.lock.json",
+])
 
 pkg_tar(
     name = "host_install_artifact",

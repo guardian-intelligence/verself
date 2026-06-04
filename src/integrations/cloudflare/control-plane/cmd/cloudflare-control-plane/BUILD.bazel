@@ -12,7 +12,7 @@ go_library(
     importpath = "github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/integrations/cloudflare/control-plane/internal/r2control",
+        "//src/integrations/cloudflare/control-plane/r2control",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_x_crypto//acme",
     ],
@@ -28,5 +28,5 @@ go_test(
     name = "cloudflare-control-plane_test",
     srcs = ["main_test.go"],
     embed = [":cloudflare-control-plane_lib"],
-    deps = ["//src/integrations/cloudflare/control-plane/internal/r2control"],
+    deps = ["//src/integrations/cloudflare/control-plane/r2control"],
 )

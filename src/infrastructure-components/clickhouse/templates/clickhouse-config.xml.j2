@@ -8,6 +8,20 @@
     <format_schema_path>{{ clickhouse_data_path }}/format_schemas/</format_schema_path>
     <access_control_path>{{ clickhouse_data_path }}/access/</access_control_path>
 
+    <storage_configuration>
+        <disks>
+            <{{ clickhouse_backup_disk_name }}>
+                <type>local</type>
+                <path>{{ clickhouse_backup_path }}/</path>
+            </{{ clickhouse_backup_disk_name }}>
+        </disks>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>{{ clickhouse_backup_disk_name }}</allowed_disk>
+        <remove_backup_files_after_failure>true</remove_backup_files_after_failure>
+    </backups>
+
     <logger>
         <level>information</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>

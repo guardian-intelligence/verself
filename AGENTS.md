@@ -9,21 +9,52 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
+# Disaster Recovery
+
+Disaster recovery is the first and principle function of Verself. The most foundational invariant of the system is that is able to execute a `recovery` control loop over the built source code (which includes all binaries including `nomad`) and bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped.
+
+Every deployable unit, big or small component can declare a `recovery` Nomad task in its `nomad.hcl` file.
+
+```
+task "recover" {
+    lifecycle {
+      hook    = "prestart"
+      sidecar = false
+    }
+
+    config {
+      command = "<name>-recover" # 
+      args = ["recover", "--site=prod", "--state-dir=/var/lib/..."]
+    }
+  }
+
+  task "serve" {
+    # normal service
+  }
+```
+
+Offsite encrypted backups live in Cloudflare R2, scoped by site.
+
+## Unhealthy Node
+
+Procedure: provision a new node from available offsite backup (note that, by design, customer zvols/snapshots are not backed up). This procedure is also used to bootstrap a node
+
+1. Establish connection to node -- try in order: Pomerium -> WireGuard Fallback -> Latitude IPMI -> Latitude Reinstall
+2. Build repo locally
+
 <available_tooling>
 Integrations: `aspect integrations`
 </available_toling>
 
-
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.
-
 * Expect to build with the level of rigor that would make FedRAMP HIGH certification seem realistic.
 * Keep OpenTofu provisioning lean -- It does a narrow job. Let Ansible keep the boxes in order, and Bazel for build graph and Nomad for deployment orchestration. Every layer does what it's good at.
 * Use nftables for perimeter, host, and guest-boundary policy. Do not encode service-to-service reachability or dependency ports in nftables.
 * Always think of the governance, IAM, quotas, and metering story behind service changes. Customers must know who did what, what they're allowed to do, and how much they used.
 * Think in terms of providing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
 * Never use useEffect. Very rarely, if ever, use `useState` -- prefer TanStack Query primitives for all state. Sync snowflake client-side state with the URL.
-* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Choose the appropriate language and check the result into a Bazel target. Treat scripts as core load-bearing architecture + sharp knives. They are extremely dangerous and should be carefully reviewed.
+* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/` because it executes prior to bazelisk setting everything up.
 * Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.
 * Treat errors as data. Use tagged and structured errors to aid control flow.
 * Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
@@ -42,7 +73,6 @@ Integrations: `aspect integrations`
 
 * Avoid drift between what runs in CI and what you run for local development. CI is basically a warm dev box. Local development should give high confidence on correctness.
 
-* The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure so choose the right tool for the job (it's never a shell script).
 * Binaries are versioned, built, packaged, and installed by Bazel declarations owned by the component or tool that uses them.
 * Canonical API contracts live under `src/smithy/models/verself` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
 * Model our system's contracts in Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
@@ -159,19 +189,7 @@ Per environment, the founder configures a single site root key that they are res
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
-Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. The R2 control plane publishes immutable artifacts from those outputs. Nomad orchestrates deployments for non-host concerns. Ansible configures hosts and ensures convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
-
-The bootstrap from zero special case:
-
-1. Operator sets up provider API keys, the fresh-host SSH root password when needed, and the site root key
-    a. Minimum needed are
-        i. Compute Provider (Latitude only for now)
-        ii. Domain Registrar (Cloudflare only for now)
-        iii. Object Storage Provider (Cloudflare R2 only for now)
-    b. Additional bootstrap integrations: Stripe for payments and GitHub App private material
-2. SSH into target box, verify the OS/machine is configured correctly, apply security patches. Host convergence installs the site root key for OpenBao bootstrap.
-3. `aspect site bootstrap-deploy` builds locally, publishes the initial immutable artifacts through a temporary controller-owned R2 path, and registers the minimum Nomad jobs over recovery SSH.
-4. Nomad brings up the site-local deployment-service and control-plane jobs. After that, `aspect deploy` only submits authenticated deployment requests to deployment-service.
+Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. Deployment-service publishes immutable artifacts through object-storage-service and submits Nomad jobs. Nomad orchestrates deployments for non-host concerns. Ansible configures hosts and ensures convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
 
 # Tech Stack (partial description):
 

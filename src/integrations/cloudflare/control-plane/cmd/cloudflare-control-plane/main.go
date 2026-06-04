@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
+	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 	"gopkg.in/yaml.v3"
 )
 

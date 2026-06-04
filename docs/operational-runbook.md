@@ -62,18 +62,33 @@ git pull --ff-only
 ```
 
 `aspect site converge-host` configures the OS, installs host tools, starts
-Nomad, and skips the public edge. `aspect bootstrap-deploy` stages the
-operator-provided OpenBao site root token under `/run`, builds locally, copies
-every deployment artifact to the target host over SSH, registers the Nomad jobs
-through a temporary SSH tunnel, and exits. Object-storage runtime capabilities
-for deployment publication, recovery, and product object storage are owned by
-`object-storage-service`. When Cloudflare R2 backs those capabilities,
-`cloudflare-integration-service` reconciles provider-side R2 credentials and
-stores them through `secrets-service` after provider verification. Product
-provider credentials such as Stripe and GitHub App private material may be
-absent during site bootstrap; if absent, the owning service or gate fails when
-it consumes that runtime secret. Resend sending credentials are created by
-`email-service` after site OpenBao is available.
+Nomad, and skips the public edge. `aspect bootstrap-deploy` receives the
+operator-provided OpenBao site root token file and one per-site bootstrap
+credential YAML file. It builds locally, copies the bootstrap artifacts to the
+target host over SSH, registers OpenBao and PostgreSQL through a temporary SSH
+tunnel, stages the root token under `/run`, initializes or unseals OpenBao,
+imports external runtime secrets, registers the remaining Nomad jobs, and
+exits.
+
+The bootstrap credential YAML is a single-use local handoff. It must be a
+regular non-symlink file with mode `0600` or stricter and is passed with
+`--bootstrap-credentials-file`. It contains:
+
+- `site`: the target site name; it must match `--site`.
+- `cloudflare`: account-admin token, account ID, object-storage bucket, and
+  child-token TTL. Bootstrap uses it to create bucket-scoped R2 child
+  credentials, verifies each child credential with real R2 PUT/HEAD/GET, and
+  imports only those child credentials into site OpenBao.
+- `openbao_runtime_secrets`: provider-originated values keyed by the OpenBao
+  runtime secret logical name. GitHub App material, GitHub Sign-in OAuth
+  client secret, Stripe keys, and Resend full-access authority enter the site
+  through this map.
+
+Resend is a prod/global provider authority. The
+`email-service.resend.full_access_api_key` value is imported into site OpenBao
+so the `email-service-resend-keys` Nomad batch job can create a site-local
+`sending_access` key, write `email-service.resend.api_key`, and write
+`zitadel.smtp.password`. Runtime services do not receive the full-access key.
 
 The site root token is the operator-held bootstrap input for OpenBao
 initialization and unseal. It is separate from the fresh-host SSH root password,
@@ -108,34 +123,18 @@ The file contains names, provider surfaces, target OpenBao logical names, and
 retrieval pointers only. It must not contain live, encrypted, redacted, or
 example secret values.
 
-Provision one Cloudflare account admin API token before bootstrap. It is
-imported through `cloudflare-integration-service` and stored through
-`secrets-service` as:
-
-```text
-cloudflare.account_admin
-```
+Provision one Cloudflare account admin API token before bootstrap and place it
+only in the local bootstrap credential YAML. The token is not durable site
+state. Bootstrap uses it to derive and verify the object-storage R2 runtime
+credentials that are stored in OpenBao.
 
 The token must have Account API Tokens Read/Write, Workers R2 Storage
 Read/Write, Workers R2 Storage Bucket Item Read/Write, Zone Read, DNS Write,
 and Email Routing permissions for managed zones. The provider returns token
 values only once; write the value directly into a local operator-only handoff
 file or read it from the approved password manager. Do not stage Cloudflare
-account authority in repo-local env files, Nomad jobs, Ansible vars, generated
-artifacts, or committed encrypted blobs.
-
-Once OpenBao is reachable, import the token through the provider control-plane
-tool. The token file must be a regular file with mode `0600`.
-
-```shell
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=import-account-admin \
-  --openbao-addr=https://127.0.0.1:<openbao-tunnel-port> \
-  --openbao-ca-cert=<path-to-openbao-ca.pem> \
-  --openbao-token-file=<path-to-temporary-openbao-root-token> \
-  --account-admin-api-token-file=<path-to-cloudflare-account-admin-token>
-```
+account authority in Nomad jobs, Ansible vars, generated artifacts, or
+committed encrypted blobs.
 
 The R2 buckets are capability-owned global account resources:
 
@@ -158,8 +157,8 @@ the in-flight candidate deployment, and a short drain window for previous
 allocations. Recovery retention follows the recovery policy for the protected
 data class.
 
-After the account-admin credential is present, `cloudflare-integration-service`
-performs these provider transitions:
+After the site is alive, `cloudflare-integration-service` owns steady-state
+provider reconciliation and performs these transitions:
 
 ```text
 VerifyCloudflareAuthority
@@ -170,11 +169,9 @@ VerifyCloudflareAuthority
   -> ReconcileEmailRouting for managed forwarding zones
 ```
 
-If prod authority storage is not reachable during first-site recovery, recover
-or establish OpenBao and `secrets-service` before running Cloudflare DNS or R2
-provisioning. TLS issuance is an explicit public-edge step outside host
-bootstrap. `cloudflare-integration-service` does not accept account-admin
-secret files as steady-state input.
+If prod authority storage is not reachable during first-site recovery, use the
+local bootstrap credential YAML only for the first handoff. TLS issuance is an
+explicit public-edge step outside host bootstrap.
 
 Steady-state artifact publication uses
 `object-storage-service.CreateObjectWriteSession` and
@@ -193,7 +190,7 @@ Runtime deployment, object-storage, and recovery credentials are
 Daily Cloudflare reconciliation is service-owned:
 
 ```text
-verify cloudflare.account_admin
+verify Cloudflare account authority
   -> reconcile DNS state from desired records
   -> create new R2 capability credential generation when due
   -> persist capability generations through secrets-service
@@ -288,22 +285,24 @@ aspect site converge-host --site=gamma
 aspect bootstrap-deploy \
   --site=gamma \
   --sha="$(git rev-parse HEAD)" \
-  --openbao-site-root-token-file=<path-to-gamma-openbao-site-root-token>
+  --openbao-site-root-token-file=<path-to-gamma-openbao-site-root-token> \
+  --bootstrap-credentials-file=<path-to-gamma-bootstrap-credentials-yaml>
 aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 ```
 
 ## Bootstrap State Machine
 
 ```text
-external provider authority available through secrets-service and OpenBao
+operator bootstrap credential YAML available as a local 0600 file
   -> host base converged
   -> Nomad starts with site-local OpenBao integration
   -> bootstrap-deploy stages the site root token under /run over recovery SSH
-  -> bootstrap-deploy copies local artifacts over SSH and tunnels to Nomad
-  -> bootstrap-deploy registers the minimum Nomad jobs needed for the site
+  -> bootstrap-deploy copies local OpenBao and PostgreSQL artifacts over SSH and tunnels to Nomad
+  -> bootstrap-deploy registers OpenBao and PostgreSQL
   -> OpenBao initializes and unseals; unseal material is wrapped by the site root token
   -> the staged host copy of the site root token is deleted
-  -> service-owned jobs or rotation commands project runtime secrets into OpenBao
+  -> bootstrap-deploy imports external provider runtime secrets into OpenBao
+  -> service-owned jobs or rotation commands create derived runtime secrets
   -> Nomad deploys deployment-service and site-local services
   -> public-edge certificates and HAProxy are converged after core services are healthy
   -> Pomerium operator access handoff is verified

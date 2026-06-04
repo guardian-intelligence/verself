@@ -25,6 +25,7 @@ type runtimeAccessCatalog struct {
 	Roles          map[string]struct{}
 	RoleReads      map[string]map[string]struct{}
 	RoleWrites     map[string]map[string]struct{}
+	JobReads       map[string]map[string]struct{}
 	SecretReaders  map[string]map[string]struct{}
 	SecretWriters  map[string]map[string]struct{}
 	PrincipalRoles map[string]map[string]struct{}
@@ -101,6 +102,7 @@ func inspectNomadRuntimeAccess(ctx context.Context, nomadAddr, repoRoot string, 
 		Roles:          map[string]struct{}{},
 		RoleReads:      map[string]map[string]struct{}{},
 		RoleWrites:     map[string]map[string]struct{}{},
+		JobReads:       map[string]map[string]struct{}{},
 		SecretReaders:  map[string]map[string]struct{}{},
 		SecretWriters:  map[string]map[string]struct{}{},
 		PrincipalRoles: map[string]map[string]struct{}{},
@@ -136,6 +138,7 @@ func inspectNomadRuntimeAccess(ctx context.Context, nomadAddr, repoRoot string, 
 						continue
 					}
 					for _, secret := range runtimeSecretRefs(*tmpl.EmbeddedTmpl) {
+						access.addJobRead(jobID, secret)
 						access.addRoleRead(role, secret)
 					}
 				}
@@ -192,6 +195,15 @@ func (c *runtimeAccessCatalog) addRoleWrite(role, secret string) {
 	}
 	addSetValue(c.RoleWrites, role, secret)
 	addSetValue(c.SecretWriters, secret, role)
+}
+
+func (c *runtimeAccessCatalog) addJobRead(jobID, secret string) {
+	jobID = strings.TrimSpace(jobID)
+	secret = strings.TrimSpace(secret)
+	if jobID == "" || secret == "" {
+		return
+	}
+	addSetValue(c.JobReads, jobID, secret)
 }
 
 func runtimeSecretRefs(template string) []string {

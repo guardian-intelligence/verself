@@ -181,6 +181,11 @@ PY
         args = ["server", "-config=/etc/openbao/openbao.hcl"]
       }
 
+      restart {
+        attempts = 0
+        mode = "fail"
+      }
+
       env {
         BAO_ADDR = "https://127.0.0.1:8200"
         HOME = "/var/lib/openbao"
@@ -192,7 +197,7 @@ PY
 
       resources {
         cpu = 500
-        memory = 1024
+        memory = 4096
       }
 
       service {

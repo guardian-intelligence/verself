@@ -27,3 +27,17 @@ http_file(
     sha256 = "74ab8be7aa487e5cc7d9d228212f538ff96658afcb080335c02fe0f3e384ff7c",
     url = "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.7_amd64.deb",
 )
+
+http_file(
+    name = "postgresql_tool_pgbackrest",
+    downloaded_file_path = "pgbackrest_2.58.0-1.pgdg24.04+1_amd64.deb",
+    sha256 = "f2eddd27246e85fb4842a030fee21ebc036ba22a81627e932d2c01796f616546",
+    url = "https://apt.postgresql.org/pub/repos/apt/pool/main/p/pgbackrest/pgbackrest_2.58.0-1.pgdg24.04+1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_tool_libssh2_1t64",
+    downloaded_file_path = "libssh2-1t64_1.11.0-4.1ubuntu0.24.04.1_amd64.deb",
+    sha256 = "44754349d71a772416fb134c12dd8c08a2c1785f0344676eb936c89305ca5f26",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libs/libssh2/libssh2-1t64_1.11.0-4.1ubuntu0.24.04.1_amd64.deb",
+)

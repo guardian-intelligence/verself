@@ -133,8 +133,7 @@ root_handoff = task(
     },
 )
 
-def _converge_host_impl(ctx):
-    site = ctx.args.site or DEFAULT_SITE
+def _converge_site_host(ctx, site):
     if inventory_check(ctx, site = site) != 0:
         return 1
     ansible_playbook = host_ansible_playbook(ctx)
@@ -172,6 +171,10 @@ def _converge_host_impl(ctx):
         label = "ansible-playbook site.yml --site " + site,
     )
 
+def _converge_host_impl(ctx):
+    site = ctx.args.site or DEFAULT_SITE
+    return _converge_site_host(ctx, site)
+
 converge_host = task(
     implementation = _converge_host_impl,
     name = "converge-host",
@@ -192,7 +195,14 @@ def _bootstrap_deploy_impl(ctx):
         return 1
     if not _require_existing_file(ctx, "openbao-site-root-token-file", site_root_token):
         return 1
+    bootstrap_credentials_file = ctx.args.bootstrap_credentials_file
+    if not require_arg(ctx, "bootstrap-credentials-file", bootstrap_credentials_file):
+        return 1
+    if not _require_existing_file(ctx, "bootstrap-credentials-file", bootstrap_credentials_file):
+        return 1
     if inventory_check(ctx, site = site) != 0:
+        return 1
+    if _converge_site_host(ctx, site) != 0:
         return 1
     args_list = [
         "bootstrap-deploy",
@@ -203,6 +213,7 @@ def _bootstrap_deploy_impl(ctx):
         "--ssh-transport=" + ctx.args.ssh_transport,
         "--openbao-site-root-token-file=" + _abs(ctx, site_root_token),
     ]
+    args_list.append("--bootstrap-credentials-file=" + _abs(ctx, bootstrap_credentials_file))
     if ctx.args.timeout != "":
         args_list.append("--timeout=" + ctx.args.timeout)
     return bazel_run(
@@ -221,6 +232,7 @@ bootstrap_deploy = task(
         "site": args.string(default = "prod", description = "Deployment site."),
         "sha": args.string(default = "", description = "Git SHA or ref to deploy. Defaults to HEAD."),
         "openbao_site_root_token_file": args.string(default = "", description = "Single-use OpenBao site root token file for the bootstrap deploy."),
+        "bootstrap_credentials_file": args.string(default = "", description = "Required single-use per-site YAML credential input for external OpenBao runtime secrets."),
         "ssh_transport": args.string(default = "recovery", description = "SSH transport for the bootstrap Nomad tunnel: recovery or inventory."),
         "timeout": args.string(default = "15m", description = "Bootstrap deploy timeout as a Go duration."),
     },

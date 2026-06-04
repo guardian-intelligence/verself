@@ -216,7 +216,7 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 					return nil, fmt.Errorf("artifact %q is referenced by authored spec but not declared by nomad_component", output)
 				}
 				destination := taskArtifactDestination(output)
-				task.Artifacts = append(task.Artifacts, taskArtifact(binding, destination))
+				task.Artifacts = append(task.Artifacts, taskArtifact(binding, destination, task.User))
 				task.Env[key] = destination
 				seen[output] = true
 			}
@@ -225,7 +225,7 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 	return seen, nil
 }
 
-func taskArtifact(binding artifactBinding, destination string) *api.TaskArtifact {
+func taskArtifact(binding artifactBinding, destination, taskUser string) *api.TaskArtifact {
 	getterOptions := map[string]string{}
 	getterOptions["checksum"] = binding.Checksum
 	source := binding.Artifact.GetterSource
@@ -233,6 +233,10 @@ func taskArtifact(binding artifactBinding, destination string) *api.TaskArtifact
 		GetterSource:  &source,
 		GetterOptions: getterOptions,
 		RelativeDest:  &destination,
-		Chown:         true,
+		Chown:         taskArtifactChown(taskUser),
 	}
+}
+
+func taskArtifactChown(taskUser string) bool {
+	return strings.TrimSpace(taskUser) != "" && strings.TrimSpace(taskUser) != "root"
 }

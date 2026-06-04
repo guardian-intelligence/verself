@@ -8,8 +8,11 @@ go_library(
         "r2.go",
         "temporary_credentials.go",
     ],
-    importpath = "github.com/verself/integrations/cloudflare/control-plane/internal/r2control",
-    visibility = ["//src/integrations/cloudflare/control-plane:__subpackages__"],
+    importpath = "github.com/verself/integrations/cloudflare/control-plane/r2control",
+    visibility = [
+        "//src/bootstrap:__subpackages__",
+        "//src/integrations/cloudflare/control-plane:__subpackages__",
+    ],
     deps = [
         "@com_github_aws_aws_sdk_go_v2//aws",
         "@com_github_aws_aws_sdk_go_v2//aws/signer/v4:signer",

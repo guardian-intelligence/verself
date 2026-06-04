@@ -75,9 +75,10 @@ to `zitadel.smtp.password`, and records non-secret key metadata in
 to OpenBao before revoking the prior Resend key and records pending revocation in
 metadata so retries complete the delete instead of creating another child key.
 
-The full-access Resend key is an external provider authority stored in site
-OpenBao under the email-service policy boundary. Runtime services receive only
-the generated child credentials through Nomad/OpenBao templates.
+The full-access Resend key is a prod/global external provider authority copied
+into site OpenBao under the email-service policy boundary during bootstrap or
+rotation. Runtime services receive only the generated child credentials through
+Nomad/OpenBao templates.
 
 ## Agent-To-Operator Email
 

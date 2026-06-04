@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ type BootstrapDeployOptions struct {
 	RepoRoot                 string
 	InventoryPath            string
 	OpenBaoSiteRootTokenFile string
+	BootstrapCredentialsFile string
 	SSHTransport             string
 	Timeout                  time.Duration
 }
@@ -72,6 +74,9 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	}
 	if opts.InventoryPath == "" {
 		return errors.New("inventory path is required")
+	}
+	if opts.BootstrapCredentialsFile == "" {
+		return errors.New("bootstrap credentials file is required")
 	}
 	target, err := loadBootstrapInventoryTarget(opts.InventoryPath, opts.SSHTransport)
 	if err != nil {
@@ -145,7 +150,11 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err != nil {
 		return err
 	}
-	runtimeValues, err := reconcileOpenBaoRuntime(ctx, target, opts.OpenBaoSiteRootTokenFile, runtimeSecrets, runtimeAccess)
+	bootstrapCredentials, err := loadBootstrapCredentialInput(opts.Site, opts.BootstrapCredentialsFile, runtimeSecrets)
+	if err != nil {
+		return err
+	}
+	runtimeValues, err := reconcileOpenBaoRuntime(ctx, target, opts.Site, opts.OpenBaoSiteRootTokenFile, runtimeSecrets, runtimeAccess, bootstrapCredentials)
 	if err != nil {
 		return err
 	}
@@ -156,17 +165,118 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err := reconcilePostgres(ctx, target, postgresCatalog, runtimeValues); err != nil {
 		return err
 	}
-	if len(remainingDescriptors) > 0 {
-		steadyOptions := common
-		steadyOptions.NomadComponentDescriptors = remainingDescriptors
-		if _, err := deployengine.Submit(ctx, steadyOptions); err != nil {
-			return err
-		}
+	if err := submitBootstrapDescriptorWaves(ctx, target, opts.OpenBaoSiteRootTokenFile, common, remainingDescriptors, activeDescriptors, runtimeSecrets, runtimeAccess); err != nil {
+		return err
 	}
 	if _, err := fmt.Printf("bootstrap_deploy_id=%s site=%s sha=%s\n", deployRunKey, opts.Site, opts.SHA); err != nil {
 		return fmt.Errorf("write bootstrap deployment response: %w", err)
 	}
 	return nil
+}
+
+func submitBootstrapDescriptorWaves(ctx context.Context, target inventoryTarget, siteRootTokenFile string, common deployengine.Options, remainingPaths []string, activeDescriptors []bootstrapNomadDescriptor, secrets runtimeSecretCatalog, access runtimeAccessCatalog) error {
+	pending := activeDescriptorByPath(activeDescriptors, remainingPaths)
+	available := bootstrapAvailableRuntimeSecrets(secrets)
+	for len(pending) > 0 {
+		wave := []bootstrapNomadDescriptor{}
+		next := []bootstrapNomadDescriptor{}
+		blocked := map[string][]string{}
+		for _, descriptor := range pending {
+			missing := missingProducedRuntimeSecrets(descriptor.JobID, access, secrets, available)
+			if len(missing) == 0 {
+				wave = append(wave, descriptor)
+				continue
+			}
+			blocked[descriptor.JobID] = missing
+			next = append(next, descriptor)
+		}
+		if len(wave) == 0 {
+			return bootstrapSecretWaveError(blocked)
+		}
+		paths := make([]string, 0, len(wave))
+		produced := map[string]struct{}{}
+		for _, descriptor := range wave {
+			paths = append(paths, descriptor.Path)
+			for _, name := range producedRuntimeSecretsForJob(secrets, descriptor.JobID) {
+				produced[name] = struct{}{}
+			}
+		}
+		options := common
+		options.NomadComponentDescriptors = paths
+		if _, err := deployengine.Submit(ctx, options); err != nil {
+			return err
+		}
+		names := sortedSetValues(produced)
+		if err := waitForOpenBaoRuntimeSecrets(ctx, target, siteRootTokenFile, names); err != nil {
+			return err
+		}
+		for _, name := range names {
+			available[name] = struct{}{}
+		}
+		pending = next
+	}
+	return nil
+}
+
+func activeDescriptorByPath(active []bootstrapNomadDescriptor, paths []string) []bootstrapNomadDescriptor {
+	byPath := map[string]bootstrapNomadDescriptor{}
+	for _, descriptor := range active {
+		byPath[descriptor.Path] = descriptor
+	}
+	out := make([]bootstrapNomadDescriptor, 0, len(paths))
+	for _, path := range paths {
+		if descriptor, ok := byPath[path]; ok {
+			out = append(out, descriptor)
+		}
+	}
+	return out
+}
+
+func bootstrapAvailableRuntimeSecrets(secrets runtimeSecretCatalog) map[string]struct{} {
+	available := map[string]struct{}{}
+	for _, declaration := range secrets.Declarations {
+		if strings.TrimSpace(declaration.ProducedByJob) == "" {
+			available[declaration.Name] = struct{}{}
+		}
+	}
+	return available
+}
+
+func missingProducedRuntimeSecrets(jobID string, access runtimeAccessCatalog, secrets runtimeSecretCatalog, available map[string]struct{}) []string {
+	missing := map[string]struct{}{}
+	for name := range access.JobReads[jobID] {
+		declaration, ok := secrets.ByName[name]
+		if !ok || strings.TrimSpace(declaration.ProducedByJob) == "" {
+			continue
+		}
+		if _, ok := available[name]; !ok {
+			missing[name] = struct{}{}
+		}
+	}
+	return sortedSetValues(missing)
+}
+
+func producedRuntimeSecretsForJob(secrets runtimeSecretCatalog, jobID string) []string {
+	produced := map[string]struct{}{}
+	for _, declaration := range secrets.Declarations {
+		if strings.TrimSpace(declaration.ProducedByJob) == jobID {
+			produced[declaration.Name] = struct{}{}
+		}
+	}
+	return sortedSetValues(produced)
+}
+
+func bootstrapSecretWaveError(blocked map[string][]string) error {
+	jobs := make([]string, 0, len(blocked))
+	for job := range blocked {
+		jobs = append(jobs, job)
+	}
+	sort.Strings(jobs)
+	parts := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		parts = append(parts, job+" waits for "+strings.Join(blocked[job], ", "))
+	}
+	return fmt.Errorf("bootstrap produced-secret graph is blocked: %s", strings.Join(parts, "; "))
 }
 
 func startTCPTunnel(ctx context.Context, target inventoryTarget, localPort int, remoteAddr string) *exec.Cmd {
