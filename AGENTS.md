@@ -11,16 +11,31 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 
 # Disaster Recovery
 
-The most foundational invariant of the system is that is able to execute a `recovery` control loop over credentials and the built source code (which includes all binaries including `nomad`) and bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped.
+A foundational invariant of the system is that is able to execute a `recovery` control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped. 
 
-The only ingredients necessary to recover the system are:
+We accomplish this through the following two core techniques:
+
+1. The repo builds the system that is deployed, byte-for-byte via Bazel + commit-pinning every dependency and modeling them in Bazel, including developer tooling.
+2. Deployment is the process of taking credentials and a deployment target (a remote computer + configuration), uploading the built repo, and running `nomad` to execute control loops to bring the system to the desired state.
+
+The only ingredients necessary to recover the system, therefore, are:
 
 0. Root credentials (human root user pw + API keys)
 1. The source code
 2. Network ingress to download pinned dependencies (including build tools + OCI images)
 3. Network egress to a node
 
-Disaster recovery from zero is fundamentally, therefore, figuring out where to resume the system from the following : clone repo -> configure secrets -> build repo -> point to any bare metal node -> upload built repo -> run `nomad run recovery` -> run `nomad run deploy`
+Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following : clone repo -> configure secrets -> build repo -> point to any bare metal node -> upload built repo -> run `nomad run recovery` -> run `nomad run deploy`.
+
+Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by ensuring we build openbao locally and then, inside the OpenBao recovery prestart, either using the system-present OpenBao or the one from the repo artifacts. A "check + bootstrap-if-needed" prestart is all we need. 
+
+Note that components should still handle subtle nuances, e.g. for OpenBao consider:
+
+OpenBao not present/absent — the situation could be any of the following
+  - storage empty → init (fresh bootstrap) or restore-from-snapshot if a
+  backup exists,
+  - storage present + sealed → unseal only (must not init),
+  - storage present + unsealed → no-op.
 
 Recovery frequently means "restore data from offsite backups on S3-compatible object storage" but even if no backups are provided, a clean version of the system can be bootstrapped.
 
