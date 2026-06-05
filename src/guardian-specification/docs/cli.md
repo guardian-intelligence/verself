@@ -14,12 +14,15 @@ response without parsing progress logs.
 ## Response Formats
 
 `-o yaml` is the default. `json`, `toml`, and `toon` are supported for
-automation and language-specific tooling. `--output` is the long form, and
-`--format` is accepted as an alias.
+automation and language-specific tooling. `text` and `table` are human
+inspection formats. `dot` and `mermaid` render the loaded document or command
+result as a directed graph for topology inspection and documentation.
+`--output` is the long form, and `--format` is accepted as an alias.
 
 JSON uses Go's standard `encoding/json` package. YAML uses `gopkg.in/yaml.v3`.
 TOML uses `github.com/BurntSushi/toml`. TOON uses
-`github.com/toon-format/toon-go`.
+`github.com/toon-format/toon-go`. `table` uses Go's standard `text/tabwriter`.
+`dot` emits Graphviz DOT syntax. `mermaid` emits Mermaid flowchart syntax.
 
 ## Input Formats
 

@@ -2,11 +2,15 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "guardian_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "render.go",
+    ],
     importpath = "github.com/verself/guardian-specification/cli/cmd/guardian",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/guardian-specification/cli/internal/formatio",
+        "//src/guardian-specification/internal/formatio",
+        "//src/guardian-specification/internal/specdoc",
         "@org_cuelang_go//cue",
         "@org_cuelang_go//cue/cuecontext",
         "@org_cuelang_go//cue/load",

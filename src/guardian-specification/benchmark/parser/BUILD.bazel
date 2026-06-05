@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "parser_property_test",
+    srcs = ["roundtrip_test.go"],
+    deps = [
+        "//src/guardian-specification/internal/formatio",
+        "//src/guardian-specification/internal/specdoc",
+        "@net_pgregory_rapid//:rapid",
+    ],
+)
+
+go_test(
+    name = "parser_benchmark",
+    timeout = "moderate",
+    srcs = ["roundtrip_test.go"],
+    args = [
+        "-test.run=__benchmark_only__",
+        "-test.bench=BenchmarkStructuredCodecNoInformationLoss",
+        "-test.benchtime=10s",
+        "-test.benchmem",
+    ],
+    tags = [
+        "local",
+        "manual",
+        "no-remote",
+    ],
+    deps = [
+        "//src/guardian-specification/internal/formatio",
+        "//src/guardian-specification/internal/specdoc",
+        "@net_pgregory_rapid//:rapid",
+    ],
+)

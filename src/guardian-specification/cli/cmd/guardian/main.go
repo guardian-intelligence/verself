@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,73 +20,18 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
-	"github.com/verself/guardian-specification/cli/internal/formatio"
+	"github.com/verself/guardian-specification/internal/formatio"
+	"github.com/verself/guardian-specification/internal/specdoc"
 )
 
-type guardianDocument struct {
-	Kind         string       `json:"kind" yaml:"kind" toml:"kind" toon:"kind"`
-	Name         string       `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
-	StaticConfig staticConfig `json:"staticConfig" yaml:"staticConfig" toml:"staticConfig" toon:"staticConfig"`
-	Board        boardSpec    `json:"board" yaml:"board" toml:"board" toon:"board"`
-	Nomad        nomadSpec    `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
-}
-
-type staticConfig struct {
-	BaseURL        string `json:"baseURL" yaml:"baseURL" toml:"baseURL" toon:"baseURL"`
-	CredentialsRef string `json:"credentialsRef" yaml:"credentialsRef" toml:"credentialsRef" toon:"credentialsRef"`
-}
-
-type boardSpec struct {
-	Substrate substrateSpec `json:"substrate" yaml:"substrate" toml:"substrate" toon:"substrate"`
-	Access    accessSpec    `json:"access" yaml:"access" toml:"access" toon:"access"`
-	Seed      seedSpec      `json:"seed" yaml:"seed" toml:"seed" toon:"seed"`
-}
-
-type substrateSpec struct {
-	StateDir string `json:"stateDir" yaml:"stateDir" toml:"stateDir" toon:"stateDir"`
-}
-
-type accessSpec struct {
-	SSH sshAccessSpec `json:"ssh" yaml:"ssh" toml:"ssh" toon:"ssh"`
-}
-
-type sshAccessSpec struct {
-	Host              string             `json:"host" yaml:"host" toml:"host" toon:"host"`
-	Port              int                `json:"port" yaml:"port" toml:"port" toon:"port"`
-	User              string             `json:"user" yaml:"user" toml:"user" toon:"user"`
-	KnownHostsFile    string             `json:"knownHostsFile" yaml:"knownHostsFile" toml:"knownHostsFile" toon:"knownHostsFile"`
-	IdentityFile      string             `json:"identityFile,omitempty" yaml:"identityFile,omitempty" toml:"identityFile,omitempty" toon:"identityFile,omitempty"`
-	ConnectTimeout    string             `json:"connectTimeout,omitempty" yaml:"connectTimeout,omitempty" toml:"connectTimeout,omitempty" toon:"connectTimeout,omitempty"`
-	WireGuardFallback *wireGuardFallback `json:"wireguardFallback,omitempty" yaml:"wireguardFallback,omitempty" toml:"wireguardFallback,omitempty" toon:"wireguardFallback,omitempty"`
-}
-
-type wireGuardFallback struct {
-	Host      string `json:"host" yaml:"host" toml:"host" toon:"host"`
-	Port      int    `json:"port" yaml:"port" toml:"port" toon:"port"`
-	Interface string `json:"interface,omitempty" yaml:"interface,omitempty" toml:"interface,omitempty" toon:"interface,omitempty"`
-}
-
-type seedSpec struct {
-	TargetRoot string     `json:"targetRoot" yaml:"targetRoot" toml:"targetRoot" toon:"targetRoot"`
-	Paths      []seedPath `json:"paths" yaml:"paths" toml:"paths" toon:"paths"`
-}
-
-type seedPath struct {
-	Source string `json:"source" yaml:"source" toml:"source" toon:"source"`
-	Target string `json:"target" yaml:"target" toml:"target" toon:"target"`
-	Mode   string `json:"mode" yaml:"mode" toml:"mode" toon:"mode"`
-}
-
-type nomadSpec struct {
-	Address   string         `json:"address" yaml:"address" toml:"address" toon:"address"`
-	Namespace string         `json:"namespace" yaml:"namespace" toml:"namespace" toon:"namespace"`
-	Jobs      []nomadJobSpec `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
-}
-
-type nomadJobSpec struct {
-	Path        string   `json:"path" yaml:"path" toml:"path" toon:"path"`
-	RequiredFor []string `json:"requiredFor,omitempty" yaml:"requiredFor,omitempty" toml:"requiredFor,omitempty" toon:"requiredFor,omitempty"`
-}
+type guardianDocument = specdoc.Document
+type staticConfig = specdoc.StaticConfig
+type substrateSpec = specdoc.Substrate
+type sshAccessSpec = specdoc.SSHAccess
+type seedSpec = specdoc.Seed
+type seedPath = specdoc.SeedPath
+type nomadSpec = specdoc.Nomad
+type nomadJobSpec = specdoc.NomadJob
 
 type condition struct {
 	Type     string `json:"type" yaml:"type" toml:"type" toon:"type"`
@@ -98,13 +42,26 @@ type condition struct {
 }
 
 type boardResult struct {
-	Name               string       `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
-	ReadyToFly         string       `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
-	ExecutionMode      string       `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
-	StaticConfigDigest string       `json:"static_config_digest,omitempty" yaml:"static_config_digest,omitempty" toml:"static_config_digest,omitempty" toon:"static_config_digest,omitempty"`
-	Access             accessResult `json:"access" yaml:"access" toml:"access" toon:"access"`
-	Seed               seedResult   `json:"seed" yaml:"seed" toml:"seed" toon:"seed"`
-	Conditions         []condition  `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
+	Name               string           `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	ReadyToFly         string           `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
+	ExecutionMode      string           `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
+	StaticConfigDigest string           `json:"static_config_digest,omitempty" yaml:"static_config_digest,omitempty" toml:"static_config_digest,omitempty" toon:"static_config_digest,omitempty"`
+	StaticConfig       configResult     `json:"static_config" yaml:"static_config" toml:"static_config" toon:"static_config"`
+	Substrate          substrateResult  `json:"substrate" yaml:"substrate" toml:"substrate" toon:"substrate"`
+	Access             accessResult     `json:"access" yaml:"access" toml:"access" toon:"access"`
+	Seed               seedResult       `json:"seed" yaml:"seed" toml:"seed" toon:"seed"`
+	Nomad              nomadPlanResult  `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
+	Jobs               []nomadJobResult `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
+	Conditions         []condition      `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
+}
+
+type configResult struct {
+	BaseURL        string `json:"base_url" yaml:"base_url" toml:"base_url" toon:"base_url"`
+	CredentialsRef string `json:"credentials_ref" yaml:"credentials_ref" toml:"credentials_ref" toon:"credentials_ref"`
+}
+
+type substrateResult struct {
+	StateDir string `json:"state_dir" yaml:"state_dir" toml:"state_dir" toon:"state_dir"`
 }
 
 type accessResult struct {
@@ -306,8 +263,8 @@ func parseCommonFlags(name string, args []string, stderr io.Writer) (commandOpti
 func bindCommonFlags(fs *flag.FlagSet, opts *commandOptions) {
 	fs.StringVar(&opts.File, "f", "", "Guardian config document path")
 	fs.StringVar(&opts.File, "file", "", "Guardian config document path")
-	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon")
-	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
+	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon | text | table | dot | mermaid")
+	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon | text | table | dot | mermaid")
 	fs.StringVar(&opts.Output, "format", "yaml", "alias for --output")
 	fs.StringVar(&opts.RepoRoot, "repo-root", "", "checkout root used for relative seed source and Nomad job paths")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "plan without mutating remote state")
@@ -445,62 +402,7 @@ func loadCUEDocument(path string) (guardianDocument, error) {
 }
 
 func validateDocument(doc guardianDocument) error {
-	if doc.Kind != "FlyProcedure" {
-		return fmt.Errorf("kind must be FlyProcedure, got %q", doc.Kind)
-	}
-	if strings.TrimSpace(doc.StaticConfig.BaseURL) == "" {
-		return errors.New("staticConfig.baseURL is required")
-	}
-	parsedBaseURL, err := url.Parse(doc.StaticConfig.BaseURL)
-	if err != nil {
-		return fmt.Errorf("staticConfig.baseURL is invalid: %w", err)
-	}
-	if parsedBaseURL.Scheme != "https" || parsedBaseURL.Host == "" {
-		return errors.New("staticConfig.baseURL must be an https URL with a host")
-	}
-	if strings.TrimSpace(doc.StaticConfig.CredentialsRef) == "" {
-		return errors.New("staticConfig.credentialsRef is required")
-	}
-	if strings.TrimSpace(doc.Board.Substrate.StateDir) == "" {
-		return errors.New("board.substrate.stateDir is required")
-	}
-	ssh := doc.Board.Access.SSH
-	if strings.TrimSpace(ssh.Host) == "" {
-		return errors.New("board.access.ssh.host is required")
-	}
-	if strings.TrimSpace(ssh.User) == "" {
-		return errors.New("board.access.ssh.user is required")
-	}
-	if ssh.Port < 1 || ssh.Port > 65535 {
-		return errors.New("board.access.ssh.port must be between 1 and 65535")
-	}
-	if strings.TrimSpace(ssh.KnownHostsFile) == "" {
-		return errors.New("board.access.ssh.knownHostsFile is required")
-	}
-	if ssh.WireGuardFallback != nil {
-		if strings.TrimSpace(ssh.WireGuardFallback.Host) == "" {
-			return errors.New("board.access.ssh.wireguardFallback.host is required")
-		}
-		if ssh.WireGuardFallback.Port < 1 || ssh.WireGuardFallback.Port > 65535 {
-			return errors.New("board.access.ssh.wireguardFallback.port must be between 1 and 65535")
-		}
-	}
-	if strings.TrimSpace(doc.Board.Seed.TargetRoot) == "" {
-		return errors.New("board.seed.targetRoot is required")
-	}
-	if len(doc.Board.Seed.Paths) == 0 {
-		return errors.New("board.seed.paths is required")
-	}
-	if strings.TrimSpace(doc.Nomad.Address) == "" {
-		return errors.New("nomad.address is required")
-	}
-	if strings.TrimSpace(doc.Nomad.Namespace) == "" {
-		return errors.New("nomad.namespace is required")
-	}
-	if len(doc.Nomad.Jobs) == 0 {
-		return errors.New("nomad.jobs is required")
-	}
-	return nil
+	return specdoc.Validate(doc)
 }
 
 func findCUEModuleRoot(start string) (string, error) {
@@ -527,11 +429,23 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		Name:          doc.Name,
 		ReadyToFly:    "no",
 		ExecutionMode: mode,
-		Access:        accessStatus(doc.Board.Access.SSH),
+		StaticConfig: configResult{
+			BaseURL:        doc.StaticConfig.BaseURL,
+			CredentialsRef: doc.StaticConfig.CredentialsRef,
+		},
+		Substrate: substrateResult{
+			StateDir: doc.Board.Substrate.StateDir,
+		},
+		Access: accessStatus(doc.Board.Access.SSH),
 		Seed: seedResult{
 			TargetRoot:  doc.Board.Seed.TargetRoot,
 			SourceCount: len(doc.Board.Seed.Paths),
 		},
+		Nomad: nomadPlanResult{
+			Address:   doc.Nomad.Address,
+			Namespace: doc.Nomad.Namespace,
+		},
+		Jobs: declaredNomadJobs(doc.Nomad.Jobs),
 	}
 	if !path.IsAbs(doc.Board.Seed.TargetRoot) {
 		result.Conditions = append(result.Conditions, conditionFalse("Seed", "InvalidTargetRoot", "board.seed.targetRoot must be an absolute remote path", "board.seed.targetRoot"))
@@ -571,6 +485,19 @@ func accessStatus(ssh sshAccessSpec) accessResult {
 		}
 	}
 	return status
+}
+
+func declaredNomadJobs(jobs []nomadJobSpec) []nomadJobResult {
+	results := make([]nomadJobResult, 0, len(jobs))
+	for _, job := range jobs {
+		results = append(results, nomadJobResult{
+			Path:        job.Path,
+			RequiredFor: job.RequiredFor,
+			Status:      "declared",
+			Reason:      "Configured",
+		})
+	}
+	return results
 }
 
 func buildSeedPlan(doc guardianDocument, repoRoot string) (seedPlan, []condition) {
@@ -813,6 +740,9 @@ func conditionFalse(conditionType string, reason string, message string, resourc
 }
 
 func writeOutput(w io.Writer, format string, value any) error {
+	if isProjectedOutputFormat(format) {
+		return writeProjectedOutput(w, format, value)
+	}
 	return formatio.Write(w, format, value)
 }
 
@@ -834,8 +764,8 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `guardian
 
 usage:
-  guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon] [--dry-run] [--stream]
-  guardian fly <config.cue|yaml|json|toml|toon> --dry-run [-o yaml|json|toml|toon] [--stream]
+  guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon|text|table|dot|mermaid] [--dry-run] [--stream]
+  guardian fly <config.cue|yaml|json|toml|toon> --dry-run [-o yaml|json|toml|toon|text|table|dot|mermaid] [--stream]
 
 board loads a FlyProcedure config document, checks SSH access configuration,
 computes the content-addressed seed, and reports whether fly can be planned.

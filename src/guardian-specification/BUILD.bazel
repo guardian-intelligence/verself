@@ -1,3 +1,9 @@
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+
+# gazelle:prefix github.com/verself/guardian-specification
+
+go_module_checks()
+
 filegroup(
     name = "docs",
     srcs = glob([

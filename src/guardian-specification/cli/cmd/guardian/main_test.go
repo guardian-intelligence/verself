@@ -14,28 +14,7 @@ import (
 )
 
 func TestWriteOutputFormats(t *testing.T) {
-	result := flyResult{
-		Name:               "gamma",
-		ReadyToFly:         "yes",
-		ExecutionMode:      "dry_run",
-		StaticConfigDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-		SeedDigest:         "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-		SeedRoot:           "/var/lib/guardian/seeds/sha256-2222222222222222222222222222222222222222222222222222222222222222",
-		Nomad:              nomadPlanResult{Address: "http://127.0.0.1:4646", Namespace: "default"},
-		Jobs: []nomadJobResult{{
-			Path:        "nomad.hcl",
-			RequiredFor: []string{"recovery"},
-			Status:      "ready",
-			Reason:      "PathResolved",
-		}},
-		Conditions: []condition{{
-			Type:     "BoardingReady",
-			Status:   "True",
-			Reason:   "ReadyToFly",
-			Message:  "boarding inputs are ready for fly",
-			Resource: "board",
-		}},
-	}
+	result := testFlyResult()
 
 	for _, format := range []string{"json", "yaml", "yml", "toml", "toon"} {
 		t.Run(format, func(t *testing.T) {
@@ -47,6 +26,52 @@ func TestWriteOutputFormats(t *testing.T) {
 				t.Fatalf("%s output omitted stable ready_to_fly key:\n%s", format, out.String())
 			}
 			assertDecodable(t, format, out.Bytes())
+		})
+	}
+}
+
+func TestWriteProjectedOutputFormats(t *testing.T) {
+	result := testFlyResult()
+	cases := map[string][]string{
+		"text": {
+			"fly gamma",
+			"ready_to_fly: yes",
+			"jobs",
+			"- nomad.hcl status=ready reason=PathResolved required_for=recovery",
+		},
+		"table": {
+			"SUMMARY",
+			"ready_to_fly",
+			"JOBS",
+			"CONDITIONS",
+		},
+		"dot": {
+			"digraph \"guardian_fly\" {",
+			"\"fly_result\" [label=\"fly: gamma\\nready_to_fly=yes\\nexecutionMode=dry_run\"];",
+			"\"static_config\" [label=\"staticConfig\\ndigest=sha256:1111111111111111111111111111111111111111111111111111111111111111\"];",
+			"\"fly_result\" -> \"nomad\";",
+			"\"nomad\" -> \"nomad_job_nomad_hcl\" [label=\"recovery\"];",
+		},
+		"mermaid": {
+			"flowchart LR",
+			"fly_result[\"fly: gamma<br/>ready_to_fly=yes<br/>executionMode=dry_run\"]",
+			"static_config[\"staticConfig<br/>digest=sha256:1111111111111111111111111111111111111111111111111111111111111111\"]",
+			"fly_result --> nomad",
+			"nomad -->|recovery| nomad_job_nomad_hcl",
+		},
+	}
+
+	for format, expected := range cases {
+		t.Run(format, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := writeOutput(&out, format, result); err != nil {
+				t.Fatalf("writeOutput(%s): %v", format, err)
+			}
+			for _, want := range expected {
+				if !strings.Contains(out.String(), want) {
+					t.Fatalf("%s output omitted %q:\n%s", format, want, out.String())
+				}
+			}
 		})
 	}
 }
@@ -89,6 +114,15 @@ func TestBoardCUEDocument(t *testing.T) {
 	if result.Access.Target != "ubuntu@127.0.0.1:22" {
 		t.Fatalf("access target = %q, want ubuntu@127.0.0.1:22", result.Access.Target)
 	}
+	if result.StaticConfig.BaseURL != "https://gamma.guardianintelligence.org" {
+		t.Fatalf("static config base URL = %q, want gamma URL", result.StaticConfig.BaseURL)
+	}
+	if result.Substrate.StateDir != "/var/lib/guardian" {
+		t.Fatalf("substrate state dir = %q, want /var/lib/guardian", result.Substrate.StateDir)
+	}
+	if result.Nomad.Address != "http://127.0.0.1:4646" || len(result.Jobs) != 1 {
+		t.Fatalf("board result omitted declared Nomad plan: %#v jobs=%#v", result.Nomad, result.Jobs)
+	}
 }
 
 func TestBoardRenderCUEDocument(t *testing.T) {
@@ -128,6 +162,88 @@ func TestFlyDryRunCUEDocument(t *testing.T) {
 	}
 	if len(result.Jobs) != 1 || result.Jobs[0].Status != "ready" {
 		t.Fatalf("unexpected jobs: %#v", result.Jobs)
+	}
+}
+
+func TestFlyDryRunProjectedFormats(t *testing.T) {
+	dir, path := writeTestCUEDocument(t)
+	for _, format := range []string{"text", "table", "dot", "mermaid"} {
+		t.Run(format, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := run([]string{"fly", path, "--repo-root", dir, "--dry-run", "-o", format}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+			}
+			if stdout.Len() == 0 {
+				t.Fatalf("%s output was empty", format)
+			}
+		})
+	}
+}
+
+func TestBoardProjectedGraphsIncludeTopology(t *testing.T) {
+	dir, path := writeTestCUEDocument(t)
+	cases := map[string][]string{
+		"dot": {
+			"\"static_config\" [label=\"staticConfig\\nbaseURL=https://gamma.guardianintelligence.org\\ncredentialsRef=gamma-credentials",
+			"\"substrate\" [label=\"substrate\\nstateDir=/var/lib/guardian\"];",
+			"\"access\" [label=\"access\\nmethod=ssh\\ntarget=ubuntu@127.0.0.1:22\\nknownHostsFile=~/.ssh/known_hosts\"];",
+			"\"seed_file_bin_guardian\" [label=\"seed file\\ntarget=bin/guardian\\nsource=guardian\\nmode=0755\\nsha256=sha256:",
+			"\"nomad_job_nomad_hcl\" [label=\"nomad job\\npath=nomad.hcl\\nrequiredFor=recovery\\nstatus=declared\\nreason=Configured\"];",
+		},
+		"mermaid": {
+			"static_config[\"staticConfig<br/>baseURL=https://gamma.guardianintelligence.org<br/>credentialsRef=gamma-credentials",
+			"substrate[\"substrate<br/>stateDir=/var/lib/guardian\"]",
+			"access[\"access<br/>method=ssh<br/>target=ubuntu@127.0.0.1:22<br/>knownHostsFile=~/.ssh/known_hosts\"]",
+			"seed_file_bin_guardian[\"seed file<br/>target=bin/guardian<br/>source=guardian<br/>mode=0755<br/>sha256=sha256:",
+			"nomad_job_nomad_hcl[\"nomad job<br/>path=nomad.hcl<br/>requiredFor=recovery<br/>status=declared<br/>reason=Configured\"]",
+		},
+	}
+
+	for format, expected := range cases {
+		t.Run(format, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := run([]string{"board", path, "--repo-root", dir, "-o", format}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+			}
+			output := stdout.String()
+			for _, want := range expected {
+				if !strings.Contains(output, want) {
+					t.Fatalf("%s output omitted %q:\n%s", format, want, output)
+				}
+			}
+			if strings.Contains(output, "seed_source_") {
+				t.Fatalf("%s output used anonymous seed source IDs:\n%s", format, output)
+			}
+		})
+	}
+}
+
+func testFlyResult() flyResult {
+	return flyResult{
+		Name:               "gamma",
+		ReadyToFly:         "yes",
+		ExecutionMode:      "dry_run",
+		StaticConfigDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		SeedDigest:         "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		SeedRoot:           "/var/lib/guardian/seeds/sha256-2222222222222222222222222222222222222222222222222222222222222222",
+		Nomad:              nomadPlanResult{Address: "http://127.0.0.1:4646", Namespace: "default"},
+		Jobs: []nomadJobResult{{
+			Path:        "nomad.hcl",
+			RequiredFor: []string{"recovery"},
+			Status:      "ready",
+			Reason:      "PathResolved",
+		}},
+		Conditions: []condition{{
+			Type:     "BoardingReady",
+			Status:   "True",
+			Reason:   "ReadyToFly",
+			Message:  "boarding inputs are ready for fly",
+			Resource: "board",
+		}},
 	}
 }
 

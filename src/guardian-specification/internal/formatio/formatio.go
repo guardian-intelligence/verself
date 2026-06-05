@@ -42,7 +42,14 @@ func Decode(data []byte, format string, out any) error {
 		}
 		return nil
 	case ".toml":
-		return toml.Unmarshal(data, out)
+		md, err := toml.Decode(string(data), out)
+		if err != nil {
+			return err
+		}
+		if undecoded := md.Undecoded(); len(undecoded) > 0 {
+			return fmt.Errorf("unknown TOML field %q", undecoded[0].String())
+		}
+		return nil
 	case ".toon":
 		return toon.Unmarshal(data, out)
 	case ".yaml":

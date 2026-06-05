@@ -1,13 +1,13 @@
 # Guardian Specification
 
-Guardian Specification defines a small configuration protocol for taking a
+Guardian Specification defines a configuration protocol for taking a
 built repo, reaching a substrate, seeding deterministic bytes, and handing
 Nomad the recovery/deployment jobs.
 
-The command surface is intentionally small:
+The command surface:
 
 ```sh
-guardian board src/guardian-specification/examples/gamma/gamma.cue -o yaml
+guardian board src/guardian-specification/examples/gamma/gamma.cue -o <yaml|json|toml|toon|text|table|dot|mermaid>
 guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run -o yaml
 guardian fly src/guardian-specification/examples/gamma/gamma.cue
 ```
