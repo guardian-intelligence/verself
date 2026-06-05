@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -53,7 +52,7 @@ func runOperatorRuntime(command string, opts operatorRuntimeOptions, commandBudg
 		NeedSSH:        true,
 		NeedOTel:       true,
 		Interactive:    false,
-		UseRecovery:    operatorUseRecovery(),
+		UseRecovery:    opruntime.UseRecoveryFromEnv(),
 	}, func(rt *opruntime.Runtime) error {
 		chClient, err := opch.OpenOperator(rt.Ctx, rt, chConfig)
 		if err != nil {
@@ -71,17 +70,4 @@ func runOperatorRuntime(command string, opts operatorRuntimeOptions, commandBudg
 
 func contextWithoutCancel(ctx context.Context) context.Context {
 	return context.WithoutCancel(ctx)
-}
-
-// operatorUseRecovery reports whether commands should reach the host over the
-// out-of-band WireGuard recovery SSH transport instead of the Pomerium native
-// SSH path. This is the unattended o11y path: it skips the interactive device
-// sign-in at the cost of bypassing Pomerium identity-aware access.
-func operatorUseRecovery() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("VERSELF_OPERATOR_SSH_TRANSPORT"))) {
-	case "recovery", "wireguard", "wg":
-		return true
-	default:
-		return false
-	}
 }

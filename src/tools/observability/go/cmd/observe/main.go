@@ -132,6 +132,7 @@ func runObserve(ctx context.Context, cfg config) error {
 		Site:           cfg.site,
 		NeedSSH:        true,
 		NeedOTel:       true,
+		UseRecovery:    opruntime.UseRecoveryFromEnv(),
 	}, func(rt *opruntime.Runtime) error {
 		chClient, err := opch.OpenOperator(rt.Ctx, rt, opch.Config{Database: "default"})
 		if err != nil {
