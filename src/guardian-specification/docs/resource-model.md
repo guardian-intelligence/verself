@@ -10,20 +10,13 @@ staticConfig:
   credentialsRef: gamma-credentials
 
 board:
-  substrate:
-    stateDir: /var/lib/guardian
   access:
-    ssh:
-      host: 206.223.228.87
-      port: 22
-      user: ubuntu
-      knownHostsFile: ~/.ssh/known_hosts
-  seed:
-    targetRoot: /var/lib/guardian/seeds
-    paths:
-      - source: bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
-        target: bin/guardian
-        mode: "0755"
+    argv: [ssh, -T, ubuntu@206.223.228.87, true]
+  upload:
+    run:
+      argv: [ansible-playbook, src/sites/gamma/board.yml]
+    verify:
+      argv: [ssh, -T, ubuntu@206.223.228.87, sha256sum /path/to/upload.tar.zst]
 
 nomad:
   address: http://127.0.0.1:4646
@@ -39,19 +32,19 @@ nomad:
 
 `staticConfig.baseURL` is the configured external base URL.
 `staticConfig.credentialsRef` points at the credential bundle to resolve.
-Guardian includes these values in the seed manifest and reports a digest.
 
-`board` declares how to reach the substrate and which local files become the
-remote seed.
+`board.access`, `board.upload.run`, and `board.upload.verify` are lifecycle
+hooks. Guardian executes them as argv commands after preparing the local upload
+bundle. The hooks own access, transfer, permissions, and remote tooling.
 
 `nomad` declares the jobs to plan or submit. Guardian does not model Nomad HCL
 internals.
 
 ## Command Results
 
-Command results contain observed outcomes: readiness, seed digest, seed root,
-Nomad job path status, condition types, and reason codes. Command results are
-ephemeral CLI responses and are not config resources.
+Command results contain observed outcomes: readiness, upload digest, observed
+digest, hook status, Nomad job path status, condition types, and reason codes.
+Command results are ephemeral CLI responses and are not config resources.
 
 ## Versioning
 

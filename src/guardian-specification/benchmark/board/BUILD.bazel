@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "board_benchmark",
+    timeout = "long",
+    srcs = ["board_benchmark_test.go"],
+    args = [
+        "-test.run=__benchmark_only__",
+        "-test.bench=BenchmarkGuardianBoard",
+        "-test.benchtime=10x",
+        "-test.benchmem",
+    ],
+    tags = [
+        "local",
+        "manual",
+    ],
+)

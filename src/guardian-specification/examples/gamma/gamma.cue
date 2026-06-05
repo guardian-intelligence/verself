@@ -12,38 +12,34 @@ staticConfig: {
 }
 
 board: {
-	substrate: {
-		stateDir: "/var/lib/guardian"
-	}
-	access: ssh: {
-		host:           "206.223.228.87"
-		port:           22
-		user:           "ubuntu"
-		knownHostsFile: "~/.ssh/known_hosts"
-		wireguardFallback: {
-			host:      "10.66.67.1"
-			port:      2222
-			interface: "wg-ops"
-		}
-	}
-	seed: {
-		targetRoot: "/var/lib/guardian/seeds"
-		paths: [
-			{
-				source: "bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian"
-				target: "bin/guardian"
-				mode:   "0755"
-			},
-			{
-				source: "src/infrastructure-components/openbao/nomad.hcl"
-				target: "jobs/openbao.nomad.hcl"
-				mode:   "0644"
-			},
-			{
-				source: "src/services/deployment-service/nomad.hcl"
-				target: "jobs/deployment-service.nomad.hcl"
-				mode:   "0644"
-			},
+	access: argv: [
+		"ssh",
+		"-T",
+		"-o", "BatchMode=yes",
+		"-o", "StrictHostKeyChecking=yes",
+		"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+		"ubuntu@206.223.228.87",
+		"true",
+	]
+	upload: {
+		run: argv: [
+			"sh",
+			"-c",
+			"""
+				set -eu
+				remote_dir=/home/ubuntu/.local/state/guardian/uploads/current
+				ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 "mkdir -p $remote_dir"
+				rsync -a -- "$GUARDIAN_UPLOAD_BUNDLE" "ubuntu@206.223.228.87:$remote_dir/upload.tar.zst"
+				""",
+		]
+		verify: argv: [
+			"ssh",
+			"-T",
+			"-o", "BatchMode=yes",
+			"-o", "StrictHostKeyChecking=yes",
+			"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+			"ubuntu@206.223.228.87",
+			"sha256sum /home/ubuntu/.local/state/guardian/uploads/current/upload.tar.zst",
 		]
 	}
 }

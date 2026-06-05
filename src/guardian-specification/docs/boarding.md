@@ -1,14 +1,15 @@
 # Boarding
 
-Boarding prepares the inputs required for `fly`.
+Boarding prepares the bytes required for `fly`.
 
 ```sh
 guardian board gamma.cue -o yaml
 ```
 
-The command loads a config document, checks SSH access configuration, computes
-a deterministic seed manifest, verifies local seed sources, and prints a
-structured command result.
+The command loads a config document, verifies required local build artifacts,
+creates a deterministic upload bundle, runs `board.access`, runs
+`board.upload.run`, runs `board.upload.verify`, and compares the observed
+digest with the local digest.
 
 ## Config Shape
 
@@ -20,42 +21,38 @@ staticConfig:
   credentialsRef: gamma-credentials
 
 board:
-  substrate:
-    stateDir: /var/lib/guardian
   access:
-    ssh:
-      host: 206.223.228.87
-      port: 22
-      user: ubuntu
-      knownHostsFile: ~/.ssh/known_hosts
-      wireguardFallback:
-        host: 10.66.67.1
-        port: 2222
-        interface: wg-ops
-  seed:
-    targetRoot: /var/lib/guardian/seeds
-    paths:
-      - source: bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
-        target: bin/guardian
-        mode: "0755"
+    argv: [ssh, -T, ubuntu@206.223.228.87, true]
+  upload:
+    run:
+      argv: [ansible-playbook, src/sites/gamma/board.yml]
+    verify:
+      argv: [ssh, -T, ubuntu@206.223.228.87, sha256sum /path/to/upload.tar.zst]
 ```
 
-`source` is resolved relative to `--repo-root` when it is not absolute.
-`target` is relative to the seed root and must not escape it. Seed sources must
-be regular files.
+Lifecycle hooks are self-contained commands. `board.access` proves the target
+can be reached. Upload hooks can use SSH, WireGuard, Ansible, rsync, AWS SSM,
+or another operator-provided mechanism. Guardian does not compose connection
+primitives with upload behavior.
 
-## Seed Identity
+## Hook Environment
 
-The seed digest is computed from static config, declared seed files, file
-digests, target paths, file modes, and declared Nomad jobs. The remote seed root
-is:
+Guardian sets these environment variables for each hook:
 
-```text
-<targetRoot>/sha256-<seedDigest>
-```
+- `GUARDIAN_REPO_ROOT`
+- `GUARDIAN_UPLOAD_BUNDLE`
+- `GUARDIAN_UPLOAD_FORMAT`
+- `GUARDIAN_EXPECTED_DIGEST`
+- `GUARDIAN_UPLOAD_DIGEST`
+- `GUARDIAN_UPLOAD_COMPRESSED_BYTES`
+- `GUARDIAN_UPLOAD_UNCOMPRESSED_BYTES`
+
+`board.upload.verify` must print the observed upload digest. JSON output with a
+`digest`, `observed_digest`, `upload_digest`, or `sha256` field is accepted.
+Plain `sha256sum` output is also accepted.
 
 ## Command Result
 
-`board` emits `ready_to_fly`, SSH access details, `static_config_digest`,
-`seed.digest`, `seed.root`, per-source status, and stable conditions. Command
-results never contain secret values.
+`board` emits `ready_to_fly`, `static_config_digest`, access status,
+`upload.digest`, `upload.observed_digest`, hook status, and stable conditions.
+Command results never contain secret values.

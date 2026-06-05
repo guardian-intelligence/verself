@@ -1,20 +1,20 @@
 # Guardian Specification
 
-Guardian Specification defines a configuration protocol for taking a
-built repo, reaching a substrate, seeding deterministic bytes, and handing
-Nomad the recovery/deployment jobs.
+Guardian Specification defines a configuration protocol for taking a built
+repo, running access and upload lifecycle hooks, verifying upload bytes, and
+handing Nomad the recovery/deployment jobs.
 
 The command surface:
 
 ```sh
-guardian board src/guardian-specification/examples/gamma/gamma.cue -o <yaml|json|toml|toon|text|table|dot|mermaid>
+guardian board src/guardian-specification/examples/gamma/gamma.cue -o <yaml|json|toml|toon>
 guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run -o yaml
 guardian fly src/guardian-specification/examples/gamma/gamma.cue
 ```
 
-`board` loads a config document, checks SSH access configuration, computes a
-content-addressed seed from local build artifacts and static config, and emits
-a structured command result.
+`board` loads a config document, computes a content-addressed upload bundle
+from local source and build artifacts, runs the declared boarding lifecycle
+hooks, and emits a structured command result.
 
 `fly` loads the same config document, verifies boarding readiness, wraps the
 declared Nomad jobs, and plans or submits them.

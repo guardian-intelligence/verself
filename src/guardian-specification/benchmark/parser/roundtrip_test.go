@@ -110,8 +110,8 @@ func decode(format string, data []byte) (specdoc.Document, error) {
 func benchmarkCorpus(size int) []specdoc.Document {
 	corpus := make([]specdoc.Document, 0, size)
 	gen := guardianDocument()
-	for seed := 0; seed < size; seed++ {
-		corpus = append(corpus, gen.Example(seed))
+	for example := 0; example < size; example++ {
+		corpus = append(corpus, gen.Example(example))
 	}
 	return corpus
 }
@@ -162,22 +162,10 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 				CredentialsRef: token(t, "credentials"),
 			},
 			Board: specdoc.Board{
-				Substrate: specdoc.Substrate{
-					StateDir: "/var/lib/" + token(t, "state"),
-				},
-				Access: specdoc.Access{
-					SSH: specdoc.SSHAccess{
-						Host:           fmt.Sprintf("192.0.2.%d", rapid.IntRange(1, 254).Draw(t, "ssh_host_octet")),
-						Port:           rapid.IntRange(1, 65535).Draw(t, "ssh_port"),
-						User:           token(t, "user"),
-						KnownHostsFile: "~/.ssh/" + token(t, "known_hosts"),
-						IdentityFile:   optionalPath(t, "~/.ssh/", "identity"),
-						ConnectTimeout: optionalDuration(t),
-					},
-				},
-				Seed: specdoc.Seed{
-					TargetRoot: "/var/lib/guardian/seeds/" + token(t, "seed_root"),
-					Paths:      seedPaths(t),
+				Access: lifecycleHook(t, "access"),
+				Upload: specdoc.Upload{
+					Run:    lifecycleHook(t, "upload_run"),
+					Verify: lifecycleHook(t, "upload_verify"),
 				},
 			},
 			Nomad: specdoc.Nomad{
@@ -186,34 +174,18 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 				Jobs:      nomadJobs(t),
 			},
 		}
-		if rapid.Bool().Draw(t, "wireguard_fallback") {
-			doc.Board.Access.SSH.WireGuardFallback = &specdoc.WireGuardFallback{
-				Host: fmt.Sprintf(
-					"10.%d.%d.%d",
-					rapid.IntRange(0, 255).Draw(t, "wg_host_a"),
-					rapid.IntRange(0, 255).Draw(t, "wg_host_b"),
-					rapid.IntRange(1, 254).Draw(t, "wg_host_c"),
-				),
-				Port:      rapid.IntRange(1, 65535).Draw(t, "wg_port"),
-				Interface: optionalToken(t, "wg"),
-			}
-		}
 		return doc
 	})
 }
 
-func seedPaths(t *rapid.T) []specdoc.SeedPath {
-	count := rapid.IntRange(1, 5).Draw(t, "seed_path_count")
-	paths := make([]specdoc.SeedPath, 0, count)
-	for i := 0; i < count; i++ {
-		name := token(t, fmt.Sprintf("seed%d", i))
-		paths = append(paths, specdoc.SeedPath{
-			Source: "bazel-bin/" + name + "/artifact",
-			Target: "files/" + name,
-			Mode:   rapid.SampledFrom([]string{"0644", "0755", "0600", "0700"}).Draw(t, "seed_mode"),
-		})
+func lifecycleHook(t *rapid.T, label string) specdoc.LifecycleHook {
+	return specdoc.LifecycleHook{
+		Argv: []string{
+			"guardian-test-hook",
+			label,
+			token(t, label),
+		},
 	}
-	return paths
 }
 
 func nomadJobs(t *rapid.T) []specdoc.NomadJob {
@@ -238,20 +210,6 @@ func requiredFor(t *rapid.T) []string {
 func optionalToken(t *rapid.T, label string) string {
 	if rapid.Bool().Draw(t, label+"_present") {
 		return token(t, label)
-	}
-	return ""
-}
-
-func optionalPath(t *rapid.T, dir string, label string) string {
-	if rapid.Bool().Draw(t, label+"_present") {
-		return dir + token(t, label)
-	}
-	return ""
-}
-
-func optionalDuration(t *rapid.T) string {
-	if rapid.Bool().Draw(t, "connect_timeout_present") {
-		return fmt.Sprintf("%ds", rapid.IntRange(1, 30).Draw(t, "connect_timeout_seconds"))
 	}
 	return ""
 }

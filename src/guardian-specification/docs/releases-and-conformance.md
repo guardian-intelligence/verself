@@ -21,10 +21,10 @@ Conformance suites test:
 
 - config document validation;
 - static config digesting;
-- seed source validation;
-- seed digest stability;
+- local build artifact validation;
+- upload digest stability;
 - command result conditions;
-- provider boundary behavior through fake providers.
+- lifecycle hook behavior through fake commands.
 
 Dogfooding a config such as `gamma` is operational evidence. It uses real
 infrastructure and real component recovery jobs. That evidence informs

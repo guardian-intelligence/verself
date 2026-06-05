@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,26 +12,21 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
+	"github.com/verself/guardian-specification/cli/internal/uploadbundle"
 	"github.com/verself/guardian-specification/internal/formatio"
 	"github.com/verself/guardian-specification/internal/specdoc"
 )
 
 type guardianDocument = specdoc.Document
-type staticConfig = specdoc.StaticConfig
-type substrateSpec = specdoc.Substrate
-type sshAccessSpec = specdoc.SSHAccess
-type seedSpec = specdoc.Seed
-type seedPath = specdoc.SeedPath
-type nomadSpec = specdoc.Nomad
+type lifecycleHookSpec = specdoc.LifecycleHook
 type nomadJobSpec = specdoc.NomadJob
 
 type condition struct {
@@ -47,9 +43,8 @@ type boardResult struct {
 	ExecutionMode      string           `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	StaticConfigDigest string           `json:"static_config_digest,omitempty" yaml:"static_config_digest,omitempty" toml:"static_config_digest,omitempty" toon:"static_config_digest,omitempty"`
 	StaticConfig       configResult     `json:"static_config" yaml:"static_config" toml:"static_config" toon:"static_config"`
-	Substrate          substrateResult  `json:"substrate" yaml:"substrate" toml:"substrate" toon:"substrate"`
-	Access             accessResult     `json:"access" yaml:"access" toml:"access" toon:"access"`
-	Seed               seedResult       `json:"seed" yaml:"seed" toml:"seed" toon:"seed"`
+	Access             hookResult       `json:"access" yaml:"access" toml:"access" toon:"access"`
+	Upload             uploadResult     `json:"upload" yaml:"upload" toml:"upload" toon:"upload"`
 	Nomad              nomadPlanResult  `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
 	Jobs               []nomadJobResult `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
 	Conditions         []condition      `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
@@ -60,33 +55,23 @@ type configResult struct {
 	CredentialsRef string `json:"credentials_ref" yaml:"credentials_ref" toml:"credentials_ref" toon:"credentials_ref"`
 }
 
-type substrateResult struct {
-	StateDir string `json:"state_dir" yaml:"state_dir" toml:"state_dir" toon:"state_dir"`
+type uploadResult struct {
+	Digest            string     `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
+	ObservedDigest    string     `json:"observed_digest,omitempty" yaml:"observed_digest,omitempty" toml:"observed_digest,omitempty" toon:"observed_digest,omitempty"`
+	Format            string     `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty" toon:"format,omitempty"`
+	FileCount         int        `json:"file_count" yaml:"file_count" toml:"file_count" toon:"file_count"`
+	CompressedBytes   int64      `json:"compressed_bytes,omitempty" yaml:"compressed_bytes,omitempty" toml:"compressed_bytes,omitempty" toon:"compressed_bytes,omitempty"`
+	UncompressedBytes int64      `json:"uncompressed_bytes,omitempty" yaml:"uncompressed_bytes,omitempty" toml:"uncompressed_bytes,omitempty" toon:"uncompressed_bytes,omitempty"`
+	Run               hookResult `json:"run" yaml:"run" toml:"run" toon:"run"`
+	Verify            hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
+	Status            string     `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason            string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
 
-type accessResult struct {
-	Method             string `json:"method" yaml:"method" toml:"method" toon:"method"`
-	Target             string `json:"target" yaml:"target" toml:"target" toon:"target"`
-	KnownHostsFile     string `json:"known_hosts_file" yaml:"known_hosts_file" toml:"known_hosts_file" toon:"known_hosts_file"`
-	FallbackConfigured bool   `json:"fallback_configured" yaml:"fallback_configured" toml:"fallback_configured" toon:"fallback_configured"`
-	FallbackTarget     string `json:"fallback_target,omitempty" yaml:"fallback_target,omitempty" toml:"fallback_target,omitempty" toon:"fallback_target,omitempty"`
-}
-
-type seedResult struct {
-	Digest      string             `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
-	Root        string             `json:"root,omitempty" yaml:"root,omitempty" toml:"root,omitempty" toon:"root,omitempty"`
-	TargetRoot  string             `json:"target_root" yaml:"target_root" toml:"target_root" toon:"target_root"`
-	SourceCount int                `json:"source_count" yaml:"source_count" toml:"source_count" toon:"source_count"`
-	Sources     []seedSourceResult `json:"sources" yaml:"sources" toml:"sources" toon:"sources"`
-}
-
-type seedSourceResult struct {
-	Source string `json:"source" yaml:"source" toml:"source" toon:"source"`
-	Target string `json:"target" yaml:"target" toml:"target" toon:"target"`
-	Mode   string `json:"mode" yaml:"mode" toml:"mode" toon:"mode"`
-	SHA256 string `json:"sha256,omitempty" yaml:"sha256,omitempty" toml:"sha256,omitempty" toon:"sha256,omitempty"`
-	Status string `json:"status" yaml:"status" toml:"status" toon:"status"`
-	Reason string `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+type hookResult struct {
+	Argv   []string `json:"argv" yaml:"argv" toml:"argv" toon:"argv"`
+	Status string   `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason string   `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
 
 type flyResult struct {
@@ -94,8 +79,7 @@ type flyResult struct {
 	ReadyToFly         string           `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
 	ExecutionMode      string           `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	StaticConfigDigest string           `json:"static_config_digest,omitempty" yaml:"static_config_digest,omitempty" toml:"static_config_digest,omitempty" toon:"static_config_digest,omitempty"`
-	SeedDigest         string           `json:"seed_digest,omitempty" yaml:"seed_digest,omitempty" toml:"seed_digest,omitempty" toon:"seed_digest,omitempty"`
-	SeedRoot           string           `json:"seed_root,omitempty" yaml:"seed_root,omitempty" toml:"seed_root,omitempty" toon:"seed_root,omitempty"`
+	UploadDigest       string           `json:"upload_digest,omitempty" yaml:"upload_digest,omitempty" toml:"upload_digest,omitempty" toon:"upload_digest,omitempty"`
 	Nomad              nomadPlanResult  `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
 	Jobs               []nomadJobResult `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
 	Conditions         []condition      `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
@@ -113,32 +97,12 @@ type nomadJobResult struct {
 	Reason      string   `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
 
-type seedManifest struct {
-	StaticConfig staticConfig        `json:"static_config"`
-	Files        []seedManifestFile  `json:"files"`
-	NomadJobs    []seedManifestNomad `json:"nomad_jobs"`
-}
-
-type seedManifestFile struct {
-	Source string `json:"source"`
-	Target string `json:"target"`
-	Mode   string `json:"mode"`
-	SHA256 string `json:"sha256"`
-	Size   int64  `json:"size"`
-}
-
-type seedManifestNomad struct {
-	Path        string   `json:"path"`
-	RequiredFor []string `json:"required_for,omitempty"`
-}
-
 type commandOptions struct {
 	File     string
 	Output   string
 	RepoRoot string
 	Stream   bool
 	DryRun   bool
-	Render   bool
 }
 
 type eventWriter struct {
@@ -189,13 +153,6 @@ func runBoard(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "guardian board: %v\n", err)
 		return 1
 	}
-	if opts.Render {
-		if err := writeOutput(stdout, opts.Output, doc); err != nil {
-			_, _ = fmt.Fprintf(stderr, "guardian board: %v\n", err)
-			return 2
-		}
-		return 0
-	}
 	result := evaluateBoard(doc, opts, emitter)
 	if err := writeOutput(stdout, opts.Output, result); err != nil {
 		_, _ = fmt.Fprintf(stderr, "guardian board: %v\n", err)
@@ -217,13 +174,6 @@ func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "guardian fly: %v\n", err)
 		return 1
-	}
-	if opts.Render {
-		if err := writeOutput(stdout, opts.Output, doc); err != nil {
-			_, _ = fmt.Fprintf(stderr, "guardian fly: %v\n", err)
-			return 2
-		}
-		return 0
 	}
 	result := evaluateFly(doc, opts, emitter)
 	if err := writeOutput(stdout, opts.Output, result); err != nil {
@@ -263,13 +213,12 @@ func parseCommonFlags(name string, args []string, stderr io.Writer) (commandOpti
 func bindCommonFlags(fs *flag.FlagSet, opts *commandOptions) {
 	fs.StringVar(&opts.File, "f", "", "Guardian config document path")
 	fs.StringVar(&opts.File, "file", "", "Guardian config document path")
-	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon | text | table | dot | mermaid")
-	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon | text | table | dot | mermaid")
+	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon")
+	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.Output, "format", "yaml", "alias for --output")
-	fs.StringVar(&opts.RepoRoot, "repo-root", "", "checkout root used for relative seed source and Nomad job paths")
+	fs.StringVar(&opts.RepoRoot, "repo-root", "", "checkout root used for upload bundle and Nomad job paths")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "plan without mutating remote state")
 	fs.BoolVar(&opts.DryRun, "plan", false, "alias for --dry-run")
-	fs.BoolVar(&opts.Render, "render", false, "render the concrete config document without boarding or flying")
 	fs.BoolVar(&opts.Stream, "stream", false, "write newline-delimited JSON progress events to stderr")
 }
 
@@ -426,20 +375,20 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		mode = "dry_run"
 	}
 	result := boardResult{
-		Name:          doc.Name,
-		ReadyToFly:    "no",
-		ExecutionMode: mode,
+		Name:               doc.Name,
+		ReadyToFly:         "no",
+		ExecutionMode:      mode,
+		StaticConfigDigest: digestValue(doc.StaticConfig),
 		StaticConfig: configResult{
 			BaseURL:        doc.StaticConfig.BaseURL,
 			CredentialsRef: doc.StaticConfig.CredentialsRef,
 		},
-		Substrate: substrateResult{
-			StateDir: doc.Board.Substrate.StateDir,
-		},
-		Access: accessStatus(doc.Board.Access.SSH),
-		Seed: seedResult{
-			TargetRoot:  doc.Board.Seed.TargetRoot,
-			SourceCount: len(doc.Board.Seed.Paths),
+		Access: hookPending(doc.Board.Access),
+		Upload: uploadResult{
+			Run:    hookPending(doc.Board.Upload.Run),
+			Verify: hookPending(doc.Board.Upload.Verify),
+			Status: "pending",
+			Reason: "NotStarted",
 		},
 		Nomad: nomadPlanResult{
 			Address:   doc.Nomad.Address,
@@ -447,44 +396,193 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		},
 		Jobs: declaredNomadJobs(doc.Nomad.Jobs),
 	}
-	if !path.IsAbs(doc.Board.Seed.TargetRoot) {
-		result.Conditions = append(result.Conditions, conditionFalse("Seed", "InvalidTargetRoot", "board.seed.targetRoot must be an absolute remote path", "board.seed.targetRoot"))
+	result.Conditions = append(result.Conditions, conditionTrue("AccessHookConfigured", "HookConfigured", "access lifecycle hook is configured", "board.access"))
+	result.Conditions = append(result.Conditions, conditionTrue("UploadHooksConfigured", "HooksConfigured", "upload lifecycle hooks are configured", "board.upload"))
+	prepared, err := prepareUpload(opts.RepoRoot)
+	if err != nil {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "BuildArtifactsMissing"
+		result.Conditions = append(result.Conditions, conditionFalse("UploadPrepared", "BuildArtifactsMissing", err.Error(), "board.upload"))
 		return result
 	}
-	if !path.IsAbs(doc.Board.Substrate.StateDir) {
-		result.Conditions = append(result.Conditions, conditionFalse("Substrate", "InvalidStateDir", "board.substrate.stateDir must be an absolute remote path", "board.substrate.stateDir"))
-		return result
-	}
-	result.Conditions = append(result.Conditions, conditionTrue("AccessConfigured", "SSHConfigured", "SSH access configuration is complete", "board.access.ssh"))
-	result.Conditions = append(result.Conditions, conditionTrue("SubstrateConfigured", "StateDirConfigured", "substrate state directory is configured", "board.substrate"))
-	plan, conditions := buildSeedPlan(doc, opts.RepoRoot)
-	result.Conditions = append(result.Conditions, conditions...)
-	result.StaticConfigDigest = plan.StaticConfigDigest
-	result.Seed.Digest = plan.Digest
-	result.Seed.Root = plan.Root
-	result.Seed.Sources = plan.Sources
+	defer prepared.Cleanup()
+	result.Upload.Digest = prepared.Manifest.ArchiveSHA256
+	result.Upload.Format = prepared.Manifest.Format
+	result.Upload.FileCount = len(prepared.Manifest.Files)
+	result.Upload.CompressedBytes = prepared.Manifest.CompressedBytes
+	result.Upload.UncompressedBytes = prepared.Manifest.UncompressedBytes
+	result.Upload.Status = "prepared"
+	result.Upload.Reason = "BundleReady"
+	result.Conditions = append(result.Conditions, conditionTrue("UploadPrepared", "BundleReady", "workspace upload bundle is built locally", "board.upload"))
 	if hasFalseCondition(result.Conditions) {
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "SeedPlanned", "local seed inputs are deterministic and ready for remote materialization", "board.seed"))
+	if opts.DryRun {
+		result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "DryRun", "dry run did not execute the access hook", "board.access"))
+		result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DryRun", "dry run prepared the upload bundle without mutating the target", "board.upload"))
+		return result
+	}
+	accessResult, _ := runLifecycleHook("board.access", doc.Board.Access, opts.RepoRoot, prepared, emitter)
+	result.Access = accessResult
+	if accessResult.Status != "ready" {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "AccessHookFailed"
+		result.Conditions = append(result.Conditions, conditionFalse("BoardAccess", accessResult.Reason, "access hook failed", "board.access"))
+		return result
+	}
+	result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "HookSucceeded", "access hook completed", "board.access"))
+	runResult, _ := runLifecycleHook("board.upload.run", doc.Board.Upload.Run, opts.RepoRoot, prepared, emitter)
+	result.Upload.Run = runResult
+	if runResult.Status != "ready" {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "UploadHookFailed"
+		result.Conditions = append(result.Conditions, conditionFalse("UploadRun", runResult.Reason, "upload run hook failed", "board.upload.run"))
+		return result
+	}
+	result.Conditions = append(result.Conditions, conditionTrue("UploadRun", "HookSucceeded", "upload run hook completed", "board.upload.run"))
+	verifyResult, verifyStdout := runLifecycleHook("board.upload.verify", doc.Board.Upload.Verify, opts.RepoRoot, prepared, emitter)
+	result.Upload.Verify = verifyResult
+	if verifyResult.Status != "ready" {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "VerifyHookFailed"
+		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", verifyResult.Reason, "upload verify hook failed", "board.upload.verify"))
+		return result
+	}
+	observedDigest, err := extractObservedDigest(string(verifyStdout))
+	if err != nil {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "DigestMissing"
+		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", "DigestMissing", err.Error(), "board.upload.verify"))
+		return result
+	}
+	result.Upload.ObservedDigest = observedDigest
+	if observedDigest != prepared.Manifest.ArchiveSHA256 {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "DigestMismatch"
+		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", "DigestMismatch", fmt.Sprintf("observed digest %s did not match local digest %s", observedDigest, prepared.Manifest.ArchiveSHA256), "board.upload.verify"))
+		return result
+	}
+	result.Upload.Status = "ready"
+	result.Upload.Reason = "DigestVerified"
+	result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DigestVerified", "verify hook observed the expected upload digest", "board.upload.verify"))
+	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "UploadVerified", "workspace upload digest is verified", "board.upload"))
 	result.ReadyToFly = "yes"
 	return result
 }
 
-func accessStatus(ssh sshAccessSpec) accessResult {
-	status := accessResult{
-		Method:         "ssh",
-		Target:         fmt.Sprintf("%s@%s:%d", ssh.User, ssh.Host, ssh.Port),
-		KnownHostsFile: ssh.KnownHostsFile,
+func hookPending(hook lifecycleHookSpec) hookResult {
+	return hookResult{Argv: hook.Argv, Status: "pending", Reason: "NotStarted"}
+}
+
+type preparedUpload struct {
+	Path     string
+	Manifest uploadbundle.Manifest
+}
+
+func (p preparedUpload) Cleanup() {
+	if p.Path != "" {
+		_ = os.Remove(p.Path)
 	}
-	if ssh.WireGuardFallback != nil {
-		status.FallbackConfigured = true
-		status.FallbackTarget = fmt.Sprintf("%s@%s:%d", ssh.User, ssh.WireGuardFallback.Host, ssh.WireGuardFallback.Port)
-		if ssh.WireGuardFallback.Interface != "" {
-			status.FallbackTarget += " via " + ssh.WireGuardFallback.Interface
+}
+
+func prepareUpload(repoRoot string) (preparedUpload, error) {
+	tmp, err := os.CreateTemp("", "guardian-upload-*.tar.zst")
+	if err != nil {
+		return preparedUpload{}, fmt.Errorf("create upload bundle temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	manifest, buildErr := uploadbundle.BuildWorkspaceTarZstd(repoRoot, tmp)
+	closeErr := tmp.Close()
+	if buildErr != nil {
+		_ = os.Remove(tmpPath)
+		return preparedUpload{}, buildErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return preparedUpload{}, fmt.Errorf("close upload bundle: %w", closeErr)
+	}
+	return preparedUpload{
+		Path:     tmpPath,
+		Manifest: manifest,
+	}, nil
+}
+
+func runLifecycleHook(name string, hook lifecycleHookSpec, repoRoot string, prepared preparedUpload, emitter eventWriter) (hookResult, []byte) {
+	result := hookResult{Argv: hook.Argv, Status: "blocked", Reason: "HookFailed"}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	emitter.emit(name, "start", "", "running lifecycle hook")
+	stdout, _, err := execHook(ctx, hook, repoRoot, prepared)
+	if err != nil {
+		result.Reason = "HookFailed"
+		emitter.emit(name, "blocked", "", strings.TrimSpace(err.Error()))
+		return result, stdout
+	}
+	result.Status = "ready"
+	result.Reason = "HookSucceeded"
+	emitter.emit(name, "ok", "", "lifecycle hook completed")
+	return result, stdout
+}
+
+func execHook(ctx context.Context, hook lifecycleHookSpec, repoRoot string, prepared preparedUpload) ([]byte, []byte, error) {
+	if len(hook.Argv) == 0 {
+		return nil, nil, errors.New("hook argv is empty")
+	}
+	cmd := exec.CommandContext(ctx, hook.Argv[0], hook.Argv[1:]...)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), uploadHookEnv(repoRoot, prepared)...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+func uploadHookEnv(repoRoot string, prepared preparedUpload) []string {
+	return []string{
+		"GUARDIAN_REPO_ROOT=" + repoRoot,
+		"GUARDIAN_UPLOAD_BUNDLE=" + prepared.Path,
+		"GUARDIAN_UPLOAD_FORMAT=" + prepared.Manifest.Format,
+		"GUARDIAN_EXPECTED_DIGEST=" + prepared.Manifest.ArchiveSHA256,
+		"GUARDIAN_UPLOAD_DIGEST=" + prepared.Manifest.ArchiveSHA256,
+		"GUARDIAN_UPLOAD_COMPRESSED_BYTES=" + fmt.Sprint(prepared.Manifest.CompressedBytes),
+		"GUARDIAN_UPLOAD_UNCOMPRESSED_BYTES=" + fmt.Sprint(prepared.Manifest.UncompressedBytes),
+	}
+}
+
+func extractObservedDigest(output string) (string, error) {
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(output), &decoded); err == nil {
+		for _, key := range []string{"observed_digest", "digest", "upload_digest", "sha256"} {
+			if value, ok := decoded[key].(string); ok {
+				return normalizeDigest(value)
+			}
 		}
 	}
-	return status
+	for _, token := range strings.Fields(output) {
+		if digest, err := normalizeDigest(token); err == nil {
+			return digest, nil
+		}
+	}
+	return "", errors.New("verify hook output did not contain a sha256 digest")
+}
+
+func normalizeDigest(value string) (string, error) {
+	digest := strings.TrimSpace(value)
+	digest = strings.Trim(digest, `"'`)
+	if len(digest) == 64 {
+		digest = "sha256:" + digest
+	}
+	if len(digest) != len("sha256:")+64 || !strings.HasPrefix(digest, "sha256:") {
+		return "", fmt.Errorf("not a sha256 digest: %q", value)
+	}
+	for _, r := range strings.TrimPrefix(digest, "sha256:") {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return "", fmt.Errorf("not a lowercase sha256 digest: %q", value)
+		}
+	}
+	return digest, nil
 }
 
 func declaredNomadJobs(jobs []nomadJobSpec) []nomadJobResult {
@@ -498,140 +596,6 @@ func declaredNomadJobs(jobs []nomadJobSpec) []nomadJobResult {
 		})
 	}
 	return results
-}
-
-func buildSeedPlan(doc guardianDocument, repoRoot string) (seedPlan, []condition) {
-	plan := seedPlan{
-		StaticConfigDigest: digestValue(doc.StaticConfig),
-		Root:               doc.Board.Seed.TargetRoot,
-	}
-	manifest := seedManifest{
-		StaticConfig: doc.StaticConfig,
-		NomadJobs:    make([]seedManifestNomad, 0, len(doc.Nomad.Jobs)),
-	}
-	var conditions []condition
-	for _, job := range doc.Nomad.Jobs {
-		manifest.NomadJobs = append(manifest.NomadJobs, seedManifestNomad{Path: job.Path, RequiredFor: job.RequiredFor})
-	}
-	allReady := true
-	for _, seedPath := range doc.Board.Seed.Paths {
-		sourceResult := seedSourceResult{
-			Source: seedPath.Source,
-			Target: seedPath.Target,
-			Mode:   seedPath.Mode,
-			Status: "ready",
-			Reason: "PathResolved",
-		}
-		if err := validateSeedTarget(seedPath.Target); err != nil {
-			allReady = false
-			sourceResult.Status = "blocked"
-			sourceResult.Reason = "InvalidTarget"
-			conditions = append(conditions, conditionFalse("SeedSource", "InvalidTarget", err.Error(), seedPath.Target))
-			plan.Sources = append(plan.Sources, sourceResult)
-			continue
-		}
-		if err := validateMode(seedPath.Mode); err != nil {
-			allReady = false
-			sourceResult.Status = "blocked"
-			sourceResult.Reason = "InvalidMode"
-			conditions = append(conditions, conditionFalse("SeedSource", "InvalidMode", err.Error(), seedPath.Target))
-			plan.Sources = append(plan.Sources, sourceResult)
-			continue
-		}
-		absoluteSource := seedPath.Source
-		if !filepath.IsAbs(absoluteSource) {
-			absoluteSource = filepath.Join(repoRoot, absoluteSource)
-		}
-		digest, size, err := fileSHA256(absoluteSource)
-		if err != nil {
-			allReady = false
-			sourceResult.Status = "blocked"
-			sourceResult.Reason = "SourceUnavailable"
-			conditions = append(conditions, conditionFalse("SeedSource", "SourceUnavailable", err.Error(), seedPath.Source))
-			plan.Sources = append(plan.Sources, sourceResult)
-			continue
-		}
-		sourceResult.SHA256 = digest
-		plan.Sources = append(plan.Sources, sourceResult)
-		manifest.Files = append(manifest.Files, seedManifestFile{
-			Source: seedPath.Source,
-			Target: path.Clean(seedPath.Target),
-			Mode:   seedPath.Mode,
-			SHA256: digest,
-			Size:   size,
-		})
-	}
-	if !allReady {
-		return plan, conditions
-	}
-	manifestBytes, err := json.Marshal(manifest)
-	if err != nil {
-		conditions = append(conditions, conditionFalse("Seed", "ManifestEncodingFailed", err.Error(), "board.seed"))
-		return plan, conditions
-	}
-	sum := sha256.Sum256(manifestBytes)
-	hexDigest := hex.EncodeToString(sum[:])
-	plan.Digest = "sha256:" + hexDigest
-	plan.Root = path.Join(doc.Board.Seed.TargetRoot, "sha256-"+hexDigest)
-	conditions = append(conditions, conditionTrue("Seed", "DigestComputed", "seed manifest digest computed", "board.seed"))
-	return plan, conditions
-}
-
-type seedPlan struct {
-	StaticConfigDigest string
-	Digest             string
-	Root               string
-	Sources            []seedSourceResult
-}
-
-func validateSeedTarget(target string) error {
-	if strings.TrimSpace(target) == "" {
-		return errors.New("seed target is required")
-	}
-	if path.IsAbs(target) {
-		return fmt.Errorf("seed target %q must be relative", target)
-	}
-	if strings.Contains(target, "\\") {
-		return fmt.Errorf("seed target %q must use slash separators", target)
-	}
-	clean := path.Clean(target)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
-		return fmt.Errorf("seed target %q escapes the seed root", target)
-	}
-	return nil
-}
-
-func validateMode(mode string) error {
-	if len(mode) != 4 || mode[0] != '0' {
-		return fmt.Errorf("mode %q must be a four-digit octal string", mode)
-	}
-	if _, err := strconv.ParseUint(mode, 8, 32); err != nil {
-		return fmt.Errorf("mode %q must be octal", mode)
-	}
-	return nil
-}
-
-func fileSHA256(filename string) (string, int64, error) {
-	info, err := os.Lstat(filename)
-	if err != nil {
-		return "", 0, fmt.Errorf("%s: %w", filename, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", 0, fmt.Errorf("%s: symlink seed sources are not allowed", filename)
-	}
-	if !info.Mode().IsRegular() {
-		return "", 0, fmt.Errorf("%s: seed source must be a regular file", filename)
-	}
-	file, err := os.Open(filename)
-	if err != nil {
-		return "", 0, fmt.Errorf("%s: %w", filename, err)
-	}
-	defer func() { _ = file.Close() }()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", 0, fmt.Errorf("%s: %w", filename, err)
-	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), info.Size(), nil
 }
 
 func digestValue(value any) string {
@@ -658,21 +622,21 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		ReadyToFly:         "no",
 		ExecutionMode:      mode,
 		StaticConfigDigest: boardResult.StaticConfigDigest,
-		SeedDigest:         boardResult.Seed.Digest,
-		SeedRoot:           boardResult.Seed.Root,
+		UploadDigest:       boardResult.Upload.Digest,
 		Nomad: nomadPlanResult{
 			Address:   doc.Nomad.Address,
 			Namespace: doc.Nomad.Namespace,
 		},
 	}
-	result.Conditions = append(result.Conditions, conditionFromBoard(boardResult))
+	result.Conditions = append(result.Conditions, conditionFromBoard(boardResult, opts.DryRun))
 	jobsReady := evaluateNomadJobs(doc.Nomad.Jobs, opts.RepoRoot, &result)
 	if opts.DryRun {
 		result.Conditions = append(result.Conditions, conditionTrue("NomadSubmission", "DryRun", "dry run completed without submitting to Nomad", "nomad"))
 	} else {
 		result.Conditions = append(result.Conditions, conditionFalse("NomadSubmission", "ExecutorUnavailable", "live Nomad submission is not implemented; rerun with --dry-run", "nomad"))
 	}
-	if boardResult.ReadyToFly == "yes" && jobsReady && opts.DryRun {
+	boardReadyForFly := boardResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(boardResult.Conditions))
+	if boardReadyForFly && jobsReady && opts.DryRun {
 		result.ReadyToFly = "yes"
 	}
 	return result
@@ -715,11 +679,14 @@ func evaluateNomadJobs(jobs []nomadJobSpec, repoRoot string, result *flyResult) 
 	return allReady
 }
 
-func conditionFromBoard(result boardResult) condition {
+func conditionFromBoard(result boardResult, dryRun bool) condition {
 	if result.ReadyToFly == "yes" {
-		return conditionTrue("BoardingReady", "ReadyToFly", "boarding inputs are ready for fly", "board")
+		return conditionTrue("BoardingReady", "ReadyToFly", "workspace upload is present on the target", "board")
 	}
-	return conditionFalse("BoardingReady", "NotReadyToFly", "boarding inputs are not ready for fly", "board")
+	if dryRun && !hasFalseCondition(result.Conditions) {
+		return conditionTrue("BoardingReady", "DryRun", "dry run prepared the upload bundle without proving remote boarding", "board")
+	}
+	return conditionFalse("BoardingReady", "NotReadyToFly", "workspace upload is not present on the target", "board")
 }
 
 func hasFalseCondition(conditions []condition) bool {
@@ -740,9 +707,6 @@ func conditionFalse(conditionType string, reason string, message string, resourc
 }
 
 func writeOutput(w io.Writer, format string, value any) error {
-	if isProjectedOutputFormat(format) {
-		return writeProjectedOutput(w, format, value)
-	}
 	return formatio.Write(w, format, value)
 }
 
@@ -764,11 +728,12 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `guardian
 
 usage:
-  guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon|text|table|dot|mermaid] [--dry-run] [--stream]
-  guardian fly <config.cue|yaml|json|toml|toon> --dry-run [-o yaml|json|toml|toon|text|table|dot|mermaid] [--stream]
+  guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon] [--dry-run] [--stream]
+  guardian fly <config.cue|yaml|json|toml|toon> --dry-run [-o yaml|json|toml|toon] [--stream]
 
-board loads a FlyProcedure config document, checks SSH access configuration,
-computes the content-addressed seed, and reports whether fly can be planned.
+board loads a FlyProcedure config document, builds the workspace upload bundle,
+runs the access and upload lifecycle hooks, and reports whether the verify hook
+observed the same upload digest.
 
 fly loads the same document and wraps the declared Nomad jobs. Live
 Nomad submission is not implemented yet; use --dry-run for the current slice.

@@ -1,7 +1,6 @@
 # Configuration and Credentials
 
-Guardian includes static configuration in the seed manifest and reports a
-digest of the values it consumed.
+Guardian reports a digest of the static configuration values it consumed.
 
 ```yaml
 staticConfig:

@@ -1,8 +1,6 @@
 package v1alpha1
 
 #NonEmptyString: string & !=""
-#Duration:       =~"^([0-9]+(ns|us|ms|s|m|h))+$"
-#Mode:           =~"^0[0-7]{3}$"
 #HTTPSURL:       =~"^https://[^\\s/$.?#].[^\\s]*$"
 
 #Document: #FlyProcedure
@@ -23,38 +21,17 @@ package v1alpha1
 }
 
 #Board: {
-	substrate: {
-		stateDir: #NonEmptyString
-	}
-	access: {
-		ssh: #SSHAccess
-	}
-	seed: #Seed
+	access: #LifecycleHook
+	upload: #Upload
 }
 
-#SSHAccess: {
-	host:            #NonEmptyString
-	port:            int & >=1 & <=65535
-	user:            #NonEmptyString
-	knownHostsFile:  #NonEmptyString
-	identityFile?:   #NonEmptyString
-	connectTimeout?: #Duration
-	wireguardFallback?: {
-		host:       #NonEmptyString
-		port:       int & >=1 & <=65535
-		interface?: #NonEmptyString
-	}
+#Upload: {
+	run:    #LifecycleHook
+	verify: #LifecycleHook
 }
 
-#Seed: {
-	targetRoot: #NonEmptyString
-	paths: [#SeedPath, ...#SeedPath]
-}
-
-#SeedPath: {
-	source: #NonEmptyString
-	target: #NonEmptyString
-	mode:   #Mode
+#LifecycleHook: {
+	argv: [#NonEmptyString, ...#NonEmptyString]
 }
 
 #NomadJobFile: {

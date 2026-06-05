@@ -14,15 +14,12 @@ response without parsing progress logs.
 ## Response Formats
 
 `-o yaml` is the default. `json`, `toml`, and `toon` are supported for
-automation and language-specific tooling. `text` and `table` are human
-inspection formats. `dot` and `mermaid` render the loaded document or command
-result as a directed graph for topology inspection and documentation.
-`--output` is the long form, and `--format` is accepted as an alias.
+automation and language-specific tooling. `--output` is the long form, and
+`--format` is accepted as an alias.
 
 JSON uses Go's standard `encoding/json` package. YAML uses `gopkg.in/yaml.v3`.
 TOML uses `github.com/BurntSushi/toml`. TOON uses
-`github.com/toon-format/toon-go`. `table` uses Go's standard `text/tabwriter`.
-`dot` emits Graphviz DOT syntax. `mermaid` emits Mermaid flowchart syntax.
+`github.com/toon-format/toon-go`.
 
 ## Input Formats
 
@@ -34,13 +31,14 @@ development tooling, not in the runtime command surface.
 
 ## Boarding
 
-`board` checks the `board` section of the config document, computes the seed
-manifest digest, and reports access and seed status.
+`board` checks the `board` section of the config document, computes the upload
+bundle digest, runs the access and upload lifecycle hooks, and reports upload
+status.
 
-`ready_to_fly: yes` means the loaded config document has enough local evidence
-for `guardian fly --dry-run` to plan the Nomad jobs. Missing seed sources,
-invalid remote seed targets, invalid modes, or invalid access settings produce
-`ready_to_fly: no` with stable condition reasons.
+`ready_to_fly: yes` means the access hook completed and the verify hook
+observed the same digest Guardian computed locally. Missing build artifacts,
+failed hooks, or digest mismatches produce `ready_to_fly: no` with stable
+condition reasons.
 
 ## Fly
 
