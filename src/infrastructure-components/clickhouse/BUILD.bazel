@@ -94,7 +94,7 @@ spire_identity(
     path = "/svc/clickhouse-server",
     restart_units = ["clickhouse-server-spiffe-helper"],
     user = "clickhouse",
-    visibility = ["//src/bootstrap:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 spire_identity(
@@ -105,5 +105,5 @@ spire_identity(
     path = "/svc/clickhouse-operator",
     restart_units = ["clickhouse-operator-spiffe-helper"],
     user = "clickhouse_operator",
-    visibility = ["//src/bootstrap:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

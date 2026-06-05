@@ -6,6 +6,85 @@ job "vm-orchestrator" {
   group "daemon" {
     count = 1
 
+    task "setup" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/usr/bin/python3"
+        args = ["-c", <<-PY
+import os
+import pathlib
+import pwd
+import subprocess
+
+def run(args):
+    subprocess.run(args, check=True)
+
+import grp
+
+def ensure_group(name, gid=None):
+    try:
+        grp.getgrnam(name)
+        return
+    except KeyError:
+        args = ["/usr/sbin/groupadd", "--system"]
+        if gid is not None:
+            args += ["--gid", str(gid)]
+        args.append(name)
+        run(args)
+
+def ensure_user(name, uid, group):
+    try:
+        pwd.getpwnam(name)
+        return
+    except KeyError:
+        run([
+            "/usr/sbin/useradd",
+            "--system",
+            "--uid", str(uid),
+            "--gid", group,
+            "--home-dir", "/nonexistent",
+            "--shell", "/usr/sbin/nologin",
+            "--no-create-home",
+            name,
+        ])
+
+ensure_group("vm-clients")
+ensure_group("firecracker", 10000)
+ensure_user("firecracker", 10000, "firecracker")
+
+def mkdir(path, mode):
+    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    os.chown(path, 0, 0)
+    os.chmod(path, mode)
+
+mkdir("/run/vm-orchestrator", 0o750)
+mkdir("/var/lib/verself", 0o755)
+mkdir("/var/lib/verself/vm-orchestrator", 0o700)
+mkdir("/var/lib/verself/vm-orchestrator/storage-keys", 0o700)
+mkdir("/var/lib/verself/guest-images", 0o755)
+
+if subprocess.run(["/usr/sbin/zpool", "list", "-H", "vspool"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+    raise SystemExit("vm-orchestrator recovery requires mounted ZFS pool vspool")
+mkdir("/vspool/checkpoints", 0o755)
+mkdir("/vspool/checkpoints/jailer", 0o755)
+mkdir("/vspool/checkpoints/firecracker-snapshot-cache", 0o755)
+PY
+        ]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "stage-guest-images" {
       driver = "raw_exec"
       user = "root"
@@ -69,6 +148,12 @@ job "vm-orchestrator" {
         chown = true
       }
 
+      artifact {
+        source = "verself-artifact://vm-orchestrator-firecracker-runtime"
+        destination = "local/firecracker"
+        chown = true
+      }
+
       config {
         command = "local/bin/vm-orchestrator"
         args = [
@@ -81,8 +166,8 @@ job "vm-orchestrator" {
           "--storage-key-dir", "/var/lib/verself/vm-orchestrator/storage-keys",
           "--default-substrate-ref", "substrate",
           "--kernel-path", "/var/lib/verself/guest-images/vmlinux",
-          "--firecracker-bin", "/usr/local/bin/firecracker",
-          "--jailer-bin", "/usr/local/bin/jailer",
+          "--firecracker-bin", "local/firecracker/bin/firecracker",
+          "--jailer-bin", "local/firecracker/bin/jailer",
           "--jailer-root", "/vspool/checkpoints/jailer",
           "--snapshot-cache-dir", "/vspool/checkpoints/firecracker-snapshot-cache",
           "--firecracker-snapshots", "true",

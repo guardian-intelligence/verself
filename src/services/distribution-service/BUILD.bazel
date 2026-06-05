@@ -16,7 +16,7 @@ spire_identity(
     key = "distribution_service.default",
     path = "/svc/distribution-service",
     user = "distribution_service",
-    visibility = ["//src/bootstrap:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

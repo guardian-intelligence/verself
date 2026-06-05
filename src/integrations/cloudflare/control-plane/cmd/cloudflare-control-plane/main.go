@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
+	recoveryv1alpha1 "github.com/verself/recovery-spec/types/go/v1alpha1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -77,6 +78,8 @@ type config struct {
 	childTokenTTL            time.Duration
 	timeout                  time.Duration
 	verifyTempCredentials    bool
+	recoveryConfig           string
+	recovery                 *recoveryv1alpha1.CloudflareRecovery
 }
 
 type report struct {
@@ -115,6 +118,7 @@ type report struct {
 	VerificationObjectGetStatus  int                     `json:"verification_object_get_status,omitempty"`
 	Inventory                    []inventoryPrefixReport `json:"inventory,omitempty"`
 	AccountAdminStatus           accountAdminStatus      `json:"account_admin_status,omitempty"`
+	RecoveryConditions           []string                `json:"recovery_conditions,omitempty"`
 }
 
 type inventoryPrefixReport struct {
@@ -153,7 +157,7 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-account-admin", "Action: import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.action, "action", "verify-account-admin", "Action: recover, import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
 	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and site vars.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
@@ -169,7 +173,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.runtimeOpenBaoAddr, "runtime-openbao-addr", "", "Runtime OpenBao address for service-required secret projection. Defaults to --openbao-addr.")
 	fs.StringVar(&cfg.runtimeOpenBaoCACertFile, "runtime-openbao-ca-cert", "", "Runtime OpenBao CA certificate file. Defaults to --openbao-ca-cert, BAO_CACERT, or VAULT_CACERT.")
 	fs.StringVar(&cfg.runtimeOpenBaoTokenFile, "runtime-openbao-token-file", "", "File containing the runtime OpenBao token. Defaults to --openbao-token-file.")
-	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/bootstrap/sites/<site>/inventory.ini.")
+	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
 	fs.StringVar(&cfg.provider, "provider", "", "External provider for direct public-edge operations. Supported value: cloudflare.")
@@ -190,7 +194,11 @@ func run(args []string) error {
 	fs.DurationVar(&cfg.childTokenTTL, "child-token-ttl", 7*24*time.Hour, "TTL for generated Cloudflare child API tokens.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
+	fs.StringVar(&cfg.recoveryConfig, "recovery-config", "", "Path to a recovery.verself.sh/v1alpha1 CloudflareRecovery document for --action=recover.")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := cfg.applyRecoveryConfig(); err != nil {
 		return err
 	}
 	if err := cfg.applySiteDefaults(); err != nil {
@@ -204,10 +212,15 @@ func run(args []string) error {
 	if cfg.action == "issue-site-certificates" && timeout < 5*time.Minute {
 		timeout = 5 * time.Minute
 	}
+	if cfg.action == "recover" && timeout < 10*time.Minute {
+		timeout = 10 * time.Minute
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	switch cfg.action {
+	case "recover":
+		return recoverCloudflare(ctx, cfg)
 	case "import-account-admin":
 		return importAccountAdmin(ctx, cfg)
 	case "verify-account-admin":
@@ -400,9 +413,12 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "import-account-admin", "verify-account-admin", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "recover", "import-account-admin", "verify-account-admin", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be recover, import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+	}
+	if cfg.action == "recover" && cfg.recovery == nil {
+		return fmt.Errorf("--recovery-config is required for recovery")
 	}
 	if !certificateOnlyAction(cfg.action) {
 		if !r2control.IsCloudflareAccountID(cfg.accountID) {
@@ -561,9 +577,12 @@ func readRequiredSecretFile(path, label string) ([]byte, error) {
 	if path == "" {
 		return nil, fmt.Errorf("%s file is required", label)
 	}
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %s must not be a symlink", label, path)
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
@@ -718,7 +737,8 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 		}
 	}
 	if cfg.action == "rotate-object-storage-provider" {
-		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath("object-storage-service.r2.admin_access_key_id")), "object-storage provider runtime secret projection"); err != nil {
+		adminSecret := cfg.objectStorageRuntimeSecretNames().AdminAccessKeyName()
+		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath(adminSecret)), "object-storage provider runtime secret projection"); err != nil {
 			return err
 		}
 	}
@@ -976,7 +996,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 	if err := verifyObjectRoundTrip(ctx, proxyClient, cfg, "object-storage-proxy", out); err != nil {
 		return err
 	}
-	updates := objectStorageVars(adminToken, proxyToken)
+	updates := cfg.objectStorageVars(adminToken, proxyToken)
 	if err := writeRuntimeSecrets(ctx, cfg, updates); err != nil {
 		return err
 	}
@@ -1083,13 +1103,22 @@ func reconcileDNS(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
+	out, err := reconcileDNSDesired(ctx, cfg, accountAdmin, apiClient, desired)
+	if err != nil {
+		_ = writeReport(out)
+		return err
+	}
+	return writeReport(out)
+}
+
+func reconcileDNSDesired(ctx context.Context, cfg config, accountAdmin r2control.ParentCredentials, apiClient *r2control.CloudflareAPIClient, desired dnsDesiredState) (report, error) {
 	zoneIDsByName, err := apiClient.ZonesByName(ctx, desired.zoneNames())
 	if err != nil {
-		return fmt.Errorf("list cloudflare zones: %w", err)
+		return report{}, fmt.Errorf("list cloudflare zones: %w", err)
 	}
 	plan, err := buildDNSPlan(ctx, apiClient, zoneIDsByName, desired)
 	if err != nil {
-		return err
+		return report{}, err
 	}
 	jobs := dnsWriteJobs(plan)
 
@@ -1116,19 +1145,18 @@ func reconcileDNS(ctx context.Context, cfg config) error {
 		})
 	}
 	if cfg.dryRun {
-		return writeReport(out)
+		return out, nil
 	}
 	applied, err := applyDNSWrites(ctx, apiClient, cfg.dnsConcurrency, jobs)
 	out.DNSRecordsApplied = applied
 	if err != nil {
-		_ = writeReport(out)
-		return err
+		return out, err
 	}
-	return writeReport(out)
+	return out, nil
 }
 
 func siteDNSZones(cfg config) ([]string, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "bootstrap", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -1210,7 +1238,7 @@ func (d dnsDesiredState) byZone(zone string) []dnsDesiredRecord {
 }
 
 func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "bootstrap", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return dnsDesiredState{}, fmt.Errorf("read %s: %w", path, err)
@@ -1236,7 +1264,7 @@ func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
 	if publicIP == "" || publicIP == "0.0.0.0" {
 		inventoryPath := cfg.dnsInventory
 		if strings.TrimSpace(inventoryPath) == "" {
-			inventoryPath = filepath.Join(cfg.repoRoot, "src", "bootstrap", "sites", cfg.site, "inventory.ini")
+			inventoryPath = filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "inventory.ini")
 		}
 		publicIP, err = inventoryInfraHost(inventoryPath)
 		if err != nil {
@@ -1345,7 +1373,7 @@ func inventoryInfraHost(path string) (string, error) {
 		host := fields[0]
 		for _, field := range fields[1:] {
 			key, value, ok := strings.Cut(field, "=")
-			if ok && key == "ansible_host" {
+			if ok && key == "verself_ssh_host" {
 				host = value
 				break
 			}
@@ -1512,13 +1540,14 @@ func deleteCreatedTokensOnError(errp *error, apiClient *r2control.CloudflareAPIC
 	}
 }
 
-func objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[string]string {
-	return map[string]string{
-		"object-storage-service.r2.admin_access_key_id":     adminToken.S3AccessKeyID,
-		"object-storage-service.r2.admin_secret_access_key": adminToken.S3SecretKey,
-		"object-storage-service.r2.proxy_access_key_id":     proxyToken.S3AccessKeyID,
-		"object-storage-service.r2.proxy_secret_access_key": proxyToken.S3SecretKey,
-	}
+func (cfg config) objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[string]string {
+	names := cfg.objectStorageRuntimeSecretNames()
+	return names.Map(
+		adminToken.S3AccessKeyID,
+		adminToken.S3SecretKey,
+		proxyToken.S3AccessKeyID,
+		proxyToken.S3SecretKey,
+	)
 }
 
 func fingerprintMap(values map[string]string) map[string]string {

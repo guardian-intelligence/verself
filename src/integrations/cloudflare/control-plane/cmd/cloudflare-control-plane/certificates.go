@@ -58,14 +58,22 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
+	out, err := issueCertificatesWithClient(ctx, cfg, apiClient, certificates, zones, "provider:cloudflare-api-token-file")
+	if err != nil {
+		return err
+	}
+	return writeReport(out)
+}
+
+func issueCertificatesWithClient(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient, certificates []siteTLSCertificate, zones []string, source string) (report, error) {
 	zoneIDsByName, err := apiClient.ZonesByName(ctx, zones)
 	if err != nil {
-		return fmt.Errorf("list cloudflare zones for ACME DNS-01: %w", err)
+		return report{}, fmt.Errorf("list cloudflare zones for ACME DNS-01: %w", err)
 	}
 	outputDir := certificateOutputDir(cfg)
 	accountKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("generate ACME account key: %w", err)
+		return report{}, fmt.Errorf("generate ACME account key: %w", err)
 	}
 	acmeClient := &acme.Client{
 		Key:          accountKey,
@@ -73,10 +81,10 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 	}
 	contact, err := acmeContact(cfg.acmeContactEmail)
 	if err != nil {
-		return err
+		return report{}, err
 	}
 	if _, err := acmeClient.Register(ctx, &acme.Account{Contact: []string{contact}}, acme.AcceptTOS); err != nil {
-		return fmt.Errorf("register ACME account: %w", err)
+		return report{}, fmt.Errorf("register ACME account: %w", err)
 	}
 
 	out := report{
@@ -84,22 +92,22 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 		Action:                 cfg.action,
 		ControlPlaneSite:       cloudflareControlPlaneSite,
 		Site:                   cfg.site,
-		ParentCredentialSource: "provider:cloudflare-api-token-file",
+		ParentCredentialSource: source,
 	}
 	out.VerifiedWith = "cloudflare-provider-token-acme-dns01"
 	for _, certificate := range certificates {
 		pemFile := filepath.Join(outputDir, certificate.Name+".pem")
 		expiresAt, reusable, err := certificateReusable(pemFile, certificate.Domains, cfg.certificateRenewBefore)
 		if err != nil {
-			return err
+			return report{}, err
 		}
 		if !reusable {
 			pemBody, expires, err := issueACMECertificate(ctx, acmeClient, apiClient, zoneIDsByName, certificate.Domains, cfg.acmeDNSPropagationWait)
 			if err != nil {
-				return fmt.Errorf("issue certificate %s: %w", certificate.Name, err)
+				return report{}, fmt.Errorf("issue certificate %s: %w", certificate.Name, err)
 			}
 			if err := writeCertificate(pemFile, pemBody); err != nil {
-				return err
+				return report{}, err
 			}
 			expiresAt = expires.Format(time.RFC3339)
 		}
@@ -111,7 +119,7 @@ func issueSiteCertificates(ctx context.Context, cfg config) error {
 			Reused:    reusable,
 		})
 	}
-	return writeReport(out)
+	return out, nil
 }
 
 func cloudflareProviderClient(cfg config) (*r2control.CloudflareAPIClient, error) {
@@ -133,7 +141,7 @@ func loadSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error)
 	if hasExplicitTLSConfig(cfg) {
 		return explicitSiteTLSCertificates(cfg)
 	}
-	path := filepath.Join(cfg.repoRoot, "src", "bootstrap", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", path, err)

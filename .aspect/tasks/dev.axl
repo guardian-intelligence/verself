@@ -9,8 +9,6 @@ load(
 )
 
 DEV_CONVENIENCE_SHIMS = [
-    # Inspect the Bazel-pinned Ansible collection set used by host convergence.
-    ("ansible-galaxy", "//src/bootstrap:ansible_galaxy_bin"),
     ("buildifier", "//src/tools/dev/binaries:buildifier"),
     ("gofumpt", "//src/tools/dev/binaries:gofumpt"),
     ("ruby", "//src/tools/dev/binaries:ruby"),

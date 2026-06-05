@@ -54,10 +54,6 @@ load(
     dev_install = "install",
 )
 load(
-    ".aspect/tasks/host_configuration.axl",
-    host_configuration_operator_access_handoff = "operator_access_handoff",
-)
-load(
     ".aspect/tasks/integrations.axl",
     integrations_cloudflare_control_plane = "cloudflare_control_plane",
     integrations_stripe_projects = "stripe_projects",
@@ -86,20 +82,12 @@ load(
     release_mksk = "mksk",
     release_npm_probe = "npm_probe",
 )
-load(
-    ".aspect/tasks/site.axl",
-    bootstrap_deploy = "bootstrap_deploy",
-    site_converge_host = "converge_host",
-    site_inventory_write = "inventory_write",
-    site_root_handoff = "root_handoff",
-)
 load(".aspect/tasks/tidy.axl", "tidy")
 load(".aspect/tasks/vp.axl", "vp")
 
 def config(ctx):
     # Top-level tasks.
     ctx.tasks.add(deploy)
-    ctx.tasks.add(bootstrap_deploy)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
     ctx.tasks.add(tidy)
@@ -116,14 +104,6 @@ def config(ctx):
     # aspect release ...
     ctx.tasks.add(release_mksk)
     ctx.tasks.add(release_npm_probe)
-
-    # aspect host ...
-    ctx.tasks.add(host_configuration_operator_access_handoff)
-
-    # aspect site ...
-    ctx.tasks.add(site_inventory_write)
-    ctx.tasks.add(site_root_handoff)
-    ctx.tasks.add(site_converge_host)
 
     # aspect integrations ...
     ctx.tasks.add(integrations_cloudflare_control_plane)

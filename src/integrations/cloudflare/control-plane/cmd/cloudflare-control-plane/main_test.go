@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
+	recoveryv1alpha1 "github.com/verself/recovery-spec/types/go/v1alpha1"
 )
 
 func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
@@ -143,6 +144,23 @@ func TestReadRequiredSecretFileRequiresOperatorOnlyMode(t *testing.T) {
 	}
 }
 
+func TestReadRequiredSecretFileRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("cloudflare-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "token")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := readRequiredSecretFile(link, "cloudflare token")
+	if err == nil || !strings.Contains(err.Error(), "must not be a symlink") {
+		t.Fatalf("read error = %v", err)
+	}
+}
+
 func TestReadRequiredSecretFileTrimsSecret(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(path, []byte(" cloudflare-token\n"), 0o600); err != nil {
@@ -161,7 +179,7 @@ func TestReadRequiredSecretFileTrimsSecret(t *testing.T) {
 
 func TestSiteDNSZonesUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 cloudflare_product_zone: verself.sh
 company_domain: gamma.guardianintelligence.org
@@ -181,16 +199,16 @@ cloudflare_dns_records:
 
 func TestLoadDNSDesiredStateUsesInventoryWhenSiteIPIsPlaceholder(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 company_domain: gamma.guardianintelligence.org
 bare_metal_public_ipv4: 0.0.0.0
 cloudflare_dns_records:
   - { kind: browser_origin, record: "@", zone: product }
 `)
-	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/inventory.ini"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/inventory.ini"), `
 [infra]
-vs-gamma-w0 ansible_host=203.0.113.10
+vs-gamma-w0 verself_ssh_host=203.0.113.10
 `)
 
 	desired, err := loadDNSDesiredState(config{repoRoot: root, site: "gamma"})
@@ -207,7 +225,7 @@ vs-gamma-w0 ansible_host=203.0.113.10
 
 func TestLoadDNSDesiredStateUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/bootstrap/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 cloudflare_product_zone: verself.sh
 company_domain: gamma.guardianintelligence.org
@@ -236,6 +254,66 @@ cloudflare_dns_records:
 	company := byFQDN["gamma.guardianintelligence.org"]
 	if company.zoneName != "guardianintelligence.org" || company.record != "gamma" {
 		t.Fatalf("company record = %+v", company)
+	}
+}
+
+func TestApplyRecoveryConfigMapsMinimalCloudflareRecovery(t *testing.T) {
+	t.Setenv("NOMAD_SECRETS_DIR", "/alloc/secrets")
+	path := filepath.Join(t.TempDir(), "cloudflare-recovery.yml")
+	writeTestFile(t, path, minimalRecoveryConfigYAML())
+
+	cfg := validTestConfig()
+	cfg.action = "recover"
+	cfg.recoveryConfig = path
+	if err := cfg.applyRecoveryConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.site != "gamma" || cfg.accountID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("site/account = %s/%s", cfg.site, cfg.accountID)
+	}
+	if cfg.openBaoTokenFile != "/alloc/secrets/vault_token" {
+		t.Fatalf("openbao token file = %q", cfg.openBaoTokenFile)
+	}
+	if cfg.objectStorageRuntimeSecretNames().AdminAccessKeyName() != "object-storage-service.r2.admin_access_key_id" {
+		t.Fatalf("runtime secret names = %#v", cfg.objectStorageRuntimeSecretNames())
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDNSDesiredStateFromRecoveryUsesHostedZones(t *testing.T) {
+	doc := recoveryv1alpha1.CloudflareRecovery{
+		Spec: recoveryv1alpha1.CloudflareRecoverySpec{
+			TargetIPv4: "203.0.113.10",
+			DNS: recoveryv1alpha1.CloudflareDNS{
+				Zones: []recoveryv1alpha1.CloudflareDNSZone{
+					{Name: "product", Zone: "verself.sh", Domain: "gamma.verself.sh"},
+					{Name: "company", Zone: "guardianintelligence.org", Domain: "gamma.guardianintelligence.org"},
+				},
+				Records: []recoveryv1alpha1.CloudflareDNSRecord{
+					{Zone: "product", Record: "deployments.api", TTL: 1},
+					{Zone: "company", Record: "@", TTL: 1},
+				},
+			},
+		},
+	}
+	desired, err := dnsDesiredStateFromRecovery(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(desired.records) != 2 {
+		t.Fatalf("records = %#v", desired.records)
+	}
+	byFQDN := map[string]dnsDesiredRecord{}
+	for _, record := range desired.records {
+		byFQDN[record.fqdn] = record
+	}
+	if got := byFQDN["deployments.api.gamma.verself.sh"]; got.zoneName != "verself.sh" || got.record != "deployments.api.gamma" {
+		t.Fatalf("product record = %+v", got)
+	}
+	if got := byFQDN["gamma.guardianintelligence.org"]; got.zoneName != "guardianintelligence.org" || got.record != "gamma" {
+		t.Fatalf("company record = %+v", got)
 	}
 }
 
@@ -296,4 +374,50 @@ func writeCloudflareAccountConfig(t *testing.T, root string) {
     "recovery_bucket": "verself-recovery"
   }
 }`)
+}
+
+func minimalRecoveryConfigYAML() string {
+	return `apiVersion: recovery.verself.sh/v1alpha1
+kind: CloudflareRecovery
+metadata:
+  name: gamma-cloudflare
+spec:
+  site: gamma
+  accountID: 0123456789abcdef0123456789abcdef
+  accountAdminTokenFile: /run/verself/recovery/credentials/cloudflare-account-admin-api-token
+  targetIPv4: 203.0.113.10
+  openBao:
+    address: https://127.0.0.1:8200
+    tokenFile: ${NOMAD_SECRETS_DIR}/vault_token
+    caCertFile: /etc/verself/openbao/ca.pem
+  dns:
+    zones:
+      - name: product
+        zone: verself.sh
+        domain: gamma.verself.sh
+    records:
+      - zone: product
+        record: "@"
+        ttl: 1
+        proxied: false
+  tls:
+    outputDir: /etc/haproxy/certs
+    acme:
+      directoryURL: https://acme-v02.api.letsencrypt.org/directory
+      contactEmail: agents@guardianintelligence.org
+      dnsPropagationWait: 2m
+      renewBefore: 720h
+    certificates:
+      - name: gamma.verself.sh
+        domains:
+          - gamma.verself.sh
+  objectStorage:
+    bucket: verself-deployment-artifacts
+    childTokenTTL: 168h
+    runtimeSecrets:
+      adminAccessKeyID: object-storage-service.r2.admin_access_key_id
+      adminSecretAccessKey: object-storage-service.r2.admin_secret_access_key
+      proxyAccessKeyID: object-storage-service.r2.proxy_access_key_id
+      proxySecretAccessKey: object-storage-service.r2.proxy_secret_access_key
+`
 }

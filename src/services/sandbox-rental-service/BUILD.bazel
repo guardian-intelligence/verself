@@ -16,7 +16,7 @@ spire_identity(
     key = "sandbox_rental.default",
     path = "/svc/sandbox-rental-service",
     user = "sandbox_rental",
-    visibility = ["//src/bootstrap:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

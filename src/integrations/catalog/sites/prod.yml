@@ -97,9 +97,9 @@ integrations:
     owner: src/infrastructure-components/zitadel
     purpose: identity_provider_bootstrap
     credentials:
-      - key: github-integration-service.github.oauth_client_secret
+      - key: auth-control-plane.github_login.oauth_client_secret
         source: provider_oauth_app
         target: runtime_secret
         target_store: site_openbao
-        openbao_name: github-integration-service.github.oauth_client_secret
-    reason: Zitadel is hosted inside the Verself site.
+        openbao_name: auth-control-plane.github_login.oauth_client_secret
+    reason: Zitadel is hosted inside the Verself site and reads its GitHub login client secret through auth-control-plane runtime policy.

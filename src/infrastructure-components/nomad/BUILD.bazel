@@ -1,0 +1,26 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+genrule(
+    name = "nomad_bin",
+    srcs = ["@nomad_tool_nomad//file"],
+    outs = ["nomad"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+unzip -q "$(location @nomad_tool_nomad//file)" -d "$$tmp"
+install -m 0755 "$$tmp/nomad" "$@"
+""",
+)
+
+pkg_tar(
+    name = "runtime_artifact",
+    out = "nomad-runtime.tar",
+    files = {
+        ":nomad_bin": "bin/nomad",
+    },
+    modes = {
+        "bin/nomad": "0755",
+    },
+    visibility = ["//visibility:public"],
+)

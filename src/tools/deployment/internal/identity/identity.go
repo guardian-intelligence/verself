@@ -2,7 +2,7 @@
 // single (run-key, deploy-id, site, sha, …) tuple is captured at
 // process start, projected onto W3C baggage so every span emitted in
 // the run carries it, and fanned out as env vars when a child
-// process (ansible-playbook, reconciler scripts) needs to inherit
+// process needs to inherit
 // the same correlation.
 //
 // Generate produces a fresh snapshot for the verself-deploy process;

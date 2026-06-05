@@ -8,7 +8,7 @@ import (
 
 func TestLoadSiteConfigReadsNomadAddr(t *testing.T) {
 	root := t.TempDir()
-	writeDeployEngineTestFile(t, root, "src/bootstrap/sites/gamma/site.json", `{
+	writeDeployEngineTestFile(t, root, "src/sites/gamma/site.json", `{
   "nomad_addr": "http://127.0.0.1:4646"
 }`)
 
@@ -23,7 +23,7 @@ func TestLoadSiteConfigReadsNomadAddr(t *testing.T) {
 
 func TestLoadSiteConfigDefaultsNomadAddr(t *testing.T) {
 	root := t.TempDir()
-	writeDeployEngineTestFile(t, root, "src/bootstrap/sites/gamma/site.json", `{}`)
+	writeDeployEngineTestFile(t, root, "src/sites/gamma/site.json", `{}`)
 
 	cfg, err := loadSiteConfig(root, "gamma")
 	if err != nil {

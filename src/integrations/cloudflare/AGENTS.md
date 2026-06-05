@@ -120,17 +120,14 @@ managed destination, MX, SPF, and routing-rule reconciliation from
 `cloudflare-integration-service`. Human destination verification remains a
 provider-side step when Cloudflare requires a mailbox verification click.
 
-## Bootstrap Boundary
+## Recovery Boundary
 
-Bootstrap artifact delivery does not use Cloudflare. `aspect site
-bootstrap-deploy` copies the initial artifacts over recovery SSH and registers
-Nomad jobs through the recovery tunnel.
-
-Fresh bootstrap requires an operator-provided Cloudflare admin API token for the
-provider account. OpenTofu may reconcile non-secret global resources such as
-zones, buckets, and provider policy scaffolding. Provider token values and child
-credential generations are imported or created by `cloudflare-integration-service`
-and stored through `secrets-service` after OpenBao is available.
+Artifact delivery does not use Cloudflare. Fresh recovery requires an
+operator-provided Cloudflare admin API token for the provider account.
+OpenTofu may reconcile non-secret global resources such as zones, buckets, and
+provider policy scaffolding. Provider token values and child credential
+generations are imported or created by the Cloudflare integration recovery job
+and stored through OpenBao or `secrets-service` once that boundary is available.
 
 ## Failure Rules
 

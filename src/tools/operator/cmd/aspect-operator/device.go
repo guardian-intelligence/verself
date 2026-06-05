@@ -97,7 +97,7 @@ func configureOperatorDevice(opts deviceOptions) error {
 		Alias:     strings.TrimSpace(ops.BareMetalHostAlias),
 		Access:    accessHost,
 		SSHRoute:  route,
-		Inventory: filepath.Join(repoRoot, "src", "bootstrap", "sites", opts.site, "inventory.ini"),
+		Inventory: filepath.Join(repoRoot, "src", "sites", opts.site, "inventory.ini"),
 		KeyPath:   filepath.Join(home, ".ssh", defaultSSHKeyName),
 		PubPath:   filepath.Join(home, ".ssh", defaultSSHKeyName+".pub"),
 	}
@@ -237,15 +237,13 @@ func writeDeviceInventory(cfg deviceConfig, opts deviceOptions) error {
 
 func renderDeviceInventory(cfg deviceConfig) string {
 	return fmt.Sprintf(`[workers]
-%s ansible_host=%s
+%s verself_ssh_host=%s
 
 [infra]
-%s ansible_host=%s
+%s verself_ssh_host=%s
 
 [all:vars]
-ansible_user=%s@%s
-ansible_python_interpreter=/usr/bin/python3
-ansible_ssh_extra_args=-o IdentitiesOnly=yes
+verself_ssh_user=%s@%s
 `, cfg.Alias, cfg.Access, cfg.Alias, cfg.Access, defaultOperatorSSHUser, cfg.SSHRoute)
 }
 

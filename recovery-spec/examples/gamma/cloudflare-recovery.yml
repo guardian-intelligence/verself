@@ -1,0 +1,67 @@
+apiVersion: recovery.verself.sh/v1alpha1
+kind: CloudflareRecovery
+metadata:
+  name: gamma-cloudflare
+spec:
+  site: gamma
+  accountID: c3eaeffaadf7d4847684d4775c16d598
+  accountAdminTokenFile: /run/verself/recovery/credentials/cloudflare-account-admin-api-token
+  targetIPv4: 206.223.228.87
+  openBao:
+    address: https://127.0.0.1:8200
+    tokenFile: ${NOMAD_SECRETS_DIR}/vault_token
+    caCertFile: /etc/verself/openbao/ca.pem
+  dns:
+    zones:
+      - name: product
+        zone: verself.sh
+        domain: gamma.verself.sh
+      - name: company
+        zone: guardianintelligence.org
+        domain: gamma.guardianintelligence.org
+    records:
+      - { zone: product, record: "@", ttl: 1, proxied: false }
+      - { zone: product, record: billing.api, ttl: 1, proxied: false }
+      - { zone: product, record: deployments.api, ttl: 1, proxied: false }
+      - { zone: product, record: distribution.api, ttl: 1, proxied: false }
+      - { zone: product, record: oci, ttl: 1, proxied: false }
+      - { zone: product, record: sandbox.api, ttl: 1, proxied: false }
+      - { zone: product, record: iam.api, ttl: 1, proxied: false }
+      - { zone: product, record: profile.api, ttl: 1, proxied: false }
+      - { zone: product, record: notifications.api, ttl: 1, proxied: false }
+      - { zone: product, record: projects.api, ttl: 1, proxied: false }
+      - { zone: product, record: source.api, ttl: 1, proxied: false }
+      - { zone: product, record: governance.api, ttl: 1, proxied: false }
+      - { zone: product, record: github.api, ttl: 1, proxied: false }
+      - { zone: product, record: secrets.api, ttl: 1, proxied: false }
+      - { zone: product, record: email.api, ttl: 1, proxied: false }
+      - { zone: product, record: dashboard, ttl: 1, proxied: false }
+      - { zone: product, record: access, ttl: 1, proxied: false }
+      - { zone: product, record: git, ttl: 1, proxied: false }
+      - { zone: product, record: mail, ttl: 1, proxied: false }
+      - { zone: product, record: npm, ttl: 1, proxied: false }
+      - { zone: company, record: "@", ttl: 1, proxied: false }
+  tls:
+    outputDir: /etc/haproxy/certs
+    acme:
+      directoryURL: https://acme-v02.api.letsencrypt.org/directory
+      contactEmail: agents@guardianintelligence.org
+      dnsPropagationWait: 2m
+      renewBefore: 720h
+    certificates:
+      - name: gamma.verself.sh
+        domains:
+          - gamma.verself.sh
+          - "*.gamma.verself.sh"
+          - "*.api.gamma.verself.sh"
+      - name: gamma.guardianintelligence.org
+        domains:
+          - gamma.guardianintelligence.org
+  objectStorage:
+    bucket: verself-deployment-artifacts
+    childTokenTTL: 168h
+    runtimeSecrets:
+      adminAccessKeyID: object-storage-service.r2.admin_access_key_id
+      adminSecretAccessKey: object-storage-service.r2.admin_secret_access_key
+      proxyAccessKeyID: object-storage-service.r2.proxy_access_key_id
+      proxySecretAccessKey: object-storage-service.r2.proxy_secret_access_key

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "v1alpha1",
+    srcs = ["cloudflare.go"],
+    importpath = "github.com/verself/recovery-spec/types/go/v1alpha1",
+    visibility = ["//visibility:public"],
+    deps = ["@in_gopkg_yaml_v3//:yaml_v3"],
+)
+
+go_test(
+    name = "v1alpha1_test",
+    srcs = ["cloudflare_test.go"],
+    embed = [":v1alpha1"],
+)

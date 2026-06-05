@@ -1,17 +1,20 @@
 # gazelle:prefix github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "cloudflare-control-plane_lib",
     srcs = [
         "certificates.go",
         "main.go",
+        "recovery.go",
         "site.go",
     ],
     importpath = "github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane",
     visibility = ["//visibility:private"],
     deps = [
+        "//recovery-spec/types/go/v1alpha1",
         "//src/integrations/cloudflare/control-plane/r2control",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_x_crypto//acme",
@@ -24,9 +27,18 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+nomad_binary_artifact(
+    name = "cloudflare-control-plane_nomad_artifact",
+    binary = ":cloudflare-control-plane",
+    output = "cloudflare-control-plane",
+)
+
 go_test(
     name = "cloudflare-control-plane_test",
     srcs = ["main_test.go"],
     embed = [":cloudflare-control-plane_lib"],
-    deps = ["//src/integrations/cloudflare/control-plane/r2control"],
+    deps = [
+        "//recovery-spec/types/go/v1alpha1",
+        "//src/integrations/cloudflare/control-plane/r2control",
+    ],
 )

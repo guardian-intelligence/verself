@@ -45,11 +45,11 @@ readiness check without submitting a deployment.
 
 The run command checks that the selected site is past S7
 deployment-service-ready, authenticates the request, and submits the desired
-Git SHA to that site's deployment-service. It does not SSH, run Ansible, or
+Git SHA to that site's deployment-service. It does not SSH, run recovery, or
 mutate Nomad directly.
 
 The status command fetches deployment state and, with --events, the deployment
-event ledger from that site's deployment-service. It does not SSH, run Ansible,
+event ledger from that site's deployment-service. It does not SSH, run recovery,
 or query Nomad directly.
 
 The validate command checks site metadata, provider catalog entries,

@@ -161,10 +161,10 @@ target DNS records, R2 prefixes, runtime capability credentials, and evidence
 labels. Target hosts do not receive Cloudflare account authority during host
 bootstrap.
 
-For first-site bootstrap, the operator passes one local Cloudflare
-account-admin token through the `aspect bootstrap-deploy`
-`--bootstrap-credentials-file` handoff. Bootstrap uses that token to derive and
-verify bucket-scoped R2 child credentials, then imports only the runtime child
+For first-site recovery, the operator provides one local Cloudflare
+account-admin token through the recovery configuration consumed by the
+Cloudflare integration recovery job. That job derives and verifies
+bucket-scoped R2 child credentials, then imports only the runtime child
 credentials into site OpenBao. After the site is alive, steady-state
 Cloudflare authority is service-owned and stored through `secrets-service`.
 

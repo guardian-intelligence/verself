@@ -17,7 +17,7 @@ Conventions:
     non-zero exit code. They never silently coerce errors to no-ops.
 """
 
-HOST_CONFIGURATION_DIR = "src/bootstrap"
+SITE_CONFIGURATION_DIR = "src/sites"
 DEFAULT_SITE = "prod"
 GO_DIRS = [
     "src/services/analytics-service",
@@ -49,8 +49,6 @@ GO_DIRS = [
 VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
 ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operator"
 ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-publisher"
-ANSIBLE_PLAYBOOK_TARGET = "//src/bootstrap:ansible_playbook_bin"
-ANSIBLE_COLLECTIONS_ARCHIVE_TARGET = "//src/bootstrap:ansible_collections_archive"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 STRIPE_CLI_SHIM = ("stripe", "//src/tools/dev/binaries:stripe")
 
@@ -72,17 +70,17 @@ def ws_path(ctx, *parts):
 
 def site_inventory_source(site):
     """Repo-relative path to the per-site authored inventory file."""
-    return HOST_CONFIGURATION_DIR + "/sites/" + site + "/inventory.ini"
+    return SITE_CONFIGURATION_DIR + "/" + site + "/inventory.ini"
 
 def inventory_check(ctx, site = DEFAULT_SITE):
-    """Fail loud when the per-site Ansible inventory is missing."""
+    """Fail loud when the per-site SSH inventory is missing."""
     inv = ws_path(ctx, site_inventory_source(site))
     r = (ctx.std.process.command("test")
         .args(["-f", inv])
         .spawn().wait())
     if r.code != 0:
         ctx.std.io.stderr.write(
-            "ERROR: " + site_inventory_source(site) + " not found. Bootstrap site inventory before running this task.\n",
+            "ERROR: " + site_inventory_source(site) + " not found. Configure site SSH inventory before running this task.\n",
         )
         return 1
     return 0
@@ -348,8 +346,6 @@ def path_env_with_bazel_tool_shims(ctx, shims, bin_dir = ".verself/tools/aspect/
             return None
         env["PATH"] = tool_dir + ":" + DEFAULT_PROCESS_PATH
         for name, _target in shims:
-            if name == "ansible-playbook":
-                env["VERSELF_ANSIBLE_PLAYBOOK_BIN"] = tool_dir + "/ansible-playbook"
             if name == "tofu":
                 env["TOFU_BIN"] = tool_dir + "/tofu"
     return env
@@ -439,48 +435,6 @@ def stripe_cli_plugin_context(ctx, plugin_set, bin_dir = ".verself/tools/stripe/
         "env": env,
         "args_prefix": args_prefix,
     }
-
-def ansible_collections_path(ctx):
-    archive = bazel_output_file(ctx, ANSIBLE_COLLECTIONS_ARCHIVE_TARGET)
-    if archive == "":
-        return ""
-    hash_line = _capture_stdout(ctx, "sha256sum", [archive], label = "sha256sum ansible_collections.tar")
-    if hash_line == None:
-        return ""
-    archive_hash = hash_line.split(" ")[0]
-    out_dir = ws_path(ctx, ".verself", "tools", "host", "ansible-collections", archive_hash)
-    r = (ctx.std.process.command("test")
-        .args(["-d", out_dir + "/ansible_collections"])
-        .spawn().wait())
-    if r.code == 0:
-        return out_dir
-    rc = checked_spawn(ctx, "mkdir", ["-p", out_dir], label = "mkdir -p " + out_dir)
-    if rc != 0:
-        return ""
-    rc = checked_spawn(ctx, "tar", ["-xf", archive, "-C", out_dir], label = "tar -xf ansible_collections.tar")
-    if rc != 0:
-        return ""
-    return out_dir
-
-def host_ansible_playbook(ctx):
-    return bazel_output_file(ctx, ANSIBLE_PLAYBOOK_TARGET)
-
-def host_ansible_env(ctx, tool_shims = None, include_collections = True, extra_env = None):
-    shims = tool_shims if tool_shims != None else []
-    env = path_env_with_bazel_tool_shims(ctx, shims, extra_env = extra_env)
-    if env == None:
-        return None
-    # Explicit task envs must carry ssh-agent auth through to OpenSSH.
-    ssh_auth_sock = _read_env_value(ctx, "SSH_AUTH_SOCK")
-    if ssh_auth_sock != "":
-        env["SSH_AUTH_SOCK"] = ssh_auth_sock
-    if include_collections:
-        collections = ansible_collections_path(ctx)
-        if collections == "":
-            return None
-        env["ANSIBLE_COLLECTIONS_PATH"] = collections
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    return env
 
 def require_arg(ctx, name, value):
     """Reject empty required string args with the same message shape Make used."""

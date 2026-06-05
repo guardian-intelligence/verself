@@ -249,9 +249,9 @@ func deploymentBearerToken(ctx context.Context, audience string) (string, error)
 func deploymentServiceReachabilityError(baseURL string, err error) error {
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return fmt.Errorf("deployment.bootstrap.s7.deployment_service_dns: %s is not resolvable within the S7 deployment-service-ready check: %w. Bootstrap or recover the site first; normal aspect deploy does not SSH or run Ansible", baseURL, err)
+		return fmt.Errorf("deployment.bootstrap.s7.deployment_service_dns: %s is not resolvable within the S7 deployment-service-ready check: %w. Recover the site first; normal aspect deploy does not SSH or run recovery", baseURL, err)
 	}
-	return fmt.Errorf("deployment.bootstrap.s7.deployment_service: %s is not reachable within the S7 deployment-service-ready check: %w. Bootstrap or recover the site first; normal aspect deploy does not SSH or run Ansible", baseURL, err)
+	return fmt.Errorf("deployment.bootstrap.s7.deployment_service: %s is not reachable within the S7 deployment-service-ready check: %w. Recover the site first; normal aspect deploy does not SSH or run recovery", baseURL, err)
 }
 
 func submitDeployment(ctx context.Context, baseURL string, token string, reqBody submitRequest) (submitResponse, error) {

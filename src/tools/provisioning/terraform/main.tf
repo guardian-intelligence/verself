@@ -15,10 +15,10 @@ resource "latitudesh_ssh_key" "verself" {
 }
 
 # -----------------------------------------------------------------
-# Bootstrap user data
+# Recovery user data
 # -----------------------------------------------------------------
 resource "latitudesh_user_data" "verself" {
-  description = "verself-bootstrap"
+  description = "verself-recovery-access"
   content = base64encode(templatefile("${path.module}/cloud-init.yml.tpl", {
     ssh_public_key = trimspace(file(var.ssh_public_key_path))
   }))

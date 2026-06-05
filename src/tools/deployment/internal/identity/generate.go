@@ -39,7 +39,7 @@ type GenerateOptions struct {
 	Scope string
 
 	// Kind labels the deploy invocation type. Empty defaults to
-	// "ansible-playbook".
+	// "deploy-client".
 	Kind string
 
 	// CacheDir overrides the default $XDG_CACHE_HOME counter location.
@@ -69,7 +69,7 @@ func Generate(opts GenerateOptions) (Snapshot, error) {
 	if scope == "" {
 		scope = "affected"
 	}
-	kind := envOr("VERSELF_DEPLOY_KIND", opts.Kind, "ansible-playbook")
+	kind := envOr("VERSELF_DEPLOY_KIND", opts.Kind, "deploy-client")
 
 	gitMeta, err := readGitMetadata()
 	if err != nil {
@@ -124,7 +124,7 @@ func Generate(opts GenerateOptions) (Snapshot, error) {
 		"VERSELF_DEPLOY_SHA":     deploySha,
 		"VERSELF_DEPLOY_SCOPE":   scope,
 		"TRACEPARENT":            traceparent,
-		"OTEL_SERVICE_NAME":      envOr("OTEL_SERVICE_NAME", "", "ansible"),
+		"OTEL_SERVICE_NAME":      envOr("OTEL_SERVICE_NAME", "", "verself-deploy"),
 	}
 	values["OTEL_RESOURCE_ATTRIBUTES"] = buildResourceAttributes(values)
 	if endpoint := envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "", ""); endpoint != "" {

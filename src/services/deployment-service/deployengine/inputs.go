@@ -23,6 +23,7 @@ const (
 	deployPhasePreArtifact = "pre_artifact"
 	deployPhasePlatform    = "platform"
 	deployPhaseProduct     = "product"
+	deployPhaseProjection  = "projection"
 	deployPhaseEdge        = "edge"
 )
 
@@ -117,7 +118,7 @@ func buildDeployInputs(exec execution) (*deployInputs, error) {
 }
 
 func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
-	path := filepath.Join(repoRoot, "src", "bootstrap", "sites", site, "site.json")
+	path := filepath.Join(repoRoot, "src", "sites", site, "site.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return siteConfig{}, fmt.Errorf("read %s: %w", path, err)
@@ -263,6 +264,7 @@ var deployPhaseValues = []string{
 	deployPhasePreArtifact,
 	deployPhasePlatform,
 	deployPhaseProduct,
+	deployPhaseProjection,
 	deployPhaseEdge,
 }
 
@@ -270,6 +272,7 @@ var deployPhaseSet = map[string]struct{}{
 	deployPhasePreArtifact: {},
 	deployPhasePlatform:    {},
 	deployPhaseProduct:     {},
+	deployPhaseProjection:  {},
 	deployPhaseEdge:        {},
 }
 

@@ -78,8 +78,8 @@ func main() {
 	cfg := config{}
 	fs.StringVar(&cfg.action, "action", "bootstrap", "action: bootstrap or generate-root-token")
 	fs.StringVar(&cfg.bao, "bao", "bao", "bao binary path")
-	fs.StringVar(&cfg.stateDir, "state-dir", "/var/lib/verself/bootstrap/openbao", "OpenBao bootstrap state directory")
-	fs.StringVar(&cfg.siteRootTokenFile, "site-root-token-file", "/run/verself/bootstrap/openbao-site-root.token", "site root token file")
+	fs.StringVar(&cfg.stateDir, "state-dir", "/var/lib/verself/recovery/openbao", "OpenBao recovery state directory")
+	fs.StringVar(&cfg.siteRootTokenFile, "site-root-token-file", "/run/verself/recovery/openbao-site-root.token", "site root token file")
 	fs.IntVar(&cfg.keyShares, "key-shares", defaultKeyShares, "OpenBao operator init key shares")
 	fs.IntVar(&cfg.threshold, "key-threshold", defaultThreshold, "OpenBao operator init key threshold")
 	fs.StringVar(&cfg.addr, "addr", firstNonEmpty(os.Getenv("BAO_ADDR"), "https://127.0.0.1:8200"), "OpenBao API address")

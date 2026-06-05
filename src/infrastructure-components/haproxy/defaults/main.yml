@@ -7,7 +7,7 @@ haproxy_log_dir: /var/log/haproxy
 haproxy_shm_stats_file: /var/lib/haproxy/edge-stats.shm
 haproxy_well_known_dir: /var/www/verself/.well-known
 haproxy_verself_discovery_manifest_path: "{{ haproxy_well_known_dir }}/verself"
-haproxy_iam_service_state_dir: /var/lib/verself/bootstrap/iam-service
+haproxy_iam_service_state_dir: /var/lib/verself/haproxy/iam-service
 haproxy_verself_cli_client_id_path: "{{ haproxy_iam_service_state_dir }}/oidc-cli-client-id"
 haproxy_verself_product_api_audience_path: "{{ haproxy_iam_service_state_dir }}/auth-audience"
 haproxy_runtime_library_path: /opt/verself/profile/lib/haproxy

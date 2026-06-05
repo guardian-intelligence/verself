@@ -13,7 +13,6 @@ secrets/github-app-gamma.outputs.yaml
 
 # Terraform
 src/tools/provisioning/terraform/.terraform/
-src/tools/provisioning/terraform/.terraform.lock.hcl
 src/tools/provisioning/terraform/terraform.tfstate
 src/tools/provisioning/terraform/terraform.tfstate.backup
 src/tools/provisioning/terraform/*.tfvars.json

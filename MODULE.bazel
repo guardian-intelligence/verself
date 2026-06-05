@@ -20,14 +20,15 @@ bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
-include("//src/bootstrap:host_tools.MODULE.bazel")
 include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
 include("//src/infrastructure-components/forgejo:forgejo.MODULE.bazel")
 include("//src/infrastructure-components/grafana:grafana.MODULE.bazel")
 include("//src/infrastructure-components/haproxy:haproxy.MODULE.bazel")
+include("//src/infrastructure-components/nomad:nomad.MODULE.bazel")
 include("//src/infrastructure-components/nftables:nftables.MODULE.bazel")
 include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
 include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
+include("//src/infrastructure-components/spire:spire.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
 include("//src/infrastructure-components/verdaccio:verdaccio.MODULE.bazel")
 include("//src/viteplus-monorepo:website_tools.MODULE.bazel")
@@ -220,14 +221,6 @@ python.toolchain(
     python_version = "3.13",
 )
 use_repo(python, "python_3_13", "python_3_13_host")
-
-host_ansible_pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-host_ansible_pip.parse(
-    hub_name = "host_ansible_pip",
-    python_version = "3.13",
-    requirements_lock = "//src/bootstrap:ansible/requirements_lock.txt",
-)
-use_repo(host_ansible_pip, "host_ansible_pip")
 
 sdk_generator_pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 sdk_generator_pip.parse(

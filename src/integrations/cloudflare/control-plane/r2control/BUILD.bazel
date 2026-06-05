@@ -10,7 +10,6 @@ go_library(
     ],
     importpath = "github.com/verself/integrations/cloudflare/control-plane/r2control",
     visibility = [
-        "//src/bootstrap:__subpackages__",
         "//src/integrations/cloudflare/control-plane:__subpackages__",
     ],
     deps = [

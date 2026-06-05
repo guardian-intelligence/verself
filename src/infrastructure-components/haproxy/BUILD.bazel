@@ -117,8 +117,8 @@ filegroup(
         allow_empty = True,
     ),
     visibility = [
-        "//src/bootstrap:__pkg__",
         "//src/infrastructure-components:__pkg__",
+        "//src/infrastructure-components/spire:__pkg__",
     ],
 )
 
@@ -165,7 +165,7 @@ nomad_component(
         ":runtime_artifact": "haproxy-runtime",
     },
     component = "haproxy_upstreams",
-    deploy_phase = "platform",
+    deploy_phase = "edge",
     digest_inputs = [
         ":public_route_declarations",
         ":role_sources",

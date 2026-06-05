@@ -7,13 +7,13 @@ import (
 )
 
 const recoveryInventory = `[workers]
-vs-dev-w0 ansible_host=access.verself.sh verself_recovery_ssh_host=10.66.66.1 verself_recovery_ssh_port=2222 verself_recovery_ssh_user=ubuntu
+vs-dev-w0 verself_ssh_host=access.verself.sh verself_recovery_ssh_host=10.66.66.1 verself_recovery_ssh_port=2222 verself_recovery_ssh_user=ubuntu
 
 [infra]
-vs-dev-w0 ansible_host=access.verself.sh verself_recovery_ssh_host=10.66.66.1 verself_recovery_ssh_port=2222 verself_recovery_ssh_user=ubuntu
+vs-dev-w0 verself_ssh_host=access.verself.sh verself_recovery_ssh_host=10.66.66.1 verself_recovery_ssh_port=2222 verself_recovery_ssh_user=ubuntu
 
 [all:vars]
-ansible_user=ubuntu@prod
+verself_ssh_user=ubuntu@prod
 `
 
 func writeInventory(t *testing.T, body string) string {
@@ -58,7 +58,7 @@ func TestRecoverySelectsWireGuardTargetAndPort(t *testing.T) {
 }
 
 func TestRecoveryAbsentWhenNotDeclared(t *testing.T) {
-	body := "[infra]\nvs-dev-w0 ansible_host=access.verself.sh\n[all:vars]\nansible_user=ubuntu@prod\n"
+	body := "[infra]\nvs-dev-w0 verself_ssh_host=access.verself.sh\n[all:vars]\nverself_ssh_user=ubuntu@prod\n"
 	target, err := LoadInfraTarget(writeInventory(t, body))
 	if err != nil {
 		t.Fatalf("LoadInfraTarget: %v", err)

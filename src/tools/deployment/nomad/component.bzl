@@ -18,6 +18,7 @@ _ALLOWED_DEPLOY_PHASES = [
     "pre_artifact",
     "platform",
     "product",
+    "projection",
     "edge",
 ]
 

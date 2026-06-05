@@ -34,7 +34,7 @@ filegroup(
         allow_empty = True,
     ),
     visibility = [
-        "//src/bootstrap:__pkg__",
         "//src/infrastructure-components:__pkg__",
+        "//src/infrastructure-components/spire:__pkg__",
     ],
 )

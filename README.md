@@ -68,6 +68,3 @@ automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
 file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
 directory. Local shells need that directory on `PATH` before invoking `aspect`
 or `bazelisk`.
-`aspect dev install --install-shims` also installs the Bazel-pinned
-`ansible-galaxy` CLI so operators can inspect the host Ansible collection set
-used by convergence.

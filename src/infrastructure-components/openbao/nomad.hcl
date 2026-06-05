@@ -74,9 +74,9 @@ def mkdir(path, uid, gid, mode):
 mkdir("/etc/openbao", 0, openbao.pw_gid, 0o750)
 mkdir("/etc/openbao/tls", 0, openbao.pw_gid, 0o750)
 mkdir("/var/lib/verself", 0, 0, 0o755)
-mkdir("/var/lib/verself/bootstrap", 0, 0, 0o700)
-mkdir("/var/lib/verself/bootstrap/openbao", 0, 0, 0o700)
-mkdir("/run/verself/bootstrap", 0, 0, 0o700)
+mkdir("/var/lib/verself/recovery", 0, 0, 0o700)
+mkdir("/var/lib/verself/recovery/openbao", 0, 0, 0o700)
+mkdir("/run/verself/recovery", 0, 0, 0o700)
 mkdir("/var/lib/openbao", openbao.pw_uid, openbao.pw_gid, 0o700)
 mkdir("/var/lib/openbao/raft", openbao.pw_uid, openbao.pw_gid, 0o700)
 mkdir("/var/log/openbao", openbao.pw_uid, openbao.pw_gid, 0o700)
@@ -226,8 +226,8 @@ PY
         command = "local/bin/openbao-bootstrap"
         args = [
           "--bao=local/bin/bao",
-          "--state-dir=/var/lib/verself/bootstrap/openbao",
-          "--site-root-token-file=/run/verself/bootstrap/openbao-site-root.token",
+          "--state-dir=/var/lib/verself/recovery/openbao",
+          "--site-root-token-file=/run/verself/recovery/openbao-site-root.token",
           "--addr=https://127.0.0.1:8200",
           "--ca-cert=/etc/openbao/tls/cert.pem",
         ]

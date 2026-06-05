@@ -4,6 +4,90 @@ job "haproxy-upstreams" {
   type = "service"
   group "haproxy-upstreams" {
     count = 1
+
+    task "setup" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/usr/bin/python3"
+        args = ["-c", <<-PY
+import os
+import pathlib
+import pwd
+import subprocess
+import grp
+
+def run(args):
+    subprocess.run(args, check=True)
+
+def ensure_group(name):
+    try:
+        import grp
+        grp.getgrnam(name)
+    except KeyError:
+        run(["/usr/sbin/groupadd", "--system", name])
+
+def ensure_user(name):
+    try:
+        pwd.getpwnam(name)
+    except KeyError:
+        run([
+            "/usr/sbin/useradd",
+            "--system",
+            "--gid", name,
+            "--groups", "adm",
+            "--home-dir", "/var/lib/haproxy",
+            "--shell", "/usr/sbin/nologin",
+            "--no-create-home",
+            name,
+        ])
+
+ensure_group("haproxy")
+ensure_user("haproxy")
+haproxy = pwd.getpwnam("haproxy")
+adm = grp.getgrnam("adm")
+
+def mkdir(path, uid, gid, mode):
+    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    os.chown(path, uid, gid)
+    os.chmod(path, mode)
+
+mkdir("/etc/haproxy", 0, haproxy.pw_gid, 0o750)
+mkdir("/etc/haproxy/certs", 0, haproxy.pw_gid, 0o750)
+mkdir("/etc/haproxy/maps", 0, haproxy.pw_gid, 0o750)
+mkdir("/var/lib/haproxy", haproxy.pw_uid, haproxy.pw_gid, 0o750)
+mkdir("/var/log/haproxy", haproxy.pw_uid, adm.gr_gid, 0o2750)
+mkdir("/run/haproxy", haproxy.pw_uid, haproxy.pw_gid, 0o750)
+
+base = pathlib.Path("/etc/haproxy/haproxy.cfg")
+if not base.exists():
+    base.write_text("""global
+  maxconn 1024
+
+defaults
+  mode http
+  timeout connect 5s
+  timeout client 30s
+  timeout server 30s
+""", encoding="utf-8")
+    os.chown(base, 0, haproxy.pw_gid)
+    os.chmod(base, 0o640)
+PY
+        ]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "haproxy-upstreams" {
       driver = "raw_exec"
       user = "root"
@@ -16,7 +100,7 @@ job "haproxy-upstreams" {
       }
 
       config {
-        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "local/lib/haproxy", "--reload-unit", "haproxy.service", "--daemon"]
+        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "local/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "local/lib/haproxy", "--reload-unit", "", "--daemon"]
         command = "local/bin/haproxy-upstreams-apply"
       }
       env {

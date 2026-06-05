@@ -16,7 +16,7 @@ spire_identity(
     key = "projects_service.default",
     path = "/svc/projects-service",
     user = "projects_service",
-    visibility = ["//src/bootstrap:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

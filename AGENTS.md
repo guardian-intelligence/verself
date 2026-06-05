@@ -11,7 +11,7 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 
 # Disaster Recovery
 
-A foundational invariant of the system is that is able to execute a `recovery` control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped. 
+A foundational invariant of the system is that is able to execute a `recovery` control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped. More generally speaking, disaster recovery is a flavor of deployment, where the control loop spends additional time in the recovery process.
 
 We accomplish this through the following two core techniques:
 
@@ -73,7 +73,7 @@ Integrations: `aspect integrations`
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.
 * Expect to build with the level of rigor that would make FedRAMP HIGH certification seem realistic.
-* Keep OpenTofu provisioning lean -- It does a narrow job. Let Ansible keep the boxes in order, and Bazel for build graph and Nomad for deployment orchestration. Every layer does what it's good at.
+* Keep OpenTofu provisioning lean -- It does a narrow job. Component-owned recovery definitions declare runtime prerequisites, Bazel owns build graph and binary pins, and Nomad owns deployment orchestration. Every layer does what it's good at.
 * Use nftables for perimeter, host, and guest-boundary policy. Do not encode service-to-service reachability or dependency ports in nftables.
 * Always think of the governance, IAM, quotas, and metering story behind service changes. Customers must know who did what, what they're allowed to do, and how much they used.
 * Think in terms of providing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
@@ -93,7 +93,7 @@ Integrations: `aspect integrations`
 * Our customers will use our services via API and browser. Fix issues at the service level; don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that API consumers call directly.
 * No global, hand-managed /usr/local/bin. Let Bazel call out to package-specific toolchains for dev tools and deployment requirements.
 * For local development, packages should offer to install onto the caller's $HOME/.local/bin, requiring an explicit --bin-dir. These shims should point back to Bazel-resolved outputs or package-manager-resolved binaries and not duplicate version state.
-* When adding a binary dependency, classify it as controller/dev tooling under `src/tools/dev/binaries` or runtime/deployed tooling under the owning component's Bazel targets before exposing it through Aspect, Ansible, or deployment code.
+* When adding a binary dependency, classify it as controller/dev tooling under `src/tools/dev/binaries` or runtime/deployed tooling under the owning component's Bazel targets before exposing it through Aspect, recovery, or deployment code.
 
 * Avoid drift between what runs in CI and what you run for local development. CI is basically a warm dev box. Local development should give high confidence on correctness.
 
@@ -213,13 +213,13 @@ Per environment, the founder configures a single site root key that they are res
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
-Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. Deployment-service publishes immutable artifacts through object-storage-service and submits Nomad jobs. Nomad orchestrates deployments for non-host concerns. Ansible configures hosts and ensures convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
+Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. Deployment-service publishes immutable artifacts through object-storage-service and submits Nomad jobs. Nomad orchestrates recovery and deployment; component-owned jobs declare their own prerequisites and convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
 
 # Tech Stack (partial description):
 
 ## Layers:
 
-1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/bootstrap`, `src/integrations`)
+1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/tools/provisioning`, `src/integrations`)
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, data handling.
 3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Typically Huma because we are an OpenAPI shop, but services can be written in any language.
 4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model for docs, ecosystem tooling, and public SDK transport generation where reliable. Repo-owned service calls use service-local typed clients/adapters with caller-owned SPIFFE mTLS transports.
@@ -248,7 +248,7 @@ Each service defines a /recoveryz to expose recovery health status
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
-* HAProxy (AWS-LC build) terminates public TLS with certificates projected by the prod Cloudflare/TLS control plane; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
+* HAProxy (AWS-LC build) terminates public TLS with certificates projected by the prod Cloudflare/TLS control plane; HAProxy-owned recovery/deployment definitions own edge config and Nomad-managed upstream reconciliation owns dynamic workload backends.
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 * Stalwart over JMAP for inbound mail, Resend API integration for outbound
@@ -271,8 +271,8 @@ Boundary components that sit outside the usual service shape:
 
 - `src/substrate/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/substrate/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/bootstrap/` — host bootstrap convergence: Ansible runner, server-tool catalog, site facts, Nomad agent, and ClickHouse initial schema.
-- `src/tools/provisioning/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
+- `src/tools/provisioning/` — bare-metal provisioning inputs and Latitude/OpenTofu helpers.
+- `src/sites/` — authored site facts and SSH inventory consumed by deployment and recovery.
 
 Top-level landmarks:
 
@@ -361,7 +361,7 @@ Before writing markdown architecture in docs/ directories, please read docs/agen
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term*. Read docs/architecture/service-change-reference-architecture.md for more information on how to think about architecture.
-- Unit tests and successful `bazelisk` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are the only admissible completion evidence. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
+- Unit tests and successful `bazelisk` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are typically the only admissible completion evidence for service changes. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
 - Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 </output_contract>

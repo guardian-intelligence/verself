@@ -17,37 +17,36 @@ org-scoped compute pools and cells; see
 
 ## Service Architecture
 
-Host bootstrap substrate is authored under `src/bootstrap`. Components, services,
-frontends, SPIRE workload identities, runtime users, route metadata, and Nomad
-jobs are owned by the deployable package that needs them. Host firewall
+Components, services, frontends, SPIRE workload identities, runtime users,
+route metadata, recovery tasks, and Nomad jobs are owned by the deployable
+package that needs them. Host firewall
 foundation files are authored in `src/infrastructure-components/nftables/`;
 component, service, frontend, and privileged-substrate nftables snippets live
 with the owning package. Bazel-input artifacts are authored in their owner
 packages.
 
-The bootstrap ring contains OS/package hardening, Nomad agent state,
-operator-recovery SSH, OpenBao, and SPIRE server/agent state required before
-Nomad workloads can receive SVIDs. The nftables foundation is a pre-artifact
-Nomad component so firewall changes use the same deployment evidence and
-rollback path as other host-owned platform components. Runtime versions,
-component binaries, service binaries, ClickHouse migrations, PostgreSQL
-databases, OpenBao mounts and policies, Zitadel projects and applications, and
-rollout/rollback semantics are Nomad-managed deployable units or reconciler
-inputs owned by the deployable package. Generic reconcilers apply those
-owner-local declarations; reconcilers contain no service catalog entries.
-Devtools remain controller-local/host-local tooling outside Nomad.
+Physical machine allocation and reinstall inputs live under
+`src/tools/provisioning`. Site facts live under `src/sites`.
+The shared operator action is SSH access to a target node; convergence after
+that point is expressed through component-owned recovery and deployment Nomad
+jobs. Runtime versions, component binaries, service binaries, ClickHouse
+migrations, PostgreSQL databases, OpenBao mounts and policies, Zitadel projects
+and applications, and rollout/rollback semantics are Nomad-managed deployable
+units or reconciler inputs owned by the deployable package. Generic reconcilers
+apply those owner-local declarations; reconcilers contain no service catalog
+entries. Devtools remain controller-local/host-local tooling outside Nomad.
 
 Each site runs a deployment-service that accepts deployment requests, records
 state and ClickHouse evidence, publishes artifacts, and submits owner-local
 Nomad jobs. `aspect deploy` is the operator client for that service.
 
-Bootstrap and operator-recovery secrets enter through catalog-approved
-bootstrap sessions and controller OpenBao. Site OpenBao initializes fresh state
-with operator-provided bootstrap authority. Runtime secrets are owner-local
-`deploy/runtime-secrets.yml` declarations applied by the substrate control
-plane. Nomad jobs consume them through Nomad workload identity and OpenBao
-templates. The remaining host-local files are named non-runtime state:
-OpenBao Shamir unseal material under `/var/lib/verself/bootstrap/openbao` and
+Recovery and operator-access secrets enter through catalog-approved local
+handoff files and controller OpenBao. Site OpenBao initializes fresh state with
+operator-provided site-root authority. Runtime secrets are owner-local
+`deploy/runtime-secrets.yml` declarations applied by the owning recovery or
+deployment job. Nomad jobs consume them through Nomad workload identity and
+OpenBao templates. The remaining host-local files are named non-runtime state:
+OpenBao Shamir unseal material under `/var/lib/verself/recovery/openbao` and
 Pomerium operator-access key material under `/var/lib/verself/access/pomerium`.
 Repo-owned service-to-service authentication is SPIFFE/SPIRE.
 

@@ -167,7 +167,7 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		`render_targets:`,
 		`openbao://kv-runtime/secret/org/latitude.api_token`,
 	})
-	assertFileContains(t, filepath.Join(repoRoot, "src", "bootstrap", "sites", "prod", "vars.yml"), []string{
+	assertFileContains(t, filepath.Join(repoRoot, "src", "sites", "prod", "vars.yml"), []string{
 		`service_discovery_canary_org_slug: "guardian"`,
 		`bootstrap_runtime_substrate: customer_latitude_bare_metal`,
 	})
@@ -183,7 +183,7 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		"--repo-root", overrideRepoRoot,
 		"--set", "latitude.region=DFW",
 	)
-	assertFileContains(t, filepath.Join(overrideRepoRoot, "src", "bootstrap", "sites", "prod", "provisioning.tfvars.json.template"), []string{
+	assertFileContains(t, filepath.Join(overrideRepoRoot, "src", "tools", "provisioning", "sites", "prod", "terraform.tfvars.json.template"), []string{
 		`"region": "DFW"`,
 	})
 
@@ -1390,7 +1390,7 @@ func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {
 	)
 
 	repoRoot := t.TempDir()
-	siteVarsPath := filepath.Join(repoRoot, "src", "bootstrap", "sites", "prod", "vars.yml")
+	siteVarsPath := filepath.Join(repoRoot, "src", "sites", "prod", "vars.yml")
 	if err := os.MkdirAll(filepath.Dir(siteVarsPath), 0o700); err != nil {
 		t.Fatal(err)
 	}

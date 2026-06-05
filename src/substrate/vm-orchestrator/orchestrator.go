@@ -85,8 +85,6 @@ func DefaultConfig() Config {
 		StorageKeyDir:               "/var/lib/verself/vm-orchestrator/storage-keys",
 		DefaultSubstrateRef:         "substrate",
 		KernelPath:                  "/var/lib/verself/guest-images/vmlinux",
-		FirecrackerBin:              "/usr/local/bin/firecracker",
-		JailerBin:                   "/usr/local/bin/jailer",
 		JailerRoot:                  defaultJailerRoot,
 		SnapshotCacheDir:            defaultSnapshotCacheDir,
 		FirecrackerSnapshotsEnabled: true,
