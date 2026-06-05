@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
-	recoveryv1alpha1 "github.com/verself/recovery-spec/types/go/v1alpha1"
 )
 
 func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
@@ -283,15 +282,15 @@ func TestApplyRecoveryConfigMapsMinimalCloudflareRecovery(t *testing.T) {
 }
 
 func TestDNSDesiredStateFromRecoveryUsesHostedZones(t *testing.T) {
-	doc := recoveryv1alpha1.CloudflareRecovery{
-		Spec: recoveryv1alpha1.CloudflareRecoverySpec{
+	doc := CloudflareRecovery{
+		Spec: CloudflareRecoverySpec{
 			TargetIPv4: "203.0.113.10",
-			DNS: recoveryv1alpha1.CloudflareDNS{
-				Zones: []recoveryv1alpha1.CloudflareDNSZone{
+			DNS: CloudflareDNS{
+				Zones: []CloudflareDNSZone{
 					{Name: "product", Zone: "verself.sh", Domain: "gamma.verself.sh"},
 					{Name: "company", Zone: "guardianintelligence.org", Domain: "gamma.guardianintelligence.org"},
 				},
-				Records: []recoveryv1alpha1.CloudflareDNSRecord{
+				Records: []CloudflareDNSRecord{
 					{Zone: "product", Record: "deployments.api", TTL: 1},
 					{Zone: "company", Record: "@", TTL: 1},
 				},

@@ -1,0 +1,25 @@
+filegroup(
+    name = "docs",
+    srcs = glob([
+        "*.md",
+        "docs/*.md",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "cue",
+    srcs = glob([
+        "cue.mod/*.cue",
+        "cue/**/*.cue",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "examples",
+    srcs = glob([
+        "examples/**/*.cue",
+    ]),
+    visibility = ["//visibility:public"],
+)

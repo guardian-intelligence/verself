@@ -9,12 +9,12 @@ go_library(
         "certificates.go",
         "main.go",
         "recovery.go",
+        "recovery_config.go",
         "site.go",
     ],
     importpath = "github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane",
     visibility = ["//visibility:private"],
     deps = [
-        "//recovery-spec/types/go/v1alpha1",
         "//src/integrations/cloudflare/control-plane/r2control",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_x_crypto//acme",
@@ -37,8 +37,5 @@ go_test(
     name = "cloudflare-control-plane_test",
     srcs = ["main_test.go"],
     embed = [":cloudflare-control-plane_lib"],
-    deps = [
-        "//recovery-spec/types/go/v1alpha1",
-        "//src/integrations/cloudflare/control-plane/r2control",
-    ],
+    deps = ["//src/integrations/cloudflare/control-plane/r2control"],
 )

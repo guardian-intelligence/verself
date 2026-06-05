@@ -1,4 +1,4 @@
-# verself.sh (Verself)
+# Guardian
 
 This is a polyglot monorepo structured as a modular monolith. It contains all code for infrastructure, service, and client applications for a multi-tenant cloud computing company. It is the only repo for the entire company.
 
@@ -9,9 +9,19 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
-# Disaster Recovery
+This repo is centered around a software specification for converting compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code. The specificaion is loosely threaded nested Custom Resource Definitions (CRDs)
 
-A foundational invariant of the system is that is able to execute a `recovery` control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped. More generally speaking, disaster recovery is a flavor of deployment, where the control loop spends additional time in the recovery process.
+```sh
+guardian board --file gamma-boarding-crd.(yml|json|toml) # Establishes a connection with a remote
+guardian fly --file gamma.yml --dry-run # Attempts nomad-orchestrated disaster-recovery/stabilization until operational.
+```
+
+`board` answers: “How do I reach and prepare this target enough to run control loops?” It loads static configuration and credentials and establishes a connection with the remote.
+`fly` runs the control loop against the flight plan. Promoting a specific ref of the source code to deployed site (deploying to gamma/prod/beta/make-up-whatever/dev) is just updating the declared desired state.
+
+# Disaster Recovery / `fly`
+
+A foundational invariant of the system is that is able to execute a `fly` (disaster-recovery + deployment) control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped. More generally speaking, disaster recovery is a flavor of deployment, where the control loop spends additional time in the recovery process.
 
 We accomplish this through the following two core techniques:
 

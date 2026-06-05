@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
-	recoveryv1alpha1 "github.com/verself/recovery-spec/types/go/v1alpha1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -79,7 +78,7 @@ type config struct {
 	timeout                  time.Duration
 	verifyTempCredentials    bool
 	recoveryConfig           string
-	recovery                 *recoveryv1alpha1.CloudflareRecovery
+	recovery                 *CloudflareRecovery
 }
 
 type report struct {

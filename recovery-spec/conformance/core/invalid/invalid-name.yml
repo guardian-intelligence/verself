@@ -1,5 +1,0 @@
-apiVersion: network.guardian.verself.sh/v1alpha1
-kind: DNSResolution
-metadata:
-  name: Gamma_Public_DNS
-spec: {}

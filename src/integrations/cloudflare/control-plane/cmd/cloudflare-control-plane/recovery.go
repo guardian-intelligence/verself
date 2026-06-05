@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
-	recoveryv1alpha1 "github.com/verself/recovery-spec/types/go/v1alpha1"
 )
 
 func (cfg *config) applyRecoveryConfig() error {
@@ -17,30 +16,30 @@ func (cfg *config) applyRecoveryConfig() error {
 	if strings.TrimSpace(cfg.recoveryConfig) == "" {
 		return fmt.Errorf("--recovery-config is required for recovery")
 	}
-	doc, err := recoveryv1alpha1.LoadCloudflareRecovery(cfg.recoveryConfig)
+	doc, err := loadCloudflareRecovery(cfg.recoveryConfig)
 	if err != nil {
 		return err
 	}
-	childTokenTTL, err := doc.ChildTokenTTL()
+	childTokenTTL, err := doc.childTokenTTL()
 	if err != nil {
 		return err
 	}
-	dnsWait, err := doc.ACMEDNSPropagationWait()
+	dnsWait, err := doc.acmeDNSPropagationWait()
 	if err != nil {
 		return err
 	}
-	renewBefore, err := doc.ACMERenewBefore()
+	renewBefore, err := doc.acmeRenewBefore()
 	if err != nil {
 		return err
 	}
 	cfg.recovery = &doc
 	cfg.site = doc.Spec.Site
 	cfg.accountID = doc.Spec.AccountID
-	cfg.accountAdminAPITokenFile = recoveryv1alpha1.ExpandPath(doc.Spec.AccountAdminTokenFile)
+	cfg.accountAdminAPITokenFile = expandRecoveryPath(doc.Spec.AccountAdminTokenFile)
 	cfg.cloudflareAPITokenFile = cfg.accountAdminAPITokenFile
 	cfg.openBaoAddr = doc.Spec.OpenBao.Address
-	cfg.openBaoTokenFile = recoveryv1alpha1.ExpandPath(doc.Spec.OpenBao.TokenFile)
-	cfg.openBaoCACertFile = recoveryv1alpha1.ExpandPath(doc.Spec.OpenBao.CACertFile)
+	cfg.openBaoTokenFile = expandRecoveryPath(doc.Spec.OpenBao.TokenFile)
+	cfg.openBaoCACertFile = expandRecoveryPath(doc.Spec.OpenBao.CACertFile)
 	cfg.runtimeOpenBaoAddr = cfg.openBaoAddr
 	cfg.runtimeOpenBaoTokenFile = cfg.openBaoTokenFile
 	cfg.runtimeOpenBaoCACertFile = cfg.openBaoCACertFile
@@ -51,7 +50,7 @@ func (cfg *config) applyRecoveryConfig() error {
 	cfg.certificateRenewBefore = renewBefore
 	cfg.acmeDirectoryURL = doc.Spec.TLS.ACME.DirectoryURL
 	cfg.acmeContactEmail = doc.Spec.TLS.ACME.ContactEmail
-	cfg.certificateOutputDir = recoveryv1alpha1.ExpandPath(doc.Spec.TLS.OutputDir)
+	cfg.certificateOutputDir = expandRecoveryPath(doc.Spec.TLS.OutputDir)
 	return nil
 }
 
@@ -124,8 +123,8 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 	return writeReport(out)
 }
 
-func dnsDesiredStateFromRecovery(doc recoveryv1alpha1.CloudflareRecovery) (dnsDesiredState, error) {
-	zones := map[string]recoveryv1alpha1.CloudflareDNSZone{}
+func dnsDesiredStateFromRecovery(doc CloudflareRecovery) (dnsDesiredState, error) {
+	zones := map[string]CloudflareDNSZone{}
 	for _, zone := range doc.Spec.DNS.Zones {
 		zones[strings.TrimSpace(zone.Name)] = zone
 	}
@@ -152,7 +151,7 @@ func dnsDesiredStateFromRecovery(doc recoveryv1alpha1.CloudflareRecovery) (dnsDe
 	return out, nil
 }
 
-func tlsCertificatesFromRecovery(doc recoveryv1alpha1.CloudflareRecovery) ([]siteTLSCertificate, []string, error) {
+func tlsCertificatesFromRecovery(doc CloudflareRecovery) ([]siteTLSCertificate, []string, error) {
 	certificates := make([]siteTLSCertificate, 0, len(doc.Spec.TLS.Certificates))
 	for _, certificate := range doc.Spec.TLS.Certificates {
 		certificates = append(certificates, siteTLSCertificate{
@@ -186,11 +185,11 @@ func trimStringSlice(values []string) []string {
 	return out
 }
 
-func (cfg config) objectStorageRuntimeSecretNames() recoveryv1alpha1.ObjectStorageRuntimeKeys {
+func (cfg config) objectStorageRuntimeSecretNames() ObjectStorageRuntimeKeys {
 	if cfg.recovery != nil {
 		return cfg.recovery.Spec.ObjectStorage.RuntimeSecrets
 	}
-	return recoveryv1alpha1.ObjectStorageRuntimeKeys{
+	return ObjectStorageRuntimeKeys{
 		AdminAccessKeyID:     "object-storage-service.r2.admin_access_key_id",
 		AdminSecretAccessKey: "object-storage-service.r2.admin_secret_access_key",
 		ProxyAccessKeyID:     "object-storage-service.r2.proxy_access_key_id",
