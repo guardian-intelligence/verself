@@ -28,10 +28,6 @@ var (
 	secretNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 )
 
-type Metadata struct {
-	Name string `yaml:"name" json:"name"`
-}
-
 type CloudflareRecovery struct {
 	APIVersion string                 `yaml:"apiVersion" json:"apiVersion"`
 	Kind       string                 `yaml:"kind" json:"kind"`

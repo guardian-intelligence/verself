@@ -1,0 +1,5 @@
+filegroup(
+    name = "fixtures",
+    srcs = glob(["**/*.yml"]),
+    visibility = ["//recovery-spec/types/go/v1alpha1:__pkg__"],
+)

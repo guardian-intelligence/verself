@@ -1,0 +1,11 @@
+apiVersion: network.guardian.verself.sh/v1alpha1
+kind: DNSResolution
+metadata:
+  name: gamma-public-dns
+spec: {}
+---
+apiVersion: network.guardian.verself.sh/v1alpha1
+kind: DNSResolution
+metadata:
+  name: gamma-public-dns
+spec: {}
