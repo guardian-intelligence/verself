@@ -2,6 +2,13 @@
 
 This is a polyglot monorepo structured as a modular monolith. It contains all code for infrastructure, service, and client applications for a multi-tenant cloud computing company. It is the only repo for the entire company.
 
+All configuration is defined as CRDs authored in CUE
+All service APIs are described with IDLs via Smithy
+All scripts are to be written as aspects executing typed binaries
+All dependencies, including development tools, are commit pinned and plugged into Bazel.
+
+Treat violations of the above as aberrations to be corrected, not examples to be emulated.
+
 Console: verself.sh
 Auth portal: verself.sh
 Services: <service>.api.verself.sh
