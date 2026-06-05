@@ -13,6 +13,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+exports_files([
+    "guardian_tools.MODULE.bazel",
+    "tools.lock.json",
+    "tools.metadata.json",
+])
+
 filegroup(
     name = "cue",
     srcs = glob([

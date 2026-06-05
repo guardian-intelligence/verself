@@ -1,0 +1,8 @@
+{
+  "hyperfine": {
+    "repository": "https://github.com/sharkdp/hyperfine",
+    "tag": "v1.20.0",
+    "commit": "975fe108c4ee7bd2600d10758207b44ca3dae738",
+    "source_archive_sha256": "ab62661c633a4461311381c532af8a35d55040a77487fd44fffb095965f2f265"
+  }
+}

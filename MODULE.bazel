@@ -31,6 +31,7 @@ include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
 include("//src/infrastructure-components/spire:spire.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
 include("//src/infrastructure-components/verdaccio:verdaccio.MODULE.bazel")
+include("//src/guardian-specification:guardian_tools.MODULE.bazel")
 include("//src/viteplus-monorepo:website_tools.MODULE.bazel")
 
 component_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
@@ -49,6 +50,10 @@ component_tools.hub(
 component_tools.hub(
     hub_name = "forgejo_tools",
     lockfile = "//src/infrastructure-components/forgejo:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "guardian_specification_tools",
+    lockfile = "//src/guardian-specification:tools.lock.json",
 )
 component_tools.hub(
     hub_name = "nats_tools",
@@ -91,6 +96,7 @@ use_repo(
     "clickhouse_tools",
     "electric_tools",
     "forgejo_tools",
+    "guardian_specification_tools",
     "mksk_release_tools",
     "multitool",
     "nats_tools",
@@ -118,6 +124,8 @@ register_toolchains("@mksk_release_tools//toolchains:all")
 register_toolchains("@electric_tools//toolchains:all")
 
 register_toolchains("@forgejo_tools//toolchains:all")
+
+register_toolchains("@guardian_specification_tools//toolchains:all")
 
 register_toolchains("@nats_tools//toolchains:all")
 
