@@ -1,12 +1,13 @@
 # GuardianSpecification
 
-GuardianSpecification defines CRD-style resources for systems that recover
-toward declared invariants.
+GuardianSpecification defines a lean CRD-style envelope for systems that
+recover toward declared invariants.
 
-A Guardian resource describes a problem space such as DNS resolution, public
-TLS, object storage, or provider authority. Provider plugins implement those
-resources for concrete systems such as Cloudflare, Route53, Resend, Stripe,
-GitHub, or Latitude.
+The core specification only standardizes resource identity. Resource authors
+define HomeostaticResourceDefinitions for problem spaces such as DNS
+resolution, public TLS, object storage, or provider authority. Provider plugins
+implement those resource kinds for concrete systems such as Cloudflare,
+Route53, Resend, Stripe, GitHub, or Latitude.
 
 The resource envelope is intentionally familiar:
 
@@ -19,8 +20,12 @@ spec:
   providerRef: cloudflare-main
 ```
 
-The first implementation slice is `CloudflareRecovery`, which is being split
-into problem-space resources plus a Cloudflare provider binding.
+`DNSResolution` is intentionally an example resource, not a built-in envelope
+type. Any project may publish its own DNS resolution Homeostatic Resource and
+provider plugins may implement it if they conform to its schema.
+
+The current implementation slice is `CloudflareRecovery`, which is being split
+into provider-neutral resources plus Cloudflare provider bindings.
 
 Start with:
 

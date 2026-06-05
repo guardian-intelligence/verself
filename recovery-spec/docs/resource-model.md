@@ -10,28 +10,13 @@ metadata:
 spec: {}
 ```
 
-Reports use the same observed-state shape:
-
-```yaml
-apiVersion: <group>/<version>
-kind: <Kind>Report
-metadata:
-  name: <resource-name>
-status:
-  observedGeneration: 3
-  specHash: sha256:...
-  conditions:
-    - type: Accepted
-      status: "True"
-      reason: Valid
-      observedGeneration: 3
-      lastTransitionTime: "2026-06-05T00:00:00Z"
-```
+The envelope has no built-in `status`, generation, report, provider, reference,
+or compiled-resource fields.
 
 ## Problem Space
 
-Problem-space resources are provider-neutral. A field belongs in a problem-space
-resource only when the field still makes sense with multiple providers.
+Problem-space resources are HRDs. A field belongs in a provider-neutral HRD only
+when the field still makes sense with multiple providers.
 
 Examples:
 
@@ -41,37 +26,41 @@ Examples:
 - `RuntimeSecretProjection`
 - `ProviderAuthority`
 
-## Provider Binding
+## Custom DNSResolution
 
-Provider bindings select a plugin and credentials authority.
+Anyone can publish a DNS resolution HRD. GuardianSpecification only requires
+that it use the common envelope.
 
 ```yaml
-apiVersion: guardian.verself.sh/v1alpha1
-kind: ProviderBinding
+apiVersion: network.example.com/v1alpha1
+kind: DNSResolution
 metadata:
-  name: cloudflare-main
+  name: public-ingress
 spec:
-  provider: cloudflare
-  authorityRef: cloudflare-account-admin
-  providerConfig:
-    apiVersion: provider.cloudflare.guardian.verself.sh/v1alpha1
-    kind: CloudflareProviderConfig
-    spec: {}
+  providerRef: route53-main
+  records: []
 ```
 
-`providerConfig.spec` is the only open extension point. Once a provider plugin
-is selected, that provider's schema is strict.
+A provider plugin opts into that HRD by declaring the exact `apiVersion` and
+`kind` it implements.
+
+## Provider Binding
+
+Provider bindings and provider configs are ordinary resources. Their schemas are
+defined by HRDs and plugin manifests, not by the base envelope.
 
 ## References
 
-References are local names within the compiled specification:
+References are ordinary resource-specific fields. Recommended local reference
+names are:
 
 - `providerRef`
 - `authorityRef`
 - `domainRef`
 - `secretRef`
 
-Dynamic values use a small allowlist. The first allowed dynamic value is:
+Dynamic values should use small allowlists. The first Verself DNSResolution
+allowlist is expected to be:
 
 - `environment.ingress.publicIPv4`
 
@@ -80,14 +69,14 @@ specification.
 
 ## Validation
 
-Validation rejects:
+Base envelope validation rejects:
 
-- unknown fields outside explicit extension points;
+- unknown top-level fields;
 - duplicate resource names for the same `apiVersion` and `kind`;
-- unresolved references;
-- provider bindings without an installed plugin;
-- provider configs that fail the plugin schema;
-- source specs that require implicit defaults to become meaningful.
+- invalid `apiVersion`, `kind`, or `metadata.name`;
+- missing `spec`.
+
+HRDs and provider plugins perform resource-specific validation.
 
 ## Versioning
 
@@ -95,12 +84,13 @@ Resource versions are immutable contracts. A released version may gain optional
 fields. Required fields, renamed fields, removed fields, changed defaults, or
 changed meanings require a new version.
 
-Conversions are explicit resources or plugin entrypoints. Conversion must
-produce a materialized target version that can be hashed and reviewed.
+Conversions are HRD or plugin entrypoints. Conversion must produce a
+materialized target version that can be hashed and reviewed.
 
 ## Evidence
 
-Conditions use positive names for desired progress:
+Evidence is emitted by reconcilers, not embedded in source resources. Conditions
+should use positive names for desired progress:
 
 - `Accepted`
 - `ResolvedRefs`

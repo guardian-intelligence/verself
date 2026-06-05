@@ -1,16 +1,31 @@
 # GuardianSpecification
 
-GuardianSpecification is a CRD specification for homeostatic systems.
+GuardianSpecification is a lean CRD specification for homeostatic systems.
 
 A homeostatic system continuously reconciles source code, credentials, provider
 state, and network I/O toward a declared operating state. The specification
-defines resource schemas, provider plugin contracts, validation rules, and
-evidence reports. It does not require Kubernetes. Nomad tasks, CLIs, deployment
+defines the common resource envelope, validation rules, and plugin discovery
+contracts. It does not require Kubernetes. Nomad tasks, CLIs, deployment
 services, or other controllers may reconcile the resources.
+
+The base envelope is deliberately small:
+
+```yaml
+apiVersion: network.guardian.verself.sh/v1alpha1
+kind: DNSResolution
+metadata:
+  name: gamma-public-dns
+spec: {}
+```
+
+`apiVersion`, `kind`, and `metadata.name` identify a resource. `spec` belongs
+to the resource definition selected by that identity.
 
 ## Core Objects
 
-`HomeostaticResourceDefinition` defines a problem-space resource kind.
+`HomeostaticResourceDefinition` defines a problem-space resource kind. Resource
+authors may publish their own HRDs for DNS resolution or any other problem
+space.
 
 ```yaml
 apiVersion: guardian.verself.sh/v1alpha1
@@ -25,17 +40,7 @@ spec:
   versions:
     - name: v1alpha1
       schema: cue/network/v1alpha1/dns_resolution.cue
-      references:
-        - providerRef
-        - domainRef
-      allowedValueFrom:
-        - environment.ingress.publicIPv4
-      conditions:
-        - Accepted
-        - ResolvedRefs
-        - ProviderConfigured
-        - Verified
-        - Recovered
+      schema: cue/network/v1alpha1/dns_resolution.cue
 ```
 
 `ProviderPlugin` declares which resource kinds a provider implements.
@@ -53,11 +58,6 @@ spec:
     - apiVersion: provider.cloudflare.guardian.verself.sh/v1alpha1
       kind: CloudflareProviderConfig
       schema: cue/provider/cloudflare/v1alpha1/provider_config.cue
-  authorities:
-    - cloudflare.api_token
-  conditions:
-    - ProviderConfigured
-    - ProviderVerified
   conformance:
     fixtures: conformance/cloudflare
 ```
@@ -83,7 +83,9 @@ spec:
           domain: gamma.verself.sh
 ```
 
-`DNSResolution` is the first problem-space resource.
+`DNSResolution` is the first problem-space resource to define for Verself. It is
+still a normal HRD. Other projects can define their own DNS resolution resource
+under their own API group.
 
 ```yaml
 apiVersion: network.guardian.verself.sh/v1alpha1
@@ -101,23 +103,22 @@ spec:
 
 ## Public Contract
 
-Problem-space resources define what must be true. Provider bindings define how
-that resource is reconciled in a concrete environment. Provider config is the
-only explicit extension point.
+GuardianSpecification defines the envelope. HRDs define resource-specific
+schema. Provider plugins implement those resource kinds.
 
-Unknown fields are rejected by default. Providers validate their own
-`providerConfig.spec` schema.
+Unknown envelope fields are rejected by default. HRDs and provider plugins
+validate their own `spec` schemas.
 
-References are local and typed: `providerRef`, `authorityRef`, `domainRef`, and
-`secretRef`. Dynamic references are limited to an allowlist such as
-`environment.ingress.publicIPv4`.
+References are resource-specific fields. The recommended local reference names
+are `providerRef`, `authorityRef`, `domainRef`, and `secretRef`. Dynamic
+references should be explicit allowlists, such as
+`valueFrom: environment.ingress.publicIPv4`.
 
-The source spec has no implicit defaults. Tools may produce a materialized
-compiled spec, and reconcilers report the hash of the exact compiled input.
+The source spec has no implicit defaults. If a resource needs defaults, tooling
+must materialize them in a compiled form and hash the exact compiled input.
 
-Desired state and observed state are separate. Reconciliation reports use
-conditions such as `Accepted`, `ResolvedRefs`, `ProviderConfigured`, `Verified`,
-and `Recovered`, with `observedGeneration` or `specHash`.
+Desired state and observed state are separate. Conditions belong to reports
+emitted by reconcilers, not to the base source envelope.
 
 Every resource has `apiVersion` and `kind`. Released versions are immutable in
 meaning. Required, renamed, removed, or semantic changes require a new version

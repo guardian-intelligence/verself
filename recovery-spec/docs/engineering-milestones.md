@@ -4,34 +4,41 @@
 
 Define shared CUE schemas for:
 
-- resource envelope: `apiVersion`, `kind`, `metadata`, `spec`;
-- report envelope: `status.conditions`, `observedGeneration`, `specHash`;
-- refs: `providerRef`, `authorityRef`, `domainRef`, `secretRef`;
-- provider config extension point;
-- compiled specification hash.
+- resource envelope: `apiVersion`, `kind`, `metadata.name`, `spec`;
+- resource identity: `{apiVersion, kind, metadata.name}`;
+- stable resource hash over identity and `spec`.
 
 Deliverables:
 
 - CUE source schemas;
-- JSON Schema generation;
 - Go types;
 - valid and invalid conformance fixtures.
 
+Out of scope:
+
+- report/status envelope;
+- `metadata.generation`;
+- provider binding schemas;
+- reference schemas;
+- compiled specification public kind.
+
 ## 2. HomeostaticResourceDefinition
 
-Define `HomeostaticResourceDefinition` as the schema contract for
+Define `HomeostaticResourceDefinition` as the schema contract for custom
 problem-space resources.
 
 Deliverables:
 
 - HRD CUE schema;
-- validation for resource names, versions, schemas, references, and conditions;
+- validation for resource names, versions, and schemas;
 - docs for versioning and conversion;
 - fixture set for accepted and rejected HRDs.
 
 ## 3. DNSResolution
 
-Define the first problem-space resource.
+Define the first Verself problem-space resource. It is still just another HRD;
+external projects may publish their own DNS resolution HRDs under their own API
+groups.
 
 Initial scope:
 

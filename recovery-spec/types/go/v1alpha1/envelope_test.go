@@ -50,31 +50,28 @@ spec: {}
 	}
 }
 
-func TestCompileResourcesProducesStableHashAcrossDocumentOrder(t *testing.T) {
-	first, err := DecodeResources([]byte(twoResourceYAML("gamma-public-dns", "cloudflare-main")))
+func TestResourceSpecHashIsStable(t *testing.T) {
+	first, err := DecodeResources([]byte(validResourceYAML()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := DecodeResources([]byte(twoResourceYAML("cloudflare-main", "gamma-public-dns")))
+	second, err := DecodeResources([]byte(validResourceYAML()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstCompiled, err := CompileResources(first)
+	firstHash, err := first[0].SpecHash()
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondCompiled, err := CompileResources(second)
+	secondHash, err := second[0].SpecHash()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if firstCompiled.SpecHash != secondCompiled.SpecHash {
-		t.Fatalf("spec hashes differ: %s != %s", firstCompiled.SpecHash, secondCompiled.SpecHash)
+	if firstHash != secondHash {
+		t.Fatalf("spec hashes differ: %s != %s", firstHash, secondHash)
 	}
-	if len(firstCompiled.Resources) != 2 {
-		t.Fatalf("compiled resources = %d", len(firstCompiled.Resources))
-	}
-	if !strings.HasPrefix(firstCompiled.Resources[0].SpecHash, "sha256:") {
-		t.Fatalf("resource spec hash = %q", firstCompiled.Resources[0].SpecHash)
+	if !strings.HasPrefix(firstHash, "sha256:") {
+		t.Fatalf("spec hash = %q", firstHash)
 	}
 }
 
@@ -113,64 +110,11 @@ func TestLoadResourcesRejectsCoreInvalidConformanceFixtures(t *testing.T) {
 	}
 }
 
-func TestDecodeReportsValidatesReportEnvelope(t *testing.T) {
-	reports, err := DecodeReports([]byte(`apiVersion: network.guardian.verself.sh/v1alpha1
-kind: DNSResolutionReport
-metadata:
-  name: gamma-public-dns
-status:
-  observedGeneration: 1
-  specHash: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-  conditions:
-    - type: Accepted
-      status: "True"
-      reason: Valid
-      observedGeneration: 1
-      lastTransitionTime: "2026-06-05T00:00:00Z"
-`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reports) != 1 || reports[0].Identity().Kind != "DNSResolutionReport" {
-		t.Fatalf("reports = %#v", reports)
-	}
-}
-
-func TestReportStatusValidatesConditions(t *testing.T) {
-	status := ReportStatus{
-		ObservedGeneration: 1,
-		SpecHash:           "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		Conditions: []Condition{
-			{
-				Type:               "Accepted",
-				Status:             ConditionStatusTrue,
-				Reason:             "Valid",
-				ObservedGeneration: 1,
-				LastTransitionTime: "2026-06-05T00:00:00Z",
-			},
-		},
-	}
-	if err := status.Validate(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestValidateLocalRefs(t *testing.T) {
-	if err := ValidateProviderRef("cloudflare-main"); err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateSecretRef("BadSecret"); err == nil {
-		t.Fatal("uppercase secretRef accepted")
-	}
-}
-
-func twoResourceYAML(first, second string) string {
-	docs := map[string]string{
-		"gamma-public-dns": `apiVersion: network.guardian.verself.sh/v1alpha1
+func validResourceYAML() string {
+	return `apiVersion: network.guardian.verself.sh/v1alpha1
 kind: DNSResolution
 metadata:
   name: gamma-public-dns
-  generation: 1
 spec:
   providerRef: cloudflare-main
   records:
@@ -179,22 +123,7 @@ spec:
       type: A
       ttl: 1
       valueFrom: environment.ingress.publicIPv4
-`,
-		"cloudflare-main": `apiVersion: guardian.verself.sh/v1alpha1
-kind: ProviderBinding
-metadata:
-  name: cloudflare-main
-spec:
-  provider: cloudflare
-  authorityRef: cloudflare-account-admin
-  providerConfig:
-    apiVersion: provider.cloudflare.guardian.verself.sh/v1alpha1
-    kind: CloudflareProviderConfig
-    spec:
-      accountID: 0123456789abcdef0123456789abcdef
-`,
-	}
-	return docs[first] + "---\n" + docs[second]
+`
 }
 
 func testRunfile(path string) string {
