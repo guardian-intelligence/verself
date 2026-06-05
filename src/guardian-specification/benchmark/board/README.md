@@ -3,11 +3,16 @@
 Guardian owns a pinned `hyperfine` binary for command-level board benchmarks.
 
 ```sh
-bazelisk run //src/guardian-specification/benchmark/board:hyperfine -- \
+bazelisk build //src/guardian-specification/benchmark/board:hyperfine
+build_output="$(bazelisk cquery --output=files //src/guardian-specification/benchmark/board:hyperfine)"
+"$build_output" \
   --warmup 1 \
   --runs 5 \
-  './bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian board src/guardian-specification/examples/gamma/gamma.cue --repo-root "$PWD" -o json'
+  'guardian board src/guardian-specification/examples/gamma/gamma.cue --repo-root "$PWD" -o json'
 ```
+
+Run this from the repo root with `guardian` on `PATH`. The benchmarked command
+is the normal CLI invocation, not a site-specific command.
 
 The runnable tool bytes are declared in
 `src/guardian-specification/tools.lock.json`. The matching upstream source is
