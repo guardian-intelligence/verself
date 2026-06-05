@@ -47,6 +47,9 @@ func check(ctx context.Context, opts checkOptions) error {
 		return err
 	}
 	baseURL := deploymentServiceBaseURL(model)
+	if err := deploymentServiceReachable(ctx, baseURL); err != nil {
+		return err
+	}
 	token, err := deploymentBearerToken(ctx, baseURL)
 	if err != nil {
 		return err

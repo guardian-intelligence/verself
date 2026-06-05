@@ -104,6 +104,8 @@ object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ready":true,"failed_count":0,"checks":[{"stage":"S7","name":"deployment_service","ok":true,"code":"ok","detail":"ok"}]}`))
+		case "GET /healthz":
+			_, _ = w.Write([]byte("ok\n"))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -115,12 +117,12 @@ object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 	if err := check(context.Background(), checkOptions{Site: "gamma", RepoRoot: repoRoot}); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"GET /oidc", "GET /api/v1/deployments/bootstrap:check"} {
+	for _, key := range []string{"GET /healthz", "GET /oidc", "GET /api/v1/deployments/bootstrap:check"} {
 		if seen[key] != 1 {
 			t.Fatalf("%s count = %d, want 1; all requests = %#v", key, seen[key], seen)
 		}
 	}
-	if len(seen) != 2 {
+	if len(seen) != 3 {
 		t.Fatalf("unexpected request set: %#v", seen)
 	}
 }
@@ -140,10 +142,15 @@ object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 
-	requested := false
+	seen := map[string]int{}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested = true
-		t.Fatalf("unexpected request without auth %s %s", r.Method, r.URL.Path)
+		seen[r.Method+" "+r.URL.Path]++
+		switch r.Method + " " + r.URL.Path {
+		case "GET /healthz":
+			_, _ = w.Write([]byte("ok\n"))
+		default:
+			t.Fatalf("unexpected request without auth %s %s", r.Method, r.URL.Path)
+		}
 	}))
 	t.Cleanup(srv.Close)
 	restoreTransport := routeAllHTTPSToTestServer(t, srv)
@@ -153,7 +160,7 @@ object_storage_deployment_artifacts_bucket: verself-deployment-artifacts
 	if err == nil || !strings.Contains(err.Error(), "deployment_auth_unavailable") {
 		t.Fatalf("check error = %v, want deployment auth failure", err)
 	}
-	if requested {
-		t.Fatal("check called deployment-service before deployment auth was available")
+	if seen["GET /healthz"] != 1 || len(seen) != 1 {
+		t.Fatalf("requests = %#v, want only unauthenticated healthz", seen)
 	}
 }
