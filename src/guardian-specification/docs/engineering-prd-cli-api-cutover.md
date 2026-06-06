@@ -6,9 +6,9 @@ Last updated: 2026-06-06
 
 ## Summary
 
-Cut Guardian over from file-path-driven `board` and Bazelisk workflows to a
-profile-driven command surface that can operate a site such as gamma end to
-end:
+Cut Guardian over from file-path-driven `board` and host-managed Bazel
+workflows to a profile-driven command surface that can operate a site such as
+gamma end to end:
 
 ```sh
 guardian run bazel -- test //...
@@ -20,9 +20,8 @@ guardian fly run gamma -- bazel test //...
 The cutover makes Guardian the authority for repo-owned tool execution,
 substrate preparation, deployment convergence, and verified post-convergence
 remote tool runs. It removes `board` from the public API, makes profiles named
-repo configuration instead of mutable local state, and replaces Bazelisk's
-`.bazelversion` authority with a Guardian tool catalog of digest-pinned,
-admitted artifacts.
+repo configuration instead of mutable local state, and makes the Guardian tool
+catalog the authority for digest-pinned, admitted Bazel artifacts.
 
 ## Problem
 
@@ -31,11 +30,10 @@ resource graph path as the primary operator input. That makes repeated site
 operation noisy and hides the site context that an operator is actually
 selecting.
 
-Local tool execution also depends on Bazelisk for Bazel version management.
-Bazelisk is useful bootstrap tooling, but it makes `.bazelversion` a tool
-authority. Guardian needs stricter supply-chain control: tools must resolve
-from repo-declared catalog entries, platform-specific artifact digests,
-admission evidence, and content-addressed local caches.
+Local tool execution also depended on host-managed Bazel version selection.
+Guardian needs stricter supply-chain control: tools must resolve from
+repo-declared catalog entries, platform-specific artifact digests, admission
+evidence, and content-addressed local caches.
 
 Remote post-convergence commands are not yet modeled as verified Guardian tool
 execution. If this is left as raw SSH-shaped behavior, `fly run` will become an
@@ -53,19 +51,19 @@ supposed to enforce.
 - Prefer `.config/guardian` for authored config and `.guardian` for generated
   runtime state.
 - Replace `guardian board` with `guardian preflight`.
-- Make `guardian run bazel -- test //...` the Bazelisk replacement for normal
-  development and CI validation.
+- Make `guardian run bazel -- test //...` the normal development and CI
+  validation command.
 - Keep `guardian fly run` catalog-only by default.
 - Make arbitrary remote shell execution a separate audited breakglass command,
   not a mode hidden under `fly run`.
-- Delete contradictory board/Bazelisk call sites and docs once stage-zero
-  Guardian can build and run the repo-owned Bazel tool.
+- Delete contradictory board and host-managed Bazel call sites and docs once
+  stage-zero Guardian can build and run the repo-owned Bazel tool.
 
 ## Non-Goals
 
 - No compatibility alias for `guardian board`.
 - No hidden mutable command such as `guardian profile select`.
-- No `.bazelversion` authority after the cutover.
+- No host version-file authority after the cutover.
 - No `PATH` lookup or host package fallback for catalog tools.
 - No profile-level `artifactPolicy`; Guardian always runs admitted,
   digest-pinned artifacts.
@@ -79,12 +77,11 @@ supposed to enforce.
 - Operators running gamma/prod/dev recovery and deployment loops.
 - Developers running repo-owned tools locally.
 - CI jobs proving that the stage-zero Guardian binary can build and test the
-  Guardian specification without Bazelisk as the operational entrypoint.
+  Guardian specification without a host-managed Bazel operational entrypoint.
 
 ## Reference Models
 
 - Bazel command UX: https://bazel.build/docs/user-manual
-- Bazelisk version-selection role: https://bazel.build/install/bazelisk
 - Kubernetes named contexts: https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/
 - Kubernetes file-oriented `-f`: https://kubernetes.io/docs/reference/kubectl/generated/kubectl_apply/
 - AWS named profiles: https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html
@@ -468,11 +465,10 @@ First required target:
 guardian run bazel -- test //...
 ```
 
-This is the Bazelisk replacement. Bazelisk may remain only as temporary
-bootstrap tooling to build the first Guardian binary until stage-zero Guardian
-is published and documented. Once `guardian run bazel` proves it can test the
-Guardian specification, docs and Aspect helper call sites should move to
-Guardian.
+This replaces host-managed Bazel execution. Bootstrap installs a pinned Bazel
+binary only long enough for `aspect dev install --install-shims` to install the
+first Guardian binary and Guardian-owned tool shims. Once Guardian is on
+`PATH`, docs and Aspect helper call sites must use Guardian.
 
 ## Resource Graph Scope
 
@@ -640,24 +636,21 @@ Acceptance:
 - `guardian fly run gamma -- /usr/bin/env` fails because raw commands are not
   catalog tools.
 
-### Milestone 5: Bazelisk and Terminology Cleanup
+### Milestone 5: Bazel and Terminology Cleanup
 
 Deliverables:
 
-- Update README and developer docs from Bazelisk operational commands to
+- Update README and developer docs from host-managed Bazel operational commands to
   Guardian tool commands after stage-zero Guardian is available.
-- Remove Aspect helper call sites that invoke Bazelisk for ordinary repo tool
-  execution.
-- Delete `.bazelversion` or demote it to non-authoritative documentation only
-  if a transition note is still needed.
+- Remove Aspect helper call sites that invoke host-managed Bazel for ordinary
+  repo tool execution.
+- Delete host version-file authority.
 - Rename benchmark directories and test names from board to preflight.
 - Remove stale board terminology from Guardian docs and examples.
 
 Acceptance:
 
-- `rg "bazelisk|Bazelisk|\\.bazelversion"` returns only bootstrap notes that
-  explicitly say Bazelisk is temporary stage-zero tooling, or returns no
-  matches after full removal.
+- Search for legacy Bazel version-manager names returns no matches.
 - `rg "guardian board|boarding|boarded|Board"` in Guardian runtime docs and
   code returns no public API surface.
 - CI uses `guardian run bazel -- test //...` for Guardian validation once the
@@ -668,7 +661,7 @@ Acceptance:
 Run these commands before merging PR #135:
 
 ```sh
-bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian
+bazel build //src/guardian-specification/cli/cmd/guardian:guardian
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian profiles list -o json
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian profiles show gamma -o json
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian tool list -o json
@@ -690,13 +683,12 @@ Search gates:
 
 ```sh
 rg "guardian board|boarding|boarded|Board" src/guardian-specification README.md docs
-rg "bazelisk|Bazelisk|\\.bazelversion" README.md docs .aspect src
 rg "artifactPolicy" .config src/guardian-specification
 ```
 
 Search gates are pass/fail only after the relevant milestone. During the
-stage-zero transition, Bazelisk references must be explicitly labeled as
-temporary bootstrap authority.
+stage-zero transition, bootstrap may invoke the pinned `bazel` binary directly;
+ordinary repo operation must use Guardian.
 
 ## Rollout
 
@@ -708,7 +700,7 @@ compatibility layering.
 3. Land the catalog-backed Bazel execution path.
 4. Prove Guardian can run Bazel tests locally through `guardian run`.
 5. Land `fly run` as catalog-only remote Guardian execution.
-6. Remove Bazelisk operational call sites after stage-zero Guardian is usable.
+6. Remove host-managed Bazel operational call sites after stage-zero Guardian is usable.
 7. Merge the verified branch directly into PR #135.
 
 ## Risks and Mitigations
@@ -720,7 +712,7 @@ compatibility layering.
 | Supply-chain downgrade through PATH | no PATH lookup; catalog ref and digest are authority |
 | Profile policy footguns | no `artifactPolicy`; admitted digest-pinned artifacts are the default rule |
 | `fly run` becomes raw SSH | catalog-only command grammar; raw commands reserved for future audited `fly exec` |
-| Stage-zero circularity | keep Bazelisk only to build the first Guardian binary until Guardian can run Bazel |
+| Stage-zero circularity | bootstrap installs pinned Bazel directly only until Guardian and Guardian tool shims are installed |
 | Quiet remote mutation | preflight output includes explicit effects |
 | Board terminology lingers | milestone search gates and docs cleanup before merge |
 
@@ -729,9 +721,6 @@ compatibility layering.
 - What is the first authoritative admission source for catalog tools during the
   stage-zero period: checked-in metadata, distribution-service, OCI referrers,
   or a temporary local admission document?
-- Should `.bazelversion` be deleted immediately after `guardian run bazel`
-  passes, or retained briefly as non-authoritative release-note style
-  documentation?
 - Should `Substrate.spec.remote` model SSH argv directly for the first
   implementation, or should it reference a future substrate transport resource?
 - What is the durable result schema for `fly run` once local JSON records are
@@ -748,6 +737,7 @@ The cutover is done when:
   through a verified remote Guardian.
 - `guardian run bazel -- test //src/guardian-specification/...` passes.
 - public Guardian docs, tests, examples, and benchmarks use the new vocabulary.
-- Bazelisk is no longer an operational tool authority.
+- Host-managed Bazel version selection is no longer an operational tool
+  authority.
 - PR #135 contains the verified cutover without compatibility aliases or
   contradictory legacy paths.

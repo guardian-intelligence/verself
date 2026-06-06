@@ -172,7 +172,7 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		`bootstrap_runtime_substrate: customer_latitude_bare_metal`,
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "README.md"), []string{
-		"bazelisk build //src/guardian-cli:guardian",
+		"guardian run bazel -- build //src/guardian-cli:guardian",
 		"aspect deploy --site=prod --sha=HEAD",
 	})
 

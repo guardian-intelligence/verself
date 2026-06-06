@@ -39,8 +39,8 @@ interoperability projections, not semantic authority.
 ## Verification
 
 - Validate the Smithy package with
-  `bazelisk test //src/smithy/models/verself:smithy_validate_test`.
+  `guardian run bazel -- test //src/smithy/models/verself:smithy_validate_test`.
 - Build Smithy projection artifacts with
-  `bazelisk build //src/smithy/models/verself:smithy_build`.
+  `guardian run bazel -- build //src/smithy/models/verself:smithy_build`.
 - Prove deployed behavior through ClickHouse traces/logs for behavior-affecting
   contract changes.

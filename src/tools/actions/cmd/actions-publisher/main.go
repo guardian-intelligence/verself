@@ -49,7 +49,7 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	target := fmt.Sprintf("//src/actions/%s:github_action_dist", cfg.name)
-	if err := runCommand(ctx, cfg.repoRoot, "bazelisk build "+target, "bazelisk", "build", target); err != nil {
+	if err := runCommand(ctx, cfg.repoRoot, "guardian run bazel -- build "+target, "guardian", "run", "bazel", "--", "build", target); err != nil {
 		return err
 	}
 	tarPath, err := bazelOutputPath(ctx, cfg.repoRoot, target)
@@ -159,7 +159,7 @@ func ensureCleanSource(ctx context.Context, repoRoot string) error {
 }
 
 func bazelOutputPath(ctx context.Context, repoRoot, target string) (string, error) {
-	out, err := captureCommand(ctx, repoRoot, "bazelisk", "cquery", "--output=files", target)
+	out, err := captureCommand(ctx, repoRoot, "guardian", "run", "bazel", "--", "cquery", "--output=files", target)
 	if err != nil {
 		return "", err
 	}

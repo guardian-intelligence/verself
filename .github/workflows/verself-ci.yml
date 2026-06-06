@@ -37,11 +37,13 @@ jobs:
             echo "GitHub runner process cleanup marker is present in the step environment."
             unset RUNNER_TRACKING_ID
           fi
+          aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
+          export PATH="${HOME}/.local/bin:${PATH}"
           started_ms="$(($(date +%s%N) / 1000000))"
-          bazelisk test //...
+          guardian run bazel -- test //...
           finished_ms="$(($(date +%s%N) / 1000000))"
           echo "::notice title=Verself workload timing::workload=full-repo duration_ms=$((finished_ms - started_ms))"
-          server_pid="$(bazelisk info server_pid)"
+          server_pid="$(guardian run bazel -- info server_pid)"
           if [ -z "$server_pid" ] || [ ! -r "/proc/${server_pid}/environ" ]; then
             echo "::error::Bazel server process ${server_pid:-<empty>} is not inspectable"
             exit 1
@@ -51,4 +53,3 @@ jobs:
             exit 1
           fi
           echo "Bazel server ${server_pid} does not carry RUNNER_TRACKING_ID."
-

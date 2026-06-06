@@ -4,12 +4,11 @@ Language-specific lint and generated-output checks stay modeled as Bazel test
 targets so warm CI runners reuse the local action/test cache.
 """
 
-load(".aspect/lib/helpers.axl", "bazel_run", "bazel_tracked_files", "checked_spawn", "ws_path")
+load(".aspect/lib/helpers.axl", "bazel_command", "bazel_run", "bazel_tracked_files", "ws_path")
 
 def _bazel(ctx, args, label):
-    return checked_spawn(
+    return bazel_command(
         ctx,
-        "bazelisk",
         args,
         cwd = ws_path(ctx),
         label = label,
@@ -30,7 +29,7 @@ def _buildifier(ctx):
     )
 
 def _bzlmod(ctx):
-    return _bazel(ctx, ["mod", "tidy", "--lockfile_mode=error"], "bazelisk mod tidy --lockfile_mode=error")
+    return _bazel(ctx, ["mod", "tidy", "--lockfile_mode=error"], "guardian run bazel -- mod tidy --lockfile_mode=error")
 
 def _bazel_test(ctx):
     return _bazel(
@@ -39,7 +38,7 @@ def _bazel_test(ctx):
             "test",
             "//...",
         ],
-        "bazelisk test //...",
+        "guardian run bazel -- test //...",
     )
 
 def _impl(ctx):
@@ -52,5 +51,5 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run Buildifier/Bzlmod preflights, then `bazelisk test //...`.",
+    summary = "Run Buildifier/Bzlmod preflights, then `guardian run bazel -- test //...`.",
 )

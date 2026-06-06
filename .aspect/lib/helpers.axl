@@ -2,7 +2,7 @@
 
 This file is the single triage point when upstream Aspect breaks the AXL DSL.
 Anything that touches the Aspect-side API (spawning processes, reading env,
-locating workspace files, calling ctx.bazel.*) belongs here, so the next
+locating workspace files, routing Bazel invocations) belongs here, so the next
 breaking rename is a one-file fix instead of a 12-file fix.
 
 Conventions:
@@ -128,9 +128,9 @@ def _bazel_args_with_bep(ctx, args, label):
     if ts == "":
         return None
 
-    name = _safe_artifact_name(label if label != None else "bazelisk_" + "_".join(args))
+    name = _safe_artifact_name(label if label != None else "bazel_" + "_".join(args))
     if name == "":
-        name = "bazelisk"
+        name = "bazel"
     path = out_dir + "/" + ts + "__" + name + ".bep.json"
     ctx.std.io.stderr.write("BEP: " + path + "\n")
     return [args[0], "--build_event_json_file=" + path] + args[1:]
@@ -148,12 +148,7 @@ def checked_spawn(ctx, program, args, cwd = None, env = None, label = None):
     # exit so we can answer "how often is each task actually invoked" without
     # taking on the full OTel task-tracing surface.
     label_str = label if label != None else program
-    spawn_args = args
-    if program == "bazelisk":
-        spawn_args = _bazel_args_with_bep(ctx, args, label_str)
-        if spawn_args == None:
-            return 1
-    cmd = ctx.std.process.command(program).args(spawn_args)
+    cmd = ctx.std.process.command(program).args(args)
     if cwd != None:
         cmd = cmd.current_dir(cwd)
     if env != None:
@@ -168,23 +163,17 @@ def bazel_run(ctx, target, args = None, cwd = None, env = None, label = None, ba
     """Run a Bazel executable target and pass argv after `--`."""
     target_args = list(args) if args != None else []
     run_args = ["run"] + (list(bazel_args) if bazel_args != None else []) + [target, "--"] + target_args
-    return checked_spawn(
+    return bazel_command(
         ctx,
-        "bazelisk",
         run_args,
         cwd = cwd if cwd != None else ws_path(ctx),
         env = env,
-        label = label if label != None else "bazelisk run " + target,
+        label = label if label != None else "guardian run bazel -- run " + target,
     )
 
 def _capture_stdout(ctx, program, args, cwd = None, env = None, label = None):
     label_str = label if label != None else program
-    spawn_args = args
-    if program == "bazelisk":
-        spawn_args = _bazel_args_with_bep(ctx, args, label_str)
-        if spawn_args == None:
-            return None
-    cmd = ctx.std.process.command(program).args(spawn_args)
+    cmd = ctx.std.process.command(program).args(args)
     if cwd != None:
         cmd = cmd.current_dir(cwd)
     if env != None:
@@ -200,6 +189,46 @@ def _capture_stdout(ctx, program, args, cwd = None, env = None, label = None):
         return None
     return r.stdout.strip()
 
+def _bazel_program_args(args, stage_zero = False):
+    if stage_zero:
+        return "bazel", args
+    return "guardian", ["run", "bazel", "--"] + args
+
+def _bazel_label(args, stage_zero = False):
+    prefix = "bazel " if stage_zero else "guardian run bazel -- "
+    return prefix + " ".join(args)
+
+def bazel_command(ctx, args, cwd = None, env = None, label = None, stage_zero = False):
+    """Run Bazel through Guardian unless this is the explicit stage-zero install path."""
+    label_str = label if label != None else _bazel_label(args, stage_zero = stage_zero)
+    bazel_args = _bazel_args_with_bep(ctx, args, label_str)
+    if bazel_args == None:
+        return 1
+    program, process_args = _bazel_program_args(bazel_args, stage_zero = stage_zero)
+    return checked_spawn(
+        ctx,
+        program,
+        process_args,
+        cwd = cwd if cwd != None else ws_path(ctx),
+        env = env,
+        label = label_str,
+    )
+
+def _capture_bazel(ctx, args, cwd = None, env = None, label = None, stage_zero = False):
+    label_str = label if label != None else _bazel_label(args, stage_zero = stage_zero)
+    bazel_args = _bazel_args_with_bep(ctx, args, label_str)
+    if bazel_args == None:
+        return None
+    program, process_args = _bazel_program_args(bazel_args, stage_zero = stage_zero)
+    return _capture_stdout(
+        ctx,
+        program,
+        process_args,
+        cwd = cwd if cwd != None else ws_path(ctx),
+        env = env,
+        label = label_str,
+    )
+
 def _path_exists(ctx, path):
     r = (ctx.std.process.command("test")
         .args(["-e", path])
@@ -207,23 +236,23 @@ def _path_exists(ctx, path):
         .spawn().wait_with_output())
     return r.status.code == 0
 
-def bazel_output_file(ctx, target):
+def bazel_output_file(ctx, target, stage_zero = False):
     """Build a single-output Bazel target and return its execroot-absolute path."""
-    rc = checked_spawn(
+    rc = bazel_command(
         ctx,
-        "bazelisk",
         ["build", target],
         cwd = ws_path(ctx),
-        label = "bazelisk build " + target,
+        label = _bazel_label(["build", target], stage_zero = stage_zero),
+        stage_zero = stage_zero,
     )
     if rc != 0:
         return ""
-    raw_files = _capture_stdout(
+    raw_files = _capture_bazel(
         ctx,
-        "bazelisk",
         ["cquery", "--output=files", target],
         cwd = ws_path(ctx),
-        label = "bazelisk cquery --output=files " + target,
+        label = _bazel_label(["cquery", "--output=files", target], stage_zero = stage_zero),
+        stage_zero = stage_zero,
     )
     if raw_files == None:
         return ""
@@ -235,12 +264,12 @@ def bazel_output_file(ctx, target):
     if len(files) != 1:
         ctx.std.io.stderr.write("ERROR: expected one output for " + target + ", got " + str(len(files)) + "\n")
         return ""
-    execroot = _capture_stdout(
+    execroot = _capture_bazel(
         ctx,
-        "bazelisk",
         ["info", "execution_root"],
         cwd = ws_path(ctx),
-        label = "bazelisk info execution_root",
+        label = _bazel_label(["info", "execution_root"], stage_zero = stage_zero),
+        stage_zero = stage_zero,
     )
     if execroot == None:
         return ""
@@ -249,12 +278,12 @@ def bazel_output_file(ctx, target):
         return execroot_path
 
     # External source targets are not kept materialized under execroot.
-    output_base = _capture_stdout(
+    output_base = _capture_bazel(
         ctx,
-        "bazelisk",
         ["info", "output_base"],
         cwd = ws_path(ctx),
-        label = "bazelisk info output_base",
+        label = _bazel_label(["info", "output_base"], stage_zero = stage_zero),
+        stage_zero = stage_zero,
     )
     if output_base == None:
         return ""
@@ -268,14 +297,14 @@ def _absolute_or_workspace_path(ctx, path):
         return path
     return ws_path(ctx, path)
 
-def install_bazel_tool_shims(ctx, shims, bin_dir):
+def install_bazel_tool_shims(ctx, shims, bin_dir, stage_zero = False):
     """Install repo-local symlinks for Bazel-resolved executable targets."""
     out_dir = _absolute_or_workspace_path(ctx, bin_dir)
     rc = checked_spawn(ctx, "mkdir", ["-p", out_dir], label = "mkdir -p " + out_dir)
     if rc != 0:
         return ""
     for name, target in shims:
-        tool = bazel_output_file(ctx, target)
+        tool = bazel_output_file(ctx, target, stage_zero = stage_zero)
         if tool == "":
             return ""
         rc = checked_spawn(ctx, "ln", ["-sf", tool, out_dir + "/" + name], label = "ln -sf " + name)
@@ -292,12 +321,11 @@ def viteplus_node(ctx, ensure_toolchain = True):
     `vite-plus` launcher under it) is the lockfile-pinned tree.
     """
     if ensure_toolchain:
-        rc = checked_spawn(
+        rc = bazel_command(
             ctx,
-            "bazelisk",
             ["build", VITEPLUS_NODE_TARGET, VITEPLUS_WORKSPACE_INSTALL_TARGET],
             cwd = ws_path(ctx),
-            label = "bazelisk build Vite+ toolchain",
+            label = "guardian run bazel -- build Vite+ toolchain",
         )
         if rc != 0:
             return ""

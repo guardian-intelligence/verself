@@ -14,23 +14,27 @@ func buildBazelBinary(ctx context.Context, repoRoot, target string) (string, err
 	if repoRoot == "" {
 		return "", errors.New("bazel build: repo root is required")
 	}
-	cmd := exec.CommandContext(ctx, "bazelisk", "build", target)
-	cmd.Dir = repoRoot
+	cmd := guardianBazelCommand(ctx, repoRoot, "build", target)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("bazelisk build %s: %w\n%s", target, err, string(out))
+		return "", fmt.Errorf("guardian run bazel -- build %s: %w\n%s", target, err, string(out))
 	}
-	cmd = exec.CommandContext(ctx, "bazelisk", "cquery", "--output=files", target)
-	cmd.Dir = repoRoot
+	cmd = guardianBazelCommand(ctx, repoRoot, "cquery", "--output=files", target)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err = cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("bazelisk cquery --output=files %s: %w\n%s", target, err, stderr.String())
+		return "", fmt.Errorf("guardian run bazel -- cquery --output=files %s: %w\n%s", target, err, stderr.String())
 	}
 	files := strings.Fields(string(out))
 	if len(files) != 1 {
 		return "", fmt.Errorf("bazel cquery %s: expected one output file, got %d", target, len(files))
 	}
 	return filepath.Join(repoRoot, files[0]), nil
+}
+
+func guardianBazelCommand(ctx context.Context, repoRoot string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "guardian", append([]string{"run", "bazel", "--"}, args...)...)
+	cmd.Dir = repoRoot
+	return cmd
 }

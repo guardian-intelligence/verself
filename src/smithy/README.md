@@ -48,8 +48,8 @@ projection path.
 
 ```shell
 aspect check
-bazelisk test //src/smithy/models/verself:smithy_validate_test
-bazelisk build //src/smithy/models/verself:smithy_build
+guardian run bazel -- test //src/smithy/models/verself:smithy_validate_test
+guardian run bazel -- build //src/smithy/models/verself:smithy_build
 ```
 
 Service OpenAPI packages expose `openapi-3.1.yaml` targets extracted from the

@@ -75,7 +75,7 @@ func (s *Service) DependencyChecks(ctx context.Context) []DependencyCheck {
 		}},
 		{Stage: "S1", Name: "host_allocated", Run: func(context.Context) DependencyCheck { return s1HostAllocated(s.Config.NomadAllocID) }},
 		{Stage: "S2", Name: "recovery_ssh_ready", Run: func(context.Context) DependencyCheck { return s2RecoverySSHReady(s.Config.RecoverySSHReady) }},
-		{Stage: "S3", Name: "bazelisk", Run: func(context.Context) DependencyCheck { return s3Bazelisk() }},
+		{Stage: "S3", Name: "guardian", Run: func(context.Context) DependencyCheck { return s3Guardian() }},
 		{Stage: "S3", Name: "git", Run: func(context.Context) DependencyCheck { return s3Git() }},
 		{Stage: "S6", Name: "nomad", Run: func(ctx context.Context) DependencyCheck { return s6Nomad(ctx, s.Config.NomadAddr) }},
 		{Stage: "S7", Name: "postgres", Run: func(ctx context.Context) DependencyCheck { return s7Postgres(ctx, s.Store) }},
@@ -426,9 +426,9 @@ func runQuickCommand(parent context.Context, dir, name string, args ...string) e
 	return err
 }
 
-func s3Bazelisk() DependencyCheck {
-	_, err := exec.LookPath("bazelisk")
-	return dependency("S3", "bazelisk", err)
+func s3Guardian() DependencyCheck {
+	_, err := exec.LookPath("guardian")
+	return dependency("S3", "guardian", err)
 }
 
 func s3Git() DependencyCheck {

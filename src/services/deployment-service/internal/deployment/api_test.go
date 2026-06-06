@@ -229,7 +229,7 @@ func TestDependencyChecksReturnCanonicalS0ToS7Model(t *testing.T) {
 		"S0/site",
 		"S1/host_allocated",
 		"S2/recovery_ssh_ready",
-		"S3/bazelisk",
+		"S3/guardian",
 		"S3/git",
 		"S6/nomad",
 		"S7/postgres",

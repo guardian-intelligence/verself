@@ -1,6 +1,6 @@
-// Package bazelbuild wraps `bazelisk build` so the deploy flow can
+// Package bazelbuild wraps `guardian run bazel -- build` so the deploy flow can
 // resolve target outputs through the Build Event Protocol rather
-// than `bazelisk cquery --output=files | tail -1`.
+// than `guardian run bazel -- cquery --output=files | tail -1`.
 //
 // The cquery path's documented multi-config caveat means a target
 // that produces outputs in two configurations silently picks the
@@ -35,7 +35,7 @@ type Result struct {
 	BEPath string
 }
 
-// Build invokes `bazelisk build <extraFlags...> --build_event_json_file=<tmp> <targets...>`
+// Build invokes `guardian run bazel -- build <extraFlags...> --build_event_json_file=<tmp> <targets...>`
 // from cwd, then parses the resulting BEP into a *bep.Stream.
 //
 // Stdout/stderr inherit so operator-facing progress lines (the only
@@ -71,7 +71,7 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 		args = append(args, "--build_event_json_file="+bepPath)
 		args = append(args, targets...)
 
-		cmd := exec.CommandContext(ctx, "bazelisk", args...)
+		cmd := exec.CommandContext(ctx, "guardian", append([]string{"run", "bazel", "--"}, args...)...)
 		cmd.Dir = cwd
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -82,7 +82,7 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 	if err := run(extraFlags); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return nil, fmt.Errorf("bazelisk build: %w", err)
+		return nil, fmt.Errorf("guardian run bazel -- build: %w", err)
 	}
 	span.SetAttributes(attribute.StringSlice("bazel.effective_flags", effectiveFlags))
 

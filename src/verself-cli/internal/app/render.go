@@ -266,7 +266,9 @@ Runtime substrate: customer-provisioned Latitude bare metal.
 `+"```text"+`
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
-bazelisk build //src/%s-cli:%s
+aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
+export PATH="${HOME}/.local/bin:${PATH}"
+guardian run bazel -- build //src/%s-cli:%s
 ./bazel-bin/src/%s-cli/%s company inspect %s --json
 ./bazel-bin/src/%s-cli/%s env run --org %s --project %s --environment bootstrap -- aspect deploy --site=%s --sha=HEAD
 `+"```"+`

@@ -3,15 +3,14 @@
 These are the durable AXL wrappers around the Bazel-graph workflows that an
 operator runs by hand often enough to want shape and help text. Everything
 else (one-off `bazel build|test|query` against ad-hoc target patterns) is
-raw `bazelisk` and intentionally out of scope.
+`guardian run bazel -- ...` and intentionally out of scope.
 """
 
-load(".aspect/lib/helpers.axl", "checked_spawn")
+load(".aspect/lib/helpers.axl", "bazel_command")
 
 def _gazelle_impl(ctx):
-    return checked_spawn(
+    return bazel_command(
         ctx,
-        "bazelisk",
         [
             "run",
             "//:gazelle",
@@ -20,15 +19,14 @@ def _gazelle_impl(ctx):
             "-go_naming_convention=import",
             "-go_naming_convention_external=import",
         ],
-        label = "bazelisk run //:gazelle -- update",
+        label = "guardian run bazel -- run //:gazelle -- update",
     )
 
 def _bzlmod_impl(ctx):
-    return checked_spawn(
+    return bazel_command(
         ctx,
-        "bazelisk",
         ["mod", "tidy", "--lockfile_mode=update"],
-        label = "bazelisk mod tidy",
+        label = "guardian run bazel -- mod tidy",
     )
 
 def _update_impl(ctx):
@@ -48,7 +46,7 @@ bzlmod = task(
     implementation = _bzlmod_impl,
     name = "bzlmod",
     group = ["bazel"],
-    summary = "Update Bzlmod repository wiring (`bazelisk mod tidy --lockfile_mode=update`).",
+    summary = "Update Bzlmod repository wiring (`guardian run bazel -- mod tidy --lockfile_mode=update`).",
 )
 
 update = task(

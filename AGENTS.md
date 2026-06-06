@@ -104,7 +104,7 @@ Integrations: `aspect integrations`
 * Always think of the governance, IAM, quotas, and metering story behind service changes. Customers must know who did what, what they're allowed to do, and how much they used.
 * Think in terms of providing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
 * Never use useEffect. Very rarely, if ever, use `useState` -- prefer TanStack Query primitives for all state. Sync snowflake client-side state with the URL.
-* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/` because it executes prior to bazelisk setting everything up.
+* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/` because they execute before Guardian is installed.
 * Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.
 * Treat errors as data. Use tagged and structured errors to aid control flow.
 * Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
@@ -144,7 +144,7 @@ See @src/services/iam-service/schema/verself.zed for Zanzibar policies
 The manifest of all discoverable public APIs is in `src/infrastructure-components/haproxy/templates/verself-discovery.json.j2`; all new public services must be registered there.
 
 * `aspect` contains lots of helpful commands under `.aspect/`. Run `aspect` to get the list of tasks and task groups and `aspect <task> --help` for more details.
-* Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output, filter accordingly)
+* Run `guardian run bazel -- query 'kind(".*", ...)'` to learn more about how systems link together (expect large output, filter accordingly)
 
 GitHub with `actions/cache` - ~20m
 Blacksmith.sh + Sticky Disks - ~2m10s
@@ -302,7 +302,7 @@ Boundary components that sit outside the usual service shape:
 
 Top-level landmarks:
 
-- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or raw `bazelisk`.
+- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or `guardian run bazel -- ...`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 - Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
 
@@ -388,7 +388,7 @@ Before writing markdown architecture in docs/ directories, please read docs/agen
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term*. Read docs/architecture/service-change-reference-architecture.md for more information on how to think about architecture.
-- Unit tests and successful `bazelisk` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are typically the only admissible completion evidence for service changes. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
+- Unit tests and successful `guardian run bazel` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are typically the only admissible completion evidence for service changes. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
 - Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 </output_contract>

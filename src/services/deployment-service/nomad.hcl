@@ -18,7 +18,7 @@ job "deployment-service" {
       }
       config {
         command = "/usr/bin/install"
-        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/home/deployment_service", "/var/lib/verself/deployment-service", "/var/lib/verself/deployment-service/.cache", "/var/lib/verself/deployment-service/.cache/bazelisk", "/var/lib/verself/deployment-service/tmp"]
+        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/home/deployment_service", "/var/lib/verself/deployment-service", "/var/lib/verself/deployment-service/.cache", "/var/lib/verself/deployment-service/.cache/guardian", "/var/lib/verself/deployment-service/tmp"]
       }
       resources {
         cpu = 50
@@ -65,7 +65,6 @@ job "deployment-service" {
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        BAZELISK_HOME = "/var/lib/verself/deployment-service/.cache/bazelisk"
         HOME = "/var/lib/verself/deployment-service"
         LOGNAME = "deployment_service"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"

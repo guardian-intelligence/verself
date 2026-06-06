@@ -148,7 +148,7 @@ func Parse(path string) (*Stream, error) {
 // cycles (which the Bazel scheduler does not produce but a malformed
 // stream could) are tolerated.
 //
-// workspaceRoot is the directory `bazelisk` was invoked from. It
+// workspaceRoot is the directory `guardian run bazel` was invoked from. It
 // anchors `bazel-out`, the symlink the path-prefix tuple refers to.
 // BEP files generated under a remote-cache configuration carry
 // `bytestream://` URIs instead of `file:///`; this resolver still

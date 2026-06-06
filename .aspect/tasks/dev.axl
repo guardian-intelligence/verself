@@ -20,9 +20,19 @@ DEV_CONVENIENCE_SHIMS = [
 
 def _install_impl(ctx):
     if ctx.args.install_shims or ctx.args.print_path:
-        bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir)
+        bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir, stage_zero = True)
         if bin_dir == "":
             return 1
+        if ctx.args.install_shims:
+            rc = checked_spawn(
+                ctx,
+                bin_dir + "/guardian",
+                ["tool", "install-shims", "--bin-dir", bin_dir],
+                cwd = ws_path(ctx),
+                label = "guardian tool install-shims --bin-dir " + bin_dir,
+            )
+            if rc != 0:
+                return rc
         if ctx.args.print_path:
             ctx.std.io.stdout.write(bin_dir + "\n")
     return 0
@@ -48,7 +58,7 @@ install = task(
     implementation = _install_impl,
     name = "install",
     group = ["dev"],
-    summary = "Install controller OS prerequisites and optional repo-local tool shims.",
+    summary = "Install controller shims for Guardian and repo-owned developer tools.",
     args = {
         "install_shims": args.boolean(default = False, description = "Install repo-local shims for common developer tools."),
         "print_path": args.boolean(default = False, description = "Print the shim directory that should lead PATH for local development."),

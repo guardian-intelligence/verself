@@ -65,8 +65,8 @@ Run the frontend setup from a clean checkout before trusting TypeScript output:
 git pull --ff-only
 cd src/viteplus-monorepo
 vp install --frozen-lockfile
-bazelisk run //src/viteplus-monorepo/apps/company:dev_update
-bazelisk run //src/viteplus-monorepo/apps/verself-web:dev_update
+guardian run bazel -- run //src/viteplus-monorepo/apps/company:dev_update
+guardian run bazel -- run //src/viteplus-monorepo/apps/verself-web:dev_update
 ```
 
 The generated files under `apps/*/src/__generated` and
@@ -153,7 +153,7 @@ Electric SQL delivers real-time data via `useLiveQuery`. This is not a React Que
 
 ## Routing
 
-TanStack Router file-based routing. Route files go in `src/routes/`. The route tree is auto-generated — run the owning `bazelisk run //src/viteplus-monorepo/apps/<app>:dev_update` target after adding or removing route files.
+TanStack Router file-based routing. Route files go in `src/routes/`. The route tree is auto-generated — run the owning `guardian run bazel -- run //src/viteplus-monorepo/apps/<app>:dev_update` target after adding or removing route files.
 
 `beforeLoad` has access to `context.queryClient` for route-level side effects (invalidation, prefetching). Prefer this over component-level `useEffect` for navigation-triggered logic.
 

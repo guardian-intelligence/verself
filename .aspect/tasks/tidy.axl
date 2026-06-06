@@ -6,7 +6,7 @@ index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_command", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
 
 GOFUMPT_TARGET = "//src/tools/dev/binaries:gofumpt"
 GOOGLE_JAVA_FORMAT_TARGET = "//src/smithy/tools:google_java_format"
@@ -16,9 +16,8 @@ def _tool_path(ctx, *parts):
     return ws_path(ctx, "bazel-bin", *parts)
 
 def _build_toolchain(ctx):
-    return checked_spawn(
+    return bazel_command(
         ctx,
-        "bazelisk",
         [
             "build",
             VITEPLUS_NODE_TARGET,
@@ -28,7 +27,7 @@ def _build_toolchain(ctx):
             BUILDIFIER_TARGET,
         ],
         cwd = ws_path(ctx),
-        label = "bazelisk build tidy toolchain",
+        label = "guardian run bazel -- build tidy toolchain",
     )
 
 def _viteplus(ctx):

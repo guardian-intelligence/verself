@@ -311,7 +311,7 @@ operation SubmitDeployment {
         DeploymentBootstrapS0SiteError,
         DeploymentBootstrapS1HostAllocatedError,
         DeploymentBootstrapS2RecoverySshReadyError,
-        DeploymentBootstrapS3BazeliskError,
+        DeploymentBootstrapS3GuardianError,
         DeploymentBootstrapS3GitError,
         DeploymentBootstrapS4OpenBaoRuntimeSecretDeliveryError,
         DeploymentBootstrapS6NomadError,
@@ -539,8 +539,8 @@ structure DeploymentBootstrapS2RecoverySshReadyError with [ProblemDetails] {}
 
 @error("server")
 @httpError(503)
-@problem(type: "urn:verself:problem:deployment:bootstrap:s3:bazelisk", code: "deployment.bootstrap.s3.bazelisk")
-structure DeploymentBootstrapS3BazeliskError with [ProblemDetails] {}
+@problem(type: "urn:verself:problem:deployment:bootstrap:s3:guardian", code: "deployment.bootstrap.s3.guardian")
+structure DeploymentBootstrapS3GuardianError with [ProblemDetails] {}
 
 @error("server")
 @httpError(503)

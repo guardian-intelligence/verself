@@ -16,13 +16,13 @@ const (
 )
 
 func QueryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "bazelisk", "query", nomadComponentsQuery)
+	cmd := exec.CommandContext(ctx, "guardian", "run", "bazel", "--", "query", nomadComponentsQuery)
 	cmd.Dir = repoRoot
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	body, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("bazelisk query %s: %w: %s", nomadComponentsQuery, err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("guardian run bazel -- query %s: %w: %s", nomadComponentsQuery, err, strings.TrimSpace(stderr.String()))
 	}
 	labels := []string{}
 	for _, line := range strings.Split(string(body), "\n") {
