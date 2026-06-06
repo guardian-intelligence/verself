@@ -3,14 +3,22 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 exports_files(["tools.lock.json"])
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "runtime_artifact",
     out = "tigerbeetle-runtime.tar",
     files = {
+        "//src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover:tigerbeetle-recover": "bin/tigerbeetle-recover",
         "@tigerbeetle_tools//tools/tigerbeetle": "bin/tigerbeetle",
     },
     modes = {
         "bin/tigerbeetle": "0755",
+        "bin/tigerbeetle-recover": "0755",
     },
     visibility = ["//visibility:public"],
 )

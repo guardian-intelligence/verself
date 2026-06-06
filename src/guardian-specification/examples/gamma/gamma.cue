@@ -652,6 +652,26 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "tigerbeetle.guardianintelligence.org/v1alpha1"
+		kind:       "TigerBeetleCluster"
+		metadata: name: "tigerbeetle"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar"
+			runtimeRoot:     "/var/lib/tigerbeetle/runtime"
+			dataFile:        "/var/lib/tigerbeetle/data.tigerbeetle"
+			reportPath:      "/run/verself/recovery/tigerbeetle/report.json"
+			user:            "tigerbeetle"
+			group:           "tigerbeetle"
+			clusterID:       0
+			replica:         0
+			replicaCount:    1
+			addresses:       ["127.0.0.1:3320"]
+			logLevel:        "info"
+			statsdAddress:   "127.0.0.1:8125"
+			experimental:    true
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"

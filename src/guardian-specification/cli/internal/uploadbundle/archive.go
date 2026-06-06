@@ -131,6 +131,31 @@ var RequiredBuildArtifacts = []RequiredArtifact{
 		Mode:   "0755",
 	},
 	{
+		Source: "bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover",
+		Target: "bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover",
+		Mode:   "0755",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply",
+		Target: "bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply",
+		Mode:   "0755",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply",
+		Target: "bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply",
+		Mode:   "0755",
+	},
+	{
 		Source: "bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar",
 		Target: "bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar",
 		Mode:   "0644",
@@ -215,7 +240,7 @@ func WorkspaceFiles(repoRoot string) ([]File, error) {
 		})
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("required build artifacts are missing; run bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian //src/infrastructure-components/nomad:runtime_artifact //src/infrastructure-components/nomad/cmd/nomad-recover:nomad-recover //src/infrastructure-components/openbao:runtime_artifact //src/infrastructure-components/openbao/cmd/openbao-recover:openbao-recover //src/infrastructure-components/haproxy:runtime_artifact //src/infrastructure-components/nftables:runtime_artifact //src/infrastructure-components/nftables/cmd/nftables-apply:nftables-apply //src/infrastructure-components/nats:runtime_artifact //src/infrastructure-components/nats/cmd/nats-recover:nats-recover //src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer //src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer_nomad_artifact //src/infrastructure-components/otelcol:runtime_artifact //src/infrastructure-components/otelcol:config_artifact //src/infrastructure-components/otelcol/cmd/otelcol-recover:otelcol-recover //src/infrastructure-components/postgresql:runtime_artifact //src/infrastructure-components/clickhouse:runtime_artifact //src/infrastructure-components/clickhouse/cmd/clickhouse-recover:clickhouse-recover //src/integrations/cloudflare/control-plane:runtime_artifact //src/services/object-storage-service/cmd/object-storage-service:object-storage-service //src/services/object-storage-service/cmd/object-storage-service:object-storage-service_nomad_artifact: %s", strings.Join(missing, "; "))
+		return nil, fmt.Errorf("required build artifacts are missing; run bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian //src/infrastructure-components/nomad:runtime_artifact //src/infrastructure-components/nomad/cmd/nomad-recover:nomad-recover //src/infrastructure-components/openbao:runtime_artifact //src/infrastructure-components/openbao/cmd/openbao-recover:openbao-recover //src/infrastructure-components/haproxy:runtime_artifact //src/infrastructure-components/nftables:runtime_artifact //src/infrastructure-components/nftables/cmd/nftables-apply:nftables-apply //src/infrastructure-components/nats:runtime_artifact //src/infrastructure-components/nats/cmd/nats-recover:nats-recover //src/infrastructure-components/spire:runtime_artifact //src/infrastructure-components/spire:identity_registry //src/infrastructure-components/spire:spire-recover //src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer //src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer_nomad_artifact //src/infrastructure-components/otelcol:runtime_artifact //src/infrastructure-components/otelcol:config_artifact //src/infrastructure-components/otelcol/cmd/otelcol-recover:otelcol-recover //src/infrastructure-components/postgresql:runtime_artifact //src/infrastructure-components/clickhouse:runtime_artifact //src/infrastructure-components/clickhouse/cmd/clickhouse-recover:clickhouse-recover //src/infrastructure-components/tigerbeetle:runtime_artifact //src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover:tigerbeetle-recover //src/infrastructure-components/zitadel:runtime_artifact //src/infrastructure-components/zitadel/cmd/zitadel-setup-apply:zitadel-setup-apply //src/infrastructure-components/zitadel/cmd/auth-control-plane-apply:auth-control-plane-apply //src/integrations/cloudflare/control-plane:runtime_artifact //src/services/object-storage-service/cmd/object-storage-service:object-storage-service //src/services/object-storage-service/cmd/object-storage-service:object-storage-service_nomad_artifact: %s", strings.Join(missing, "; "))
 	}
 	return files, nil
 }
