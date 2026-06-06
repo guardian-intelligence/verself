@@ -26,25 +26,6 @@ pkg_tar(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
 spire_identity(
     name = "spiffe_identity",
     component = "nats",
@@ -58,12 +39,12 @@ spire_identity(
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "nats-runtime",
-    },
     component = "nats",
     deploy_phase = "platform",
     job_id = "nats",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "nats-runtime",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
