@@ -183,12 +183,29 @@ type encryptedInitMaterialMeta struct {
 }
 
 type encryptedInitMaterialSpec struct {
-	CreatedAt                  string   `json:"createdAt"`
-	KeyShares                  int      `json:"keyShares"`
-	KeyThreshold               int      `json:"keyThreshold"`
-	PGPRecipientCount          int      `json:"pgpRecipientCount"`
-	EncryptedUnsealSharesB64   []string `json:"encryptedUnsealSharesB64"`
-	EncryptedRecoverySharesB64 []string `json:"encryptedRecoverySharesB64,omitempty"`
+	CreatedAt                  string                                 `json:"createdAt"`
+	KeyShares                  int                                    `json:"keyShares"`
+	KeyThreshold               int                                    `json:"keyThreshold"`
+	PGPRecipientCount          int                                    `json:"pgpRecipientCount"`
+	EncryptedUnsealSharesB64   []string                               `json:"encryptedUnsealSharesB64"`
+	EncryptedRecoverySharesB64 []string                               `json:"encryptedRecoverySharesB64,omitempty"`
+	OperatorImportTokens       []encryptedOperatorImportTokenMaterial `json:"operatorImportTokens,omitempty"`
+}
+
+type encryptedOperatorImportTokenMaterial struct {
+	Name               string   `json:"name"`
+	Policy             string   `json:"policy"`
+	TTL                string   `json:"ttl"`
+	Uses               int      `json:"uses,omitempty"`
+	EncryptedTokensB64 []string `json:"encryptedTokensB64"`
+}
+
+type operatorImportTokenHandoff struct {
+	Name   string
+	Policy string
+	TTL    string
+	Uses   int
+	Token  string
 }
 
 type openBaoClient interface {
@@ -200,6 +217,7 @@ type openBaoClient interface {
 	ReconcileBaseline(context.Context, string, openBaoBaselineSpec) error
 	RevokeSelf(context.Context, string) error
 	LoginJWT(context.Context, string, string, string) (string, error)
+	CreateToken(context.Context, string, openBaoOperatorImportTokenSpec) (string, error)
 	GenerateRootInit(context.Context) (generateRootAttempt, error)
 	GenerateRootUpdate(context.Context, string, string) (generateRootAttempt, error)
 	GenerateRootCancel(context.Context) error
@@ -496,11 +514,12 @@ type openBaoSnapshotSaveSpec struct {
 }
 
 type openBaoBaselineSpec struct {
-	Reconcile   bool                     `json:"reconcile"`
-	Mounts      []openBaoMountSpec       `json:"mounts"`
-	Policies    []openBaoPolicySpec      `json:"policies"`
-	NomadJWT    *openBaoNomadJWTAuthSpec `json:"nomadJWT"`
-	SecretPaths []openBaoSecretPathSpec  `json:"-"`
+	Reconcile            bool                             `json:"reconcile"`
+	Mounts               []openBaoMountSpec               `json:"mounts"`
+	Policies             []openBaoPolicySpec              `json:"policies"`
+	NomadJWT             *openBaoNomadJWTAuthSpec         `json:"nomadJWT"`
+	OperatorImportTokens []openBaoOperatorImportTokenSpec `json:"operatorImportTokens"`
+	SecretPaths          []openBaoSecretPathSpec          `json:"-"`
 }
 
 type openBaoMountSpec struct {
@@ -513,6 +532,13 @@ type openBaoMountSpec struct {
 type openBaoPolicySpec struct {
 	Name string `json:"name"`
 	HCL  string `json:"hcl"`
+}
+
+type openBaoOperatorImportTokenSpec struct {
+	Name   string `json:"name"`
+	Policy string `json:"policy"`
+	TTL    string `json:"ttl"`
+	Uses   int    `json:"uses"`
 }
 
 type openBaoNomadJWTAuthSpec struct {
@@ -935,6 +961,9 @@ func reconcileBaselineWithNomadWorkload(ctx context.Context, cfg config, client 
 		return rep
 	}
 	extra = append(extra, conditionTrue("OpenBaoWorkloadToken", "JWTAccepted", "openbao", "Nomad workload identity issued a scoped OpenBao token"))
+	if handoffCondition, ok := operatorImportTokenObservedCondition(cfg); ok {
+		extra = append(extra, handoffCondition)
+	}
 	return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
 }
 
@@ -1219,7 +1248,7 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		)
 		return rep
 	}
-	if err := writeEncryptedInitMaterial(cfg, init); err != nil {
+	if err := writeEncryptedInitMaterial(cfg, init, nil); err != nil {
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized"),
 			conditionFalse("OpenBaoInitMaterialDelivered", "InitMaterialDeliveryFailed", "openbao", err.Error()),
@@ -1254,7 +1283,7 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed with in-memory init shares"),
 	}
 	if cfg.baseline.Reconcile {
-		return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, rootToken, extra)
+		return reconcileFreshBaselineWithInitialRootToken(ctx, cfg, client, rep, rootToken, init, extra)
 	}
 	revokeCondition := revokePresentedToken(ctx, client, rootToken)
 	if revokeCondition.Status != "True" {
@@ -1273,7 +1302,121 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 	return rep
 }
 
-func writeEncryptedInitMaterial(cfg config, init initResponse) error {
+func reconcileFreshBaselineWithInitialRootToken(ctx context.Context, cfg config, client openBaoClient, rep report, rootToken string, init initResponse, extra []condition) report {
+	if err := reconcileBaselineWithRetry(ctx, cfg.baseline, client, rootToken); err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions, baselineReconcileFailureConditions(err)...)
+		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
+		return rep
+	}
+	handoffs, err := createOperatorImportTokenHandoffs(ctx, cfg.baseline, client, rootToken)
+	if err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+			conditionFalse("OpenBaoOperatorImportTokenDelivered", "TokenCreateFailed", "openbao", err.Error()),
+			conditionFalse("OpenBaoRecoveryComplete", "OperatorImportTokenDeliveryFailed", "openbao", "fresh OpenBao could not deliver scoped operator import tokens"),
+		)
+		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
+		return rep
+	}
+	if err := writeEncryptedInitMaterial(cfg, init, handoffs); err != nil {
+		revokeOperatorImportTokens(ctx, client, handoffs)
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+			conditionFalse("OpenBaoOperatorImportTokenDelivered", "InitMaterialRewriteFailed", "openbao", err.Error()),
+			conditionFalse("OpenBaoRecoveryComplete", "OperatorImportTokenDeliveryFailed", "openbao", "fresh OpenBao could not deliver scoped operator import tokens"),
+		)
+		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
+		return rep
+	}
+	revokeCondition := revokePresentedToken(ctx, client, rootToken)
+	if revokeCondition.Status != "True" {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+			operatorImportTokenDeliveredCondition(handoffs),
+			revokeCondition,
+			conditionFalse("OpenBaoRecoveryComplete", "TransientTokenRevocationFailed", "openbao", "baseline was reconciled but the transient token could not be revoked"),
+		)
+		return rep
+	}
+	rep.Conditions = append(rep.Conditions, extra...)
+	rep.Conditions = append(rep.Conditions,
+		conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+		operatorImportTokenDeliveredCondition(handoffs),
+		revokeCondition,
+		conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
+	)
+	return rep
+}
+
+func createOperatorImportTokenHandoffs(ctx context.Context, baseline openBaoBaselineSpec, client openBaoClient, rootToken string) ([]operatorImportTokenHandoff, error) {
+	handoffs := make([]operatorImportTokenHandoff, 0, len(baseline.OperatorImportTokens))
+	for _, spec := range baseline.OperatorImportTokens {
+		token, err := client.CreateToken(ctx, rootToken, spec)
+		if err != nil {
+			revokeOperatorImportTokens(ctx, client, handoffs)
+			return nil, err
+		}
+		handoffs = append(handoffs, operatorImportTokenHandoff{
+			Name:   strings.TrimSpace(spec.Name),
+			Policy: strings.TrimSpace(spec.Policy),
+			TTL:    strings.TrimSpace(spec.TTL),
+			Uses:   spec.Uses,
+			Token:  token,
+		})
+	}
+	return handoffs, nil
+}
+
+func revokeOperatorImportTokens(ctx context.Context, client openBaoClient, handoffs []operatorImportTokenHandoff) {
+	for _, handoff := range handoffs {
+		_ = client.RevokeSelf(ctx, handoff.Token)
+	}
+}
+
+func operatorImportTokenDeliveredCondition(handoffs []operatorImportTokenHandoff) condition {
+	if len(handoffs) == 0 {
+		return conditionTrue("OpenBaoOperatorImportTokenDelivered", "NoOperatorImportsConfigured", "openbao", "no scoped operator import tokens are configured")
+	}
+	return conditionTrue("OpenBaoOperatorImportTokenDelivered", "EncryptedImportTokensWritten", "openbao", fmt.Sprintf("%d scoped operator import token(s) were encrypted into init material", len(handoffs)))
+}
+
+func operatorImportTokenObservedCondition(cfg config) (condition, bool) {
+	if len(cfg.baseline.OperatorImportTokens) == 0 {
+		return condition{}, false
+	}
+	body, err := os.ReadFile(cfg.initOutputPath)
+	if err != nil {
+		return conditionFalse("OpenBaoOperatorImportTokenDelivered", "InitMaterialUnreadable", "openbao", err.Error()), true
+	}
+	var material encryptedInitMaterial
+	if err := json.Unmarshal(body, &material); err != nil {
+		return conditionFalse("OpenBaoOperatorImportTokenDelivered", "InitMaterialInvalid", "openbao", err.Error()), true
+	}
+	expected := map[string]struct{}{}
+	for _, spec := range cfg.baseline.OperatorImportTokens {
+		expected[strings.TrimSpace(spec.Name)] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	for _, item := range material.Spec.OperatorImportTokens {
+		name := strings.TrimSpace(item.Name)
+		if _, ok := expected[name]; !ok || len(item.EncryptedTokensB64) == 0 {
+			continue
+		}
+		seen[name] = struct{}{}
+	}
+	for name := range expected {
+		if _, ok := seen[name]; !ok {
+			return conditionFalse("OpenBaoOperatorImportTokenDelivered", "EncryptedImportTokensMissing", "openbao", fmt.Sprintf("init material is missing encrypted operator import token %q", name)), true
+		}
+	}
+	return conditionTrue("OpenBaoOperatorImportTokenDelivered", "EncryptedImportTokensPresent", "openbao", fmt.Sprintf("%d scoped operator import token handoff(s) are present in init material", len(expected))), true
+}
+
+func writeEncryptedInitMaterial(cfg config, init initResponse, operatorImportTokens []operatorImportTokenHandoff) error {
 	shares := initUnsealShares(init)
 	if len(shares) != cfg.keyShares {
 		return fmt.Errorf("unseal share count %d does not match configured key shares %d", len(shares), cfg.keyShares)
@@ -1301,12 +1444,37 @@ func writeEncryptedInitMaterial(cfg config, init initResponse) error {
 		}
 		material.Spec.EncryptedRecoverySharesB64 = encryptedRecoveryKeys
 	}
+	for _, handoff := range operatorImportTokens {
+		encryptedTokens, err := encryptStringToEachPGPRecipient(handoff.Token, []string(cfg.pgpKeys))
+		if err != nil {
+			return err
+		}
+		material.Spec.OperatorImportTokens = append(material.Spec.OperatorImportTokens, encryptedOperatorImportTokenMaterial{
+			Name:               handoff.Name,
+			Policy:             handoff.Policy,
+			TTL:                handoff.TTL,
+			Uses:               handoff.Uses,
+			EncryptedTokensB64: encryptedTokens,
+		})
+	}
 	body, err := json.MarshalIndent(material, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode encrypted init material: %w", err)
 	}
 	body = append(body, '\n')
 	return writePrivateFile(cfg.initOutputPath, body, 0o600)
+}
+
+func encryptStringToEachPGPRecipient(value string, recipientPaths []string) ([]string, error) {
+	out := make([]string, 0, len(recipientPaths))
+	for _, recipientPath := range recipientPaths {
+		encrypted, err := encryptStringToPGPRecipient(value, recipientPath)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, encrypted)
+	}
+	return out, nil
 }
 
 func encryptSharesToPGPRecipients(shares []string, recipientPaths []string) ([]string, error) {
@@ -2091,6 +2259,39 @@ func (c *realOpenBaoClient) LoginJWT(ctx context.Context, authPath string, role 
 	token := strings.TrimSpace(response.Auth.ClientToken)
 	if token == "" {
 		return "", errors.New("OpenBao JWT login returned an empty token")
+	}
+	return token, nil
+}
+
+func (c *realOpenBaoClient) CreateToken(ctx context.Context, rootToken string, spec openBaoOperatorImportTokenSpec) (string, error) {
+	name := strings.TrimSpace(spec.Name)
+	policy := strings.TrimSpace(spec.Policy)
+	ttl := strings.TrimSpace(spec.TTL)
+	if name == "" || policy == "" || ttl == "" {
+		return "", errors.New("OpenBao operator import token name, policy, and ttl are required")
+	}
+	body := map[string]any{
+		"display_name": name,
+		"policies":     []string{policy},
+		"ttl":          ttl,
+		"renewable":    false,
+		// The handoff must survive revocation of the initial root token.
+		"no_parent": true,
+	}
+	if spec.Uses > 0 {
+		body["num_uses"] = spec.Uses
+	}
+	var response struct {
+		Auth struct {
+			ClientToken string `json:"client_token"`
+		} `json:"auth"`
+	}
+	if err := c.apiJSON(ctx, rootToken, http.MethodPost, "auth/token/create", body, &response, http.StatusOK); err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(response.Auth.ClientToken)
+	if token == "" {
+		return "", errors.New("OpenBao token create returned an empty token")
 	}
 	return token, nil
 }

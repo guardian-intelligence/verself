@@ -86,6 +86,7 @@ resources: [
 						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
+						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
 						'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
@@ -129,6 +130,7 @@ resources: [
 						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
+						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
 						'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
@@ -283,6 +285,14 @@ resources: [
 					},
 				]
 				policies: [
+					{
+						name: "cloudflare-account-admin-import"
+						hcl: """
+							path "kv-controller/data/integrations/cloudflare/account-admin" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 					{
 						name: "openbao-reconcile-runtime"
 						hcl: """
@@ -699,6 +709,14 @@ resources: [
 						},
 					]
 				}
+				operatorImportTokens: [
+					{
+						name:   "cloudflare-account-admin-import"
+						policy: "cloudflare-account-admin-import"
+						ttl:    "4h"
+						uses:   5
+					},
+				]
 			}
 		}
 	},

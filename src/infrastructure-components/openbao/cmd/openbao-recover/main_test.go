@@ -34,6 +34,7 @@ type fakeOpenBaoClient struct {
 	jwtToken               string
 	jwtLoginToken          string
 	jwtLoginErr            error
+	createdTokens          []createdTokenCall
 	revokedTokens          []string
 	restored               bool
 	reconcileErrs          []error
@@ -49,6 +50,12 @@ type fakeOpenBaoClient struct {
 	generateRootUpdateErr  error
 	generateRootCancelErr  error
 	decodeGeneratedRootErr error
+}
+
+type createdTokenCall struct {
+	rootToken string
+	spec      openBaoOperatorImportTokenSpec
+	token     string
 }
 
 func (f *fakeOpenBaoClient) Status(context.Context) (baoStatus, error) {
@@ -126,6 +133,12 @@ func (f *fakeOpenBaoClient) LoginJWT(_ context.Context, authPath string, role st
 		return "", errors.New("jwt login token is empty")
 	}
 	return f.jwtLoginToken, nil
+}
+
+func (f *fakeOpenBaoClient) CreateToken(_ context.Context, rootToken string, spec openBaoOperatorImportTokenSpec) (string, error) {
+	token := "token-" + randomHex(16)
+	f.createdTokens = append(f.createdTokens, createdTokenCall{rootToken: rootToken, spec: spec, token: token})
+	return token, nil
 }
 
 func (f *fakeOpenBaoClient) GenerateRootInit(context.Context) (generateRootAttempt, error) {
@@ -298,6 +311,64 @@ func TestFreshInitReconcilesBaselineWithInitialRootTokenAndRevokes(t *testing.T)
 	}
 }
 
+func TestFreshInitWritesEncryptedOperatorImportTokenHandoff(t *testing.T) {
+	rootToken := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: false, Sealed: true, Version: "2.5.2", SealType: "shamir"},
+		rootToken:    rootToken,
+		unsealShares: []string{randomSecret(t), randomSecret(t), randomSecret(t)},
+	}
+	cfg := testConfig(t)
+	cfg.keyShares = 3
+	cfg.threshold = 2
+	cfg.pgpKeys = writeTestPGPRecipientFiles(t, 3)
+	cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
+	cfg.baseline = openBaoBaselineSpec{
+		Reconcile: true,
+		OperatorImportTokens: []openBaoOperatorImportTokenSpec{
+			{Name: "cloudflare-account-admin-import", Policy: "cloudflare-account-admin-import", TTL: "4h", Uses: 5},
+		},
+	}
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "OpenBaoOperatorImportTokenDelivered", "True", "EncryptedImportTokensWritten")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if len(client.createdTokens) != 1 {
+		t.Fatalf("created tokens = %d", len(client.createdTokens))
+	}
+	if client.createdTokens[0].rootToken != rootToken {
+		t.Fatalf("operator import token was not minted by initial root token")
+	}
+	if client.createdTokens[0].spec.Policy != "cloudflare-account-admin-import" {
+		t.Fatalf("operator import policy = %q", client.createdTokens[0].spec.Policy)
+	}
+	material, err := os.ReadFile(cfg.initOutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded encryptedInitMaterial
+	if err := json.Unmarshal(material, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Spec.OperatorImportTokens) != 1 {
+		t.Fatalf("operator import handoffs = %#v", decoded.Spec.OperatorImportTokens)
+	}
+	handoff := decoded.Spec.OperatorImportTokens[0]
+	if handoff.Name != "cloudflare-account-admin-import" || handoff.Policy != "cloudflare-account-admin-import" || handoff.TTL != "4h" || handoff.Uses != 5 {
+		t.Fatalf("handoff metadata = %#v", handoff)
+	}
+	if len(handoff.EncryptedTokensB64) != 3 {
+		t.Fatalf("encrypted token count = %d", len(handoff.EncryptedTokensB64))
+	}
+	if bytes.Contains(material, []byte(rootToken)) || bytes.Contains(material, []byte(client.createdTokens[0].token)) {
+		t.Fatalf("init material leaked plaintext authority: %s", material)
+	}
+	assertReportDoesNotContain(t, rep, rootToken)
+	assertReportDoesNotContain(t, rep, client.createdTokens[0].token)
+}
+
 func TestSealedOpenBaoRequiresUnsealMaterial(t *testing.T) {
 	share := randomSecret(t)
 	client := &fakeOpenBaoClient{
@@ -430,16 +501,34 @@ func TestUnsealedOpenBaoUsesNomadWorkloadJWTForBaseline(t *testing.T) {
 		jwtLoginToken: token,
 	}
 	cfg := testConfig(t)
+	cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
+	body, err := json.Marshal(encryptedInitMaterial{
+		Spec: encryptedInitMaterialSpec{
+			OperatorImportTokens: []encryptedOperatorImportTokenMaterial{
+				{Name: "cloudflare-account-admin-import", Policy: "cloudflare-account-admin-import", TTL: "4h", Uses: 5, EncryptedTokensB64: []string{"encrypted"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.initOutputPath, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cfg.nomadWorkloadJWTFile = jwtFile
 	cfg.nomadWorkloadRole = "openbao-reconcile-runtime"
 	cfg.baseline = openBaoBaselineSpec{
 		Reconcile: true,
 		NomadJWT:  &openBaoNomadJWTAuthSpec{Path: "jwt-nomad"},
+		OperatorImportTokens: []openBaoOperatorImportTokenSpec{
+			{Name: "cloudflare-account-admin-import", Policy: "cloudflare-account-admin-import", TTL: "4h", Uses: 5},
+		},
 	}
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
 	assertCondition(t, rep, "OpenBaoWorkloadToken", "True", "JWTAccepted")
+	assertCondition(t, rep, "OpenBaoOperatorImportTokenDelivered", "True", "EncryptedImportTokensPresent")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
 	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")

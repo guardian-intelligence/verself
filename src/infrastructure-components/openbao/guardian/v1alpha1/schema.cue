@@ -79,6 +79,12 @@ package v1alpha1
 					tokenExplicitMaxTTL: int & >=0
 				}]
 			}
+			operatorImportTokens?: [...{
+				name:   #NonEmptyString
+				policy: #NonEmptyString
+				ttl:    #NonEmptyString
+				uses?:  int & >=0
+			}]
 		}
 	}
 }

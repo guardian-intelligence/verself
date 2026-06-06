@@ -86,6 +86,14 @@ Examples include missing Shamir unseal quorum, unavailable auto-unseal backing
 key, missing PGP recipient identities for fresh initialization, and missing
 provider parent credential during re-import.
 
+When a component has exhausted autonomous recovery sources and needs an
+operator-held credential, it reports reason `RootTrustMaterialRequired`. For
+Cloudflare, that means neither an account-admin credential nor bucket-scoped R2
+recovery credentials are available in the deployed OpenBao state. Manual import
+is allowed in that branch; the import material must enter through the
+component-owned stdin path and must not be committed, logged, passed through
+argv, or persisted as plaintext.
+
 Point-in-time recovery, snapshot restore, backup catalog selection, offsite
 object-store reads, and provider token import are component concerns. They live
 in owner-local binaries and Nomad lifecycle tasks.

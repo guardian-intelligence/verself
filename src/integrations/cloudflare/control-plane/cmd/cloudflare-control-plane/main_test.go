@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -149,6 +150,27 @@ func TestValidateImportAccountAdminRequiresExactlyOneTokenSource(t *testing.T) {
 	cfg.accountAdminAPITokenFile = ""
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("operator import stdin should validate: %v", err)
+	}
+}
+
+func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t *testing.T) {
+	err := cloudflareRecoveryAuthorityUnavailableError(
+		"kv-controller/data/integrations/cloudflare/account-admin",
+		errors.New("missing account-admin"),
+		"kv-controller/data/integrations/cloudflare/r2/capabilities/recovery",
+		errors.New("missing recovery credential"),
+	)
+	msg := err.Error()
+	for _, want := range []string{
+		"CloudflareRecoveryAuthorityAvailable=False",
+		"RootTrustMaterialRequired",
+		"--action=import-account-admin --operator-import-stdin",
+		"encrypted OpenBao operator import token",
+		"gitignored source such as secret.env",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q did not contain %q", msg, want)
+		}
 	}
 }
 

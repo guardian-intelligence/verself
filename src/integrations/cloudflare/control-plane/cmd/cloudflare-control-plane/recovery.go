@@ -9,6 +9,8 @@ import (
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
+const rootTrustMaterialRequiredReason = "RootTrustMaterialRequired"
+
 func (cfg *config) applyRecoveryConfig() error {
 	if strings.TrimSpace(cfg.action) != "recover" {
 		return nil
@@ -57,20 +59,46 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 	if cfg.recovery == nil {
 		return fmt.Errorf("recovery document is required")
 	}
-	accountAdmin, imported, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminOpenBaoPath(cfg))
-	if err != nil {
-		return fmt.Errorf("CloudflareAccountAuthorityAvailable=False: %w", err)
+	recoveryCfg := recoveryCredentialConfig(cfg)
+	out := baseReport(recoveryCfg, "cloudflare-recovery")
+	out.Action = "recover"
+	out.VerifiedWith = "cloudflare-recovery"
+	recoveryCredentialErr := verifyRecoveryCredential(ctx, recoveryCfg, &out)
+
+	accountAdmin, imported, accountAdminErr := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminOpenBaoPath(cfg))
+	if accountAdminErr != nil && recoveryCredentialErr != nil {
+		return cloudflareRecoveryAuthorityUnavailableError(
+			accountAdminOpenBaoPath(cfg),
+			accountAdminErr,
+			capabilityOpenBaoPath("recovery"),
+			recoveryCredentialErr,
+		)
+	}
+	if accountAdminErr != nil {
+		out.RecoveryConditions = append(out.RecoveryConditions, "AccountAdminUnavailable", "RecoveryCredentialsAvailable")
+		sort.Strings(out.RecoveryConditions)
+		return writeReport(out)
 	}
 	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
 	if err != nil {
 		return err
 	}
-	out := baseReport(cfg, accountAdmin.Source)
-	out.Action = "recover"
-	out.VerifiedWith = "cloudflare-recovery"
+	out.ParentCredentialSource = accountAdmin.Source
 	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
 	out.AccountAdminStatus = imported
 	out.RecoveryConditions = append(out.RecoveryConditions, "AccountTokenVerified")
+
+	if recoveryCredentialErr != nil {
+		if err := preflightOpenBaoPersistence(recoveryCfg.parentCredentialConfig(), "recovery capability credential persistence"); err != nil {
+			return err
+		}
+		if err := provisionRecoveryCredential(ctx, recoveryCfg, accountAdmin, &out); err != nil {
+			return err
+		}
+		out.RecoveryConditions = append(out.RecoveryConditions, "RecoveryCredentialsPersisted")
+	} else {
+		out.RecoveryConditions = append(out.RecoveryConditions, "RecoveryCredentialsAvailable")
+	}
 
 	desiredDNS, err := dnsDesiredStateFromRecovery(*cfg.recovery)
 	if err != nil {
@@ -107,17 +135,54 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 		return err
 	}
 	out.RecoveryConditions = append(out.RecoveryConditions, "ObjectStorageCredentialsPersisted")
-	recoveryCfg := cfg
-	recoveryCfg.bucket = cfg.recovery.Spec.ObjectStorage.RecoveryBucket
-	if err := preflightOpenBaoPersistence(recoveryCfg.parentCredentialConfig(), "recovery capability credential persistence"); err != nil {
-		return err
-	}
-	if err := provisionRecoveryCredential(ctx, recoveryCfg, accountAdmin, &out); err != nil {
-		return err
-	}
-	out.RecoveryConditions = append(out.RecoveryConditions, "RecoveryCredentialsPersisted")
 	sort.Strings(out.RecoveryConditions)
 	return writeReport(out)
+}
+
+func recoveryCredentialConfig(cfg config) config {
+	recoveryCfg := cfg
+	recoveryCfg.bucket = cfg.recovery.Spec.ObjectStorage.RecoveryBucket
+	recoveryCfg.openBaoPath = capabilityOpenBaoPath("recovery")
+	return recoveryCfg
+}
+
+func verifyRecoveryCredential(ctx context.Context, cfg config, out *report) error {
+	credentialCfg := cfg.parentCredentialConfig()
+	credentialCfg.OpenBaoPath = capabilityOpenBaoPath("recovery")
+	recovery, err := r2control.LoadParentCredentials(ctx, credentialCfg)
+	if err != nil {
+		return err
+	}
+	client, err := r2control.NewR2Client(r2control.R2ClientConfig{
+		Endpoint:        r2control.Endpoint(cfg.accountID),
+		Region:          cfg.region,
+		AccessKeyID:     recovery.AccessKeyID,
+		SecretAccessKey: recovery.SecretAccessKey,
+		SessionToken:    recovery.SessionToken,
+		Source:          "cloudflare-control-plane-recovery-credential",
+		Timeout:         cfg.timeout,
+	})
+	if err != nil {
+		return err
+	}
+	if err := verifyObjectRoundTrip(ctx, client, cfg, "recovery", out); err != nil {
+		return err
+	}
+	out.ChildAccessKeyIDFingerprint = r2control.Fingerprint(recovery.AccessKeyID)
+	out.ChildSecretKeyFingerprint = r2control.Fingerprint(recovery.SecretAccessKey)
+	out.VerificationObjectGetStatus = out.TestObjectGetStatus
+	return nil
+}
+
+func cloudflareRecoveryAuthorityUnavailableError(accountAdminPath string, accountAdminErr error, recoveryCredentialPath string, recoveryCredentialErr error) error {
+	return fmt.Errorf(
+		"CloudflareRecoveryAuthorityAvailable=False: %s: no deployed Cloudflare account-admin authority exists at %s (%v), and no bucket-scoped R2 recovery credential exists at %s (%v). Provide root trust material only through the operator import path: cloudflare-control-plane --action=import-account-admin --operator-import-stdin. Use the encrypted OpenBao operator import token from init-material.json and keep account-admin material in an operator-local, gitignored source such as secret.env until it is imported into OpenBao.",
+		rootTrustMaterialRequiredReason,
+		accountAdminPath,
+		accountAdminErr,
+		recoveryCredentialPath,
+		recoveryCredentialErr,
+	)
 }
 
 func dnsDesiredStateFromRecovery(doc CloudflareControlPlane) (dnsDesiredState, error) {

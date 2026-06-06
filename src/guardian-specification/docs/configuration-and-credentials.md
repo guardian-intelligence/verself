@@ -50,6 +50,16 @@ Operator recovery authority stays outside the host:
 - provider parent credentials that must be imported or rotated from the
   provider control plane.
 
+For gamma, the present-day durability compromise is to store restore material
+as encrypted blobs in Cloudflare R2. R2 is the storage location, not the root of
+trust. The encrypted material remains useless without the operator-held PGP
+private keys or a component-owned import token that has already been
+established in OpenBao.
+
+Longer term, environments may upgrade the root of trust to hardware-backed HSM
+or external KMS authority. That is an upgrade path for stronger unseal/import
+security, not a prerequisite for using reconciliation to recover gamma.
+
 ## Secret Handling
 
 Secret values MUST NOT be embedded directly in committed resource graphs.
@@ -74,3 +84,22 @@ During normal recovery, provider authority should come from restored and
 unsealed OpenBao state. During from-zero recovery without a usable snapshot, the
 component reports its own import blocker until an operator imports or rotates
 the provider credential through a component-owned path.
+
+The shared reason code for this blocker is `RootTrustMaterialRequired`. It is a
+command/report reason, not a Guardian CRD. Components use it when all autonomous
+sources have been exhausted and an operator must present root trust material.
+
+For Cloudflare recovery, the autonomous sources are:
+
+- an existing Cloudflare account-admin credential in OpenBao;
+- a bucket-scoped R2 recovery credential in OpenBao that can read and write the
+  configured recovery bucket.
+
+If neither exists, the Cloudflare component must fail loudly with
+`CloudflareRecoveryAuthorityAvailable=False` and reason
+`RootTrustMaterialRequired`. The operator may then provide an account-admin
+token through the component-owned import path. A local `secret.env` file is
+acceptable as an operator-held source only when it is gitignored, readable only
+by the operator, and transformed into the import command's stdin payload without
+being committed, logged, passed through argv, or written to host-local durable
+files.
