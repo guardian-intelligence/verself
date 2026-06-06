@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -137,7 +138,6 @@ func parseConfig(args []string) (config, error) {
 	cfg := config{
 		repoRoot:           "/home/ubuntu/.local/state/guardian/repo/current",
 		resourceName:       "nftables",
-		artifactRoot:       os.Getenv("VERSELF_NFTABLES_RUNTIME"),
 		nftBin:             "nft",
 		ldLibraryPath:      os.Getenv("LD_LIBRARY_PATH"),
 		destRoot:           "/",
@@ -351,6 +351,12 @@ func installHostRuntime(cfg *config) error {
 		return err
 	}
 	actualBase := destPath(cfg.destRoot, cfg.hostRuntimeRoot)
+	return withRuntimeLock(actualBase, func() error {
+		return installHostRuntimeLocked(cfg, actualBase, releaseID)
+	})
+}
+
+func installHostRuntimeLocked(cfg *config, actualBase string, releaseID string) error {
 	actualRelease := filepath.Join(actualBase, "releases", releaseID)
 	if _, err := os.Stat(actualRelease); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -397,6 +403,12 @@ func installRepoRuntime(cfg *config) error {
 		return err
 	}
 	actualBase := destPath(cfg.destRoot, cfg.hostRuntimeRoot)
+	return withRuntimeLock(actualBase, func() error {
+		return installRepoRuntimeLocked(cfg, actualBase, releaseID, artifact)
+	})
+}
+
+func installRepoRuntimeLocked(cfg *config, actualBase string, releaseID string, artifact string) error {
 	actualRelease := filepath.Join(actualBase, "releases", releaseID)
 	if _, err := os.Stat(actualRelease); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -418,6 +430,22 @@ func installRepoRuntime(cfg *config) error {
 	cfg.serviceNftBin = filepath.Join(serviceRoot, "bin", "nft")
 	cfg.serviceLDLibraryPath = filepath.Join(serviceRoot, "lib", "x86_64-linux-gnu")
 	return nil
+}
+
+func withRuntimeLock(actualBase string, fn func() error) error {
+	if err := os.MkdirAll(actualBase, 0o755); err != nil {
+		return fmt.Errorf("create nftables runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(actualBase, ".install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open nftables runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock nftables runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	return fn()
 }
 
 func runtimeTarHash(path string) (string, error) {
