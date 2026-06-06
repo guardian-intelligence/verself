@@ -73,9 +73,9 @@ so the `email-service-resend-keys` Nomad batch job can create a site-local
 `sending_access` key, write `email-service.resend.api_key`, and write
 `zitadel.smtp.password`. Runtime services do not receive the full-access key.
 
-OpenBao recovery uses operator-held root trust material: Shamir unseal shares
-or recovery shares for an existing store, PGP recipient identities for fresh
-initialization, and operator root credentials only for explicit baseline or
+OpenBao recovery uses operator-held recovery material: Shamir unseal shares or
+recovery shares for an existing store, PGP recipient identities for fresh
+initialization, and operator credentials only for explicit baseline or
 breakglass operations. Runtime DEKs and generated site-local credentials are
 derived or created after site OpenBao is available. Cloudflare account tokens,
 R2 child token creation, DNS authority, Stripe, Resend full-access authority,
@@ -184,7 +184,7 @@ the last known valid token generation in OpenBao, write a structured failure
 event, and notify the operator instead of retrying silently or deleting old
 credentials.
 
-OpenBao root trust material is entered through explicit operator paths and is
+OpenBao operator recovery material is entered through explicit operator paths and is
 not placed under `.verself`, git, generated artifacts, site inventory, argv, or
 environment variables.
 
@@ -240,7 +240,7 @@ aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 operator reaches the node over SSH
   -> built repo artifacts are copied to the target
   -> Nomad executes component-owned recovery definitions
-  -> OpenBao initializes, restores, or unseals using operator-held root trust material
+  -> OpenBao initializes, restores, or unseals using operator-held recovery material
   -> owning recovery jobs import external provider runtime secrets into OpenBao
   -> service-owned jobs or rotation commands create derived runtime secrets
   -> deployment-service and site-local services are deployed through Nomad

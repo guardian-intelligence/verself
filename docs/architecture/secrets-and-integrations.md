@@ -242,7 +242,7 @@ requested
 | Class | Stored in | Consumed by | Rule |
 | --- | --- | --- | --- |
 | `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
-| `controller_openbao` | Controller OpenBao root-trust namespace | Provisioning tools | Pre-host source of truth for provider handoff and first-host recovery inputs. |
+| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning tools | Pre-host source of truth for provider handoff and first-host recovery inputs. |
 | `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
 | `host_runtime_file` | Nomad allocation `secrets/` directory or component-owned runtime config | Host daemons and local jobs | Derived projection only. Files are never secret sources and deploy tooling does not read them. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
@@ -365,7 +365,7 @@ variable exported by `stripe projects env --pull`:
 
 2. Choose the storage class.
 
-   Use `controller_openbao` for pre-host root-trust inputs, `site_openbao` for
+   Use `controller_openbao` for pre-host recovery inputs, `site_openbao` for
    durable site material, `runtime_secret` for OpenBao runtime values, and
    `product_kv` for customer or org-managed values after deploy. Secret-zero
    values for the first controller exist only in the authenticated operator
