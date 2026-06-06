@@ -51,9 +51,9 @@ mismatches produce `ready_to_fly: no` with stable condition reasons.
 and prepares the upload bundle without mutating the target.
 
 Live `fly` boards the target and makes the graph available to component-owned
-Nomad jobs. Components own executor startup, service recovery, provider
-reconciliation, backup restore, and health waiting through their job files and
-recovery tasks.
+Nomad jobs. Components own executor startup, provider reconciliation, backup
+restore, health waiting, and other runtime behavior through their job files and
+owner-local binaries.
 
 The standard condition for secret-zero and external authority blockers is
 `RootTrustMaterialAvailable`.

@@ -27,8 +27,8 @@ The base spec answers two questions:
   loops to run?
 
 Component schemas answer what a component should know before it starts.
-Component Nomad jobs and recovery binaries answer what the component should do
-at runtime. Runtime evidence answers what happened.
+Component Nomad jobs and owner-local binaries answer what the component should
+do at runtime. Runtime evidence answers what happened.
 
 The root graph is static input. A component derives operations from its CRD and
 the observed state of the host, then reports conditions and evidence through
@@ -42,7 +42,7 @@ Place every new concept at the narrowest layer that can validate and use it.
 | --- | --- | --- |
 | Graph envelope, entrypoint, upload hooks, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
 | Static configuration for one deployable component | Component CRD beside the owner | `OpenBaoCluster`, `HAProxyGateway`, `ObjectStorageService` |
-| Runtime behavior and recovery steps | Component-owned Nomad job and recovery binary | `task "recover"` prestart logic |
+| Runtime behavior and convergence steps | Component-owned Nomad job and owner-local binary | `task "recover"` prestart logic |
 | Provider root authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
 | Observed outcomes and forensic evidence | Command responses, Nomad, component reports, health endpoints, telemetry | allocation logs, `/run/verself/recovery/openbao/report.json`, `/recoveryz` |
 
@@ -68,14 +68,22 @@ Use this convention when authoring a graph:
 - let component Nomad jobs read `.guardian/fly/document.json` from the boarded
   workspace and select the resources they own;
 - express restore, initialize, unseal, migrate, wait, import, publish, and
-  health-check actions in component lifecycle tasks or recovery binaries;
+  health-check actions in component lifecycle tasks or owner-local binaries;
 - report blockers as command conditions, component reports, Nomad state,
   health endpoints, or telemetry.
 
 The base schema has no component operation fields. Component sequencing,
 Nomad submission details, component environment projection, host-local secret
 paths, provider-token files, and report resources live in the owning component
-schema or runtime, according to the field placement table below.
+runtime. Static facts needed by that runtime live in the owning component
+schema.
+
+Do not add fields named `recovery`, `recover`, `submit`, `wait`, `restore`,
+`migrate`, or similar operation verbs to the base Guardian schema. If a
+component needs static configuration for such an operation, name the static
+fact instead. For example, model `snapshotPath`, `bucketName`, `policyName`,
+`runtimeRoot`, or `publicOriginRef`; let the component's Nomad lifecycle task
+decide whether to restore, create, update, wait, or no-op.
 
 ## Schema Locations
 
@@ -129,11 +137,13 @@ defines static configuration and invariants for that component:
 - references to other resources in the graph.
 
 Component CRDs describe desired inputs that component-owned code can read from
-the boarded graph.
+the boarded graph. They do not describe step order.
 
 The component CUE schema is the semantic source for static configuration. Go
 structs, Nomad templates, generated validators, and docs may mirror that schema
 for runtime use, but they do not define additional configuration fields.
+Runtime code may derive actions from the schema plus observed state, but it
+must not rely on hidden Guardian-only configuration.
 
 Component schemas should contain the full static configuration needed by that
 component: provider account IDs, public resource names, OpenBao paths, Nomad
@@ -172,19 +182,19 @@ Use these checks before adding a field:
 | How `guardian board` reaches, uploads to, extracts on, or verifies a substrate | `Substrate` |
 | A URL that multiple components consume as public configuration | `PublicOrigin` |
 | Which host daemon, service, provider, backup object, policy, or runtime path a component owns | Component CRD |
-| A component operation such as init, restore, unseal, certificate issuance, bucket creation, schema migration, or health wait | Nomad lifecycle task or component recovery binary |
+| A component operation such as init, restore, unseal, certificate issuance, bucket creation, schema migration, or health wait | Nomad lifecycle task or owner-local binary |
 | A secret value or root credential | External trust path |
 | A status line, digest, allocation ID, failure reason, or recovery observation | CLI response or component evidence |
 
 When a component needs a shared base resource, it references that resource in
 its own CRD. For example, an edge component references `PublicOrigin`; OpenBao
-recovery owns OpenBao-specific seal, policy, auth, and backup configuration.
+owns OpenBao-specific seal, policy, auth, and backup configuration.
 
 ## Nomad Convention
 
-Component recovery and deployment are Nomad conventions. A component job file is
-checked into the component directory and shipped inside the boarded repo. The
-job file may include lifecycle tasks that:
+Component convergence and deployment are Nomad conventions. A component job
+file is checked into the component directory and shipped inside the boarded
+repo. The job file may include lifecycle tasks that:
 
 - read `/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json`;
 - select the component CRD resources it owns;
@@ -205,8 +215,8 @@ needs continuous reconciliation after startup.
 Nomad agent bootstrap is host runtime machinery for the current alpha slice.
 The pinned Nomad runtime and `nomad-recover` binary are shipped in the boarded
 repo and use component-owned defaults. Add a Nomad component CRD only when
-there is static Nomad configuration that cannot live in the recovery binary or
-job file defaults.
+there is static Nomad configuration that cannot live in the owner-local binary
+or job file defaults.
 
 ## Evidence
 

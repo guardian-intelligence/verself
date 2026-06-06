@@ -29,7 +29,7 @@ Conformance suites test:
 - repeatable live `fly` convergence in implementation-owned fixtures.
 
 Dogfooding a config such as `gamma` is operational evidence. It uses real
-infrastructure and real component recovery jobs. The strongest dogfood signal is
+infrastructure and real component Nomad jobs. The strongest dogfood signal is
 two consecutive successful `fly` runs with no unexpected allocation churn.
 Portable conformance fixtures define protocol compatibility.
 

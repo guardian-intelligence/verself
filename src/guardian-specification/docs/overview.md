@@ -3,7 +3,7 @@
 Guardian Specification defines configuration documents consumed by the
 `guardian` reference CLI and compatible implementations. A document describes a
 single convergence state machine over source artifacts, network access, a
-substrate, shared public configuration, and component-owned Nomad recovery
+substrate, shared public configuration, and component-owned Nomad runtime
 logic.
 
 A Guardian resource graph document contains:
@@ -29,8 +29,8 @@ emits a structured command result with `ready_to_fly`, upload details, hook
 details, and stable conditions.
 
 `fly` starts with boarding and writes the resource graph into the boarded
-workspace. Component recovery is expressed in component-owned Nomad job files,
-typically as prestart tasks that install, restore, reconcile, or block with
+workspace. Component behavior is expressed in component-owned Nomad job files,
+typically as lifecycle tasks that install, restore, reconcile, or block with
 stable health evidence.
 
 ## Boundaries
@@ -42,9 +42,9 @@ structured command responses.
 Lifecycle hook commands own substrate access, file transfer, permissions,
 remote directories, and remote tooling.
 
-Infrastructure components own Nomad job files and recovery behavior.
+Infrastructure components own Nomad job files and runtime behavior.
 Root-of-trust stores, runtime executors, edge components, and provider
-integrations each define their own recovery logic.
+integrations each define their own convergence logic.
 
 Shared config resources describe stable facts that multiple components need.
 `PublicOrigin` describes an externally visible origin. Component extension

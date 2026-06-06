@@ -10,7 +10,7 @@ The command loads a resource graph, verifies required local build artifacts,
 creates a deterministic upload bundle, runs the entrypoint's referenced
 `Substrate` access hook, runs the `Substrate` upload hooks, extracts the repo
 on the target, verifies the extracted tree, and stops before component
-recovery/deployment.
+runtime behavior.
 
 Before packaging, Guardian writes `.guardian/fly/document.json` in the
 workspace. The upload bundle includes that generated graph and excludes
@@ -76,6 +76,6 @@ Command results never contain secret values.
 
 `ready_to_fly: yes` means the repo tree is present on the target and byte-for-
 byte verified against the local upload bundle. It does not mean component
-recovery has completed or root trust material is available. `guardian fly`
+runtime convergence has completed or root trust material is available. `guardian fly`
 performs boarding again before component convergence, so it does not depend on a
 stored report from an earlier `guardian board` invocation.

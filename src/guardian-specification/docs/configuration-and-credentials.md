@@ -13,7 +13,7 @@ spec:
 
 `PublicOrigin` is the shared URL resource. Components that need a public base
 URL reference the origin and consume the full CRD graph through their
-component-owned Nomad recovery path.
+component-owned Nomad job.
 
 Each service and infrastructure component owns a CRD schema for its own
 configuration. The component CRD is the source for static component

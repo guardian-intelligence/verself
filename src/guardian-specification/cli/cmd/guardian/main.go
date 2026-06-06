@@ -727,9 +727,6 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 	boardReadyForFly := boardResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(boardResult.Conditions))
 	if boardReadyForFly {
 		result.ReadyToFly = "yes"
-		result.Conditions = append(result.Conditions, conditionTrue("ComponentRecovery", "NomadConvention", "component recovery is owner-defined in Nomad job files", "nomad"))
-	} else {
-		result.Conditions = append(result.Conditions, conditionFalse("ComponentRecovery", "Blocked", "boarding must pass before component recovery can run", "components"))
 	}
 	return result
 }
@@ -807,7 +804,7 @@ board loads a FlyProcedure config document, builds the workspace upload bundle,
 runs the Substrate access and upload lifecycle hooks, and reports whether the
 target repo tree was extracted and verified.
 
-fly runs the same boarding phase and leaves component recovery to the Nomad
-job files included in the boarded workspace.
+fly runs the same boarding phase and leaves component runtime behavior to the
+Nomad job files included in the boarded workspace.
 	`)
 }

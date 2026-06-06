@@ -51,8 +51,8 @@ origin reference it as a stable shared fact.
 
 Every service and infrastructure component owns its own CRD schema. That CRD
 defines the component's static configuration surface: public config, provider
-references, backup policy, and component-local invariants. The Guardian base
-schema validates the envelope and shared resources, then leaves
+references, backup identifiers, and component-local invariants. The Guardian
+base schema validates the envelope and shared resources, then leaves
 component-specific fields to the component-owned schema.
 
 Base-spec additions are gated by the scope test in [Spec Scope](spec-scope.md).
@@ -79,16 +79,16 @@ boarding entrypoint, substrate lifecycle hooks, shared origins, and stable
 condition vocabulary.
 
 Component schemas should model facts that can be checked before running the
-operation: artifact paths, public names, socket paths, backup object names,
+component: artifact paths, public names, socket paths, backup object names,
 provider account identifiers, OpenBao paths, policy names, workload role names,
 and references to shared resources. Component runtime behavior is represented by
-the component's Nomad job and recovery binary.
+the component's Nomad job and owner-local binaries.
 
 Static configuration should be complete enough that a component can derive its
 runtime plan without hidden Guardian fields. For example, OpenBao declares
 mounts, policies, seal recipients, and snapshot locations in its component CRD;
-the OpenBao recovery task decides whether the live state requires init, unseal,
-restore, reconcile, or no-op.
+the OpenBao lifecycle task decides whether the live state requires init,
+unseal, restore, reconcile, or no-op.
 
 ## Site Files
 
@@ -110,7 +110,7 @@ submission order, component-specific environment projection, host-local secret
 paths, status fields, report resources, and other runtime evidence are handled
 outside the base Guardian graph.
 
-Runtime component behavior belongs in the component's Nomad job and recovery
+Runtime component behavior belongs in the component's Nomad job and owner-local
 binary. Runtime observations belong in command responses, Nomad state,
 component reports, health endpoints, and telemetry.
 

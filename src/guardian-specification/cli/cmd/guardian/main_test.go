@@ -185,12 +185,12 @@ func TestFlyLiveCUEDocument(t *testing.T) {
 	}
 	found := false
 	for _, cond := range result.Conditions {
-		if cond.Type == "ComponentRecovery" && cond.Status == "True" && cond.Reason == "NomadConvention" {
+		if cond.Type == "BoardingReady" && cond.Status == "True" && cond.Reason == "ReadyToFly" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("ComponentRecovery true condition not found: %#v", result.Conditions)
+		t.Fatalf("BoardingReady true condition not found: %#v", result.Conditions)
 	}
 }
 

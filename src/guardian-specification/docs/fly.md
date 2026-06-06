@@ -1,7 +1,7 @@
 # Fly
 
 `fly` runs Guardian boarding and prepares the boarded workspace for
-component-owned Nomad recovery.
+component-owned Nomad runtime behavior.
 
 ```sh
 guardian fly gamma.cue --dry-run -o yaml
@@ -11,7 +11,7 @@ guardian fly gamma.cue
 The command loads the same resource graph used by `board`, writes the graph to
 `.guardian/fly/document.json`, runs the boarding phase, and verifies the
 boarded repo tree. Re-running `fly` is the normal way to refresh the boarded
-workspace before Nomad jobs run their owner-defined recovery tasks.
+workspace before Nomad jobs run their owner-defined lifecycle tasks.
 
 ## Config Shape
 
@@ -47,8 +47,8 @@ public origins become listener, certificate, and backend state.
 
 The graph contains component CRDs. If a field describes an action such as
 `restore`, `init`, `migrate`, `wait`, `submit`, `unseal`, or `import`, the
-owning Nomad lifecycle task or recovery binary implements that action and reads
-static inputs from its CRD.
+owning Nomad lifecycle task or owner-local binary implements that action and
+reads static inputs from its CRD.
 
 ## Dry Run
 
@@ -57,10 +57,10 @@ upload bundle preparation.
 
 ## Live Run
 
-`guardian fly` performs boarding and leaves component recovery to Nomad. In
-this repo, owner job files use prestart recovery tasks to install runtime
-artifacts, restore or initialize state, reconcile configuration, and block
-loudly when external authority is missing.
+`guardian fly` performs boarding and leaves component behavior to Nomad. In
+this repo, owner job files use lifecycle tasks to install runtime artifacts,
+restore or initialize state, reconcile configuration, and block loudly when
+external authority is missing.
 
 OpenBao recovery is expected to report `RootTrustMaterialAvailable=False` when it
 cannot continue without operator-held or externally-held authority. Examples
@@ -70,7 +70,7 @@ parent credential during re-import.
 
 Point-in-time recovery, snapshot restore, backup catalog selection, offsite
 object-store reads, and provider token import are component concerns. They live
-in owner-local recovery binaries and Nomad lifecycle tasks.
+in owner-local binaries and Nomad lifecycle tasks.
 
 ## Nomad Job Convention
 
