@@ -672,6 +672,26 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "zot.guardianintelligence.org/v1alpha1"
+		kind:       "ZotRegistry"
+		metadata: name: "zot"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/zot/zot-runtime.tar"
+			runtimeRoot:     "/var/lib/zot/runtime"
+			configPath:      "/etc/zot/config.json"
+			storageDir:      "/var/lib/zot/storage"
+			htpasswdPath:    "/etc/zot/htpasswd"
+			reportPath:      "/run/verself/recovery/zot/report.json"
+			user:            "zot"
+			group:           "zot"
+			host:            "127.0.0.1"
+			port:            5080
+			realm:           "verself-artifacts"
+			logLevel:        "info"
+			publisherUser:   "artifact-publisher"
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"

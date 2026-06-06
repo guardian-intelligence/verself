@@ -1,51 +1,103 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current"
+}
+
+variable "zot_resource_name" {
+  type    = string
+  default = "zot"
+}
+
 job "zot" {
-  name = "zot"
+  name        = "zot"
   datacenters = ["*"]
-  type = "service"
+  type        = "service"
 
   group "zot" {
     count = 1
 
+    reschedule {
+      attempts  = 0
+      unlimited = false
+    }
+
     network {
       mode = "host"
+
       port "http" {
         host_network = "loopback"
-        static = 5080
-        to = 5080
+        static       = 5080
+        to           = 5080
+      }
+    }
+
+    task "recover" {
+      driver = "raw_exec"
+      user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
+
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.zot_resource_name}",
+        ]
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
       }
     }
 
     task "server" {
       driver = "raw_exec"
-      user = "root"
+      user   = "root"
 
-      artifact {
-        source = "verself-artifact://zot-runtime"
-        destination = "local"
+      restart {
+        attempts = 0
+        mode     = "fail"
       }
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "getent group zot >/dev/null || groupadd --system zot\nid -u zot >/dev/null 2>&1 || useradd --system --gid zot --home-dir /var/lib/zot --shell /usr/sbin/nologin --no-create-home zot\ninstall -d -o zot -g zot -m 0750 /var/lib/zot\nif [ ! -s /etc/zot/htpasswd ] && [ -s /etc/zot/publisher-password ]; then\n  local/bin/zot-htpasswd --username artifact-publisher --password-file /etc/zot/publisher-password >/tmp/zot-htpasswd\n  install -o root -g zot -m 0640 /tmp/zot-htpasswd /etc/zot/htpasswd\nfi\nlocal/bin/zot verify /etc/zot/config.json\nexec /usr/sbin/runuser -u zot --preserve-environment -- local/bin/zot serve /etc/zot/config.json\n"]
-      }
-
-      env {
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "zot"
-        VERSELF_SUPERVISOR = "nomad"
+        command = "/var/lib/zot/runtime/current/bin/zot-recover"
+        args = [
+          "server",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.zot_resource_name}",
+        ]
       }
 
       resources {
-        cpu = 400
+        cpu    = 400
         memory = 512
       }
 
       service {
-        name = "zot-http"
-        port = "http"
-        provider = "nomad"
+        name         = "zot-http"
+        port         = "http"
+        provider     = "nomad"
         address_mode = "auto"
+
+        check {
+          name     = "zot-registry-v2"
+          type     = "http"
+          path     = "/v2/"
+          interval = "2s"
+          timeout  = "3s"
+        }
       }
     }
   }

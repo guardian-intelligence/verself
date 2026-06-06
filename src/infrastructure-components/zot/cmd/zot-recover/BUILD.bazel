@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "zot-recover_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/zot/cmd/zot-recover",
+    visibility = ["//visibility:private"],
+    deps = ["@org_golang_x_crypto//bcrypt"],
+)
+
+go_binary(
+    name = "zot-recover",
+    embed = [":zot-recover_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "zot-recover_test",
+    srcs = ["main_test.go"],
+    embed = [":zot-recover_lib"],
+)

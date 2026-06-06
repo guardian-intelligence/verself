@@ -5,16 +5,24 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 exports_files(["tools.lock.json"])
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "runtime_artifact",
     out = "zot-runtime.tar",
     files = {
+        "//src/infrastructure-components/zot/cmd/zot-recover:zot-recover": "bin/zot-recover",
         "@zot_tools//tools/zot": "bin/zot",
         "//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd": "bin/zot-htpasswd",
     },
     modes = {
         "bin/zot": "0755",
         "bin/zot-htpasswd": "0755",
+        "bin/zot-recover": "0755",
     },
     visibility = ["//visibility:public"],
 )
