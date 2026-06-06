@@ -522,6 +522,18 @@ func installRuntime(repoRoot string, cfg config) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(cfg.RuntimeRoot, 0o755); err != nil {
+		return "", fmt.Errorf("create Zot runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(cfg.RuntimeRoot, "install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("open Zot runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return "", fmt.Errorf("lock Zot runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	release := filepath.Join(cfg.RuntimeRoot, "releases", strings.ReplaceAll(digest, ":", "-"))
 	if !runtimeInstalled(release) {
 		if err := extractRuntimeTar(artifact, release); err != nil {
