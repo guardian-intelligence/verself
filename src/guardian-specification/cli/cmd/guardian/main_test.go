@@ -345,6 +345,7 @@ func writeRequiredArtifacts(t *testing.T, dir string) {
 		"bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover": []byte("openbao recover\n"),
 		"bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar":                                  []byte("haproxy runtime\n"),
 		"bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar":             []byte("cloudflare runtime\n"),
+		"bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar":  []byte("object storage runtime\n"),
 	}
 	for rel, data := range artifacts {
 		path := filepath.Join(dir, filepath.FromSlash(rel))

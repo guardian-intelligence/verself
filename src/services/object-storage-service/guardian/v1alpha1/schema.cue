@@ -22,6 +22,10 @@ package v1alpha1
 	kind:       "ObjectStorageService"
 	metadata:   #Metadata
 	spec: {
+		site: #NonEmptyString
+		credentials: {
+			credentialKEKRef: #CredentialRef
+		}
 		provider: {
 			cloudflareR2: {
 				endpoint:     #HTTPSURL

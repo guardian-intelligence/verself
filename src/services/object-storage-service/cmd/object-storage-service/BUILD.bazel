@@ -1,9 +1,12 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "object-storage-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+    ],
     importpath = "github.com/verself/object-storage-service/cmd/object-storage-service",
     visibility = ["//visibility:private"],
     deps = [
@@ -29,6 +32,12 @@ go_binary(
     name = "object-storage-service",
     embed = [":object-storage-service_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "object-storage-service_test",
+    srcs = ["guardian_config_test.go"],
+    embed = [":object-storage-service_lib"],
 )
 
 nomad_binary_artifact(

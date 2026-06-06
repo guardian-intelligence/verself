@@ -156,7 +156,7 @@ func (s *Service) ensureCapabilityBucket(ctx context.Context, capability, actor 
 	}
 	bucketName := normalizeBucketName(s.Config.DeploymentArtifactsBucket)
 	if bucketName == "" {
-		return Bucket{}, fmt.Errorf("OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET is required")
+		return Bucket{}, fmt.Errorf("deployment artifacts bucket is required")
 	}
 	bucket, err := s.Store.BucketByName(ctx, bucketName)
 	if err == nil {

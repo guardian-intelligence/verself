@@ -41,40 +41,47 @@ const (
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], "object-storage-service")
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	cfg, err := loadObjectStorageRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.RunCLIWithDSN(ctx, remaining, "object-storage-service", cfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	roleCfg := envconfig.New()
-	roleRaw := roleCfg.RequireString("OBJECT_STORAGE_ROLE")
-	if err := roleCfg.Err(); err != nil {
-		return err
-	}
-	role, err := parseRuntimeRole(roleRaw)
+	opts, err := parseServiceRunOptions(args)
 	if err != nil {
 		return err
 	}
-	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: role.serviceName(), ServiceVersion: serviceVersion})
+	runtimeCfg, err := loadObjectStorageRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: opts.Role.serviceName(), ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -82,30 +89,24 @@ func run() error {
 	slog.SetDefault(logger)
 
 	shared := envconfig.New()
-	pgDSN := shared.RequireString("VERSELF_PG_DSN")
-	secretKeyHex := shared.RequireCredential("credential-kek")
-	spiffeEndpoint := shared.String(workloadauth.EndpointSocketEnv, "")
-	site := shared.RequireString("VERSELF_SITE")
-	writerInstanceID := shared.String("OBJECT_STORAGE_WRITER_INSTANCE_ID", hostname())
-	providerKind := shared.String("OBJECT_STORAGE_PROVIDER", objectstorage.ProviderCloudflareR2)
-	proxyRegion := shared.String("OBJECT_STORAGE_S3_REGION", "auto")
+	secretKeyHex := shared.RequireCredential(runtimeCfg.CredentialKEKName)
 	if err := shared.Err(); err != nil {
 		return err
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("object-storage spiffe source: %w", err)
 	}
 	defer func() {
 		if err := spiffeSource.Close(); err != nil {
-			logger.ErrorContext(context.Background(), role.serviceName()+" spiffe source close", "error", err)
+			logger.ErrorContext(context.Background(), opts.Role.serviceName()+" spiffe source close", "error", err)
 		}
 	}()
-	if _, err := workloadauth.CurrentIDForService(spiffeSource, role.serviceName()); err != nil {
+	if _, err := workloadauth.CurrentIDForService(spiffeSource, opts.Role.serviceName()); err != nil {
 		return err
 	}
-	pg, err := newPostgres(ctx, pgDSN)
+	pg, err := newPostgres(ctx, runtimeCfg.PostgresDSN)
 	if err != nil {
 		return err
 	}
@@ -118,21 +119,25 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	writerInstanceID := opts.WriterID
+	if strings.TrimSpace(writerInstanceID) == "" {
+		writerInstanceID = hostname()
+	}
 	baseConfig := objectstorage.Config{
-		ServiceName:      role.serviceName(),
-		Site:             site,
+		ServiceName:      opts.Role.serviceName(),
+		Site:             runtimeCfg.Site,
 		ServiceVersion:   serviceVersion,
 		WriterInstanceID: writerInstanceID,
-		Provider:         providerKind,
-		ProxyRegion:      proxyRegion,
+		Provider:         runtimeCfg.Provider,
+		ProxyRegion:      runtimeCfg.R2Region,
 	}
-	switch role {
+	switch opts.Role {
 	case runtimeRoleAdmin:
-		return runAdmin(ctx, logger, spiffeSource, pg, secretBox, baseConfig)
+		return runAdmin(ctx, logger, spiffeSource, pg, secretBox, baseConfig, runtimeCfg, opts)
 	case runtimeRoleS3:
-		return runS3(ctx, logger, spiffeSource, pg, secretBox, baseConfig)
+		return runS3(ctx, logger, spiffeSource, pg, secretBox, baseConfig, runtimeCfg, opts)
 	default:
-		return fmt.Errorf("unsupported object-storage role %q", role)
+		return fmt.Errorf("unsupported object-storage role %q", opts.Role)
 	}
 }
 
@@ -143,13 +148,12 @@ func runAdmin(
 	pg *pgxpool.Pool,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
+	runtimeCfg objectStorageRuntimeConfig,
+	opts serviceRunOptions,
 ) error {
 	l := envconfig.New()
-	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
-	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := l.RequireCredential("auth-audience")
-	deploymentArtifactsBucket := l.RequireString("OBJECT_STORAGE_DEPLOYMENT_ARTIFACTS_BUCKET")
-	provider, proxyAccessKeyID, err := newBucketProviderFromEnv(ctx, l, cfg)
+	authAudience := l.RequireCredential(runtimeCfg.AuthAudienceCredentialName)
+	provider, proxyAccessKeyID, err := newBucketProviderFromConfig(ctx, l, cfg, runtimeCfg)
 	if err := l.Err(); err != nil {
 		return err
 	}
@@ -170,7 +174,7 @@ func runAdmin(
 		return fmt.Errorf("object-storage iam client: %w", err)
 	}
 	cfg.ProxyAccessKeyID = proxyAccessKeyID
-	cfg.DeploymentArtifactsBucket = deploymentArtifactsBucket
+	cfg.DeploymentArtifactsBucket = runtimeCfg.DeploymentArtifactsBucket
 
 	objectstorageapi.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
 	svc := &objectstorage.Service{
@@ -204,47 +208,34 @@ func runAdmin(
 	privateMux := http.NewServeMux()
 	objectstorageapi.NewAPI(privateMux, objectstorageapi.Config{
 		Version:    serviceVersion,
-		ListenAddr: adminListenAddr,
+		ListenAddr: opts.AdminAddr,
 		Service:    svc,
 		Authorizer: iamclient.NewAuthorizer(iamClient),
 	})
-	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(privateMux)
+	protected := auth.Middleware(auth.Config{IssuerURL: runtimeCfg.AuthIssuerURL, Audience: authAudience})(privateMux)
 	adminMux.Handle("/", objectStorageAdminHandler(privateMux, protected))
 	adminAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(adminClientIDs, adminMux)
 	if err != nil {
 		return fmt.Errorf("object-storage admin allowlist: %w", err)
 	}
-	adminServer := httpserver.New(adminListenAddr, otelhttp.NewHandler(adminAllowlist, "object-storage-admin"))
+	adminServer := httpserver.New(opts.AdminAddr, otelhttp.NewHandler(adminAllowlist, "object-storage-admin"))
 	adminServer.TLSConfig = adminTLSConfig
 	return httpserver.Run(ctx, logger, adminServer)
 }
 
-func newBucketProviderFromEnv(ctx context.Context, l *envconfig.Loader, cfg objectstorage.Config) (objectstorage.BucketProvider, string, error) {
+func newBucketProviderFromConfig(ctx context.Context, l *envconfig.Loader, cfg objectstorage.Config, runtimeCfg objectStorageRuntimeConfig) (objectstorage.BucketProvider, string, error) {
 	providerHTTPClient := &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 		Timeout:   3 * time.Second,
 	}
 	switch cfg.Provider {
-	case objectstorage.ProviderGarage:
-		garageAdminURLs := splitEnvList(l.RequireString("OBJECT_STORAGE_GARAGE_ADMIN_URLS"))
-		proxyAccessKeyID := l.RequireCredential("garage-proxy-access-key-id")
-		garageAdminToken := l.RequireCredential("garage-admin-token")
-		if err := l.Err(); err != nil {
-			return nil, "", err
-		}
-		garageClient, err := objectstorage.NewGarageAdminClient(garageAdminURLs, garageAdminToken, providerHTTPClient)
-		if err != nil {
-			return nil, "", err
-		}
-		return &objectstorage.GarageBucketProvider{Admin: garageClient, ProxyAccessKeyID: proxyAccessKeyID}, proxyAccessKeyID, nil
 	case objectstorage.ProviderCloudflareR2:
-		endpoint := l.RequireString("OBJECT_STORAGE_R2_ENDPOINT")
-		accessKeyID := l.RequireCredential("r2-admin-access-key-id")
-		secretAccessKey := l.RequireCredential("r2-admin-secret-access-key")
+		accessKeyID := l.RequireCredential(runtimeCfg.R2AdminAccessKeyIDName)
+		secretAccessKey := l.RequireCredential(runtimeCfg.R2AdminSecretAccessKeyName)
 		if err := l.Err(); err != nil {
 			return nil, "", err
 		}
-		provider, err := objectstorage.NewR2BucketProvider(endpoint, accessKeyID, secretAccessKey, cfg.ProxyRegion, providerHTTPClient)
+		provider, err := objectstorage.NewR2BucketProvider(runtimeCfg.R2Endpoint, accessKeyID, secretAccessKey, cfg.ProxyRegion, providerHTTPClient)
 		if err != nil {
 			return nil, "", err
 		}
@@ -255,22 +246,8 @@ func newBucketProviderFromEnv(ctx context.Context, l *envconfig.Loader, cfg obje
 		}
 		return provider, "", nil
 	default:
-		return nil, "", fmt.Errorf("unsupported OBJECT_STORAGE_PROVIDER %q", cfg.Provider)
+		return nil, "", fmt.Errorf("unsupported object-storage provider %q", cfg.Provider)
 	}
-}
-
-func proxyAccessKeyIDCredentialName(provider string) string {
-	if provider == objectstorage.ProviderCloudflareR2 {
-		return "r2-proxy-access-key-id"
-	}
-	return "garage-proxy-access-key-id"
-}
-
-func proxySecretAccessKeyCredentialName(provider string) string {
-	if provider == objectstorage.ProviderCloudflareR2 {
-		return "r2-proxy-secret-access-key"
-	}
-	return "garage-proxy-secret-access-key"
 }
 
 func objectStorageAdminHandler(public http.Handler, protected http.Handler) http.Handler {
@@ -300,23 +277,19 @@ func runS3(
 	pg *pgxpool.Pool,
 	secretBox *objectstorage.SecretBox,
 	cfg objectstorage.Config,
+	runtimeCfg objectStorageRuntimeConfig,
+	opts serviceRunOptions,
 ) error {
 	l := envconfig.New()
-	s3ListenAddr := l.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4256")
-	chAddress := l.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
-	chUser := l.String("VERSELF_CLICKHOUSE_USER", "object_storage_service")
-	upstreamS3URLs := splitEnvList(l.RequireString("OBJECT_STORAGE_S3_URLS"))
-	proxyAccessKeyID := l.RequireCredential(proxyAccessKeyIDCredentialName(cfg.Provider))
-	proxySecretAccessKey := l.RequireCredential(proxySecretAccessKeyCredentialName(cfg.Provider))
-	chCACertPath := l.RequireCredentialPath("clickhouse-ca-cert")
-	spiffeEndpoint := l.String(workloadauth.EndpointSocketEnv, "")
+	proxyAccessKeyID := l.RequireCredential(runtimeCfg.R2ProxyAccessKeyIDName)
+	proxySecretAccessKey := l.RequireCredential(runtimeCfg.R2ProxySecretAccessKeyName)
 	if err := l.Err(); err != nil {
 		return err
 	}
 
 	cfg.ProxyAccessKeyID = proxyAccessKeyID
 
-	chConn, err := newClickHouseConn(ctx, spiffeSource, chAddress, chUser, chCACertPath)
+	chConn, err := newClickHouseConn(ctx, spiffeSource, runtimeCfg.ClickHouseAddress, runtimeCfg.ClickHouseUser, runtimeCfg.ClickHouseCACertPath)
 	if err != nil {
 		return err
 	}
@@ -342,7 +315,7 @@ func runS3(
 	}
 	s3Handler, err := objectstorage.NewS3Handler(
 		svc,
-		upstreamS3URLs,
+		[]string{runtimeCfg.R2Endpoint},
 		upstreamS3HTTPClient,
 		proxyAccessKeyID,
 		proxySecretAccessKey,
@@ -352,7 +325,7 @@ func runS3(
 	if err != nil {
 		return fmt.Errorf("object-storage s3 handler: %w", err)
 	}
-	bundleSource, err := workloadapi.NewBundleSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(spiffeEndpoint)))
+	bundleSource, err := workloadapi.NewBundleSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(runtimeCfg.SPIFFEEndpointSocket)))
 	if err != nil {
 		return fmt.Errorf("object-storage spiffe bundle source: %w", err)
 	}
@@ -370,7 +343,7 @@ func runS3(
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	s3Mux.Handle("/", s3Handler)
-	s3Server := httpserver.New(s3ListenAddr, otelhttp.NewHandler(s3PeerMiddleware(s3Mux), "object-storage-s3"))
+	s3Server := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(s3PeerMiddleware(s3Mux), "object-storage-s3"))
 	s3Server.TLSConfig = s3TLSConfig
 	// S3 requests stream large bodies; drop the standard Read/Write timeouts.
 	s3Server.ReadTimeout = 0
@@ -440,7 +413,7 @@ func parseRuntimeRole(raw string) (runtimeRole, error) {
 	case runtimeRoleS3:
 		return runtimeRoleS3, nil
 	default:
-		return "", fmt.Errorf("OBJECT_STORAGE_ROLE must be %q or %q", runtimeRoleAdmin, runtimeRoleS3)
+		return "", fmt.Errorf("--role must be %q or %q", runtimeRoleAdmin, runtimeRoleS3)
 	}
 }
 
@@ -482,19 +455,6 @@ func newClickHouseConn(ctx context.Context, spiffeSource *workloadapi.X509Source
 		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	return chConn, nil
-}
-
-func splitEnvList(raw string) []string {
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		out = append(out, part)
-	}
-	return out
 }
 
 func hostname() string {

@@ -246,6 +246,29 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "object-storage-service-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/object-storage-service.credential_kek" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+							  capabilities = ["read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -267,6 +290,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["cloudflare-integration-recovery-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "object-storage-service-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "object-storage-service"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["object-storage-service-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -461,6 +501,14 @@ resources: [
 		kind:       "ObjectStorageService"
 		metadata: name: "object-storage"
 		spec: {
+			site: "gamma"
+			credentials: {
+				credentialKEKRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "object-storage-service.credential_kek"
+				}
+			}
 			provider: cloudflareR2: {
 				endpoint: "https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com"
 				region:   "auto"
@@ -509,7 +557,7 @@ resources: [
 				audienceRef: {
 					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 					kind:       "SecretPath"
-					name:       "object-storage-service.auth.audience"
+					name:       "iam-service.zitadel.auth_audience"
 				}
 			}
 			postgres: dsn: "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
