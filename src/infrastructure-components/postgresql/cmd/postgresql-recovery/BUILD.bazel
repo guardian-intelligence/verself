@@ -6,6 +6,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/infrastructure-components/postgresql/cmd/postgresql-recovery",
     visibility = ["//visibility:private"],
+    deps = ["//src/infrastructure-components/postgresql/internal/recoveryfsm"],
 )
 
 go_binary(

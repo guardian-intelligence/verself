@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "recoveryfsm",
+    srcs = ["fsm.go"],
+    importpath = "github.com/verself/infrastructure-components/postgresql/internal/recoveryfsm",
+    visibility = ["//src/infrastructure-components/postgresql:__subpackages__"],
+)
+
+go_test(
+    name = "recoveryfsm_test",
+    srcs = ["fsm_test.go"],
+    embed = [":recoveryfsm"],
+    deps = ["@net_pgregory_rapid//:rapid"],
+)
