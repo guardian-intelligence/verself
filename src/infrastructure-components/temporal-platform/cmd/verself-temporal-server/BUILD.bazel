@@ -9,7 +9,6 @@ go_library(
         "//src/infrastructure-components/temporal-platform/internal/pgsocket",
         "//src/infrastructure-components/temporal-platform/internal/spiffeauth",
         "//src/infrastructure-components/temporal-platform/internal/tlsprovider",
-        "//src/services/service-runtime/go/envconfig",
         "//src/tools/observability/go/otel",
         "@io_temporal_go_server//common/authorization",
         "@io_temporal_go_server//common/config",

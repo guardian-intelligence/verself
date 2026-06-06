@@ -2,6 +2,7 @@ package spiffeauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -22,63 +23,68 @@ type Config struct {
 	namespaceRoles map[string]map[string]authorization.Role
 }
 
-func LoadFromEnv() (*Config, error) {
+type Document struct {
+	SystemAdminIDs  []string        `json:"systemAdminIDs,omitempty"`
+	SystemWriterIDs []string        `json:"systemWriterIDs,omitempty"`
+	SystemReaderIDs []string        `json:"systemReaderIDs,omitempty"`
+	NamespaceRoles  []NamespaceRole `json:"namespaceRoles,omitempty"`
+}
+
+type NamespaceRole struct {
+	SPIFFEID  string `json:"spiffeID"`
+	Namespace string `json:"namespace"`
+	Role      string `json:"role"`
+}
+
+func LoadFromFile(path string) (*Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open temporal authorization config: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	var doc Document
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("decode temporal authorization config: %w", err)
+	}
+	return FromDocument(doc)
+}
+
+func FromDocument(doc Document) (*Config, error) {
 	cfg := &Config{
 		systemRoles:    map[string]authorization.Role{},
 		namespaceRoles: map[string]map[string]authorization.Role{},
 	}
-	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS", authorization.RoleAdmin); err != nil {
-		return nil, err
-	}
-	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_WRITER_IDS", authorization.RoleWriter); err != nil {
-		return nil, err
-	}
-	if err := cfg.mergeSystemRoleEnv("VERSELF_TEMPORAL_SYSTEM_READER_IDS", authorization.RoleReader); err != nil {
-		return nil, err
-	}
-	if err := cfg.mergeNamespaceRoleEnv("VERSELF_TEMPORAL_NAMESPACE_ROLES"); err != nil {
+	cfg.mergeSystemRoleIDs(doc.SystemAdminIDs, authorization.RoleAdmin)
+	cfg.mergeSystemRoleIDs(doc.SystemWriterIDs, authorization.RoleWriter)
+	cfg.mergeSystemRoleIDs(doc.SystemReaderIDs, authorization.RoleReader)
+	if err := cfg.mergeNamespaceRoles(doc.NamespaceRoles); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func (c *Config) mergeSystemRoleEnv(name string, role authorization.Role) error {
-	raw := strings.TrimSpace(getenv(name))
-	if raw == "" {
-		return nil
-	}
-	for _, item := range strings.Split(raw, ",") {
+func (c *Config) mergeSystemRoleIDs(ids []string, role authorization.Role) {
+	for _, item := range ids {
 		id := strings.TrimSpace(item)
 		if id == "" {
 			continue
 		}
 		c.systemRoles[id] |= role
 	}
-	return nil
 }
 
-func (c *Config) mergeNamespaceRoleEnv(name string) error {
-	raw := strings.TrimSpace(getenv(name))
-	if raw == "" {
-		return nil
-	}
-	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		parts := strings.Split(entry, "|")
-		if len(parts) != 3 {
-			return fmt.Errorf("%s entry %q must use spiffe-id|namespace|role", name, entry)
-		}
-		id := strings.TrimSpace(parts[0])
-		namespace := strings.TrimSpace(parts[1])
-		role, err := parseRole(parts[2])
+func (c *Config) mergeNamespaceRoles(entries []NamespaceRole) error {
+	for _, entry := range entries {
+		id := strings.TrimSpace(entry.SPIFFEID)
+		namespace := strings.TrimSpace(entry.Namespace)
+		role, err := parseRole(entry.Role)
 		if err != nil {
-			return fmt.Errorf("%s entry %q: %w", name, entry, err)
+			return fmt.Errorf("namespace role for %s/%s: %w", id, namespace, err)
 		}
 		if id == "" || namespace == "" {
-			return fmt.Errorf("%s entry %q must not contain empty fields", name, entry)
+			return errors.New("temporal namespace role entries must not contain empty fields")
 		}
 		rolesByNamespace, ok := c.namespaceRoles[id]
 		if !ok {
@@ -221,8 +227,4 @@ func decisionString(decision authorization.Decision) string {
 	default:
 		return "unknown"
 	}
-}
-
-var getenv = func(key string) string {
-	return os.Getenv(key)
 }

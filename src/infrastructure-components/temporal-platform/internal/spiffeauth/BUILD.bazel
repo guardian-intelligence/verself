@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "spiffeauth",
@@ -13,4 +13,11 @@ go_library(
         "@io_temporal_go_server//common/authorization",
         "@org_golang_google_grpc//:grpc",
     ],
+)
+
+go_test(
+    name = "spiffeauth_test",
+    srcs = ["spiffeauth_test.go"],
+    embed = [":spiffeauth"],
+    deps = ["@io_temporal_go_server//common/authorization"],
 )

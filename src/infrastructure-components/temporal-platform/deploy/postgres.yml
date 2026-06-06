@@ -1,5 +1,0 @@
-postgresql_service_databases:
-  - { name: temporal, owner: temporal }
-  - { name: temporal_visibility, owner: temporal }
-postgresql_peer_mappings:
-  - { system_user: temporal_server, pg_user: temporal }

@@ -649,6 +649,14 @@ resources: [
 					name:  "grafana"
 					owner: "grafana"
 				},
+				{
+					name:  "temporal"
+					owner: "temporal"
+				},
+				{
+					name:  "temporal_visibility"
+					owner: "temporal"
+				},
 			]
 			roles: [
 				{
@@ -666,6 +674,10 @@ resources: [
 				},
 				{
 					name:  "grafana"
+					login: true
+				},
+				{
+					name:  "temporal"
 					login: true
 				},
 			]
@@ -693,6 +705,10 @@ resources: [
 				{
 					systemUser:   "grafana"
 					postgresUser: "grafana"
+				},
+				{
+					systemUser:   "temporal_server"
+					postgresUser: "temporal"
 				},
 			]
 		}
@@ -966,6 +982,63 @@ resources: [
 					name:       "source-code-hosting-service.forgejo.automation_token"
 				}
 			}
+		}
+	},
+	{
+		apiVersion: "temporal.guardianintelligence.org/v1alpha1"
+		kind:       "TemporalPlatform"
+		metadata: name: "temporal"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/temporal-platform/temporal-runtime.tar"
+			runtimeRoot:     "/var/lib/temporal/runtime"
+			stateDir:        "/var/lib/temporal"
+			authConfigPath:  "/etc/temporal/auth.json"
+			reportPath:      "/run/verself/recovery/temporal/report.json"
+			user:            "temporal_server"
+			group:           "temporal_server"
+			workloadGroup:   "spire_workload"
+			persistence: {
+				user:               "temporal"
+				socketDir:          "/var/run/postgresql"
+				defaultDatabase:    "temporal"
+				visibilityDatabase: "temporal_visibility"
+				defaultMaxConns:    20
+				visibilityMaxConns: 10
+			}
+			authorization: {
+				systemAdminIDs: ["spiffe://gamma.verself.sh/svc/temporal-server"]
+				namespaceRoles: [
+					{
+						spiffeID:  "spiffe://gamma.verself.sh/svc/sandbox-rental-service"
+						namespace: "sandbox-rental-service"
+						role:      "admin"
+					},
+					{
+						spiffeID:  "spiffe://gamma.verself.sh/svc/billing-service"
+						namespace: "billing-service"
+						role:      "admin"
+					},
+					{
+						spiffeID:  "spiffe://gamma.verself.sh/svc/distribution-service"
+						namespace: "distribution-service"
+						role:      "admin"
+					},
+				]
+			}
+			bootstrap: namespaces: [
+				{
+					name:      "sandbox-rental-service"
+					retention: "24h"
+				},
+				{
+					name:      "billing-service"
+					retention: "24h"
+				},
+				{
+					name:      "distribution-service"
+					retention: "24h"
+				},
+			]
 		}
 	},
 	{
