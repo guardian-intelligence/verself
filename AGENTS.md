@@ -49,7 +49,7 @@ The only ingredients necessary to recover the system, therefore, are:
 
 Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external provider authority and root-of-trust automation -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
 
-Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by ensuring we build openbao locally and then, inside the OpenBao recovery prestart, either using the system-present OpenBao or the one from the repo artifacts. A "check + bootstrap-if-needed" prestart is all we need. 
+Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by building openbao locally and, in the recovery reconciler, using either the system-present OpenBao or the one from the repo artifacts. The reconciler observes live state and converges — checking and bootstrapping when needed — on every tick of a level-triggered loop.
 
 Note that components should still handle subtle nuances, e.g. for OpenBao consider:
 
@@ -61,25 +61,27 @@ OpenBao not present/absent — the situation could be any of the following
 
 Recovery frequently means "restore data from offsite backups on S3-compatible object storage" but even if no backups are provided, a clean version of the system can be bootstrapped.
 
-Every deployable unit, big or small, can declare a component-owned recovery lifecycle task in its `nomad.hcl` file:
+Every deployable unit declares a component-owned recovery reconciler that runs as a long-lived sidecar in its `nomad.hcl` file. The reconciler observes live state, classifies it, and runs the idempotent action that converges to desired, re-sampling on an interval so the converged state is a maintained invariant. `spire` and `postgresql` are the reference implementations.
 
 ```
-task "recover" {
+task "reconcile" {
     lifecycle {
-      hook    = "prestart"
-      sidecar = false
+      hook    = "poststart"
+      sidecar = true
     }
 
     config {
-      command = "<name>-recover" # 
-      args = ["recover", "--site=prod", "--state-dir=/var/lib/..."]
+      command = "<name>-recover"
+      args    = ["reconcile", "--loop", "--resource-graph=...", "--resource-name=<name>", "--report=/run/verself/recovery/<name>/report.json"]
     }
   }
 
   task "serve" {
-    # normal service
+    # normal service; restart enabled so "process running" is a maintained invariant
   }
 ```
+
+See `docs/architecture/disaster-recovery-reference.md` for the recovery lifecycle contract, the canonical topology, condition feedback, seal/unseal posture, and the reasoning behind each decision.
 
 The Guardian base specification stays narrow: the graph envelope, `FlyProcedure`, `Substrate`, shared `PublicOrigin` facts, command responses, and common cross-component conditions. Static configuration for an infrastructure component or service belongs in that component's `guardian/v1alpha1/schema.cue`. Runtime actions such as restore, initialize, unseal, migrate, import, publish, and health waiting belong in Nomad lifecycle tasks and component binaries.
 
@@ -351,6 +353,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Service change packet, SDK-first API design, capacity, metering, retention, waiters, observability, release evidence:** `docs/architecture/service-change-reference-architecture.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
+- **Disaster recovery reconciler contract, recovery lifecycle topology, seal/unseal posture, condition feedback to `fly` and `/recoveryz`:** `docs/architecture/disaster-recovery-reference.md`
 
 In this repo, "ship" does not just mean merge to main. It means running on real customer devices in production after a thorough release checklist automated by CI.
 
