@@ -15,10 +15,9 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue
 ```
 
 `board` is the first cut point in the convergence state machine. It loads the
-resource graph, computes a content-addressed upload bundle from local source
-and build artifacts, runs the referenced `Substrate` lifecycle hooks, verifies
-the extracted repo tree, prepares OpenBao integration material for Nomad, starts
-the Nomad executor, and stops.
+resource graph, verifies local build artifacts are present, runs the referenced
+`Substrate` lifecycle hooks, verifies the boarded repo tree, prepares OpenBao
+integration material for Nomad, starts the Nomad executor, and stops.
 
 `fly` starts with the same boarding phase and then runs the configured Nomad
 job hook. Component runtime behavior is a Nomad convention: owner job files

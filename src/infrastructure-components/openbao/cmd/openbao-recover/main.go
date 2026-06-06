@@ -353,6 +353,8 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		return config{}, err
 	}
 	baoExplicit := flagProvided(args, "bao")
+	reportExplicit := flagProvided(args, "report")
+	reportPath := cfg.reportPath
 	cfg = normalizeConfig(cfg)
 	if cfg.resourceGraph != "" {
 		next, err := applyResourceGraphConfig(cfg)
@@ -361,6 +363,9 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		}
 		if !baoExplicit {
 			next.bao = ""
+		}
+		if reportExplicit {
+			next.reportPath = reportPath
 		}
 		cfg = normalizeConfig(next)
 	}
@@ -851,7 +856,7 @@ func reconcileBaselineWithToken(ctx context.Context, baseline openBaoBaselineSpe
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
 			revokeCondition,
-			conditionFalse("OpenBaoRecoveryComplete", "OperatorTokenRevocationFailed", "openbao", "baseline was reconciled but the presented operator token could not be revoked"),
+			conditionFalse("OpenBaoRecoveryComplete", "TransientTokenRevocationFailed", "openbao", "baseline was reconciled but the transient token could not be revoked"),
 		)
 		return rep
 	}
@@ -903,9 +908,9 @@ func revokePresentedToken(ctx context.Context, client openBaoClient, token strin
 		if isOpenBaoPermissionDenied(err) {
 			reason = "RevokeSelfPermissionDenied"
 		}
-		return conditionFalse("OpenBaoOperatorTokenRevoked", reason, "openbao", err.Error())
+		return conditionFalse("OpenBaoTransientTokenRevoked", reason, "openbao", err.Error())
 	}
-	return conditionTrue("OpenBaoOperatorTokenRevoked", "Revoked", "openbao", "presented operator token was revoked")
+	return conditionTrue("OpenBaoTransientTokenRevoked", "Revoked", "openbao", "transient recovery token was revoked")
 }
 
 func generateRootTokenFromShares(ctx context.Context, client openBaoClient, shares []string) (string, error) {

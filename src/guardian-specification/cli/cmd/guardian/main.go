@@ -71,9 +71,10 @@ type uploadResult struct {
 }
 
 type hookResult struct {
-	Argv   []string `json:"argv" yaml:"argv" toml:"argv" toon:"argv"`
-	Status string   `json:"status" yaml:"status" toml:"status" toon:"status"`
-	Reason string   `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Argv    []string `json:"argv" yaml:"argv" toml:"argv" toon:"argv"`
+	Status  string   `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason  string   `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Message string   `json:"message,omitempty" yaml:"message,omitempty" toml:"message,omitempty" toon:"message,omitempty"`
 }
 
 type kernelResult struct {
@@ -446,7 +447,7 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 	if accessResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "AccessHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("BoardAccess", accessResult.Reason, "access hook failed", "board.access"))
+		result.Conditions = append(result.Conditions, conditionFalse("BoardAccess", accessResult.Reason, hookFailureMessage("access hook failed", accessResult), "board.access"))
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "HookSucceeded", "access hook completed", "board.access"))
@@ -455,7 +456,7 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 	if runResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "UploadHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadRun", runResult.Reason, "upload run hook failed", "board.upload.run"))
+		result.Conditions = append(result.Conditions, conditionFalse("UploadRun", runResult.Reason, hookFailureMessage("upload run hook failed", runResult), "board.upload.run"))
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("UploadRun", "HookSucceeded", "upload run hook completed", "board.upload.run"))
@@ -464,7 +465,7 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 	if extractResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "ExtractHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadExtract", extractResult.Reason, "upload extract hook failed", "board.upload.extract"))
+		result.Conditions = append(result.Conditions, conditionFalse("UploadExtract", extractResult.Reason, hookFailureMessage("upload extract hook failed", extractResult), "board.upload.extract"))
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "HookSucceeded", "upload extract hook completed", "board.upload.extract"))
@@ -473,7 +474,7 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 	if verifyResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "VerifyHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", verifyResult.Reason, "upload verify hook failed", "board.upload.verify"))
+		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", verifyResult.Reason, hookFailureMessage("upload verify hook failed", verifyResult), "board.upload.verify"))
 		return result
 	}
 	observedDigest, err := extractObservedDigest(string(verifyStdout))
@@ -553,7 +554,7 @@ func runKernelHooks(result *boardResult, kernel specdoc.Kernel, workspaceRoot st
 		if hookResult.Status != "ready" {
 			result.Kernel.Status = "blocked"
 			result.Kernel.Reason = hookResult.Reason
-			result.Conditions = append(result.Conditions, conditionFalse(step.condition, hookResult.Reason, "kernel hook failed", step.resource))
+			result.Conditions = append(result.Conditions, conditionFalse(step.condition, hookResult.Reason, hookFailureMessage("kernel hook failed", hookResult), step.resource))
 			return false
 		}
 		result.Conditions = append(result.Conditions, conditionTrue(step.condition, "HookSucceeded", step.message, step.resource))
@@ -615,10 +616,11 @@ func runLifecycleHook(name string, hook lifecycleHookSpec, workspaceRoot string,
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	emitter.emit(name, "start", "", "running lifecycle hook")
-	stdout, _, err := execHook(ctx, hook, workspaceRoot)
+	stdout, stderr, err := execHook(ctx, hook, workspaceRoot)
 	if err != nil {
 		result.Reason = "HookFailed"
-		emitter.emit(name, "blocked", "", strings.TrimSpace(err.Error()))
+		result.Message = commandFailureMessage(err, stdout, stderr)
+		emitter.emit(name, "blocked", "", result.Message)
 		return result, stdout
 	}
 	result.Status = "ready"
@@ -640,6 +642,32 @@ func execHook(ctx context.Context, hook lifecycleHookSpec, workspaceRoot string)
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
+}
+
+func hookFailureMessage(prefix string, result hookResult) string {
+	if strings.TrimSpace(result.Message) == "" {
+		return prefix
+	}
+	return prefix + ": " + result.Message
+}
+
+func commandFailureMessage(err error, stdout []byte, stderr []byte) string {
+	parts := []string{strings.TrimSpace(err.Error())}
+	if tail := outputTail(stderr, 1600); tail != "" {
+		parts = append(parts, "stderr: "+tail)
+	}
+	if tail := outputTail(stdout, 1600); tail != "" {
+		parts = append(parts, "stdout: "+tail)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func outputTail(output []byte, limit int) string {
+	trimmed := strings.TrimSpace(string(output))
+	if len(trimmed) <= limit {
+		return trimmed
+	}
+	return "..." + trimmed[len(trimmed)-limit:]
 }
 
 func extractObservedDigest(output string) (string, error) {
@@ -721,7 +749,7 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 	nomadResult, _ := runLifecycleHook("fly.nomad.run", doc.Compiled.FlySpec.Nomad.Run, opts.WorkspaceRoot, emitter)
 	result.Nomad = nomadResult
 	if nomadResult.Status != "ready" {
-		result.Conditions = append(result.Conditions, conditionFalse("NomadJobReady", nomadResult.Reason, "Nomad job hook failed", "fly.nomad"))
+		result.Conditions = append(result.Conditions, conditionFalse("NomadJobReady", nomadResult.Reason, hookFailureMessage("Nomad job hook failed", nomadResult), "fly.nomad"))
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "HookSucceeded", "Nomad job hook completed", "fly.nomad"))

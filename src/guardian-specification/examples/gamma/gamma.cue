@@ -35,6 +35,7 @@ resources: [
 					nomad=/opt/verself/profile/bin/nomad
 					job=/home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
 					report=/run/verself/recovery/openbao/report.json
+					sudo rm -f "$report"
 					NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job run -detach "$job"
 					for _ in $(seq 1 240); do
 						NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job status openbao
@@ -79,10 +80,16 @@ resources: [
 						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
 						remote=ubuntu@206.223.228.87
 						remote_root=/home/ubuntu/.local/state/guardian/repo
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
+						artifact_paths='
+						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
+						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
+						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
+						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
+						'
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
 						rsync -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
 						rsync -a --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/next/workspace/"
-						rsync -aL --delete --timeout=60 -e "$ssh_opts" bazel-bin/ "$remote:$remote_root/next/bazel-bin/"
+						printf '%s\n' $artifact_paths | rsync -aL --mkpath --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/next/"
 						""",
 				]
 				extract: argv: [
@@ -96,10 +103,10 @@ resources: [
 						test -f "$repo_root/next/workspace/.guardian/fly/document.json"
 						test -d "$repo_root/next/bazel-bin"
 						if [ -e "$repo_root/current" ] || [ -L "$repo_root/current" ]; then
-							rm -rf "$repo_root/previous"
-							mv -Tf "$repo_root/current" "$repo_root/previous"
+							sudo rm -rf "$repo_root/previous"
+							sudo mv -Tf "$repo_root/current" "$repo_root/previous"
 						fi
-						mv -Tf "$repo_root/next" "$repo_root/current"
+						sudo mv -Tf "$repo_root/next" "$repo_root/current"
 						REMOTE
 						""",
 				]
@@ -111,12 +118,18 @@ resources: [
 						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
 						remote=ubuntu@206.223.228.87
 						remote_root=/home/ubuntu/.local/state/guardian/repo
-						workspace_delta="$(rsync -a --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
+						artifact_paths='
+						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
+						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
+						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
+						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
+						'
+						workspace_delta="$(rsync -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
 						fly_delta="$(rsync -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
-						bazel_delta="$(rsync -aL --dry-run --checksum --itemize-changes --delete --timeout=60 -e "$ssh_opts" bazel-bin/ "$remote:$remote_root/current/bazel-bin/")"
+						artifact_delta="$(printf '%s\n' $artifact_paths | rsync -aL --mkpath --dry-run --checksum --itemize-changes --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/current/")"
 						test -z "$workspace_delta"
 						test -z "$fly_delta"
-						test -z "$bazel_delta"
+						test -z "$artifact_delta"
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'cd /home/ubuntu/.local/state/guardian/repo/current && find workspace bazel-bin -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum'
 						""",
 				]

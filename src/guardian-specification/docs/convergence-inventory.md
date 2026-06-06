@@ -11,8 +11,8 @@ consecutive submissions do not create unexpected allocation churn.
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad runtime | component bootstrap machinery | Converged | None | Boarded repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged; steady-state autonomous restart not complete | Initialized Shamir-sealed restart still needs manual unseal or a configured auto-unseal mechanism; initialized baseline drift still needs scoped workload authority or breakglass operator authority | Boarded OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile, external seal for autonomous restart, scoped workload identity for baseline reconciliation |
-| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Previous recovery completed; not yet re-submitted after latest wipe | Provider parent credential still requires operator import if no restored OpenBao snapshot provides it | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin`; OpenBao baseline creates `cloudflare-integration-recovery-runtime` |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Boarded OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
+| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Previous recovery completed; not yet re-submitted after latest wipe | Provider parent credential still requires operator import if no restored OpenBao snapshot provides it | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin`; OpenBao recovery creates the Cloudflare runtime role |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Boarded nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Boarded NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
@@ -33,28 +33,28 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --strea
 
 Observed results from the latest destructive gamma run on June 6, 2026:
 
-- `guardian board src/guardian-specification/examples/gamma/gamma.cue -o json
-  --stream` succeeded after the host was re-imaged;
+- `guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json
+  --stream` boarded gamma and submitted the OpenBao Nomad job;
 - board reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:fe4131dc6a6c9aa9572f665c21426916d4f90a932844af7b172a14f8888914e4`;
+  `sha256:d9d8f38e10375ffbedb3a070e7dfa969e25cf25b990478e2b01d9454b0615f8b`;
 - latest verified upload digest:
-  `sha256:fb5981cfe6ec1b0d50ae975243079d4291bf67b41f0ce359558d1d672d997f39`;
+  `sha256:7d6786e99b9bfc44b210b2854bbfc8a0801cfcdf592998099ee8bc5aec0e6ba2`;
 - board prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during board;
-- `guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json
-  --stream` then submitted the OpenBao job and returned `ready_to_fly: yes`;
 - Nomad reports `openbao` status `running`, deployment `successful`, one
   healthy allocation, and no failed allocations;
+- allocation task states: `setup` and `recover` exited `0`; `server` remains
+  running;
 - `/run/verself/recovery/openbao/report.json` reports
   `OpenBaoRecoveryComplete=True/Recovered`;
 - OpenBao evidence from the report: version `2.5.2`, Shamir seal, threshold
-  `2`, cluster id `7a07b187-b47c-f9e1-6792-2b994fe38333`;
+  `2`, cluster id `5c5790b0-199e-aab8-529d-34d6c5f3206c`;
 - the fresh-init path delivered encrypted init material to
   `/run/verself/recovery/openbao/init-material.json`, unsealed using in-memory
   init shares, reconciled baseline mounts/auth/policies, and revoked the
-  initial operator token.
+  transient initial root token;
 - after boarding the breakglass cleanup, the live empty-stdin breakglass probe
   reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails

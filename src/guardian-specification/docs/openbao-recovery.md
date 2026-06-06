@@ -87,7 +87,7 @@ baseline reconciliation requested by OpenBao component CRD
   -> prefer scoped workload-authenticated authority
   -> otherwise require an explicit transient operator token
   -> reconcile mounts/policies/auth/secret paths
-  -> revoke presented operator token when one was used
+  -> revoke the transient recovery token when one was used
 
 breakglass generate-root
   -> only when operators explicitly enable OpenBao's deprecated generate-root

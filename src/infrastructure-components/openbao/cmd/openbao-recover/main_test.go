@@ -23,6 +23,7 @@ import (
 
 type fakeOpenBaoClient struct {
 	status                 baoStatus
+	statuses               []baoStatus
 	rootToken              string
 	unsealShares           []string
 	snapshot               []byte
@@ -46,6 +47,12 @@ type fakeOpenBaoClient struct {
 }
 
 func (f *fakeOpenBaoClient) Status(context.Context) (baoStatus, error) {
+	if len(f.statuses) > 0 {
+		status := f.statuses[0]
+		f.statuses = f.statuses[1:]
+		f.status = status
+		return status, nil
+	}
 	return f.status, nil
 }
 
@@ -198,7 +205,7 @@ func TestFreshInitWritesEncryptedInitMaterial(t *testing.T) {
 		assertCondition(t, rep, "OpenBaoInitialized", "True", "FreshInitComplete")
 		assertCondition(t, rep, "OpenBaoInitMaterialDelivered", "True", "InitOutputWritten")
 		assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
-		assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+		assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 		assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 		if len(client.baselineTokens) != 0 {
 			t.Fatalf("baseline reconciled when baseline reconcile was disabled")
@@ -259,7 +266,7 @@ func TestFreshInitReconcilesBaselineWithInitialRootTokenAndRevokes(t *testing.T)
 	assertCondition(t, rep, "OpenBaoInitialized", "True", "FreshInitComplete")
 	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != rootToken {
 		t.Fatalf("baseline did not use initial root token")
@@ -344,7 +351,7 @@ func TestSealedOpenBaoBreakglassGeneratesRootTokenAfterUnsealForBaseline(t *test
 	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
 	assertCondition(t, rep, "OpenBaoBreakglassRootToken", "True", "BreakglassGenerated")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
 		t.Fatalf("baseline did not use generated root token")
@@ -429,7 +436,7 @@ func TestBaselineReconcileRetriesTransientOpenBaoErrors(t *testing.T) {
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
 
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 	if len(client.baselineTokens) != 2 {
 		t.Fatalf("baseline reconcile attempts = %d", len(client.baselineTokens))
@@ -453,7 +460,7 @@ func TestUnsealedOpenBaoRevokesOperatorTokenAfterBaselineFailure(t *testing.T) {
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
 
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "ReconcileFailed")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineFailed")
 	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
 		t.Fatalf("operator token was not revoked after baseline failure")
@@ -475,7 +482,7 @@ func TestUnsealedOpenBaoReportsInsufficientOperatorTokenAuthority(t *testing.T) 
 
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "BaselineAuthorityInsufficient")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertReportDoesNotContain(t, rep, token)
 }
 
@@ -492,8 +499,8 @@ func TestUnsealedOpenBaoReportsOperatorTokenRevocationFailure(t *testing.T) {
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
 
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "False", "RevokeSelfFailed")
-	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "OperatorTokenRevocationFailed")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "False", "RevokeSelfFailed")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "TransientTokenRevocationFailed")
 	assertReportDoesNotContain(t, rep, token)
 }
 
@@ -513,7 +520,7 @@ func TestUnsealedOpenBaoBreakglassGeneratesRootTokenFromUnsealSharesForBaseline(
 
 	assertCondition(t, rep, "OpenBaoBreakglassRootToken", "True", "BreakglassGenerated")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
 		t.Fatalf("baseline did not use generated root token")
@@ -570,8 +577,8 @@ func TestUnsealedOpenBaoClassifiesOperatorTokenRevocationPermissionDenied(t *tes
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
 
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
-	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "False", "RevokeSelfPermissionDenied")
-	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "OperatorTokenRevocationFailed")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "False", "RevokeSelfPermissionDenied")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "TransientTokenRevocationFailed")
 	assertReportDoesNotContain(t, rep, token)
 }
 
@@ -838,6 +845,21 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 		if !strings.HasPrefix(string(body), "pubkey-") {
 			t.Fatalf("unexpected PGP key body in %s: %q", path, body)
 		}
+	}
+
+	reportOverride := filepath.Join(dir, "override-report.json")
+	overrideCfg, err := parseConfig("test", []string{
+		"--repo-root=" + dir,
+		"--resource-graph=" + graphPath,
+		"--resource-name=openbao",
+		"--pgp-key-dir=" + pgpDir,
+		"--report=" + reportOverride,
+	}, true, false)
+	if err != nil {
+		t.Fatalf("parseConfig with report override: %v", err)
+	}
+	if overrideCfg.reportPath != reportOverride {
+		t.Fatalf("reportPath override = %q, want %q", overrideCfg.reportPath, reportOverride)
 	}
 }
 

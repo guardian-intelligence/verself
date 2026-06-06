@@ -61,7 +61,8 @@ reads static inputs from its CRD.
 ## Dry Run
 
 `guardian fly --dry-run` runs non-mutating checks: resource validation and
-upload bundle preparation. It does not run kernel hooks or submit Nomad jobs.
+local boarding input validation. It does not run kernel hooks or submit Nomad
+jobs.
 
 ## Live Run
 

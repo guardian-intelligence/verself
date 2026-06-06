@@ -36,9 +36,9 @@ install, restore, reconcile, or block with stable health evidence.
 
 ## Boundaries
 
-Guardian owns config parsing, local artifact checks, upload digest computation,
-lifecycle hook execution, digest comparison, resource graph materialization, and
-structured command responses.
+Guardian owns config parsing, local artifact checks, lifecycle hook execution,
+resource graph materialization, verified digest collection, and structured
+command responses.
 
 Lifecycle hook commands own substrate access, file transfer, permissions,
 remote directories, and remote tooling.

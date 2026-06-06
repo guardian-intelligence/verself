@@ -43,7 +43,7 @@ responses and component evidence.
 procedure stays a small entrypoint into the graph.
 
 `Substrate` contains the access hook and upload hooks. Guardian executes them
-as argv commands after preparing the local upload bundle. The hooks own access,
+as argv commands after verifying local boarding inputs. The hooks own access,
 transfer, extraction, permissions, and remote tooling.
 
 `PublicOrigin` is the shared URL abstraction. Components that need an external
