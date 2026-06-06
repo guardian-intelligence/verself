@@ -29,9 +29,9 @@ resources:
       url: https://gamma.verself.sh
 ```
 
-`board` and `fly` read the same graph. `board` stops after verified upload.
-`fly` performs the same boarding work and materializes the graph in the boarded
-workspace for component-owned Nomad jobs.
+`board` and `fly` read the same graph. `board` stops after verified upload and
+Nomad executor readiness. `fly` performs the same boarding work, materializes
+the graph in the boarded workspace, and runs the configured Nomad job hook.
 
 The input graph uses the Kubernetes-style `spec` convention for desired input.
 It does not define `status`. Observed state is reported through command
@@ -119,11 +119,6 @@ component reports, health endpoints, and telemetry.
 Command results contain observed outcomes: readiness, upload digest, observed
 digest, hook status, condition types, and reason codes. Command results are
 ephemeral CLI responses and are not config resources.
-
-`RootTrustMaterialAvailable` is the standard condition for recovery blocked on
-external root authority. Component implementations choose precise reasons such
-as `UnsealQuorumIncomplete`, `ExternalSealUnavailable`, or
-`ProviderRootCredentialRequired`.
 
 ## Versioning
 

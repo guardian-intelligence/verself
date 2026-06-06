@@ -173,6 +173,9 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 							Kind:       specdoc.KindSubstrate,
 							Name:       substrateName,
 						},
+						Nomad: specdoc.NomadRun{
+							Run: lifecycleHook(t, "nomad_run"),
+						},
 					}),
 				},
 				{
@@ -185,6 +188,11 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 							Run:     lifecycleHook(t, "upload_run"),
 							Extract: lifecycleHook(t, "upload_extract"),
 							Verify:  lifecycleHook(t, "upload_verify"),
+						},
+						Kernel: specdoc.Kernel{
+							OpenBaoPrepare: lifecycleHook(t, "kernel_openbao_prepare"),
+							Nomad:          lifecycleHook(t, "kernel_nomad"),
+							Verify:         lifecycleHook(t, "kernel_verify"),
 						},
 					}),
 				},

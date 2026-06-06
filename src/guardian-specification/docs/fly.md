@@ -1,7 +1,7 @@
 # Fly
 
-`fly` runs Guardian boarding and prepares the boarded workspace for
-component-owned Nomad runtime behavior.
+`fly` runs Guardian boarding and then submits the configured Nomad job from the
+boarded workspace.
 
 ```sh
 guardian fly gamma.cue --dry-run -o yaml
@@ -10,8 +10,9 @@ guardian fly gamma.cue
 
 The command loads the same resource graph used by `board`, writes the graph to
 `.guardian/fly/document.json`, runs the boarding phase, and verifies the
-boarded repo tree. Re-running `fly` is the normal way to refresh the boarded
-workspace before Nomad jobs run their owner-defined lifecycle tasks.
+boarded repo tree and kernel prerequisites. Re-running `fly` is the normal way
+to refresh the boarded workspace before Nomad jobs run their owner-defined
+lifecycle tasks.
 
 ## Config Shape
 
@@ -31,6 +32,13 @@ resources:
         apiVersion: substrate.guardianintelligence.org/v1alpha1
         kind: Substrate
         name: gamma-primary
+      nomad:
+        run:
+          argv:
+            - ssh
+            - -T
+            - ubuntu@206.223.228.87
+            - nomad job run -detach /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
 
   - apiVersion: networking.guardianintelligence.org/v1alpha1
     kind: PublicOrigin
@@ -53,20 +61,28 @@ reads static inputs from its CRD.
 ## Dry Run
 
 `guardian fly --dry-run` runs non-mutating checks: resource validation and
-upload bundle preparation.
+upload bundle preparation. It does not run kernel hooks or submit Nomad jobs.
 
 ## Live Run
 
-`guardian fly` performs boarding and leaves component behavior to Nomad. In
-this repo, owner job files use lifecycle tasks to install runtime artifacts,
+`guardian fly` performs boarding, then runs `FlyProcedure.spec.nomad.run`. In
+this repo that hook uses the boarded Nomad binary to submit and monitor a
+Nomad job. Owner job files use lifecycle tasks to install runtime artifacts,
 restore or initialize state, reconcile configuration, and block loudly when
 external authority is missing.
 
-OpenBao recovery is expected to report `RootTrustMaterialAvailable=False` when it
-cannot continue without operator-held or externally-held authority. Examples
-include missing Shamir unseal quorum, unavailable auto-unseal backing key,
-missing PGP recipient identities for fresh initialization, and missing provider
-parent credential during re-import.
+On a wiped node, boarding prepares OpenBao before Nomad starts. The
+`openbao-recover prepare` hook installs the repo-built OpenBao runtime, writes
+host-local config, and creates the CA file Nomad needs for Vault integration
+without initializing or unsealing OpenBao. Nomad recovery then starts the
+single-node agent once with Vault integration already configured. After that,
+`fly` submits the OpenBao Nomad job and later Vault-backed jobs can validate
+against the same stable Nomad agent.
+
+OpenBao recovery reports concrete component blockers when it cannot continue.
+Examples include missing Shamir unseal quorum, unavailable auto-unseal backing
+key, missing PGP recipient identities for fresh initialization, and missing
+provider parent credential during re-import.
 
 Point-in-time recovery, snapshot restore, backup catalog selection, offsite
 object-store reads, and provider token import are component concerns. They live
@@ -119,7 +135,6 @@ Component readiness for `fly` is measured in levels:
 - prestart tasks no-op on healthy existing state;
 - prestart tasks repair or block loudly on degraded state;
 - stateful components declare restore behavior from offsite backups;
-- root trust gates report `RootTrustMaterialAvailable`;
 - the component exposes recovery health through service checks or `/recoveryz`;
 - a wipe drill passes;
 - a second `fly` run is stable.

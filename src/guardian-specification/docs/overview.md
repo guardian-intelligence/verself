@@ -24,14 +24,15 @@ protocol, component CRDs, component-owned Nomad jobs, and runtime evidence.
 
 `board` runs the state machine through substrate readiness. It resolves the
 entrypoint and referenced substrate, checks local build artifacts, computes the
-upload digest, runs the `Substrate` access and upload lifecycle hooks, and
+upload digest, runs the `Substrate` access/upload/kernel lifecycle hooks, and
 emits a structured command result with `ready_to_fly`, upload details, hook
-details, and stable conditions.
+details, and stable conditions. Kernel hooks recover the fixed Nomad/OpenBao
+substrate prerequisites.
 
 `fly` starts with boarding and writes the resource graph into the boarded
-workspace. Component behavior is expressed in component-owned Nomad job files,
-typically as lifecycle tasks that install, restore, reconcile, or block with
-stable health evidence.
+workspace, then runs the configured Nomad job hook. Component behavior is
+expressed in component-owned Nomad job files, typically as lifecycle tasks that
+install, restore, reconcile, or block with stable health evidence.
 
 ## Boundaries
 
@@ -50,13 +51,10 @@ Shared config resources describe stable facts that multiple components need.
 `PublicOrigin` describes an externally visible origin. Component extension
 resources describe component needs without adding new base Guardian concepts.
 
-## Root Trust
+## Secrets
 
-Root trust material is external authority required to continue recovery. It may
-be Shamir unseal shares, an HSM/KMS seal, operator-recipient PGP identities,
-provider parent credentials, or backup retrieval authority.
-
-Guardian surfaces root trust blockers through conditions. The base condition is
-`RootTrustMaterialAvailable`. Secret values are never embedded in resource
-graphs, environment variables, argv, command output, telemetry, or durable host
-files.
+Secret values are never embedded in resource graphs, environment variables,
+argv, command output, telemetry, or durable host files. Component recovery
+binaries request operator-held authority through component-owned paths and
+report concrete component blockers such as unseal, snapshot restore, provider
+import, or baseline reconciliation.

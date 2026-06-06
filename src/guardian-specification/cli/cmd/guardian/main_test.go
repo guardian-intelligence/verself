@@ -10,7 +10,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	toon "github.com/toon-format/toon-go"
-	"github.com/verself/guardian-specification/cli/internal/uploadbundle"
 	"gopkg.in/yaml.v3"
 )
 
@@ -103,11 +102,11 @@ func TestBoardCUEDocument(t *testing.T) {
 	if result.ReadyToFly != "no" {
 		t.Fatalf("ready_to_fly = %q, want no for dry run\n%s", result.ReadyToFly, stdout.String())
 	}
-	if result.Upload.Digest == "" {
-		t.Fatalf("board result omitted upload digest:\n%s", stdout.String())
-	}
 	if result.Access.Status != "pending" {
 		t.Fatalf("dry-run access status = %q, want pending", result.Access.Status)
+	}
+	if result.Kernel.Status != "pending" {
+		t.Fatalf("dry-run kernel status = %q, want pending", result.Kernel.Status)
 	}
 	if result.Entrypoint.Name != "gamma" {
 		t.Fatalf("entrypoint = %#v, want gamma FlyProcedure", result.Entrypoint)
@@ -132,14 +131,17 @@ func TestBoardHooksVerifyDigest(t *testing.T) {
 	if result.ReadyToFly != "yes" {
 		t.Fatalf("ready_to_fly = %q, want yes\n%s", result.ReadyToFly, stdout.String())
 	}
-	if result.Upload.Digest == "" || result.Upload.ObservedDigest != result.Upload.Digest {
-		t.Fatalf("upload digests did not match: %#v", result.Upload)
+	if result.Upload.Digest == "" {
+		t.Fatalf("upload digest was not reported: %#v", result.Upload)
 	}
 	if result.Upload.Run.Status != "ready" || result.Upload.Extract.Status != "ready" || result.Upload.Verify.Status != "ready" {
 		t.Fatalf("hooks not ready: run=%#v extract=%#v verify=%#v", result.Upload.Run, result.Upload.Extract, result.Upload.Verify)
 	}
 	if result.Access.Status != "ready" {
 		t.Fatalf("access hook not ready: %#v", result.Access)
+	}
+	if result.Kernel.Status != "ready" {
+		t.Fatalf("kernel hooks not ready: %#v", result.Kernel)
 	}
 }
 
@@ -207,6 +209,11 @@ func testFlyResult() flyResult {
 			Kind:       "FlyProcedure",
 			Name:       "gamma",
 		},
+		Nomad: hookResult{
+			Argv:   []string{"sh", "-c", "test -d extracted"},
+			Status: "ready",
+			Reason: "HookSucceeded",
+		},
 		Conditions: []condition{{
 			Type:     "BoardingReady",
 			Status:   "True",
@@ -261,7 +268,12 @@ language: version: "v0.11.0"
 	if err := os.WriteFile(filepath.Join(dir, "guardian"), []byte("guardian binary\n"), 0o755); err != nil {
 		t.Fatalf("write guardian source: %v", err)
 	}
-	writeRequiredArtifacts(t, dir)
+	if err := os.Mkdir(filepath.Join(dir, "bazel-bin"), 0o755); err != nil {
+		t.Fatalf("mkdir bazel-bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bazel-bin", "guardian"), []byte("built guardian\n"), 0o755); err != nil {
+		t.Fatalf("write built artifact: %v", err)
+	}
 	path := filepath.Join(dir, "gamma.cue")
 	if err := os.WriteFile(path, []byte(`package gamma
 
@@ -282,6 +294,7 @@ resources: [
 				kind:       "Substrate"
 				name:       "local"
 			}
+			nomad: run: argv: ["sh", "-c", "test -d extracted"]
 		}
 	},
 	{
@@ -291,13 +304,15 @@ resources: [
 		spec: {
 				access: argv: ["sh", "-c", "test -f MODULE.bazel"]
 				upload: {
-					bundlePath: ".guardian/board/upload.tar.gz"
-					manifestPath: ".guardian/board/upload-manifest.json"
-					digestPath: ".guardian/board/upload.sha256"
-					run: argv: ["sh", "-c", "cp .guardian/board/upload.tar.gz upload.tar.gz"]
-					extract: argv: ["sh", "-c", "rm -rf extracted && mkdir extracted && tar -xzf upload.tar.gz -C extracted"]
-					verify: argv: ["sh", "-c", "cd extracted && sha256sum -c guardian-upload-sha256sums.txt >/dev/null && sha256sum ../upload.tar.gz"]
+					run: argv: ["sh", "-c", "rm -rf uploaded && mkdir -p uploaded && cp -a MODULE.bazel guardian bazel-bin .guardian uploaded/"]
+					extract: argv: ["sh", "-c", "rm -rf extracted && cp -a uploaded extracted"]
+					verify: argv: ["sh", "-c", "test -f extracted/.guardian/fly/document.json && find extracted -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum"]
 				}
+					kernel: {
+						openbaoPrepare: argv: ["sh", "-c", "test -d extracted"]
+						nomad: argv: ["sh", "-c", "test -d extracted"]
+						verify: argv: ["sh", "-c", "test -d extracted"]
+					}
 			}
 		},
 	{
@@ -334,17 +349,4 @@ func withWorkingDir(t *testing.T, dir string, fn func()) {
 		}
 	}()
 	fn()
-}
-
-func writeRequiredArtifacts(t *testing.T, dir string) {
-	t.Helper()
-	for _, artifact := range uploadbundle.RequiredBuildArtifacts {
-		path := filepath.Join(dir, filepath.FromSlash(artifact.Source))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("mkdir artifact parent: %v", err)
-		}
-		if err := os.WriteFile(path, []byte(artifact.Source+"\n"), 0o755); err != nil {
-			t.Fatalf("write artifact %s: %v", artifact.Source, err)
-		}
-	}
 }

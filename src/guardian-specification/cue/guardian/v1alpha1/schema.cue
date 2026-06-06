@@ -2,7 +2,6 @@ package v1alpha1
 
 #NonEmptyString: string & !=""
 #HTTPSOrigin:    =~"^https://[^\\s/$.?#][^\\s/?#]*$"
-#RepoPath:       string & !~"^/" & !~"(^|/)\\.\\.(/|$)" & !=""
 
 #Document: {
 	entrypoint: #ObjectRef & {
@@ -28,7 +27,7 @@ package v1alpha1
 	apiVersion: #NonEmptyString
 	kind:       #NonEmptyString
 	metadata:   #Metadata
-	spec?:      {...}
+	spec?: {...}
 
 	if apiVersion == "guardian.guardianintelligence.org/v1alpha1" {
 		kind: !="FlyProcedure"
@@ -50,6 +49,7 @@ package v1alpha1
 			apiVersion: "substrate.guardianintelligence.org/v1alpha1"
 			kind:       "Substrate"
 		}
+		nomad: run: #LifecycleHook
 	}
 }
 
@@ -60,12 +60,14 @@ package v1alpha1
 	spec: {
 		access: #LifecycleHook
 		upload: {
-			bundlePath?:   #RepoPath
-			manifestPath?: #RepoPath
-			digestPath?:   #RepoPath
-			run:           #LifecycleHook
-			extract:       #LifecycleHook
-			verify:        #LifecycleHook
+			run:     #LifecycleHook
+			extract: #LifecycleHook
+			verify:  #LifecycleHook
+		}
+		kernel: {
+			openbaoPrepare: #LifecycleHook
+			nomad:          #LifecycleHook
+			verify:         #LifecycleHook
 		}
 	}
 }

@@ -20,16 +20,12 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
-	"github.com/verself/guardian-specification/cli/internal/uploadbundle"
 	"github.com/verself/guardian-specification/internal/formatio"
 	"github.com/verself/guardian-specification/internal/specdoc"
 )
 
 const (
-	defaultUploadBundlePath   = ".guardian/board/upload.tar.gz"
-	defaultUploadManifestPath = ".guardian/board/upload-manifest.json"
-	defaultUploadDigestPath   = ".guardian/board/upload.sha256"
-	defaultFlyDocumentPath    = ".guardian/fly/document.json"
+	defaultFlyDocumentPath = ".guardian/fly/document.json"
 )
 
 type guardianDocument struct {
@@ -55,6 +51,7 @@ type boardResult struct {
 	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
 	Access         hookResult        `json:"access" yaml:"access" toml:"access" toon:"access"`
 	Upload         uploadResult      `json:"upload" yaml:"upload" toml:"upload" toon:"upload"`
+	Kernel         kernelResult      `json:"kernel" yaml:"kernel" toml:"kernel" toon:"kernel"`
 	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
 }
 
@@ -65,23 +62,26 @@ type resourceRefResult struct {
 }
 
 type uploadResult struct {
-	Digest            string     `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
-	ObservedDigest    string     `json:"observed_digest,omitempty" yaml:"observed_digest,omitempty" toml:"observed_digest,omitempty" toon:"observed_digest,omitempty"`
-	Format            string     `json:"format,omitempty" yaml:"format,omitempty" toml:"format,omitempty" toon:"format,omitempty"`
-	FileCount         int        `json:"file_count" yaml:"file_count" toml:"file_count" toon:"file_count"`
-	CompressedBytes   int64      `json:"compressed_bytes,omitempty" yaml:"compressed_bytes,omitempty" toml:"compressed_bytes,omitempty" toon:"compressed_bytes,omitempty"`
-	UncompressedBytes int64      `json:"uncompressed_bytes,omitempty" yaml:"uncompressed_bytes,omitempty" toml:"uncompressed_bytes,omitempty" toon:"uncompressed_bytes,omitempty"`
-	Run               hookResult `json:"run" yaml:"run" toml:"run" toon:"run"`
-	Extract           hookResult `json:"extract" yaml:"extract" toml:"extract" toon:"extract"`
-	Verify            hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
-	Status            string     `json:"status" yaml:"status" toml:"status" toon:"status"`
-	Reason            string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Digest  string     `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
+	Run     hookResult `json:"run" yaml:"run" toml:"run" toon:"run"`
+	Extract hookResult `json:"extract" yaml:"extract" toml:"extract" toon:"extract"`
+	Verify  hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
+	Status  string     `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason  string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
 
 type hookResult struct {
 	Argv   []string `json:"argv" yaml:"argv" toml:"argv" toon:"argv"`
 	Status string   `json:"status" yaml:"status" toml:"status" toon:"status"`
 	Reason string   `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+}
+
+type kernelResult struct {
+	OpenBaoPrepare hookResult `json:"openbao_prepare" yaml:"openbao_prepare" toml:"openbao_prepare" toon:"openbao_prepare"`
+	Nomad          hookResult `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
+	Verify         hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
+	Status         string     `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason         string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
 
 type flyResult struct {
@@ -91,6 +91,7 @@ type flyResult struct {
 	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
 	UploadDigest   string            `json:"upload_digest,omitempty" yaml:"upload_digest,omitempty" toml:"upload_digest,omitempty" toon:"upload_digest,omitempty"`
 	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
+	Nomad          hookResult        `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
 	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
 }
 
@@ -408,10 +409,12 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 			Status:  "pending",
 			Reason:  "NotStarted",
 		},
+		Kernel: kernelPending(substrateSpec.Kernel),
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphResolved", "RefsResolved", "Guardian resource refs resolved", "resources"))
 	result.Conditions = append(result.Conditions, conditionTrue("AccessHookConfigured", "HookConfigured", "access lifecycle hook is configured", "board.access"))
 	result.Conditions = append(result.Conditions, conditionTrue("UploadHooksConfigured", "HooksConfigured", "upload lifecycle hooks are configured", "board.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("KernelHooksConfigured", "HooksConfigured", "Nomad executor kernel hooks are configured", "board.kernel"))
 	if err := writeFlyDocument(opts.WorkspaceRoot, doc.Source); err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "ResourceGraphWriteFailed"
@@ -419,28 +422,23 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphMaterialized", "DocumentWritten", "Guardian resource graph was written for component-owned Nomad tasks", "board.resources"))
-	prepared, err := prepareUpload(opts.WorkspaceRoot, substrateSpec.Upload)
-	if err != nil {
+	if err := prepareBoardWorkspace(opts.WorkspaceRoot); err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "BuildArtifactsMissing"
 		result.Conditions = append(result.Conditions, conditionFalse("UploadPrepared", "BuildArtifactsMissing", err.Error(), "board.upload"))
 		return result
 	}
-	result.Upload.Digest = prepared.Manifest.ArchiveSHA256
-	result.Upload.Format = prepared.Manifest.Format
-	result.Upload.FileCount = len(prepared.Manifest.Files)
-	result.Upload.CompressedBytes = prepared.Manifest.CompressedBytes
-	result.Upload.UncompressedBytes = prepared.Manifest.UncompressedBytes
 	result.Upload.Status = "prepared"
-	result.Upload.Reason = "BundleReady"
-	result.Conditions = append(result.Conditions, conditionTrue("UploadPrepared", "BundleReady", "workspace upload bundle is built locally", "board.upload"))
+	result.Upload.Reason = "WorkspaceReady"
+	result.Conditions = append(result.Conditions, conditionTrue("UploadPrepared", "WorkspaceReady", "workspace graph and build artifacts are present locally", "board.upload"))
 	if hasFalseCondition(result.Conditions) {
 		return result
 	}
 	if opts.DryRun {
 		result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "DryRun", "dry run did not execute the access hook", "board.access"))
-		result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "DryRun", "dry run did not extract the upload bundle", "board.upload.extract"))
-		result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DryRun", "dry run prepared the upload bundle without mutating the target", "board.upload.verify"))
+		result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "DryRun", "dry run did not materialize the workspace on the target", "board.upload.extract"))
+		result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DryRun", "dry run verified local boarding inputs without mutating the target", "board.upload.verify"))
+		result.Conditions = append(result.Conditions, conditionTrue("KernelReady", "DryRun", "dry run did not execute kernel recovery hooks", "board.kernel"))
 		return result
 	}
 	accessResult, _ := runLifecycleHook("board.access", substrateSpec.Access, opts.WorkspaceRoot, emitter)
@@ -485,17 +483,16 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", "DigestMissing", err.Error(), "board.upload.verify"))
 		return result
 	}
-	result.Upload.ObservedDigest = observedDigest
-	if observedDigest != prepared.Manifest.ArchiveSHA256 {
-		result.Upload.Status = "blocked"
-		result.Upload.Reason = "DigestMismatch"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", "DigestMismatch", fmt.Sprintf("observed digest %s did not match local digest %s", observedDigest, prepared.Manifest.ArchiveSHA256), "board.upload.verify"))
-		return result
-	}
+	result.Upload.Digest = observedDigest
 	result.Upload.Status = "ready"
 	result.Upload.Reason = "TreeVerified"
-	result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "TreeVerified", "verify hook observed the expected upload digest after checking the extracted tree", "board.upload.verify"))
-	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "UploadVerified", "workspace upload is extracted and verified", "board.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "TreeVerified", "verify hook proved the boarded workspace tree and printed its digest", "board.upload.verify"))
+	result.Conditions = append(result.Conditions, conditionTrue("UploadReady", "UploadVerified", "workspace upload is extracted and verified", "board.upload"))
+	if !runKernelHooks(&result, substrateSpec.Kernel, opts.WorkspaceRoot, emitter) {
+		return result
+	}
+	result.Conditions = append(result.Conditions, conditionTrue("KernelReady", "KernelBootstrapped", "Nomad is running with OpenBao integration inputs available", "board.kernel"))
+	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "KernelBootstrapped", "Nomad can run component-owned recovery jobs", "board.kernel"))
 	result.ReadyToFly = "yes"
 	return result
 }
@@ -504,95 +501,82 @@ func hookPending(hook lifecycleHookSpec) hookResult {
 	return hookResult{Argv: hook.Argv, Status: "pending", Reason: "NotStarted"}
 }
 
-type preparedUpload struct {
-	BundlePath   string
-	ManifestPath string
-	DigestPath   string
-	Manifest     uploadbundle.Manifest
+func kernelPending(kernel specdoc.Kernel) kernelResult {
+	return kernelResult{
+		OpenBaoPrepare: hookPending(kernel.OpenBaoPrepare),
+		Nomad:          hookPending(kernel.Nomad),
+		Verify:         hookPending(kernel.Verify),
+		Status:         "pending",
+		Reason:         "NotStarted",
+	}
 }
 
-func prepareUpload(workspaceRoot string, upload specdoc.Upload) (preparedUpload, error) {
-	paths, err := resolveUploadPaths(workspaceRoot, upload)
-	if err != nil {
-		return preparedUpload{}, err
+func runKernelHooks(result *boardResult, kernel specdoc.Kernel, workspaceRoot string, emitter eventWriter) bool {
+	result.Kernel.Status = "running"
+	result.Kernel.Reason = "KernelRecoveryStarted"
+	steps := []struct {
+		name      string
+		resource  string
+		hook      lifecycleHookSpec
+		assign    func(hookResult)
+		condition string
+		message   string
+	}{
+		{
+			name:      "board.kernel.openbao_prepare",
+			resource:  "board.kernel.openbao_prepare",
+			hook:      kernel.OpenBaoPrepare,
+			assign:    func(h hookResult) { result.Kernel.OpenBaoPrepare = h },
+			condition: "OpenBaoRuntimePrepared",
+			message:   "OpenBao runtime and CA are prepared before Nomad starts",
+		},
+		{
+			name:      "board.kernel.nomad",
+			resource:  "board.kernel.nomad",
+			hook:      kernel.Nomad,
+			assign:    func(h hookResult) { result.Kernel.Nomad = h },
+			condition: "NomadKernelReady",
+			message:   "Nomad agent is running with OpenBao integration available",
+		},
+		{
+			name:      "board.kernel.verify",
+			resource:  "board.kernel.verify",
+			hook:      kernel.Verify,
+			assign:    func(h hookResult) { result.Kernel.Verify = h },
+			condition: "KernelVerified",
+			message:   "kernel recovery verification passed",
+		},
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.BundlePath), 0o755); err != nil {
-		return preparedUpload{}, fmt.Errorf("create upload bundle directory: %w", err)
+	for _, step := range steps {
+		hookResult, _ := runLifecycleHook(step.name, step.hook, workspaceRoot, emitter)
+		step.assign(hookResult)
+		if hookResult.Status != "ready" {
+			result.Kernel.Status = "blocked"
+			result.Kernel.Reason = hookResult.Reason
+			result.Conditions = append(result.Conditions, conditionFalse(step.condition, hookResult.Reason, "kernel hook failed", step.resource))
+			return false
+		}
+		result.Conditions = append(result.Conditions, conditionTrue(step.condition, "HookSucceeded", step.message, step.resource))
 	}
-	tmpPath := paths.BundlePath + ".tmp." + fmt.Sprint(os.Getpid())
-	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return preparedUpload{}, fmt.Errorf("create upload bundle: %w", err)
-	}
-	manifest, buildErr := uploadbundle.BuildWorkspaceTarGzip(workspaceRoot, tmp)
-	closeErr := tmp.Close()
-	if buildErr != nil {
-		_ = os.Remove(tmpPath)
-		return preparedUpload{}, buildErr
-	}
-	if closeErr != nil {
-		_ = os.Remove(tmpPath)
-		return preparedUpload{}, fmt.Errorf("close upload bundle: %w", closeErr)
-	}
-	if err := os.Rename(tmpPath, paths.BundlePath); err != nil {
-		_ = os.Remove(tmpPath)
-		return preparedUpload{}, fmt.Errorf("promote upload bundle: %w", err)
-	}
-	manifestBody, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return preparedUpload{}, fmt.Errorf("encode upload manifest: %w", err)
-	}
-	manifestBody = append(manifestBody, '\n')
-	if err := writeWorkspaceFile(paths.ManifestPath, manifestBody, 0o644); err != nil {
-		return preparedUpload{}, err
-	}
-	if err := writeWorkspaceFile(paths.DigestPath, []byte(manifest.ArchiveSHA256+"\n"), 0o644); err != nil {
-		return preparedUpload{}, err
-	}
-	return preparedUpload{
-		BundlePath:   paths.BundlePath,
-		ManifestPath: paths.ManifestPath,
-		DigestPath:   paths.DigestPath,
-		Manifest:     manifest,
-	}, nil
+	result.Kernel.Status = "ready"
+	result.Kernel.Reason = "KernelBootstrapped"
+	return true
 }
 
-type uploadPaths struct {
-	BundlePath   string
-	ManifestPath string
-	DigestPath   string
-}
-
-func resolveUploadPaths(workspaceRoot string, upload specdoc.Upload) (uploadPaths, error) {
-	bundlePath := defaultIfEmpty(upload.BundlePath, defaultUploadBundlePath)
-	manifestPath := defaultIfEmpty(upload.ManifestPath, defaultUploadManifestPath)
-	digestPath := defaultIfEmpty(upload.DigestPath, defaultUploadDigestPath)
-	resolved := uploadPaths{
-		BundlePath:   filepath.Join(workspaceRoot, filepath.FromSlash(bundlePath)),
-		ManifestPath: filepath.Join(workspaceRoot, filepath.FromSlash(manifestPath)),
-		DigestPath:   filepath.Join(workspaceRoot, filepath.FromSlash(digestPath)),
-	}
-	for label, path := range map[string]string{
-		"bundlePath":   resolved.BundlePath,
-		"manifestPath": resolved.ManifestPath,
-		"digestPath":   resolved.DigestPath,
+func prepareBoardWorkspace(workspaceRoot string) error {
+	for _, rel := range []string{
+		defaultFlyDocumentPath,
+		"bazel-bin",
 	} {
-		inside, err := pathIsInside(workspaceRoot, path)
-		if err != nil {
-			return uploadPaths{}, fmt.Errorf("resolve upload %s: %w", label, err)
-		}
-		if !inside {
-			return uploadPaths{}, fmt.Errorf("upload %s must stay inside the workspace root", label)
+		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
+		if _, err := os.Stat(path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("%s is missing; build the repo before boarding", rel)
+			}
+			return fmt.Errorf("stat %s: %w", rel, err)
 		}
 	}
-	return resolved, nil
-}
-
-func defaultIfEmpty(value string, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
+	return nil
 }
 
 func writeWorkspaceFile(path string, body []byte, mode os.FileMode) error {
@@ -722,12 +706,26 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		ResourceDigest: boardResult.ResourceDigest,
 		UploadDigest:   boardResult.Upload.Digest,
 		Entrypoint:     boardResult.Entrypoint,
+		Nomad:          hookPending(doc.Compiled.FlySpec.Nomad.Run),
 	}
 	result.Conditions = append(result.Conditions, conditionFromBoard(boardResult, opts.DryRun))
 	boardReadyForFly := boardResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(boardResult.Conditions))
-	if boardReadyForFly {
-		result.ReadyToFly = "yes"
+	if !boardReadyForFly {
+		return result
 	}
+	if opts.DryRun {
+		result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "DryRun", "dry run did not submit a Nomad job", "fly.nomad"))
+		result.ReadyToFly = "yes"
+		return result
+	}
+	nomadResult, _ := runLifecycleHook("fly.nomad.run", doc.Compiled.FlySpec.Nomad.Run, opts.WorkspaceRoot, emitter)
+	result.Nomad = nomadResult
+	if nomadResult.Status != "ready" {
+		result.Conditions = append(result.Conditions, conditionFalse("NomadJobReady", nomadResult.Reason, "Nomad job hook failed", "fly.nomad"))
+		return result
+	}
+	result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "HookSucceeded", "Nomad job hook completed", "fly.nomad"))
+	result.ReadyToFly = "yes"
 	return result
 }
 
@@ -750,10 +748,10 @@ func writeFlyDocument(workspaceRoot string, doc specdoc.Document) error {
 
 func conditionFromBoard(result boardResult, dryRun bool) condition {
 	if result.ReadyToFly == "yes" {
-		return conditionTrue("BoardingReady", "ReadyToFly", "workspace upload is extracted and verified on the target", "board")
+		return conditionTrue("BoardingReady", "ReadyToFly", "workspace upload is verified on the target", "board")
 	}
 	if dryRun && !hasFalseCondition(result.Conditions) {
-		return conditionTrue("BoardingReady", "DryRun", "dry run prepared the upload bundle without proving remote boarding", "board")
+		return conditionTrue("BoardingReady", "DryRun", "dry run verified local boarding inputs without proving remote boarding", "board")
 	}
 	return conditionFalse("BoardingReady", "NotReadyToFly", "workspace upload is not present on the target", "board")
 }
@@ -800,11 +798,11 @@ usage:
   guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon] [--dry-run] [--stream]
   guardian fly <config.cue|yaml|json|toml|toon> [--dry-run] [-o yaml|json|toml|toon] [--stream]
 
-board loads a FlyProcedure config document, builds the workspace upload bundle,
-runs the Substrate access and upload lifecycle hooks, and reports whether the
-target repo tree was extracted and verified.
+board loads a FlyProcedure config document, verifies local build artifacts,
+runs the Substrate access, upload, and kernel lifecycle hooks, and reports
+whether the target is ready for Nomad-driven fly.
 
-fly runs the same boarding phase and leaves component runtime behavior to the
-Nomad job files included in the boarded workspace.
+fly runs the same boarding phase and then runs the FlyProcedure Nomad job hook
+from the boarded workspace.
 	`)
 }

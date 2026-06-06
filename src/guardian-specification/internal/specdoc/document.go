@@ -46,11 +46,13 @@ type ResourceSpec map[string]any
 
 type FlyProcedureSpec struct {
 	SubstrateRef ObjectRef `json:"substrateRef,omitempty" yaml:"substrateRef,omitempty" toml:"substrateRef,omitempty" toon:"substrateRef,omitempty"`
+	Nomad        NomadRun  `json:"nomad,omitempty" yaml:"nomad,omitempty" toml:"nomad,omitempty" toon:"nomad,omitempty"`
 }
 
 type SubstrateSpec struct {
 	Access LifecycleHook `json:"access,omitempty" yaml:"access,omitempty" toml:"access,omitempty" toon:"access,omitempty"`
 	Upload Upload        `json:"upload,omitempty" yaml:"upload,omitempty" toml:"upload,omitempty" toon:"upload,omitempty"`
+	Kernel Kernel        `json:"kernel,omitempty" yaml:"kernel,omitempty" toml:"kernel,omitempty" toon:"kernel,omitempty"`
 }
 
 type PublicOriginSpec struct {
@@ -61,13 +63,20 @@ type LifecycleHook struct {
 	Argv []string `json:"argv,omitempty" yaml:"argv,omitempty" toml:"argv,omitempty" toon:"argv,omitempty"`
 }
 
+type NomadRun struct {
+	Run LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
+}
+
+type Kernel struct {
+	OpenBaoPrepare LifecycleHook `json:"openbaoPrepare,omitempty" yaml:"openbaoPrepare,omitempty" toml:"openbaoPrepare,omitempty" toon:"openbaoPrepare,omitempty"`
+	Nomad          LifecycleHook `json:"nomad,omitempty" yaml:"nomad,omitempty" toml:"nomad,omitempty" toon:"nomad,omitempty"`
+	Verify         LifecycleHook `json:"verify,omitempty" yaml:"verify,omitempty" toml:"verify,omitempty" toon:"verify,omitempty"`
+}
+
 type Upload struct {
-	BundlePath   string        `json:"bundlePath,omitempty" yaml:"bundlePath,omitempty" toml:"bundlePath,omitempty" toon:"bundlePath,omitempty"`
-	ManifestPath string        `json:"manifestPath,omitempty" yaml:"manifestPath,omitempty" toml:"manifestPath,omitempty" toon:"manifestPath,omitempty"`
-	DigestPath   string        `json:"digestPath,omitempty" yaml:"digestPath,omitempty" toml:"digestPath,omitempty" toon:"digestPath,omitempty"`
-	Run          LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
-	Extract      LifecycleHook `json:"extract,omitempty" yaml:"extract,omitempty" toml:"extract,omitempty" toon:"extract,omitempty"`
-	Verify       LifecycleHook `json:"verify,omitempty" yaml:"verify,omitempty" toml:"verify,omitempty" toon:"verify,omitempty"`
+	Run     LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
+	Extract LifecycleHook `json:"extract,omitempty" yaml:"extract,omitempty" toml:"extract,omitempty" toon:"extract,omitempty"`
+	Verify  LifecycleHook `json:"verify,omitempty" yaml:"verify,omitempty" toml:"verify,omitempty" toon:"verify,omitempty"`
 }
 
 type CompiledDocument struct {
@@ -189,19 +198,13 @@ func validateResourceSpec(resource Resource) error {
 		if err != nil {
 			return err
 		}
-		return requireKindRef("spec.substrateRef", spec.SubstrateRef, APISubstrate, KindSubstrate)
+		if err := requireKindRef("spec.substrateRef", spec.SubstrateRef, APISubstrate, KindSubstrate); err != nil {
+			return err
+		}
+		return validateHook("spec.nomad.run", spec.Nomad.Run)
 	case APISubstrate + "/" + KindSubstrate:
 		spec, err := DecodeResourceSpec[SubstrateSpec](resource.Spec)
 		if err != nil {
-			return err
-		}
-		if err := validateRepoPath("spec.upload.bundlePath", spec.Upload.BundlePath); err != nil {
-			return err
-		}
-		if err := validateRepoPath("spec.upload.manifestPath", spec.Upload.ManifestPath); err != nil {
-			return err
-		}
-		if err := validateRepoPath("spec.upload.digestPath", spec.Upload.DigestPath); err != nil {
 			return err
 		}
 		if err := validateHook("spec.access", spec.Access); err != nil {
@@ -213,7 +216,16 @@ func validateResourceSpec(resource Resource) error {
 		if err := validateHook("spec.upload.extract", spec.Upload.Extract); err != nil {
 			return err
 		}
-		return validateHook("spec.upload.verify", spec.Upload.Verify)
+		if err := validateHook("spec.upload.verify", spec.Upload.Verify); err != nil {
+			return err
+		}
+		if err := validateHook("spec.kernel.openbaoPrepare", spec.Kernel.OpenBaoPrepare); err != nil {
+			return err
+		}
+		if err := validateHook("spec.kernel.nomad", spec.Kernel.Nomad); err != nil {
+			return err
+		}
+		return validateHook("spec.kernel.verify", spec.Kernel.Verify)
 	case APINetworking + "/" + KindPublicOrigin:
 		spec, err := DecodeResourceSpec[PublicOriginSpec](resource.Spec)
 		if err != nil {
@@ -308,22 +320,6 @@ func validateHook(name string, hook LifecycleHook) error {
 	for i, arg := range hook.Argv {
 		if strings.TrimSpace(arg) == "" {
 			return fmt.Errorf("%s.argv[%d] must not be empty", name, i)
-		}
-	}
-	return nil
-}
-
-func validateRepoPath(field string, value string) error {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	if strings.HasPrefix(value, "/") {
-		return fmt.Errorf("%s must be relative to the workspace root", field)
-	}
-	for _, part := range strings.Split(value, "/") {
-		if part == ".." {
-			return fmt.Errorf("%s must not contain '..'", field)
 		}
 	}
 	return nil

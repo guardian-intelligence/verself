@@ -40,10 +40,10 @@ Place every new concept at the narrowest layer that can validate and use it.
 
 | Concept | Location | Example |
 | --- | --- | --- |
-| Graph envelope, entrypoint, upload hooks, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
+| Graph envelope, entrypoint, upload hooks, kernel hooks, Nomad run hook, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
 | Static configuration for one deployable component | Component CRD beside the owner | `OpenBaoCluster`, `HAProxyGateway`, `ObjectStorageService` |
 | Runtime behavior and convergence steps | Component-owned Nomad job and owner-local binary | `task "recover"` prestart logic |
-| Provider root authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
+| Provider authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
 | Observed outcomes and forensic evidence | Command responses, Nomad, component reports, health endpoints, telemetry | allocation logs, `/run/verself/recovery/openbao/report.json`, `/recoveryz` |
 
 The base spec may add a field only when the field has portable,
@@ -118,13 +118,12 @@ identifiers, origins, and substrate hooks. The site name is an operator label.
 The base spec owns:
 
 - `Document`: `entrypoint` plus `resources`;
-- `FlyProcedure`: the root procedure that references one `Substrate`;
-- `Substrate`: access and upload lifecycle hook commands;
+- `FlyProcedure`: the root procedure that references one `Substrate` and one
+  Nomad run hook;
+- `Substrate`: access, upload, and fixed executor lifecycle hook commands;
 - `PublicOrigin`: shared externally visible URL facts;
 - CLI response keys such as `ready_to_fly`, upload digests, hook status, and
-  conditions;
-- common condition names that cross component boundaries, currently including
-  `RootTrustMaterialAvailable`.
+  conditions.
 
 Adding a base resource requires evidence that multiple unrelated components
 need the same fact and would otherwise duplicate incompatible schemas. A
@@ -207,7 +206,7 @@ repo. The job file may include lifecycle tasks that:
 - restore or initialize state;
 - reconcile static configuration;
 - emit component health evidence;
-- block loudly with stable conditions when root trust material or provider
+- block loudly with stable conditions when operator authority or provider
   authority is missing.
 
 The component job is the runtime boundary. Guardian keeps the graph available;
@@ -217,11 +216,10 @@ Use `prestart` lifecycle tasks for idempotent recovery work that must complete
 before the main task starts. Use a long-running task only when the component
 needs continuous reconciliation after startup.
 
-Nomad agent bootstrap is host runtime machinery for the current alpha slice.
-The pinned Nomad runtime and `nomad-recover` binary are shipped in the boarded
-repo and use component-owned defaults. Add a Nomad component CRD only when
-there is static Nomad configuration that cannot live in the owner-local binary
-or job file defaults.
+Nomad agent recovery is kernel machinery for the current alpha slice. The
+pinned Nomad runtime and `nomad-recover` binary are shipped in the boarded repo
+and use component-owned defaults. Add a Nomad component CRD when static Nomad
+configuration no longer fits in the owner-local binary or job file defaults.
 
 ## Evidence
 
@@ -243,8 +241,8 @@ public identifiers, provider account IDs, object names, and operator recipient
 identities. They do not contain root credentials, provider token values, unseal
 shares, private keys, or runtime DEKs.
 
-Components that need external authority report a blocker such as
-`RootTrustMaterialAvailable=False` and wait for a component-owned operator path.
+Components that need external authority report a component-specific blocker and
+wait for a component-owned operator path.
 
 ## Scope Test
 

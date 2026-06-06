@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/verself/guardian-specification/cli/cmd/guardian",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/guardian-specification/cli/internal/uploadbundle",
         "//src/guardian-specification/internal/formatio",
         "//src/guardian-specification/internal/specdoc",
         "@org_cuelang_go//cue",
@@ -26,7 +25,6 @@ go_test(
     srcs = ["main_test.go"],
     embed = [":guardian_lib"],
     deps = [
-        "//src/guardian-specification/cli/internal/uploadbundle",
         "@com_github_burntsushi_toml//:toml",
         "@com_github_toon_format_toon_go//:toon-go",
         "@in_gopkg_yaml_v3//:yaml_v3",

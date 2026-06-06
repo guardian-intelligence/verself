@@ -43,7 +43,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.dataDir, "data-dir", "/var/lib/nomad", "Nomad data directory.")
 	fs.StringVar(&cfg.datacenter, "datacenter", "iad1", "Nomad datacenter.")
 	fs.StringVar(&cfg.address, "address", "http://127.0.0.1:4646", "Nomad HTTP address to verify.")
-	fs.StringVar(&cfg.vaultCAFile, "vault-ca-file", "/etc/verself/openbao/ca.pem", "OpenBao CA file. Vault integration is enabled only when this file exists.")
+	fs.StringVar(&cfg.vaultCAFile, "vault-ca-file", "/etc/verself/openbao/ca.pem", "OpenBao CA file required for Vault-backed Nomad jobs.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -95,8 +95,11 @@ func (cfg config) validate() error {
 	if filepath.IsAbs(cfg.runtimeArtifact) {
 		return errors.New("--runtime-artifact must be repo-relative")
 	}
-	if !filepath.IsAbs(cfg.repoRoot) || !filepath.IsAbs(cfg.installRoot) || !filepath.IsAbs(cfg.configPath) || !filepath.IsAbs(cfg.servicePath) || !filepath.IsAbs(cfg.dataDir) {
-		return errors.New("--repo-root, --install-root, --config, --service, and --data-dir must be absolute")
+	if !filepath.IsAbs(cfg.repoRoot) || !filepath.IsAbs(cfg.installRoot) || !filepath.IsAbs(cfg.configPath) || !filepath.IsAbs(cfg.servicePath) || !filepath.IsAbs(cfg.dataDir) || !filepath.IsAbs(cfg.vaultCAFile) {
+		return errors.New("--repo-root, --install-root, --config, --service, --data-dir, and --vault-ca-file must be absolute")
+	}
+	if !regularFile(cfg.vaultCAFile) {
+		return fmt.Errorf("--vault-ca-file %s must exist before Nomad recovery; run OpenBao prepare first", cfg.vaultCAFile)
 	}
 	return nil
 }
@@ -216,9 +219,7 @@ func writeConfig(cfg config) (bool, error) {
 	if err := os.MkdirAll(cfg.dataDir, 0o755); err != nil {
 		return false, fmt.Errorf("create data dir: %w", err)
 	}
-	vault := ""
-	if regularFile(cfg.vaultCAFile) {
-		vault = fmt.Sprintf(`
+	vault := fmt.Sprintf(`
 vault {
   enabled               = true
   address               = "https://127.0.0.1:8200"
@@ -231,7 +232,6 @@ vault {
   }
 }
 `, cfg.vaultCAFile)
-	}
 	body := fmt.Sprintf(`data_dir  = %q
 log_level = "INFO"
 datacenter = %q

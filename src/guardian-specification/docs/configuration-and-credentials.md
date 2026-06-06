@@ -41,7 +41,7 @@ Offsite encrypted backups contain state that should survive the host:
 - component database snapshots;
 - component-specific restore metadata.
 
-External root trust material stays outside the host:
+Operator recovery authority stays outside the host:
 
 - Shamir unseal shares;
 - PGP private keys held by operators;
@@ -56,22 +56,21 @@ Secret values MUST NOT be embedded directly in committed resource graphs.
 Secret values MUST NOT be passed through argv, environment variables, command
 responses, telemetry, or durable host files.
 
-Recovery binaries MAY request root trust material through an ephemeral operator
-path. The request must bind the operation to verifiable facts: target identity,
-repo upload digest, recovery binary digest, snapshot digest, requested action,
-and recipient identities.
+Recovery binaries MAY request operator-held authority through an ephemeral
+operator path. The request must bind the operation to verifiable facts: target
+identity, repo upload digest, recovery binary digest, snapshot digest, requested
+action, and recipient identities.
 
 Implementations emit fingerprints, stable identifiers, and conditions. Command
 results never include secret values.
 
 ## Provider Authority
 
-Provider root authority is a component concern. A Cloudflare component may
+Provider authority is a component concern. A Cloudflare component may
 declare that Cloudflare account authority is required, but the base Guardian
 schema does not define a file path or secret projection for the token.
 
 During normal recovery, provider authority should come from restored and
 unsealed OpenBao state. During from-zero recovery without a usable snapshot, the
-component reports `RootTrustMaterialAvailable=False` with
-`ProviderRootCredentialRequired` until an operator imports or rotates the
-provider credential through a component-owned path.
+component reports its own import blocker until an operator imports or rotates
+the provider credential through a component-owned path.

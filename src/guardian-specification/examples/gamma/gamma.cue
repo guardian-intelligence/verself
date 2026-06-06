@@ -4,8 +4,6 @@ import guardian "guardianintelligence.org/guardian-specification/cue/guardian/v1
 
 guardian.#Document
 
-let uploadBundlePath = ".guardian/board/upload.tar.gz"
-let uploadDigestPath = ".guardian/board/upload.sha256"
 let openbaoOperatorAPublicKeyBase64 = "mDMEaiRhIxYJKwYBBAHaRw8BAQdA8GOif2dDXBWOBg/GHP6LO8LwNw2MfZx5W/oI0Z/gtYG0VUdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYSA8b3BlcmF0b3ItYS5nYW1tYS1vcGVuYmFvLTIwMjYwNjA2QGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6ImQQTFgoAQRYhBGNW1vGxjQtSegmSQ20xt8fxFYl3BQJqJGEjAhsBBQkB4TOABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEG0xt8fxFYl35VUBAOixZYI/dNDzn9VyzHO7bFN0GNArLEcLq6BFEGQ7IjXaAQD/gDiRo3hCwkwZFd8xDhcwmjAueFbz/EE+7nUZBRHwArg4BGokYSMSCisGAQQBl1UBBQEBB0DLYp659TibCfBxFLfSkIhF/xXEQ7W1wp598YBbYSkEJwMBCAeIfgQYFgoAJhYhBGNW1vGxjQtSegmSQ20xt8fxFYl3BQJqJGEjAhsMBQkB4TOAAAoJEG0xt8fxFYl36KkBAPPHsGHCl7iMKj1mv6pOiq3IpmUHiKQuPcxaQJosOywhAP0SClTwfkanxQCoqRQ25xwDgXl0T5G+CTAFTaa4prXVCQ=="
 let openbaoOperatorBPublicKeyBase64 = "mDMEaiRhIxYJKwYBBAHaRw8BAQdAjfu3dNTLPT+QgJhV7iGb7JDb3+YeefJudUIQJtjo6Ya0VUdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYiA8b3BlcmF0b3ItYi5nYW1tYS1vcGVuYmFvLTIwMjYwNjA2QGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6ImQQTFgoAQRYhBGz35jGr25/6zSNxaqcfyZRqEfguBQJqJGEjAhsBBQkB4TOABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEKcfyZRqEfguSNgA/R+3WOoRCTGMsd9Xa1OoB020KL2aacC2YIKuaxSzpoj0AQCUWTuBBFajVkoVNoiVuF6Xqamil4n35/SJkCI9axIhDbg4BGokYSMSCisGAQQBl1UBBQEBB0D1I/QMcqzJsawZTvYQi7dXDaDekRHSEoOUNn+Ma4kcKQMBCAeIfgQYFgoAJhYhBGz35jGr25/6zSNxaqcfyZRqEfguBQJqJGEjAhsMBQkB4TOAAAoJEKcfyZRqEfguPKYBAPOJPFkx4dgU4ikm2G5cHp3dK8zUVkvVnkmWwl2mkXGqAQCj2InQlPCc3b7Vo/N3nTv3y77NhQ+nTvgbomBw4xddDQ=="
 let openbaoOperatorCPublicKeyBase64 = "mDMEaiRhIxYJKwYBBAHaRw8BAQdAUMZkn5+mJ5B/rStGFsRXl4mO4JnWvMbbAvFv+Vf1K160VUdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYyA8b3BlcmF0b3ItYy5nYW1tYS1vcGVuYmFvLTIwMjYwNjA2QGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6ImQQTFgoAQRYhBA8rlTrW1GIuHSCz4J4Q3PJiM5yyBQJqJGEjAhsBBQkB4TOABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEJ4Q3PJiM5yym6ABAN779R1z6W9XrvGj4QOro0F3ip1FgNbs4mzJmY+dhlNSAQCkzOWEj7Gk1XjZOoy08vuDobAZKnJcDF2DzcG1VtThCbg4BGokYSMSCisGAQQBl1UBBQEBB0B2JyTNSo6Q1ib5/5gZWwxE14reUtgPPW7RuMCQUDwyKwMBCAeIfgQYFgoAJhYhBA8rlTrW1GIuHSCz4J4Q3PJiM5yyBQJqJGEjAhsMBQkB4TOAAAoJEJ4Q3PJiM5yyqMYBAN3ZvGO53CfMZottjtIiKmfJnX3coPpE9oty2zu2dBBaAQCvhc/5+WiIxyeaTZFvoQ2F3PIALUXUXM16Q8FmhRRqBQ=="
@@ -27,6 +25,34 @@ resources: [
 				kind:       "Substrate"
 				name:       "gamma-primary"
 			}
+			nomad: run: argv: [
+				"sh",
+				"-c",
+				"""
+					set -eu
+					ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
+					set -eu
+					nomad=/opt/verself/profile/bin/nomad
+					job=/home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
+					report=/run/verself/recovery/openbao/report.json
+					NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job run -detach "$job"
+					for _ in $(seq 1 240); do
+						NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job status openbao
+						if sudo test -f "$report"; then
+							sudo cat "$report"
+							if sudo python3 -c 'import json, sys; doc=json.load(open(sys.argv[1], encoding="utf-8")); conditions=doc.get("conditions", []); sys.exit(0 if any(c.get("type") == "OpenBaoRecoveryComplete" and c.get("status") == "True" for c in conditions) else 1)' "$report"; then
+								exit 0
+							fi
+							if sudo python3 -c 'import json, sys; doc=json.load(open(sys.argv[1], encoding="utf-8")); conditions=doc.get("conditions", []); sys.exit(0 if any(c.get("type") == "OpenBaoRecoveryComplete" and c.get("status") == "False" for c in conditions) else 1)' "$report"; then
+								exit 1
+							fi
+						fi
+						sleep 1
+					done
+					exit 1
+					REMOTE
+					""",
+			]
 		}
 	},
 	{
@@ -45,17 +71,18 @@ resources: [
 				"true",
 			]
 			upload: {
-				bundlePath:   uploadBundlePath
-				manifestPath: ".guardian/board/upload-manifest.json"
-				digestPath:   uploadDigestPath
 				run: argv: [
 					"sh",
 					"-c",
 					"""
 						set -eu
-						remote_dir=/home/ubuntu/.local/state/guardian/uploads/current
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 "mkdir -p $remote_dir"
-						rsync -a --timeout=60 -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10" -- "\(uploadBundlePath)" "ubuntu@206.223.228.87:$remote_dir/upload.tar.gz"
+						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
+						remote=ubuntu@206.223.228.87
+						remote_root=/home/ubuntu/.local/state/guardian/repo
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
+						rsync -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
+						rsync -a --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/next/workspace/"
+						rsync -aL --delete --timeout=60 -e "$ssh_opts" bazel-bin/ "$remote:$remote_root/next/bazel-bin/"
 						""",
 				]
 				extract: argv: [
@@ -63,31 +90,16 @@ resources: [
 					"-c",
 					"""
 						set -eu
-						digest_dir=$(tr ':' '-' < "\(uploadDigestPath)")
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 "sh -s -- '$digest_dir'" <<'REMOTE'
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
 						set -eu
-						digest_dir=$1
 						repo_root=/home/ubuntu/.local/state/guardian/repo
-						release="$repo_root/releases/$digest_dir"
-						tmp="$repo_root/tmp/$digest_dir.$$"
-						archive=/home/ubuntu/.local/state/guardian/uploads/current/upload.tar.gz
-						mkdir -p "$repo_root/releases" "$repo_root/tmp"
-						trap 'rm -rf "$tmp"' EXIT
-						if [ -d "$release" ] && (cd "$release" && sha256sum -c guardian-upload-sha256sums.txt >/dev/null); then
-							:
-						else
-							rm -rf "$tmp"
-							mkdir -p "$tmp"
-							tar -xzf "$archive" -C "$tmp"
-							(cd "$tmp" && sha256sum -c guardian-upload-sha256sums.txt >/dev/null)
-							rm -rf "$release"
-							mv "$tmp" "$release"
+						test -f "$repo_root/next/workspace/.guardian/fly/document.json"
+						test -d "$repo_root/next/bazel-bin"
+						if [ -e "$repo_root/current" ] || [ -L "$repo_root/current" ]; then
+							rm -rf "$repo_root/previous"
+							mv -Tf "$repo_root/current" "$repo_root/previous"
 						fi
-						ln -sfn "$release" "$repo_root/current.next"
-						if [ -d "$repo_root/current" ] && [ ! -L "$repo_root/current" ]; then
-							rm -rf "$repo_root/current"
-						fi
-						mv -Tf "$repo_root/current.next" "$repo_root/current"
+						mv -Tf "$repo_root/next" "$repo_root/current"
 						REMOTE
 						""",
 				]
@@ -96,7 +108,54 @@ resources: [
 					"-c",
 					"""
 						set -eu
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'cd /home/ubuntu/.local/state/guardian/repo/current && sha256sum -c guardian-upload-sha256sums.txt >/dev/null && sha256sum /home/ubuntu/.local/state/guardian/uploads/current/upload.tar.gz'
+						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
+						remote=ubuntu@206.223.228.87
+						remote_root=/home/ubuntu/.local/state/guardian/repo
+						workspace_delta="$(rsync -a --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
+						fly_delta="$(rsync -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
+						bazel_delta="$(rsync -aL --dry-run --checksum --itemize-changes --delete --timeout=60 -e "$ssh_opts" bazel-bin/ "$remote:$remote_root/current/bazel-bin/")"
+						test -z "$workspace_delta"
+						test -z "$fly_delta"
+						test -z "$bazel_delta"
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'cd /home/ubuntu/.local/state/guardian/repo/current && find workspace bazel-bin -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum'
+						""",
+				]
+			}
+			kernel: {
+				openbaoPrepare: argv: [
+					"ssh",
+					"-T",
+					"-o", "BatchMode=yes",
+					"-o", "StrictHostKeyChecking=yes",
+					"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+					"-o", "ConnectTimeout=10",
+					"ubuntu@206.223.228.87",
+					"sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover prepare --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao",
+				]
+				nomad: argv: [
+					"ssh",
+					"-T",
+					"-o", "BatchMode=yes",
+					"-o", "StrictHostKeyChecking=yes",
+					"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+					"-o", "ConnectTimeout=10",
+					"ubuntu@206.223.228.87",
+					"sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --address=http://127.0.0.1:4646",
+				]
+				verify: argv: [
+					"sh",
+					"-c",
+					"""
+							set -eu
+							ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
+							set -eu
+							nomad=/opt/verself/profile/bin/nomad
+							sudo test -f /etc/verself/openbao/ca.pem
+							sudo grep -q '^vault {' /etc/nomad/nomad.hcl
+							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
+							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl
+							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/postgresql/nomad.hcl
+							REMOTE
 						""",
 				]
 			}
@@ -132,7 +191,6 @@ resources: [
 			configPath:       "/etc/openbao/openbao.hcl"
 			reportPath:       "/run/verself/recovery/openbao/report.json"
 			initMaterialPath: "/run/verself/recovery/openbao/init-material.json"
-			freshInit: wipeDataDirBeforeStart: true
 			seal: shamir: {
 				keyShares:    3
 				keyThreshold: 2
@@ -209,6 +267,20 @@ resources: [
 							}
 							path "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" {
 							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
+					{
+						name: "postgresql-runtime"
+						hcl: """
+							path "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/postgresql.pgbackrest.cipher_pass" {
+							  capabilities = ["read"]
 							}
 							"""
 					},
@@ -387,6 +459,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["cloudflare-integration-recovery-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "postgresql-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "postgresql"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["postgresql-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -627,7 +716,7 @@ resources: [
 				address:   "http://127.0.0.1:4646"
 				namespace: "default"
 			}
-			otel: exporterEndpoint: "http://127.0.0.1:4317"
+			otel: exporterEndpoint:         "http://127.0.0.1:4317"
 			fleet: snapshotIntervalSeconds: 30
 			clickhouse: {
 				address:    "127.0.0.1:9440"
@@ -680,13 +769,36 @@ resources: [
 		kind:       "PostgreSQLCluster"
 		metadata: name: "postgresql"
 		spec: {
-			runtimeArtifact:              "bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar"
-			runtimeRoot:                  "/var/lib/postgresql/runtime"
-			dataDir:                      "/var/lib/postgresql/16/verself"
-			configDir:                    "/etc/postgresql/verself"
-			logDir:                       "/var/log/postgresql"
-			socketDir:                    "/var/run/postgresql"
-			reportPath:                   "/run/verself/recovery/postgresql/report.json"
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar"
+			runtimeRoot:     "/var/lib/postgresql/runtime"
+			dataDir:         "/var/lib/postgresql/16/verself"
+			configDir:       "/etc/postgresql/verself"
+			logDir:          "/var/log/postgresql"
+			socketDir:       "/var/run/postgresql"
+			reportPath:      "/run/verself/recovery/postgresql/report.json"
+			backup: {
+				stanza:                        "gamma"
+				configPath:                    "/run/verself/recovery/postgresql/pgbackrest.conf"
+				spoolDir:                      "/var/spool/pgbackrest"
+				logDir:                        "/var/log/pgbackrest"
+				archiveTimeout:                "60s"
+				processMax:                    2
+				retentionFull:                 2
+				destructiveRestoreAllowed:     false
+				recoveryCredentialOpenBaoPath: "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery"
+				cipherPassRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "postgresql.pgbackrest.cipher_pass"
+				}
+				repository: {
+					type:     "s3"
+					endpoint: "c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com"
+					region:   "auto"
+					bucket:   "verself-recovery"
+					path:     "/gamma/postgresql"
+				}
+			}
 			listenAddress:                "127.0.0.1"
 			port:                         5432
 			maxConnections:               300
@@ -1310,8 +1422,9 @@ resources: [
 				]
 			}
 			objectStorage: {
-				bucket:        "verself-deployment-artifacts"
-				childTokenTTL: "168h"
+				bucket:         "verself-deployment-artifacts"
+				recoveryBucket: "verself-recovery"
+				childTokenTTL:  "168h"
 				runtimeSecrets: {
 					adminAccessKeyID:     "object-storage-service.r2.admin_access_key_id"
 					adminSecretAccessKey: "object-storage-service.r2.admin_secret_access_key"
@@ -1583,6 +1696,20 @@ resources: [
 			generate: {
 				bytes:    32
 				encoding: "hex"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "postgresql.pgbackrest.cipher_pass"
+		spec: {
+			path:   "kv-runtime/data/secret/org/postgresql.pgbackrest.cipher_pass"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
 			}
 		}
 	},

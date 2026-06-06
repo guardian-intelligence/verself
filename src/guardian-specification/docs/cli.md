@@ -34,26 +34,23 @@ development tooling, not in the runtime command surface.
 ## Boarding
 
 `board` runs through substrate readiness and stops. It resolves the entrypoint
-and referenced `Substrate`, computes the upload bundle digest, runs the access
-and upload lifecycle hooks, materializes the repo tree on the target, and
-reports upload status. Boarding writes `.guardian/fly/document.json` before
-packaging so component-owned Nomad jobs can read the graph from the boarded
-workspace.
+and referenced `Substrate`, verifies local build artifacts exist, runs the
+access and upload lifecycle hooks, materializes the repo tree on the target,
+prepares OpenBao integration inputs, and starts the Nomad executor. Boarding
+writes `.guardian/fly/document.json` before upload hooks run so component-owned
+Nomad jobs can read the graph from the boarded workspace.
 
 `ready_to_fly: yes` means the access hook completed, the upload was extracted,
-and the verify hook observed the same digest Guardian computed locally after
-checking the extracted tree. Missing build artifacts, failed hooks, or digest
-mismatches produce `ready_to_fly: no` with stable condition reasons.
+the verify hook proved the boarded tree and printed a sha256 digest, and Nomad
+can run component-owned recovery jobs. Missing build artifacts, failed hooks,
+missing verify digests, or kernel blockers produce `ready_to_fly: no` with
+stable condition reasons.
 
 ## Fly
 
 `fly` starts with the same boarding phase. `fly --dry-run` validates the graph
-and prepares the upload bundle without mutating the target.
+and verifies local boarding inputs without mutating the target.
 
-Live `fly` boards the target and makes the graph available to component-owned
-Nomad jobs. Components own executor startup, provider reconciliation, backup
-restore, health waiting, and other runtime behavior through their job files and
-owner-local binaries.
-
-The standard condition for secret-zero and external authority blockers is
-`RootTrustMaterialAvailable`.
+Live `fly` boards the target and runs the configured Nomad job hook. Components
+own provider reconciliation, backup restore, health waiting, and other runtime
+behavior through their job files and owner-local binaries.
