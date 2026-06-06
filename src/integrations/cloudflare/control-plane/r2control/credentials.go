@@ -26,6 +26,7 @@ type ParentCredentialConfig struct {
 	OpenBaoPath       string
 	OpenBaoCACertFile string
 	OpenBaoTokenFile  string
+	OpenBaoToken      string
 	Timeout           time.Duration
 }
 
@@ -202,6 +203,9 @@ func resolveParentCredentials(ctx context.Context, cfg ParentCredentialConfig, c
 }
 
 func LoadOpenBaoToken(cfg ParentCredentialConfig) (string, error) {
+	if token := strings.TrimSpace(cfg.OpenBaoToken); token != "" {
+		return token, nil
+	}
 	if cfg.OpenBaoTokenFile != "" {
 		body, err := os.ReadFile(cfg.OpenBaoTokenFile)
 		if err != nil {

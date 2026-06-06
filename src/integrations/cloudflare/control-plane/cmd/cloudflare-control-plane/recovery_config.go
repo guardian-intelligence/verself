@@ -40,13 +40,14 @@ type CloudflareControlPlane struct {
 }
 
 type CloudflareControlPlaneSpec struct {
-	Site          string          `yaml:"site" json:"site"`
-	AccountID     string          `yaml:"accountID" json:"accountID"`
-	TargetIPv4    string          `yaml:"targetIPv4" json:"targetIPv4"`
-	OpenBao       OpenBao         `yaml:"openBao" json:"openBao"`
-	DNS           CloudflareDNS   `yaml:"dns" json:"dns"`
-	TLS           CloudflareTLS   `yaml:"tls" json:"tls"`
-	ObjectStorage R2ObjectStorage `yaml:"objectStorage" json:"objectStorage"`
+	Site                    string          `yaml:"site" json:"site"`
+	AccountID               string          `yaml:"accountID" json:"accountID"`
+	AccountAdminOpenBaoPath string          `yaml:"accountAdminOpenBaoPath" json:"accountAdminOpenBaoPath"`
+	TargetIPv4              string          `yaml:"targetIPv4" json:"targetIPv4"`
+	OpenBao                 OpenBao         `yaml:"openBao" json:"openBao"`
+	DNS                     CloudflareDNS   `yaml:"dns" json:"dns"`
+	TLS                     CloudflareTLS   `yaml:"tls" json:"tls"`
+	ObjectStorage           R2ObjectStorage `yaml:"objectStorage" json:"objectStorage"`
 }
 
 type OpenBao struct {
@@ -136,6 +137,13 @@ func (d CloudflareControlPlane) validate() error {
 	}
 	if !accountIDRE.MatchString(strings.TrimSpace(d.Spec.AccountID)) {
 		return fmt.Errorf("spec.accountID must be a 32-character lowercase hex Cloudflare account ID")
+	}
+	accountAdminPath := strings.Trim(strings.TrimSpace(d.Spec.AccountAdminOpenBaoPath), "/")
+	if accountAdminPath == "" {
+		return fmt.Errorf("spec.accountAdminOpenBaoPath is required")
+	}
+	if !strings.Contains(accountAdminPath, "/data/") {
+		return fmt.Errorf("spec.accountAdminOpenBaoPath must be a KV v2 data path")
 	}
 	if ip := net.ParseIP(strings.TrimSpace(d.Spec.TargetIPv4)); ip == nil || ip.To4() == nil {
 		return fmt.Errorf("spec.targetIPv4 must be an IPv4 address")

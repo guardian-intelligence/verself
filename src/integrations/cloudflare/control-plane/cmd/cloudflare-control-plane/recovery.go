@@ -35,6 +35,7 @@ func (cfg *config) applyRecoveryConfig() error {
 	cfg.recovery = &doc
 	cfg.site = doc.Spec.Site
 	cfg.accountID = doc.Spec.AccountID
+	cfg.accountAdminOpenBaoPath = strings.Trim(strings.TrimSpace(doc.Spec.AccountAdminOpenBaoPath), "/")
 	cfg.openBaoAddr = doc.Spec.OpenBao.Address
 	cfg.openBaoTokenFile = expandRecoveryPath(doc.Spec.OpenBao.TokenFile)
 	cfg.openBaoCACertFile = expandRecoveryPath(doc.Spec.OpenBao.CACertFile)

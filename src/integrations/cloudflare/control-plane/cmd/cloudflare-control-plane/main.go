@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -49,10 +50,12 @@ type config struct {
 	region                   string
 	accountAdminOpenBaoPath  string
 	accountAdminAPITokenFile string
+	operatorImportStdin      bool
 	openBaoAddr              string
 	openBaoPath              string
 	openBaoCACertFile        string
 	openBaoTokenFile         string
+	openBaoToken             string
 	runtimeOpenBaoAddr       string
 	runtimeOpenBaoCACertFile string
 	runtimeOpenBaoTokenFile  string
@@ -165,6 +168,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
 	fs.StringVar(&cfg.accountAdminOpenBaoPath, "account-admin-openbao-path", accountAdminOpenBaoPathDefault, "Controller OpenBao KV path for the Cloudflare account-admin API token.")
 	fs.StringVar(&cfg.accountAdminAPITokenFile, "account-admin-api-token-file", "", "File containing the Cloudflare account-admin API token for --action=import-account-admin.")
+	fs.BoolVar(&cfg.operatorImportStdin, "operator-import-stdin", false, "Read OpenBao and Cloudflare account-admin tokens from a JSON stdin payload for --action=import-account-admin.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
@@ -472,11 +476,14 @@ func (cfg config) validate() error {
 		if strings.TrimSpace(cfg.openBaoAddr) == "" {
 			return fmt.Errorf("--openbao-addr is required for account-admin import")
 		}
-		if strings.TrimSpace(cfg.openBaoTokenFile) == "" {
-			return fmt.Errorf("--openbao-token-file is required for account-admin import")
+		if cfg.operatorImportStdin {
+			if strings.TrimSpace(cfg.openBaoTokenFile) != "" || strings.TrimSpace(cfg.accountAdminAPITokenFile) != "" {
+				return fmt.Errorf("--operator-import-stdin cannot be combined with --openbao-token-file or --account-admin-api-token-file")
+			}
+			return nil
 		}
-		if strings.TrimSpace(cfg.accountAdminAPITokenFile) == "" {
-			return fmt.Errorf("--account-admin-api-token-file is required for account-admin import")
+		if strings.TrimSpace(cfg.openBaoTokenFile) == "" || strings.TrimSpace(cfg.accountAdminAPITokenFile) == "" {
+			return fmt.Errorf("--openbao-token-file and --account-admin-api-token-file are required for account-admin import unless --operator-import-stdin is used")
 		}
 	}
 	return nil
@@ -523,6 +530,7 @@ func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 		OpenBaoPath:       cfg.openBaoPath,
 		OpenBaoCACertFile: cfg.openBaoCACertFile,
 		OpenBaoTokenFile:  cfg.openBaoTokenFile,
+		OpenBaoToken:      cfg.openBaoToken,
 		Timeout:           cfg.timeout,
 	}
 }
@@ -534,6 +542,7 @@ func (cfg config) runtimeOpenBaoCredentialConfig(path string) r2control.ParentCr
 		OpenBaoPath:       path,
 		OpenBaoCACertFile: firstNonEmpty(cfg.runtimeOpenBaoCACertFile, cfg.openBaoCACertFile),
 		OpenBaoTokenFile:  firstNonEmpty(cfg.runtimeOpenBaoTokenFile, cfg.openBaoTokenFile),
+		OpenBaoToken:      cfg.openBaoToken,
 		Timeout:           cfg.timeout,
 	}
 }
@@ -548,7 +557,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func importAccountAdmin(ctx context.Context, cfg config) error {
-	token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "account-admin API token")
+	token, cfg, err := readAccountAdminImport(os.Stdin, cfg)
 	if err != nil {
 		return err
 	}
@@ -569,6 +578,24 @@ func importAccountAdmin(ctx context.Context, cfg config) error {
 	out.VerifiedWith = "cloudflare-account-admin-import"
 	out.AccountAdminStatus = verified
 	return writeReport(out)
+}
+
+func readAccountAdminImport(stdin io.Reader, cfg config) ([]byte, config, error) {
+	if cfg.operatorImportStdin {
+		material, err := readOperatorImportStdin(stdin)
+		if err != nil {
+			return nil, config{}, err
+		}
+		cfg.openBaoToken = material.OpenBaoToken
+		return []byte(material.CloudflareAccountAdminAPIToken), cfg, nil
+	}
+	token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "account-admin API token")
+	return token, cfg, err
+}
+
+type operatorImportMaterial struct {
+	OpenBaoToken                   string `json:"openBaoToken"`
+	CloudflareAccountAdminAPIToken string `json:"cloudflareAccountAdminAPIToken"`
 }
 
 func readRequiredSecretFile(path, label string) ([]byte, error) {
@@ -601,6 +628,40 @@ func readRequiredSecretFile(path, label string) ([]byte, error) {
 		return nil, fmt.Errorf("%s file %s is empty", label, path)
 	}
 	return body, nil
+}
+
+func readRequiredSecretStdin(stdin io.Reader, label string) ([]byte, error) {
+	if stdin == nil {
+		return nil, fmt.Errorf("%s stdin is required", label)
+	}
+	body, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read %s from stdin: %w", label, err)
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, fmt.Errorf("%s stdin is empty", label)
+	}
+	return body, nil
+}
+
+func readOperatorImportStdin(stdin io.Reader) (operatorImportMaterial, error) {
+	body, err := readRequiredSecretStdin(stdin, "operator import JSON")
+	if err != nil {
+		return operatorImportMaterial{}, err
+	}
+	var material operatorImportMaterial
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&material); err != nil {
+		return operatorImportMaterial{}, fmt.Errorf("decode operator import JSON: %w", err)
+	}
+	material.OpenBaoToken = strings.TrimSpace(material.OpenBaoToken)
+	material.CloudflareAccountAdminAPIToken = strings.TrimSpace(material.CloudflareAccountAdminAPIToken)
+	if material.OpenBaoToken == "" || material.CloudflareAccountAdminAPIToken == "" {
+		return operatorImportMaterial{}, errors.New("operator import JSON requires openBaoToken and cloudflareAccountAdminAPIToken")
+	}
+	return material, nil
 }
 
 func clearBytes(value []byte) {

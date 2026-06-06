@@ -57,6 +57,7 @@ func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
 	cfg.openBaoCACertFile = "/openbao/ca.pem"
 	cfg.openBaoTokenFile = "/run/openbao/token"
+	cfg.openBaoToken = "openbao-token"
 
 	got := cfg.parentCredentialConfig()
 	if got.Source != r2control.ParentCredentialSourceOpenBao {
@@ -64,6 +65,9 @@ func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	}
 	if got.OpenBaoAddr != cfg.openBaoAddr || got.OpenBaoPath != cfg.openBaoPath || got.OpenBaoCACertFile != cfg.openBaoCACertFile || got.OpenBaoTokenFile != cfg.openBaoTokenFile {
 		t.Fatalf("OpenBao config = %+v", got)
+	}
+	if got.OpenBaoToken != "openbao-token" {
+		t.Fatalf("OpenBao token was not carried in memory")
 	}
 }
 
@@ -119,15 +123,32 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 	}
 }
 
-func TestValidateImportAccountAdminRequiresTokenFile(t *testing.T) {
+func TestValidateImportAccountAdminRequiresExactlyOneTokenSource(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.action = "import-account-admin"
 	cfg.openBaoAddr = "https://openbao.internal"
-	cfg.openBaoTokenFile = "/run/openbao/token"
 
 	err := cfg.validate()
-	if err == nil || !strings.Contains(err.Error(), "--account-admin-api-token-file is required") {
+	if err == nil || !strings.Contains(err.Error(), "--openbao-token-file and --account-admin-api-token-file are required") {
 		t.Fatalf("validate error = %v", err)
+	}
+
+	cfg.openBaoTokenFile = "/run/openbao/token"
+	cfg.accountAdminAPITokenFile = "/run/operator/cloudflare-token"
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("file token source should validate: %v", err)
+	}
+
+	cfg.operatorImportStdin = true
+	err = cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--operator-import-stdin cannot be combined") {
+		t.Fatalf("validate error with mixed token sources = %v", err)
+	}
+
+	cfg.openBaoTokenFile = ""
+	cfg.accountAdminAPITokenFile = ""
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("operator import stdin should validate: %v", err)
 	}
 }
 
@@ -173,6 +194,35 @@ func TestReadRequiredSecretFileTrimsSecret(t *testing.T) {
 	defer clearBytes(got)
 	if string(got) != "cloudflare-token" {
 		t.Fatalf("secret = %q", got)
+	}
+}
+
+func TestReadRequiredSecretStdinTrimsSecret(t *testing.T) {
+	got, err := readRequiredSecretStdin(strings.NewReader(" cloudflare-token\n"), "cloudflare token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearBytes(got)
+	if string(got) != "cloudflare-token" {
+		t.Fatalf("secret = %q", got)
+	}
+}
+
+func TestReadOperatorImportStdinRequiresBothTokens(t *testing.T) {
+	material, err := readOperatorImportStdin(strings.NewReader(`{
+  "openBaoToken": " openbao-token ",
+  "cloudflareAccountAdminAPIToken": " cloudflare-token "
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if material.OpenBaoToken != "openbao-token" || material.CloudflareAccountAdminAPIToken != "cloudflare-token" {
+		t.Fatalf("material = %#v", material)
+	}
+
+	_, err = readOperatorImportStdin(strings.NewReader(`{"openBaoToken":"openbao-token"}`))
+	if err == nil || !strings.Contains(err.Error(), "requires openBaoToken and cloudflareAccountAdminAPIToken") {
+		t.Fatalf("missing token error = %v", err)
 	}
 }
 
@@ -272,6 +322,9 @@ func TestApplyRecoveryConfigMapsMinimalCloudflareControlPlane(t *testing.T) {
 	}
 	if cfg.openBaoTokenFile != "/alloc/secrets/vault_token" {
 		t.Fatalf("openbao token file = %q", cfg.openBaoTokenFile)
+	}
+	if cfg.accountAdminOpenBaoPath != "kv-controller/data/integrations/cloudflare/account-admin" {
+		t.Fatalf("account-admin OpenBao path = %q", cfg.accountAdminOpenBaoPath)
 	}
 	if cfg.objectStorageRuntimeSecretNames().AdminAccessKeyName() != "object-storage-service.r2.admin_access_key_id" {
 		t.Fatalf("runtime secret names = %#v", cfg.objectStorageRuntimeSecretNames())
@@ -383,6 +436,7 @@ metadata:
 spec:
   site: gamma
   accountID: 0123456789abcdef0123456789abcdef
+  accountAdminOpenBaoPath: kv-controller/data/integrations/cloudflare/account-admin
   targetIPv4: 203.0.113.10
   openBao:
     address: https://127.0.0.1:8200

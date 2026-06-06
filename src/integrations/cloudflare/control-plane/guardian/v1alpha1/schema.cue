@@ -1,12 +1,13 @@
 package v1alpha1
 
-#NonEmptyString: string & !=""
-#AbsolutePath:   =~"^/[^\\s]*$"
-#DNSName:        =~"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
-#IPv4:           =~"^([0-9]{1,3}\\.){3}[0-9]{1,3}$"
-#HTTPURL:        =~"^https?://[^\\s]+$"
-#Email:          =~"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
-#BucketName:     =~"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+#NonEmptyString:     string & !=""
+#AbsolutePath:       =~"^/[^\\s]*$"
+#DNSName:            =~"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$"
+#IPv4:               =~"^([0-9]{1,3}\\.){3}[0-9]{1,3}$"
+#HTTPURL:            =~"^https?://[^\\s]+$"
+#Email:              =~"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+#BucketName:         =~"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+#OpenBaoKV2DataPath: =~"^[^\\s]+/data/[^\\s]+$"
 
 #ObjectRef: {
 	apiVersion: #NonEmptyString
@@ -23,9 +24,10 @@ package v1alpha1
 	kind:       "CloudflareControlPlane"
 	metadata:   #Metadata
 	spec: {
-		site:       #NonEmptyString
-		accountID:  =~"^[a-f0-9]{32}$"
-		targetIPv4: #IPv4
+		site:                    #NonEmptyString
+		accountID:               =~"^[a-f0-9]{32}$"
+		accountAdminOpenBaoPath: #OpenBaoKV2DataPath
+		targetIPv4:              #IPv4
 		openBao: {
 			address:    #HTTPURL
 			tokenFile:  #NonEmptyString

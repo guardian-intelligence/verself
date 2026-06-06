@@ -304,9 +304,10 @@ resources: [
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"
 		spec: {
-			site:       "gamma"
-			accountID:  "c3eaeffaadf7d4847684d4775c16d598"
-			targetIPv4: "206.223.228.87"
+			site:                    "gamma"
+			accountID:               "c3eaeffaadf7d4847684d4775c16d598"
+			accountAdminOpenBaoPath: "kv-controller/data/integrations/cloudflare/account-admin"
+			targetIPv4:              "206.223.228.87"
 			openBao: {
 				address:    "https://127.0.0.1:8200"
 				tokenFile:  "${NOMAD_SECRETS_DIR}/vault_token"
