@@ -357,6 +357,7 @@ PY
 import json
 import os
 import pathlib
+import time
 
 resource_name = "${var.postgresql_resource_name}"
 doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
@@ -382,6 +383,39 @@ argv = [
     "-D", spec["dataDir"],
     "-c", "config_file=" + spec["configDir"] + "/postgresql.conf",
 ]
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+def wait_for_previous_postmaster(data_dir, socket_dir, port):
+    pid_file = data_dir / "postmaster.pid"
+    deadline = time.monotonic() + 90
+    while pid_file.exists():
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8").splitlines()[0])
+        except Exception as exc:
+            raise SystemExit(f"cannot parse PostgreSQL postmaster pid file {pid_file}: {exc}") from exc
+        if not pid_alive(pid):
+            pid_file.unlink()
+            break
+        if time.monotonic() >= deadline:
+            raise SystemExit(f"previous PostgreSQL postmaster pid {pid} did not exit before restart")
+        time.sleep(0.5)
+    if not pid_file.exists():
+        socket_name = ".s.PGSQL." + str(port)
+        for path in [socket_dir / socket_name, socket_dir / (socket_name + ".lock")]:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+wait_for_previous_postmaster(pathlib.Path(spec["dataDir"]), pathlib.Path(spec["socketDir"]), spec["port"])
 os.execv(str(postgres), argv)
 PY
         ]

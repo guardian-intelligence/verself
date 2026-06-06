@@ -5,22 +5,9 @@ POSTGRESQL_RUNTIME_ROOT = "opt/verself/postgresql"
 POSTGRESQL_MAJOR_VERSION = "16"
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )
 
 genrule(
@@ -76,12 +63,12 @@ alias(
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":postgresql_runtime": "postgresql-runtime",
-    },
     component = "postgresql",
     deploy_phase = "pre_artifact",
     job_id = "postgresql",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":postgresql_runtime": "postgresql-runtime",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
