@@ -132,7 +132,7 @@ func cloudflareProviderClient(cfg config) (*r2control.CloudflareAPIClient, error
 	}
 	token := strings.TrimSpace(string(body))
 	if token == "" {
-		return nil, fmt.Errorf("Cloudflare API token file is empty")
+		return nil, fmt.Errorf("cloudflare API token file is empty")
 	}
 	return r2control.NewCloudflareAPIClient(token, cfg.timeout)
 }

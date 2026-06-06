@@ -60,8 +60,9 @@ package v1alpha1
 			}]
 		}
 		objectStorage: {
-			bucket:        #BucketName
-			childTokenTTL: #NonEmptyString
+			bucket:         #BucketName
+			recoveryBucket: #BucketName
+			childTokenTTL:  #NonEmptyString
 			runtimeSecrets: {
 				adminAccessKeyID:     #NonEmptyString
 				adminSecretAccessKey: #NonEmptyString

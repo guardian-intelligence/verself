@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net"
 	"net/mail"
@@ -94,6 +93,7 @@ type CloudflareTLSCert struct {
 
 type R2ObjectStorage struct {
 	Bucket         string                   `yaml:"bucket" json:"bucket"`
+	RecoveryBucket string                   `yaml:"recoveryBucket" json:"recoveryBucket"`
 	ChildTokenTTL  string                   `yaml:"childTokenTTL" json:"childTokenTTL"`
 	RuntimeSecrets ObjectStorageRuntimeKeys `yaml:"runtimeSecrets" json:"runtimeSecrets"`
 }
@@ -258,6 +258,9 @@ func (s R2ObjectStorage) validate() error {
 	if !bucketRE.MatchString(strings.TrimSpace(s.Bucket)) || strings.Contains(s.Bucket, "..") {
 		return fmt.Errorf("bucket must be a valid lowercase R2 bucket name")
 	}
+	if !bucketRE.MatchString(strings.TrimSpace(s.RecoveryBucket)) || strings.Contains(s.RecoveryBucket, "..") {
+		return fmt.Errorf("recoveryBucket must be a valid lowercase R2 bucket name")
+	}
 	if _, err := parsePositiveDuration("childTokenTTL", s.ChildTokenTTL); err != nil {
 		return err
 	}
@@ -338,12 +341,4 @@ func (k ObjectStorageRuntimeKeys) AdminAccessKeyName() string {
 
 func expandRecoveryPath(path string) string {
 	return os.ExpandEnv(strings.TrimSpace(path))
-}
-
-func requiredRecoveryPath(path string, field string) (string, error) {
-	path = expandRecoveryPath(path)
-	if path == "" {
-		return "", errors.New(field + " is required")
-	}
-	return path, nil
 }

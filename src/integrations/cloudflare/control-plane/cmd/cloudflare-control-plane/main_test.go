@@ -465,6 +465,7 @@ spec:
           - gamma.verself.sh
   objectStorage:
     bucket: verself-deployment-artifacts
+    recoveryBucket: verself-recovery
     childTokenTTL: 168h
     runtimeSecrets:
       adminAccessKeyID: object-storage-service.r2.admin_access_key_id

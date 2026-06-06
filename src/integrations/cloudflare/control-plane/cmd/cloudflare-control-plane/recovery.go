@@ -107,6 +107,15 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 		return err
 	}
 	out.RecoveryConditions = append(out.RecoveryConditions, "ObjectStorageCredentialsPersisted")
+	recoveryCfg := cfg
+	recoveryCfg.bucket = cfg.recovery.Spec.ObjectStorage.RecoveryBucket
+	if err := preflightOpenBaoPersistence(recoveryCfg.parentCredentialConfig(), "recovery capability credential persistence"); err != nil {
+		return err
+	}
+	if err := provisionRecoveryCredential(ctx, recoveryCfg, accountAdmin, &out); err != nil {
+		return err
+	}
+	out.RecoveryConditions = append(out.RecoveryConditions, "RecoveryCredentialsPersisted")
 	sort.Strings(out.RecoveryConditions)
 	return writeReport(out)
 }
