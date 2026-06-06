@@ -10,10 +10,12 @@ pkg_tar(
     name = "runtime_artifact",
     out = "spicedb-runtime.tar",
     files = {
+        "//src/infrastructure-components/spicedb/cmd/spicedb-recover:spicedb-recover": "bin/spicedb-recover",
         "@spicedb_tools//tools/spicedb": "bin/spicedb",
         "@spicedb_tools//tools/zed": "bin/zed",
     },
     modes = {
+        "bin/spicedb-recover": "0755",
         "bin/spicedb": "0755",
         "bin/zed": "0755",
     },
@@ -21,22 +23,9 @@ pkg_tar(
 )
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )
 
 nomad_component(

@@ -296,6 +296,14 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "spicedb-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -368,6 +376,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["auth-control-plane-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "spicedb-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "spicedb"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["spicedb-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -551,6 +576,10 @@ resources: [
 					name:  "zitadel"
 					owner: "zitadel"
 				},
+				{
+					name:  "spicedb"
+					owner: "spicedb"
+				},
 			]
 			roles: [
 				{
@@ -560,6 +589,10 @@ resources: [
 				},
 				{
 					name:  "zitadel"
+					login: true
+				},
+				{
+					name:  "spicedb"
 					login: true
 				},
 			]
@@ -579,6 +612,10 @@ resources: [
 				{
 					systemUser:   "zitadel"
 					postgresUser: "zitadel"
+				},
+				{
+					systemUser:   "spicedb"
+					postgresUser: "spicedb"
 				},
 			]
 		}
@@ -716,6 +753,40 @@ resources: [
 			}
 			packageFilter: minAgeDays: 3
 			log: level: "http"
+		}
+	},
+	{
+		apiVersion: "spicedb.guardianintelligence.org/v1alpha1"
+		kind:       "SpiceDBCluster"
+		metadata: name: "spicedb"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar"
+			runtimeRoot:     "/var/lib/spicedb/runtime"
+			homeDir:         "/var/lib/spicedb"
+			reportPath:      "/run/verself/recovery/spicedb/report.json"
+			user:            "spicedb"
+			group:           "spicedb"
+			datastore: {
+				engine:           "postgres"
+				connURI:          "postgres://spicedb@/spicedb?host=/var/run/postgresql&sslmode=disable&application_name=spicedb"
+				readPoolMaxOpen:  8
+				readPoolMinOpen:  1
+				writePoolMaxOpen: 4
+				writePoolMinOpen: 1
+			}
+			grpc: {
+				host: "127.0.0.1"
+				presharedKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.spicedb.grpc_preshared_key"
+				}
+			}
+			metrics: host: "127.0.0.1"
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+			}
 		}
 	},
 	{
@@ -1056,6 +1127,20 @@ resources: [
 			generate: {
 				bytes:    32
 				encoding: "hex"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.spicedb.grpc_preshared_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    64
+				encoding: "alphanumeric"
 			}
 		}
 	},

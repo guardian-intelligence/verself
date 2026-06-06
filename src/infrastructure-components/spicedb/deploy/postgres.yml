@@ -1,4 +1,0 @@
-postgresql_service_databases:
-  - { name: spicedb, owner: spicedb }
-postgresql_peer_mappings:
-  - { system_user: spicedb, pg_user: spicedb }

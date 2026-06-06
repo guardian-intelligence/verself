@@ -131,6 +131,16 @@ var RequiredBuildArtifacts = []RequiredArtifact{
 		Mode:   "0755",
 	},
 	{
+		Source: "bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/spicedb/cmd/spicedb-recover/spicedb-recover_/spicedb-recover",
+		Target: "bazel-bin/src/infrastructure-components/spicedb/cmd/spicedb-recover/spicedb-recover_/spicedb-recover",
+		Mode:   "0755",
+	},
+	{
 		Source: "bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar",
 		Target: "bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar",
 		Mode:   "0644",
