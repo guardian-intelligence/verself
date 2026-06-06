@@ -701,19 +701,22 @@ func startServices(cfg config) error {
 	if err := command("/bin/systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	if err := command("/bin/systemctl", "enable", "--now", "clickhouse-server-spiffe-helper.service"); err != nil {
+	if err := enableAndRestart("clickhouse-server-spiffe-helper.service"); err != nil {
+		return err
+	}
+	if err := waitForValidCertificate(filepath.Join(cfg.SPIFFE.ServerDir, "svid.pem"), 30*time.Second); err != nil {
 		return err
 	}
 	if err := waitForFile(filepath.Join(cfg.SPIFFE.ServerDir, "bundle.pem"), 30*time.Second); err != nil {
 		return err
 	}
-	if err := command("/bin/systemctl", "enable", "--now", "clickhouse-server.service"); err != nil {
+	if err := enableAndRestart("clickhouse-server.service"); err != nil {
 		return err
 	}
-	if err := command("/bin/systemctl", "enable", "--now", "clickhouse-operator-spiffe-helper.service"); err != nil {
+	if err := enableAndRestart("clickhouse-operator-spiffe-helper.service"); err != nil {
 		return err
 	}
-	if err := waitForFile(filepath.Join(cfg.SPIFFE.OperatorDir, "svid.pem"), 30*time.Second); err != nil {
+	if err := waitForValidCertificate(filepath.Join(cfg.SPIFFE.OperatorDir, "svid.pem"), 30*time.Second); err != nil {
 		return err
 	}
 	if err := waitForQuery(cfg, 60*time.Second); err != nil {
@@ -731,6 +734,13 @@ func startServices(cfg config) error {
 	return nil
 }
 
+func enableAndRestart(unit string) error {
+	if err := command("/bin/systemctl", "enable", unit); err != nil {
+		return err
+	}
+	return command("/bin/systemctl", "restart", unit)
+}
+
 func waitForFile(path string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -740,6 +750,42 @@ func waitForFile(path string, timeout time.Duration) error {
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("timed out waiting for %s", path)
+}
+
+func waitForValidCertificate(path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var last error
+	for time.Now().Before(deadline) {
+		valid, err := certificateValidBeyond(path, time.Now().Add(5*time.Minute))
+		if valid {
+			return nil
+		}
+		last = err
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("timed out waiting for valid certificate %s: %w", path, last)
+}
+
+func certificateValidBeyond(path string, minimumNotAfter time.Time) (bool, error) {
+	body, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	if err != nil {
+		return false, fmt.Errorf("read certificate %s: %w", path, err)
+	}
+	block, _ := pem.Decode(body)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return false, fmt.Errorf("%s does not contain a PEM certificate", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false, fmt.Errorf("parse certificate %s: %w", path, err)
+	}
+	if !cert.NotAfter.After(minimumNotAfter) {
+		return false, fmt.Errorf("certificate %s expires at %s", path, cert.NotAfter.Format(time.RFC3339))
+	}
+	return true, nil
 }
 
 func waitForQuery(cfg config, timeout time.Duration) error {

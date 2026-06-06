@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "clickhouse-recover_lib",
@@ -11,4 +11,10 @@ go_binary(
     name = "clickhouse-recover",
     embed = [":clickhouse-recover_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "clickhouse-recover_test",
+    srcs = ["main_test.go"],
+    embed = [":clickhouse-recover_lib"],
 )
