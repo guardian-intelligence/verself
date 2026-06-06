@@ -46,6 +46,8 @@ const (
 	defaultResource = "nomad-observer"
 
 	heartbeatInterval = 60 * time.Second
+
+	maxUint32AsInt64 = int64(1<<32 - 1)
 )
 
 var (
@@ -596,10 +598,14 @@ func installRuntime(repoRoot string, cfg config) (string, error) {
 		return "", fmt.Errorf("open Nomad Observer runtime install lock: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	lockFD, err := intFromFileDescriptor(lock.Fd(), "Nomad Observer runtime install lock")
+	if err != nil {
+		return "", err
+	}
+	if err := syscall.Flock(lockFD, syscall.LOCK_EX); err != nil {
 		return "", fmt.Errorf("lock Nomad Observer runtime install: %w", err)
 	}
-	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	defer func() { _ = syscall.Flock(lockFD, syscall.LOCK_UN) }()
 	release := filepath.Join(cfg.runtimeRoot, "releases", strings.ReplaceAll(digest, ":", "-"))
 	if !runtimeInstalled(release) {
 		if err := extractRuntimeTar(artifact, release); err != nil {
@@ -625,7 +631,7 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open Nomad Observer runtime artifact: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, file); err != nil {
 		return "", fmt.Errorf("hash Nomad Observer runtime artifact: %w", err)
@@ -649,7 +655,7 @@ func extractRuntimeTar(artifact string, release string) error {
 		return fmt.Errorf("chmod Nomad Observer runtime staging directory: %w", err)
 	}
 	if !runtimeInstalled(tmp) {
-		return errors.New("Nomad Observer runtime artifact missing bin/nomad-observer")
+		return errors.New("nomad observer runtime artifact missing bin/nomad-observer")
 	}
 	if err := os.RemoveAll(release); err != nil {
 		return fmt.Errorf("remove stale Nomad Observer runtime release: %w", err)
@@ -665,7 +671,7 @@ func extractTar(artifact string, dest string) error {
 	if err != nil {
 		return fmt.Errorf("open Nomad Observer runtime artifact: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	destAbs, err := filepath.Abs(dest)
 	if err != nil {
 		return err
@@ -685,14 +691,22 @@ func extractTar(artifact string, dest string) error {
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, modeOrDefault(header.Mode, 0o755)); err != nil {
+			mode, err := modeOrDefault(header.Mode, 0o755)
+			if err != nil {
+				return fmt.Errorf("runtime directory %s mode: %w", header.Name, err)
+			}
+			if err := os.MkdirAll(target, mode); err != nil {
 				return fmt.Errorf("create runtime directory %s: %w", header.Name, err)
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return fmt.Errorf("create runtime parent %s: %w", header.Name, err)
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, modeOrDefault(header.Mode, 0o644))
+			mode, err := modeOrDefault(header.Mode, 0o644)
+			if err != nil {
+				return fmt.Errorf("runtime file %s mode: %w", header.Name, err)
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 			if err != nil {
 				return fmt.Errorf("create runtime file %s: %w", header.Name, err)
 			}
@@ -724,11 +738,22 @@ func safeTarTarget(destAbs string, name string) (string, error) {
 	return targetAbs, nil
 }
 
-func modeOrDefault(mode int64, fallback os.FileMode) os.FileMode {
+func modeOrDefault(mode int64, fallback os.FileMode) (os.FileMode, error) {
 	if mode == 0 {
-		return fallback
+		return fallback, nil
 	}
-	return os.FileMode(mode).Perm()
+	if mode < 0 || mode > maxUint32AsInt64 {
+		return 0, fmt.Errorf("mode %d exceeds os.FileMode range", mode)
+	}
+	return os.FileMode(mode).Perm(), nil // #nosec G115 -- mode is checked against the uint32-backed os.FileMode range above.
+}
+
+// os.File.Fd is uintptr, but flock expects an int descriptor.
+func intFromFileDescriptor(fd uintptr, field string) (int, error) {
+	if strconv.IntSize == 32 && fd > uintptr(1<<31-1) {
+		return 0, fmt.Errorf("%s file descriptor exceeds int range: %d", field, fd)
+	}
+	return int(fd), nil // #nosec G115 -- fd is range-checked for 32-bit; on 64-bit uintptr and int have the same width.
 }
 
 func promoteRuntime(runtimeRoot string, release string) error {
@@ -1163,21 +1188,6 @@ func appendMetaAttrs(attrs []slog.Attr, meta deployMeta) []slog.Attr {
 		attrs = append(attrs, slog.String("verself.artifact_sha256", meta.ArtifactSHA256))
 	}
 	return attrs
-}
-
-func setMetaSpanAttributes(span trace.Span, meta deployMeta) {
-	if meta.DeployRunKey != "" {
-		span.SetAttributes(attribute.String("verself.deploy_run_key", meta.DeployRunKey))
-	}
-	if meta.DeploySHA != "" {
-		span.SetAttributes(attribute.String("verself.deploy_sha", meta.DeploySHA))
-	}
-	if meta.SpecSHA256 != "" {
-		span.SetAttributes(attribute.String("verself.deploy_spec_sha256", meta.SpecSHA256))
-	}
-	if meta.ArtifactSHA256 != "" {
-		span.SetAttributes(attribute.String("verself.artifact_sha256", meta.ArtifactSHA256))
-	}
 }
 
 func (o *observer) metadataForJob(ctx context.Context, namespace, jobID string) (deployMeta, error) {

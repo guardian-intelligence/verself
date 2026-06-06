@@ -101,6 +101,12 @@ func TestInstallRuntimePromotesCurrentSymlink(t *testing.T) {
 	}
 }
 
+func TestModeOrDefaultRejectsOutOfRangeMode(t *testing.T) {
+	if _, err := modeOrDefault(int64(1)<<33, 0o644); err == nil {
+		t.Fatal("modeOrDefault accepted out-of-range file mode")
+	}
+}
+
 func testConfig(t *testing.T) config {
 	t.Helper()
 	body, err := json.Marshal(testSpec())
