@@ -449,6 +449,25 @@ backend be_route_company_apex_company_frontend
   http-request return status 503 content-type text/plain string "service unavailable"
 [[ end ]]
 
+backend be_route_product_dashboard_grafana_operator_ui
+  guid be_route_product_dashboard_grafana_operator_ui
+  balance random
+  http-response set-header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+  http-response set-header Cross-Origin-Opener-Policy same-origin
+  http-response set-header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+  http-response set-header Referrer-Policy strict-origin-when-cross-origin
+  http-response set-header X-Content-Type-Options nosniff
+  http-response set-header X-Frame-Options DENY
+  http-request set-header X-Forwarded-Host %[req.hdr(host)]
+  http-request set-header X-Forwarded-Proto https if { ssl_fc }
+[[ with nomadService "grafana-http" ]]
+[[ range $i, $svc := . ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_dashboard_grafana_operator_ui_srv_[[ $i ]]
+[[ end ]]
+[[ else ]]
+  http-request return status 503 content-type text/plain string "service unavailable"
+[[ end ]]
+
 backend be_route_product_apex_iam_service_public_api
   guid be_route_product_apex_iam_service_public_api
   balance random
