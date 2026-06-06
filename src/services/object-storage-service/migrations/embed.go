@@ -43,7 +43,7 @@ func Up(ctx context.Context, service string) error {
 func UpWithDSN(ctx context.Context, service string, dsn string) error {
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
-		return errors.New("Postgres DSN is required")
+		return errors.New("postgres DSN is required")
 	}
 	sourceDriver, err := iofs.New(Files, ".")
 	if err != nil {

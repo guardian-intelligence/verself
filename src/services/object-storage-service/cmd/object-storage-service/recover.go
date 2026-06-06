@@ -27,6 +27,7 @@ const (
 	objectStorageAdminUID               = 961
 	objectStorageServiceHome            = "/var/lib/object-storage-service"
 	objectStorageRuntimeBinary          = "bin/object-storage-service"
+	maxUint32AsInt64                    = int64(1<<32 - 1)
 )
 
 type recoverOptions struct {
@@ -246,10 +247,14 @@ func installObjectStorageRuntime(opts recoverOptions, serviceGID int) error {
 		return fmt.Errorf("open object-storage runtime install lock: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	lockFD, err := intFromFileDescriptor(lock.Fd(), "object-storage runtime install lock")
+	if err != nil {
+		return err
+	}
+	if err := syscall.Flock(lockFD, syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("lock object-storage runtime install: %w", err)
 	}
-	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	defer func() { _ = syscall.Flock(lockFD, syscall.LOCK_UN) }()
 	releases := filepath.Join(opts.RuntimeRoot, "releases")
 	tmpRoot := filepath.Join(opts.RuntimeRoot, "tmp")
 	if err := ensureDir(releases, 0, serviceGID, 0o755); err != nil {
@@ -354,14 +359,22 @@ func extractSafeTar(artifact string, dest string) error {
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(targetClean, os.FileMode(header.Mode)); err != nil {
+			mode, err := modeOrDefault(header.Mode, 0o755)
+			if err != nil {
+				return fmt.Errorf("runtime directory %s mode: %w", header.Name, err)
+			}
+			if err := os.MkdirAll(targetClean, mode); err != nil {
 				return fmt.Errorf("extract runtime directory %s: %w", header.Name, err)
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(targetClean), 0o755); err != nil {
 				return fmt.Errorf("create runtime file parent %s: %w", header.Name, err)
 			}
-			out, err := os.OpenFile(targetClean, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(header.Mode))
+			mode, err := modeOrDefault(header.Mode, 0o644)
+			if err != nil {
+				return fmt.Errorf("runtime file %s mode: %w", header.Name, err)
+			}
+			out, err := os.OpenFile(targetClean, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 			if err != nil {
 				return fmt.Errorf("create runtime file %s: %w", header.Name, err)
 			}
@@ -376,6 +389,24 @@ func extractSafeTar(artifact string, dest string) error {
 			return fmt.Errorf("unsupported object-storage runtime artifact member %s type %d", header.Name, header.Typeflag)
 		}
 	}
+}
+
+func modeOrDefault(mode int64, fallback os.FileMode) (os.FileMode, error) {
+	if mode == 0 {
+		return fallback, nil
+	}
+	if mode < 0 || mode > maxUint32AsInt64 {
+		return 0, fmt.Errorf("mode %d exceeds os.FileMode range", mode)
+	}
+	return os.FileMode(mode).Perm(), nil // #nosec G115 -- mode is checked against the uint32-backed os.FileMode range above.
+}
+
+// os.File.Fd is uintptr, but flock expects an int descriptor.
+func intFromFileDescriptor(fd uintptr, field string) (int, error) {
+	if strconv.IntSize == 32 && fd > uintptr(1<<31-1) {
+		return 0, fmt.Errorf("%s file descriptor exceeds int range: %d", field, fd)
+	}
+	return int(fd), nil // #nosec G115 -- fd is range-checked for 32-bit; on 64-bit uintptr and int have the same width.
 }
 
 func projectObjectStorageGraph(opts recoverOptions, serviceGID int) error {

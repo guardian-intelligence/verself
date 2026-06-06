@@ -93,6 +93,8 @@ job "object-storage-service" {
         change_mode = "restart"
         destination = "secrets/object-storage-service.credential_kek"
         perms       = "0600"
+        uid         = "960"
+        gid         = "960"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -102,6 +104,8 @@ EOT
         change_mode = "restart"
         destination = "secrets/object-storage-service.r2.proxy_access_key_id"
         perms       = "0600"
+        uid         = "960"
+        gid         = "960"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -111,6 +115,8 @@ EOT
         change_mode = "restart"
         destination = "secrets/object-storage-service.r2.proxy_secret_access_key"
         perms       = "0600"
+        uid         = "960"
+        gid         = "960"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -234,6 +240,8 @@ EOT
         change_mode = "restart"
         destination = "secrets/iam-service.zitadel.auth_audience"
         perms       = "0600"
+        uid         = "961"
+        gid         = "961"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -243,6 +251,8 @@ EOT
         change_mode = "restart"
         destination = "secrets/object-storage-service.credential_kek"
         perms       = "0600"
+        uid         = "961"
+        gid         = "961"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/object-storage-service.credential_kek" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -252,6 +262,8 @@ EOT
         change_mode = "restart"
         destination = "secrets/object-storage-service.r2.admin_access_key_id"
         perms       = "0600"
+        uid         = "961"
+        gid         = "961"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -261,6 +273,8 @@ EOT
         change_mode = "restart"
         destination = "secrets/object-storage-service.r2.admin_secret_access_key"
         perms       = "0600"
+        uid         = "961"
+        gid         = "961"
         data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" }}{{ .Data.data.value }}{{ end }}
 EOT
