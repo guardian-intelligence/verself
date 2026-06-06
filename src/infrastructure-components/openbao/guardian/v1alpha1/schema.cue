@@ -26,9 +26,6 @@ package v1alpha1
 		configPath:       #AbsolutePath
 		reportPath:       #AbsolutePath
 		initMaterialPath: #AbsolutePath
-		freshInit?: {
-			wipeDataDirBeforeStart: bool
-		}
 		seal: {
 			shamir: {
 				keyShares:    int & >0

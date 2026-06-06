@@ -11,17 +11,17 @@ consecutive submissions do not create unexpected allocation churn.
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad runtime | component bootstrap machinery | Converged | None | Boarded repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator root authority: a valid operator token or threshold unseal shares that can generate a transient root token |
-| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` through the component import action |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged; steady-state autonomous restart not complete | Initialized Shamir-sealed restart still needs manual unseal or a configured auto-unseal mechanism; initialized baseline drift still needs scoped workload authority or breakglass operator authority | Boarded OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile, external seal for autonomous restart, scoped workload identity for baseline reconciliation |
+| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Previous recovery completed; not yet re-submitted after latest wipe | Provider parent credential still requires operator import if no restored OpenBao snapshot provides it | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin`; OpenBao baseline creates `cloudflare-integration-recovery-runtime` |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Boarded nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Boarded NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Boarded Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Boarded OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
-| Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | OpenBao baseline blocked; runtime jobs still need artifact/config CRD cutover | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
-| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
+| Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | Runtime jobs still need artifact/config CRD cutover and live verification against the latest bootstrapped graph | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
+| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Previous job running; not yet re-submitted after latest wipe | Cloudflare recovery has not produced the recovery R2 capability on this host | Boarded PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; not yet re-submitted after latest wipe | Cloudflare-produced R2 credentials and Zitadel-produced auth audience are not yet available on this host | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
 
@@ -31,13 +31,42 @@ Live command:
 guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --stream
 ```
 
-Observed results:
+Observed results from the latest destructive gamma run on June 6, 2026:
+
+- `guardian board src/guardian-specification/examples/gamma/gamma.cue -o json
+  --stream` succeeded after the host was re-imaged;
+- board reported `ready_to_fly: yes`;
+- latest resource graph digest:
+  `sha256:fe4131dc6a6c9aa9572f665c21426916d4f90a932844af7b172a14f8888914e4`;
+- latest verified upload digest:
+  `sha256:fb5981cfe6ec1b0d50ae975243079d4291bf67b41f0ce359558d1d672d997f39`;
+- board prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
+  validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
+  OpenBao during board;
+- `guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json
+  --stream` then submitted the OpenBao job and returned `ready_to_fly: yes`;
+- Nomad reports `openbao` status `running`, deployment `successful`, one
+  healthy allocation, and no failed allocations;
+- `/run/verself/recovery/openbao/report.json` reports
+  `OpenBaoRecoveryComplete=True/Recovered`;
+- OpenBao evidence from the report: version `2.5.2`, Shamir seal, threshold
+  `2`, cluster id `7a07b187-b47c-f9e1-6792-2b994fe38333`;
+- the fresh-init path delivered encrypted init material to
+  `/run/verself/recovery/openbao/init-material.json`, unsealed using in-memory
+  init shares, reconciled baseline mounts/auth/policies, and revoked the
+  initial operator token.
+- after boarding the breakglass cleanup, the live empty-stdin breakglass probe
+  reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
+  `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
+  closed before generating a token.
+
+Previous observed results:
 
 - boarding verified the extracted repo tree on gamma;
 - latest resource graph digest:
-  `sha256:07e3488cfc808a99506a2d791b0336bfab9873c856ad4e6c33d0651c28b3c014`;
+  `sha256:be740b4ecd230e6fca468331ce9e5821ee6671b1fcfaa6e86865969e6b5b6570`;
 - latest verified upload digest:
-  `sha256:7a9424f90cade7092efef8b9b07fa7cfb8bf48bc198e95ca5133908f3fa69a3c`;
+  `sha256:f66d2ca778795159238c43bc23437eb55dbb3c58ba5cfb0cdd266d7c77619e98`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, OTel Collector,
   Cloudflare, HAProxy, object-storage, substrate, and public-origin resources;
@@ -45,14 +74,19 @@ Observed results:
   nftables, NATS, Nomad Observer, OTel Collector, HAProxy, Cloudflare, and
   object-storage job files;
 - Nomad is running and reachable on gamma;
-- OpenBao initialized a Shamir store with PGP-encrypted init material and is
-  unsealed, but baseline reconciliation is blocked until operator root
-  authority is presented;
-- Cloudflare cannot derive its Nomad workload OpenBao token until the OpenBao
-  baseline creates the `cloudflare-integration-recovery-runtime` role;
-- after OpenBao baseline reconciliation, Cloudflare recovery is expected to
-  block on missing account-admin authority in OpenBao:
-  `kv-controller/data/integrations/cloudflare/account-admin`;
+- current OpenBao live state is initialized, unsealed, and running the previous
+  baseline;
+- updated OpenBao, Cloudflare, and PostgreSQL jobs pass remote Nomad planning
+  against gamma;
+- the next destructive OpenBao drill should wipe the Raft data directory before
+  starting the control loop, initialize fresh, encrypt only unseal shares for
+  operators, unseal from in-memory shares, reconcile baseline with the
+  transient initial root token, and revoke that token;
+- Cloudflare cannot write the recovery R2 capability until OpenBao baseline
+  reconciliation updates the `cloudflare-integration-recovery-runtime` policy;
+- PostgreSQL cannot start the pgBackRest-enabled job until OpenBao baseline
+  reconciliation creates the `postgresql-runtime` Nomad JWT role and generated
+  `postgresql.pgbackrest.cipher_pass` secret;
 - the Cloudflare CRD carries the OpenBao account-admin path and omits durable
   host file paths for provider token values;
 - the Cloudflare CRD declares `accountAdminOpenBaoPath`, and the component
@@ -180,30 +214,32 @@ Observed results:
 - object-storage-service runtime and admin tasks still fail before process start
   because Nomad cannot derive an OpenBao token: role
   `object-storage-service-runtime` does not exist;
-- OpenBao recovery reports the hidden blocker explicitly:
-  `RootTrustMaterialAvailable=False`,
-  `OpenBaoBaselineReconciled=False`, and
-  `OpenBaoRecoveryComplete=False` with reason `BaselineBlocked`;
+- OpenBao recovery reported the previous non-destructive blocker explicitly:
+  `OpenBaoBaselineReconciled=False` and `OpenBaoRecoveryComplete=False` with
+  reason `BaselineBlocked`;
 - OpenBao baseline reconciliation through `--operator-token-stdin` is
-  scriptable and consumes the token through stdin;
-- OpenBao baseline reconciliation through `--generate-root-token-stdin` is
-  implemented as a component-owned operator path that starts OpenBao
-  generate-root, decodes the transient token, reconciles baseline state, and
-  revokes the generated token;
-- OpenBao sealed-state recovery now treats `--generate-root-token-stdin` as
-  threshold unseal material first, then reuses the same material to generate a
-  transient root token for baseline reconciliation;
-- the live `--generate-root-token-stdin </dev/null` path reports
-  `RootTrustMaterialAvailable=False/UnsealQuorumIncomplete` and does not
+  scriptable and consumes the token through stdin, but it is an operator path,
+  not the target steady-state autonomous path;
+- OpenBao breakglass repair through
+  `--breakglass-generate-root-token-stdin` is implemented as a component-owned
+  emergency path that starts OpenBao generate-root, decodes the transient
+  token, reconciles baseline state, and revokes the generated token;
+- OpenBao sealed-state breakglass first treats
+  `--breakglass-generate-root-token-stdin` as threshold unseal material, then
+  reuses the same material to generate a transient root token for emergency
+  baseline repair;
+- the live `--breakglass-generate-root-token-stdin </dev/null` path reports
+  `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and does not
   attempt baseline reconciliation without threshold material;
 - the patched OpenBao recovery binary was boarded to gamma in upload
   `sha256:d99aac0a65a886a951fea7e9935b580c8063be1eb8ccb6916a9306a65ff28b22`;
 - the available gamma bootstrap token is not sufficient for baseline
   reconciliation: OpenBao returned 403 on `sys/mounts` and 403 on
   `auth/token/revoke-self`;
-- the missing OpenBao role is caused by baseline reconciliation requiring a
-  valid operator token with authority to reconcile mounts, policies, auth, and
-  Nomad JWT roles.
+- the missing OpenBao role in the previous allocation is caused by baseline
+  reconciliation requiring authority to reconcile mounts, policies, auth, and
+  Nomad JWT roles; gamma now exercises the fresh-init path instead of preserving
+  that store;
 - OpenBao now has explicit `SecretPath` resources for the object-storage
   secrets referenced by the `ObjectStorageService` CRD;
 - OpenBao baseline reconciliation can create generated secret values only when
@@ -214,11 +250,11 @@ Observed results:
   `CloudflareControlPlane/gamma-cloudflare`;
 - `iam-service.zitadel.auth_audience` is declared as produced by the future
   Zitadel/auth-control-plane recovery path;
-- running the updated boarded OpenBao recovery binary without operator material
-  on gamma still reports `RootTrustMaterialAvailable=False` and
-  `OpenBaoBaselineReconciled=False` with reason
-  `OperatorRootCredentialsRequired`, confirming the graph parses cleanly and
-  the remaining blocker is root authority.
+- running the updated boarded OpenBao recovery binary against the previous
+  allocation without operator material still reports
+  `OpenBaoBaselineReconciled=False/BaselineAuthorityRequired`; the next proof is
+  a destructive OpenBao allocation restart so the prestart wipe and fresh-init
+  transaction run from zero;
 - Zitadel now has component CRDs for the service cluster and auth-control-plane
   batch job, and the gamma graph declares the `zitadel` PostgreSQL database,
   peer role, OpenBao JWT roles, and OpenBao secret paths that the two jobs need;
@@ -229,9 +265,8 @@ Observed results:
   are declared as `SecretPath` resources, while SMTP and GitHub OAuth input
   material remain operator-import/provider-owned inputs;
 - the current Zitadel Nomad job files still validate but remain in the old
-  runtime-artifact and placeholder shape; the next Zitadel slice is the runtime
-  cutover from `verself-artifact://` and `__VERSELF_*` placeholders to boarded
-  artifacts plus CRD-loaded config.
+  runtime-artifact and site-token shape; the next Zitadel slice is the runtime
+  cutover to boarded artifacts plus CRD-loaded config.
 
 Evidence commands:
 
@@ -253,7 +288,7 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task recover <cloudflare-allocation-id>'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/openbao/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --operator-token-stdin' < <operator-token-file>
-ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --generate-root-token-stdin' < <unseal-shares-file>
+ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --breakglass-generate-root-token-stdin' < <unseal-shares-file>
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_service env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d object_storage_service -A -t -c "select current_user;"'
@@ -309,11 +344,10 @@ cloudflare-control-plane \
 ## Next Component
 
 The next mechanical recovery target is the Zitadel runtime cutover. OpenBao
-baseline reconciliation remains externally gated on operator root authority, but
+baseline reconciliation remains externally gated on operator authority, but
 the graph now declares the Zitadel/OpenBao/PostgreSQL dependencies that baseline
 will apply once authority is presented. Zitadel still needs to consume its CRDs
-at runtime, install boarded artifacts instead of `verself-artifact://` sources,
-and remove `__VERSELF_*` placeholders from its Nomad jobs. After that, OpenBao
-baseline authority can be presented and the next live run should expose whether
-Zitadel reaches service health or blocks on operator-imported SMTP/GitHub
-material.
+at runtime and install boarded artifacts instead of legacy runtime-artifact
+sources. After that, OpenBao baseline authority can be presented and the next
+live run should expose whether Zitadel reaches service health or blocks on
+operator-imported SMTP/GitHub material.

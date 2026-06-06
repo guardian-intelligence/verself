@@ -51,30 +51,29 @@ const (
 )
 
 type config struct {
-	repoRoot          string
-	runtimeRoot       string
-	dataDir           string
-	configPath        string
-	reportPath        string
-	addr              string
-	caCert            string
-	bao               string
-	keyShares         int
-	threshold         int
-	wipeDataDir       bool
-	pgpKeys           stringList
-	initOutputPath    string
-	snapshotPath      string
-	snapshotManifest  string
-	snapshotOut       string
-	manifestOut       string
-	tokenStdin        bool
-	unsealStdin       bool
-	generateRootStdin bool
-	resourceGraph     string
-	resourceName      string
-	pgpKeyDir         string
-	baseline          openBaoBaselineSpec
+	repoRoot                    string
+	runtimeRoot                 string
+	dataDir                     string
+	configPath                  string
+	reportPath                  string
+	addr                        string
+	caCert                      string
+	bao                         string
+	keyShares                   int
+	threshold                   int
+	pgpKeys                     stringList
+	initOutputPath              string
+	snapshotPath                string
+	snapshotManifest            string
+	snapshotOut                 string
+	manifestOut                 string
+	tokenStdin                  bool
+	unsealStdin                 bool
+	breakglassGenerateRootStdin bool
+	resourceGraph               string
+	resourceName                string
+	pgpKeyDir                   string
+	baseline                    openBaoBaselineSpec
 }
 
 type stringList []string
@@ -222,7 +221,7 @@ func run(ctx context.Context, args []string, stdout io.Writer, stdin io.Reader) 
 		if err != nil {
 			return err
 		}
-		return prepare(ctx, cfg, prepareOptions{applyPrestartWipe: true})
+		return prepare(ctx, cfg, prepareOptions{})
 	case "recover":
 		cfg, err := parseConfig("openbao-recover recover", args[1:], true, false)
 		if err != nil {
@@ -341,7 +340,7 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		fs.StringVar(&cfg.snapshotManifest, "snapshot-manifest", "", "snapshot manifest path")
 		fs.BoolVar(&cfg.unsealStdin, "unseal-stdin", false, "read unseal shares from stdin, one per line")
 		fs.BoolVar(&cfg.tokenStdin, "operator-token-stdin", false, "read an operator token from stdin")
-		fs.BoolVar(&cfg.generateRootStdin, "generate-root-token-stdin", false, "generate a transient root token from stdin unseal shares")
+		fs.BoolVar(&cfg.breakglassGenerateRootStdin, "breakglass-generate-root-token-stdin", false, "BREAKGLASS: use deprecated OpenBao generate-root endpoints with stdin unseal shares")
 	}
 	if snapshotFlags {
 		fs.StringVar(&cfg.snapshotPath, "snapshot", "", "snapshot path to verify")
@@ -365,8 +364,8 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		}
 		cfg = normalizeConfig(next)
 	}
-	if cfg.tokenStdin && cfg.generateRootStdin {
-		return config{}, errors.New("--operator-token-stdin and --generate-root-token-stdin are mutually exclusive")
+	if cfg.tokenStdin && cfg.breakglassGenerateRootStdin {
+		return config{}, errors.New("--operator-token-stdin and --breakglass-generate-root-token-stdin are mutually exclusive")
 	}
 	return cfg, nil
 }
@@ -428,21 +427,16 @@ type objectRef struct {
 }
 
 type openBaoClusterSpec struct {
-	Address          string               `json:"address"`
-	CACert           string               `json:"caCert"`
-	RuntimeRoot      string               `json:"runtimeRoot"`
-	DataDir          string               `json:"dataDir"`
-	ConfigPath       string               `json:"configPath"`
-	ReportPath       string               `json:"reportPath"`
-	InitMaterialPath string               `json:"initMaterialPath"`
-	FreshInit        openBaoFreshInitSpec `json:"freshInit"`
-	Seal             openBaoSealSpec      `json:"seal"`
-	Snapshots        openBaoSnapshotSpec  `json:"snapshots"`
-	Baseline         openBaoBaselineSpec  `json:"baseline"`
-}
-
-type openBaoFreshInitSpec struct {
-	WipeDataDirBeforeStart bool `json:"wipeDataDirBeforeStart"`
+	Address          string              `json:"address"`
+	CACert           string              `json:"caCert"`
+	RuntimeRoot      string              `json:"runtimeRoot"`
+	DataDir          string              `json:"dataDir"`
+	ConfigPath       string              `json:"configPath"`
+	ReportPath       string              `json:"reportPath"`
+	InitMaterialPath string              `json:"initMaterialPath"`
+	Seal             openBaoSealSpec     `json:"seal"`
+	Snapshots        openBaoSnapshotSpec `json:"snapshots"`
+	Baseline         openBaoBaselineSpec `json:"baseline"`
 }
 
 type openBaoSealSpec struct {
@@ -571,7 +565,6 @@ func applyResourceGraphConfig(cfg config) (config, error) {
 	cfg.initOutputPath = spec.InitMaterialPath
 	cfg.keyShares = spec.Seal.Shamir.KeyShares
 	cfg.threshold = spec.Seal.Shamir.KeyThreshold
-	cfg.wipeDataDir = spec.FreshInit.WipeDataDirBeforeStart
 	cfg.baseline = spec.Baseline
 	secretPaths, err := loadOpenBaoSecretPaths(resources)
 	if err != nil {
@@ -698,8 +691,10 @@ usage:
   openbao-recover snapshot save --snapshot-out <path> --manifest-out <path> --token-stdin [flags]
   openbao-recover snapshot verify --snapshot <path> --snapshot-manifest <path> [flags]
 
-Recovery reports contain conditions and fingerprints only. Root trust material
-must be provided through ephemeral operator paths, not host files.
+Recovery reports contain conditions and fingerprints only. Unseal shares,
+recovery shares, and operator tokens must be provided through ephemeral operator
+paths, not host files. Generate-root support is breakglass-only; autonomous
+recovery should use auto-unseal and scoped workload identity.
 `)
 }
 
@@ -731,24 +726,24 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 	switch classify(status) {
 	case "InitializedUnsealed":
-		if cfg.baseline.Reconcile && !cfg.tokenStdin && !cfg.generateRootStdin {
+		if cfg.baseline.Reconcile && !cfg.tokenStdin && !cfg.breakglassGenerateRootStdin {
 			rep.Conditions = append(rep.Conditions,
 				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 			)
 			return rep
 		}
-		if !cfg.tokenStdin && !cfg.generateRootStdin {
+		if !cfg.tokenStdin && !cfg.breakglassGenerateRootStdin {
 			rep.Conditions = append(rep.Conditions,
 				conditionTrue("OpenBaoRecoveryComplete", "Available", "openbao", "OpenBao is initialized, unsealed, and available"),
 			)
 			return rep
 		}
-		if cfg.generateRootStdin {
+		if cfg.breakglassGenerateRootStdin {
 			shares, err := readUnsealShares(stdin, true)
 			if err != nil {
 				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoGeneratedRootToken", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required to generate a transient root token"),
+					conditionFalse("OpenBaoBreakglassRootToken", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required to generate a transient root token"),
 					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 				)
@@ -757,13 +752,13 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 			token, err := generateRootTokenFromShares(ctx, client, shares)
 			if err != nil {
 				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoGeneratedRootToken", "GenerateRootFailed", "openbao", err.Error()),
+					conditionFalse("OpenBaoBreakglassRootToken", "BreakglassGenerateRootFailed", "openbao", err.Error()),
 					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 				)
 				return rep
 			}
-			extra := []condition{conditionTrue("OpenBaoGeneratedRootToken", "Generated", "openbao", "transient root token was generated from threshold unseal material")}
+			extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
 			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
 		}
 		token, err := readToken(stdin, true)
@@ -776,7 +771,7 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		}
 		return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, nil)
 	case "InitializedSealed":
-		shares, err := readUnsealShares(stdin, cfg.unsealStdin || cfg.generateRootStdin)
+		shares, err := readUnsealShares(stdin, cfg.unsealStdin || cfg.breakglassGenerateRootStdin)
 		if err != nil {
 			rep.Conditions = append(rep.Conditions,
 				conditionFalse("OpenBaoUnsealed", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required"),
@@ -808,7 +803,7 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		rep.Evidence = statusEvidence(status)
 		if cfg.baseline.Reconcile {
 			rep.Conditions = append(rep.Conditions, conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"))
-			if !cfg.generateRootStdin {
+			if !cfg.breakglassGenerateRootStdin {
 				rep.Conditions = append(rep.Conditions,
 					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
@@ -818,13 +813,13 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 			token, err := generateRootTokenFromShares(ctx, client, shares)
 			if err != nil {
 				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoGeneratedRootToken", "GenerateRootFailed", "openbao", err.Error()),
+					conditionFalse("OpenBaoBreakglassRootToken", "BreakglassGenerateRootFailed", "openbao", err.Error()),
 					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 				)
 				return rep
 			}
-			extra := []condition{conditionTrue("OpenBaoGeneratedRootToken", "Generated", "openbao", "transient root token was generated from threshold unseal material")}
+			extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
 			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
 		}
 		rep.Conditions = append(rep.Conditions,
@@ -1376,22 +1371,15 @@ func saveSnapshot(ctx context.Context, cfg config, client openBaoClient, token s
 	return rep
 }
 
-type prepareOptions struct {
-	applyPrestartWipe bool
-}
+type prepareOptions struct{}
 
-func prepare(ctx context.Context, cfg config, opts prepareOptions) error {
+func prepare(ctx context.Context, cfg config, _ prepareOptions) error {
 	if err := installRuntime(cfg); err != nil {
 		return err
 	}
 	if os.Geteuid() == 0 {
 		if err := prepareHost(ctx, cfg); err != nil {
 			return err
-		}
-		if opts.applyPrestartWipe && cfg.wipeDataDir {
-			if err := wipeOpenBaoDataDir(ctx, cfg); err != nil {
-				return err
-			}
 		}
 	}
 	return nil
@@ -1607,38 +1595,6 @@ func prepareHost(ctx context.Context, cfg config) error {
 		return fmt.Errorf("chown OpenBao config: %w", err)
 	}
 	return nil
-}
-
-func wipeOpenBaoDataDir(_ context.Context, cfg config) error {
-	path, err := safeWipeDataDir(cfg.dataDir)
-	if err != nil {
-		return err
-	}
-	openbaoUser, err := user.Lookup("openbao")
-	if err != nil {
-		return fmt.Errorf("lookup openbao user: %w", err)
-	}
-	uid, gid, err := userIDs(openbaoUser)
-	if err != nil {
-		return err
-	}
-	if err := os.RemoveAll(path); err != nil {
-		return fmt.Errorf("wipe OpenBao data dir %s: %w", path, err)
-	}
-	return mkdirOwned(path, uid, gid, 0o700)
-}
-
-func safeWipeDataDir(path string) (string, error) {
-	clean := filepath.Clean(strings.TrimSpace(path))
-	if clean == "" || !filepath.IsAbs(clean) {
-		return "", fmt.Errorf("OpenBao data dir must be an absolute path before destructive wipe: %q", path)
-	}
-	for _, forbidden := range []string{"/", "/var", "/var/lib", "/var/lib/openbao"} {
-		if clean == forbidden {
-			return "", fmt.Errorf("refusing to wipe unsafe OpenBao data dir %s", clean)
-		}
-	}
-	return clean, nil
 }
 
 func tlsMaterialNeedsRotation(certPath string, keyPath string, caPath string) (bool, error) {

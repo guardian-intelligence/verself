@@ -326,7 +326,7 @@ func TestSealedOpenBaoReportsBaselineBlockedAfterUnsealWithoutRootAuthority(t *t
 	assertReportDoesNotContain(t, rep, share)
 }
 
-func TestSealedOpenBaoGeneratesRootTokenAfterUnsealForBaseline(t *testing.T) {
+func TestSealedOpenBaoBreakglassGeneratesRootTokenAfterUnsealForBaseline(t *testing.T) {
 	token := randomSecret(t)
 	shareA := randomSecret(t)
 	shareB := randomSecret(t)
@@ -336,13 +336,13 @@ func TestSealedOpenBaoGeneratesRootTokenAfterUnsealForBaseline(t *testing.T) {
 		generatedRootToken: token,
 	}
 	cfg := testConfig(t)
-	cfg.generateRootStdin = true
+	cfg.breakglassGenerateRootStdin = true
 	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(shareA+"\n"+shareB+"\n"))
 
 	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
-	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "True", "Generated")
+	assertCondition(t, rep, "OpenBaoBreakglassRootToken", "True", "BreakglassGenerated")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
 	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
@@ -497,7 +497,7 @@ func TestUnsealedOpenBaoReportsOperatorTokenRevocationFailure(t *testing.T) {
 	assertReportDoesNotContain(t, rep, token)
 }
 
-func TestUnsealedOpenBaoGeneratesRootTokenFromUnsealSharesForBaseline(t *testing.T) {
+func TestUnsealedOpenBaoBreakglassGeneratesRootTokenFromUnsealSharesForBaseline(t *testing.T) {
 	token := randomSecret(t)
 	shareA := randomSecret(t)
 	shareB := randomSecret(t)
@@ -506,12 +506,12 @@ func TestUnsealedOpenBaoGeneratesRootTokenFromUnsealSharesForBaseline(t *testing
 		generatedRootToken: token,
 	}
 	cfg := testConfig(t)
-	cfg.generateRootStdin = true
+	cfg.breakglassGenerateRootStdin = true
 	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(shareA+"\n"+shareB+"\n"))
 
-	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "True", "Generated")
+	assertCondition(t, rep, "OpenBaoBreakglassRootToken", "True", "BreakglassGenerated")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
 	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
@@ -529,7 +529,7 @@ func TestUnsealedOpenBaoGeneratesRootTokenFromUnsealSharesForBaseline(t *testing
 	assertReportDoesNotContain(t, rep, shareB)
 }
 
-func TestUnsealedOpenBaoCancelsIncompleteGenerateRootAttempt(t *testing.T) {
+func TestUnsealedOpenBaoBreakglassCancelsIncompleteGenerateRootAttempt(t *testing.T) {
 	token := randomSecret(t)
 	share := randomSecret(t)
 	client := &fakeOpenBaoClient{
@@ -537,12 +537,12 @@ func TestUnsealedOpenBaoCancelsIncompleteGenerateRootAttempt(t *testing.T) {
 		generatedRootToken: token,
 	}
 	cfg := testConfig(t)
-	cfg.generateRootStdin = true
+	cfg.breakglassGenerateRootStdin = true
 	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
 
-	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "False", "GenerateRootFailed")
+	assertCondition(t, rep, "OpenBaoBreakglassRootToken", "False", "BreakglassGenerateRootFailed")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
 	if !client.generateRootCanceled {
 		t.Fatalf("incomplete generate-root attempt was not canceled")
@@ -738,9 +738,6 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 					"configPath":       "/etc/openbao/openbao-from-graph.hcl",
 					"reportPath":       "/run/verself/recovery/openbao/report-from-graph.json",
 					"initMaterialPath": "/run/verself/recovery/openbao/init-material-from-graph.json",
-					"freshInit": map[string]any{
-						"wipeDataDirBeforeStart": true,
-					},
 					"seal": map[string]any{
 						"shamir": map[string]any{
 							"keyShares":    3,
@@ -820,9 +817,6 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 	}
 	if cfg.bao != "/var/lib/openbao/runtime-from-graph/current/bin/bao" {
 		t.Fatalf("bao path was not derived from graph runtimeRoot: %q", cfg.bao)
-	}
-	if !cfg.wipeDataDir {
-		t.Fatalf("freshInit.wipeDataDirBeforeStart was not loaded")
 	}
 	if len(cfg.pgpKeys) != 3 {
 		t.Fatalf("pgpKeys = %#v", cfg.pgpKeys)
@@ -1092,21 +1086,6 @@ func TestRuntimeInstalledRequiresRecoveryBinary(t *testing.T) {
 
 	if runtimeInstalled(release) {
 		t.Fatalf("runtimeInstalled accepted a release without openbao-recover")
-	}
-}
-
-func TestSafeWipeDataDirRejectsBroadSystemPaths(t *testing.T) {
-	for _, path := range []string{"/", "/var", "/var/lib", "/var/lib/openbao"} {
-		if _, err := safeWipeDataDir(path); err == nil {
-			t.Fatalf("safeWipeDataDir accepted %s", path)
-		}
-	}
-	accepted, err := safeWipeDataDir("/var/lib/openbao/raft")
-	if err != nil {
-		t.Fatalf("safeWipeDataDir rejected raft dir: %v", err)
-	}
-	if accepted != "/var/lib/openbao/raft" {
-		t.Fatalf("safeWipeDataDir = %q", accepted)
 	}
 }
 

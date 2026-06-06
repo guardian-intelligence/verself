@@ -2,7 +2,8 @@
 
 This is a polyglot monorepo structured as a modular monolith. It contains all code for infrastructure, service, and client applications for a multi-tenant cloud computing company. It is the only repo for the entire company.
 
-All configuration is defined as CRDs authored in CUE
+All configuration is defined as CRDs authored in CUE.
+The Guardian specification encompases: CRDs for each deployable component/service
 All service APIs are described with IDLs via Smithy
 All scripts are to be written as aspects executing typed binaries
 All dependencies, including development tools, are commit pinned and plugged into Bazel.
@@ -16,33 +17,37 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
-This repo is centered around a software specification for converting compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code. The specification is a loosely threaded graph of Custom Resource Definitions (CRDs).
+The Guardian software specification specifies the procedure to convert compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code.
 
 ```sh
 guardian board src/guardian-specification/examples/gamma/gamma.cue
 guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run
 ```
 
-`board` answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, executes the declared substrate access/upload hooks, and verifies the boarded repo tree.
+`board` establishes a connection with a remote and uploads the repo's built artifacts. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, executes the declared substrate access/upload hooks, and verifies the boarded repo tree.
 `fly` starts with the same boarding phase and then relies on repo-owned Nomad job conventions. Promoting a specific ref of the source code to gamma/prod/beta/dev is updating the declared desired state and running the component-owned control loops.
 
 # Disaster Recovery / `fly`
 
-A foundational invariant of the system is that is able to execute a `fly` (disaster-recovery + deployment) control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if everything else on the system is wiped. More generally speaking, disaster recovery is a flavor of deployment, where the control loop spends additional time in the recovery process.
+A foundational invariant of the system is that is able to execute a `fly` (disaster-recovery + deployment) control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if the system and all off-site backups are wiped (components with backed up data like PG and ClickHouse define their state machines to prefer to restore from offsite backup when available).
+
+IOW, disaster recovery is just like any other deployment, where the control loop spends additional time in the recovery process because the system was in a degraded state.
+
+The process is `guardian board` -> Guardian synchronous checks to make sure the boarded repo is verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
 
 We accomplish this through the following two core techniques:
 
-1. The repo builds the system that is deployed, byte-for-byte via Bazel + commit-pinning every dependency and modeling them in Bazel, including developer tooling.
-2. Deployment is the process of taking credentials and a deployment target (a remote computer + configuration), uploading the built repo, and running `nomad` to execute control loops to bring the system to the desired state.
+1. The repo builds the system that is deployed, byte-for-byte via Bazel + commit-pinning every dependency including developer tooling.
+2. Deployment is the process of taking credentials and a deployment target (a remote + configuration), uploading the built repo, and running `nomad` to execute control loops to bring the system to the desired state.
 
 The only ingredients necessary to recover the system, therefore, are:
 
-0. Root credentials (human root user pw + API keys)
+0. Credentials (API keys)
 1. The source code
 2. Network ingress to download pinned dependencies (including build tools + OCI images)
 3. Network egress to a node
 
-Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure operator-held recovery authority -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
+Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external provider authority and root-of-trust automation -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
 
 Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by ensuring we build openbao locally and then, inside the OpenBao recovery prestart, either using the system-present OpenBao or the one from the repo artifacts. A "check + bootstrap-if-needed" prestart is all we need. 
 
@@ -228,7 +233,7 @@ Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, diff
 
 OpenBao is the runtime secret source of truth; Nomad is the runtime secret delivery mechanism; SPIRE is workload mTLS identity, not the normal secret-delivery path.
 
-Per environment, the founder is responsible for OpenBao operator recovery material: Shamir unseal shares or recovery shares for an existing store, PGP recipient identities for fresh initialization, and explicit operator credentials for breakglass or baseline operations. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
+Per environment, autonomous OpenBao restart requires a configured external seal or equivalent root-of-trust mechanism; Shamir material is breakglass authority, not the normal restart path. Fresh initialization may generate operator recovery material, but the initial root token is process-local, used only to reconcile baseline state, and revoked before recovery completes. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
