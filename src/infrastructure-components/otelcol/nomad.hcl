@@ -1,7 +1,17 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current"
+}
+
+variable "otelcol_resource_name" {
+  type    = string
+  default = "otelcol"
+}
+
 job "otelcol" {
-  name = "otelcol"
+  name        = "otelcol"
   datacenters = ["*"]
-  type = "service"
+  type        = "service"
 
   group "otelcol" {
     count = 1
@@ -25,30 +35,38 @@ job "otelcol" {
       }
     }
 
-    task "clickhouse-spiffe-helper" {
+    task "recover" {
       driver = "raw_exec"
-      user = "otelcol"
+      user   = "root"
 
       lifecycle {
-        hook = "prestart"
-        sidecar = true
-      }
-
-      artifact {
-        source = "verself-artifact://otelcol-config"
-        destination = "local"
-        chown = true
-      }
-
-      artifact {
-        source = "verself-artifact://otelcol-runtime"
-        destination = "local"
-        chown = true
+        hook    = "prestart"
+        sidecar = false
       }
 
       config {
-        command = "local/bin/spiffe-helper"
-        args = ["-config", "local/config/clickhouse-spiffe-helper.conf"]
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.otelcol_resource_name}",
+        ]
+      }
+
+      resources {
+        cpu    = 50
+        memory = 64
+      }
+    }
+
+    task "clickhouse-spiffe-helper" {
+      driver = "raw_exec"
+      user   = "otelcol"
+
+      config {
+        command = "/var/lib/otelcol/runtime/current/bin/spiffe-helper"
+        args    = ["-config", "/etc/otelcol/current/config/clickhouse-spiffe-helper.conf"]
       }
 
       resources {
@@ -59,29 +77,11 @@ job "otelcol" {
 
     task "collector" {
       driver = "raw_exec"
-      user = "otelcol"
-
-      artifact {
-        source = "verself-artifact://otelcol-config"
-        destination = "local"
-        chown = true
-      }
-
-      artifact {
-        source = "verself-artifact://otelcol-runtime"
-        destination = "local"
-        chown = true
-      }
+      user   = "otelcol"
 
       config {
-        command = "local/bin/otelcol-contrib"
-        args = ["--config", "local/config/config.yaml"]
-      }
-
-      env {
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "otelcol"
-        VERSELF_SUPERVISOR = "nomad"
+        command = "/var/lib/otelcol/runtime/current/bin/otelcol-contrib"
+        args    = ["--config", "/etc/otelcol/current/config/config.yaml"]
       }
 
       resources {
@@ -101,6 +101,20 @@ job "otelcol" {
         port = "otlp_http"
         provider = "nomad"
         address_mode = "auto"
+      }
+
+      service {
+        name         = "otelcol-health"
+        port         = "health"
+        provider     = "nomad"
+        address_mode = "auto"
+
+        check {
+          type     = "http"
+          path     = "/"
+          interval = "10s"
+          timeout  = "2s"
+        }
       }
     }
   }

@@ -307,21 +307,21 @@ resources: [
 		kind:       "NATSCluster"
 		metadata: name: "nats"
 		spec: {
-			runtimeArtifact: "bazel-bin/src/infrastructure-components/nats/nats-runtime.tar"
-			runtimeRoot:     "/var/lib/nats/runtime"
-			configPath:      "/etc/nats/nats-server.conf"
+			runtimeArtifact:  "bazel-bin/src/infrastructure-components/nats/nats-runtime.tar"
+			runtimeRoot:      "/var/lib/nats/runtime"
+			configPath:       "/etc/nats/nats-server.conf"
 			helperConfigPath: "/etc/nats/nats-spiffe-helper.conf"
-			dataDir:         "/var/lib/nats"
-			jetStreamDir:    "/var/lib/nats/jetstream"
-			pidPath:         "/var/lib/nats/nats.pid"
-			reportPath:      "/run/verself/recovery/nats/report.json"
-			user:            "nats"
-			group:           "nats"
-			workloadGroup:   "spire_workload"
-			serverName:      "verself-nats"
-			host:            "127.0.0.1"
-			clientPort:      4222
-			monitoringPort:  8222
+			dataDir:          "/var/lib/nats"
+			jetStreamDir:     "/var/lib/nats/jetstream"
+			pidPath:          "/var/lib/nats/nats.pid"
+			reportPath:       "/run/verself/recovery/nats/report.json"
+			user:             "nats"
+			group:            "nats"
+			workloadGroup:    "spire_workload"
+			serverName:       "verself-nats"
+			host:             "127.0.0.1"
+			clientPort:       4222
+			monitoringPort:   8222
 			jetstream: {
 				maxMemStore:  "256Mb"
 				maxFileStore: "4Gb"
@@ -332,8 +332,8 @@ resources: [
 			}
 			authorization: users: [
 				{
-					spiffeID:       "spiffe://gamma.verself.sh/svc/notifications-service"
-					publishAllow:   ["events.>", "$JS.API.>", "$JS.ACK.>"]
+					spiffeID: "spiffe://gamma.verself.sh/svc/notifications-service"
+					publishAllow: ["events.>", "$JS.API.>", "$JS.ACK.>"]
 					subscribeAllow: ["_INBOX.>"]
 				},
 			]
@@ -370,6 +370,26 @@ resources: [
 				caCertPath: "/etc/verself/clickhouse/server-ca.pem"
 			}
 			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+	{
+		apiVersion: "otelcol.guardianintelligence.org/v1alpha1"
+		kind:       "OtelCollector"
+		metadata: name: "otelcol"
+		spec: {
+			runtimeArtifact:     "bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar"
+			configArtifact:      "bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar"
+			runtimeRoot:         "/var/lib/otelcol/runtime"
+			configRoot:          "/etc/otelcol"
+			configPath:          "/etc/otelcol/current/config/config.yaml"
+			helperConfigPath:    "/etc/otelcol/current/config/clickhouse-spiffe-helper.conf"
+			dataDir:             "/var/lib/otelcol"
+			storageDir:          "/var/lib/otelcol/storage"
+			clickhouseSpiffeDir: "/var/lib/otelcol/clickhouse-spiffe"
+			reportPath:          "/run/verself/recovery/otelcol/report.json"
+			user:                "otelcol"
+			group:               "otelcol"
+			supplementaryGroups: ["spire_workload", "adm", "systemd-journal"]
 		}
 	},
 	{
@@ -418,6 +438,13 @@ resources: [
 					owner: "object_storage_service"
 				},
 			]
+			roles: [
+				{
+					name:  "otelcol"
+					login: true
+					memberOf: ["pg_monitor"]
+				},
+			]
 			peerMappings: [
 				{
 					systemUser:   "object_storage_service"
@@ -426,6 +453,10 @@ resources: [
 				{
 					systemUser:   "object_storage_admin"
 					postgresUser: "object_storage_service"
+				},
+				{
+					systemUser:   "otelcol"
+					postgresUser: "otelcol"
 				},
 			]
 		}

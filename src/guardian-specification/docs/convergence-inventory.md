@@ -17,6 +17,7 @@ consecutive submissions do not create unexpected allocation churn.
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Boarded nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Boarded NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Boarded Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
+| OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Boarded OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation and OpenBao-backed R2 credentials |
@@ -33,15 +34,15 @@ Observed results:
 
 - boarding verified the extracted repo tree on gamma;
 - latest resource graph digest:
-  `sha256:4f0ae3c51824210dfd9cbf210c6b6d54ae0e0be4358fa9af4d91c09cb8912470`;
+  `sha256:978976a3feb5a40f9dd8e794df1f4b27ef73a0ce08f3007eea7b364ddee423a1`;
 - latest verified upload digest:
-  `sha256:62423234ac5e575bbc0fc6bde5ce634c0a4694ddfcc49e4150ebb9af6744b727`;
+  `sha256:6d069debd4aa33cffb7f07544b5b382901343e28fc5ba6121b1771585aa33da4`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
-  PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, Cloudflare, HAProxy,
-  object-storage, substrate, and public-origin resources;
+  PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, OTel Collector,
+  Cloudflare, HAProxy, object-storage, substrate, and public-origin resources;
 - remote Nomad validation succeeds for OpenBao, PostgreSQL, ClickHouse,
-  nftables, NATS, Nomad Observer, HAProxy, Cloudflare, and object-storage job
-  files;
+  nftables, NATS, Nomad Observer, OTel Collector, HAProxy, Cloudflare, and
+  object-storage job files;
 - Nomad is running and reachable on gamma;
 - OpenBao initialized a Shamir store with PGP-encrypted init material and is
   unsealed, but baseline reconciliation is blocked until operator root
@@ -77,6 +78,8 @@ Observed results:
   `/var/run/postgresql/.s.PGSQL.5432`;
 - PostgreSQL reconciled the `object_storage_service` role, database, and peer
   mappings for `object_storage_service` and `object_storage_admin`;
+- PostgreSQL reconciled the `otelcol` peer role and granted `pg_monitor` for
+  the OTel PostgreSQL receiver;
 - ClickHouse now has a component CRD and a component-owned Nomad job;
 - ClickHouse installs the boarded runtime artifact, writes TLS/SPIFFE/systemd
   config, starts ClickHouse through systemd, applies repo migrations, and
@@ -137,6 +140,37 @@ Observed results:
 - the projected Nomad Observer graph and report are `root:nomad_observer`
   `0640`, allowing the service user to read configuration without exposing the
   boarded workspace tree broadly;
+- OTel Collector now has a component CRD and a component-owned Nomad service
+  job;
+- OTel Collector recovery installs the boarded `otelcol-runtime.tar` and
+  `otelcol-config.tar`, creates the `otelcol` account, and reports
+  `OtelCollectorRecoveryComplete=True` in
+  `/run/verself/recovery/otelcol/report.json`;
+- OTel Collector runtime digest:
+  `sha256:4c29347a3dad1c4e9bb60af074523fd8287b94b32aae7bd846839310887471de`;
+- OTel Collector config digest:
+  `sha256:60870e2bd6856ac2dcec0ec051d35c6851405e93f9db95872926a1475a8ef651`;
+- live OTel Collector allocation `6078c0f2` is running, deployment `519ad6a9`
+  completed successfully, and the `otelcol-health` Nomad service check is
+  `success`;
+- OTel Collector health endpoint returned `Server available` from
+  `127.0.0.1:13133`;
+- OTel Collector spiffe-helper received
+  `spiffe://gamma.verself.sh/svc/otelcol` and refreshed the X.509 material;
+- OTel Collector wrote fresh ClickHouse evidence newer than five minutes:
+  `default.otel_metrics_sum` had `115495` rows with
+  `max(TimeUnix) = 2026-06-06 06:26:17.015`,
+  `default.otel_metrics_gauge` had `17144` rows with
+  `max(TimeUnix) = 2026-06-06 06:26:16.996`, and `default.otel_logs` had `240`
+  rows with `max(Timestamp) = 2026-06-06 06:26:05.118326000`;
+- re-submitting the same OTel Collector job produced evaluation `890cb326`
+  without allocation churn; allocation `6078c0f2` remained the only running
+  allocation;
+- artifact-only changes are not visible to Nomad when the job HCL is unchanged;
+  the live OTel config update required an explicit allocation restart after
+  boarding the new artifact. Future `fly` submission logic should carry a
+  boarded artifact or upload digest into Nomad submission if artifact-only
+  changes must roll automatically;
 - object-storage-service setup now exits successfully and reaches past
   migrations through the component-owned `object-storage-service recover`
   command;
@@ -181,6 +215,7 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -addre
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nftables/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nats/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nomad-observer/nomad.hcl'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/otelcol/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/clickhouse/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/services/object-storage-service/nomad.hcl'
@@ -210,6 +245,12 @@ ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/nomad-observer/repo
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default nomad-observer'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 23774120'
 ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(observed_at) FROM verself.fleet_nodes WHERE observed_at > now() - INTERVAL 5 MINUTE"'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/otelcol/report.json'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default otelcol'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 6078c0f2'
+ssh -T ubuntu@206.223.228.87 'curl -fsS http://127.0.0.1:13133/'
+ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(TimeUnix) FROM default.otel_metrics_sum WHERE TimeUnix > now() - INTERVAL 5 MINUTE"'
+ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(Timestamp) FROM default.otel_logs WHERE TimestampTime > now() - INTERVAL 5 MINUTE"'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 
@@ -238,11 +279,12 @@ cloudflare-control-plane \
 
 ## Next Component
 
-The next recovery target is OpenBao baseline reconciliation. PostgreSQL and
-ClickHouse now converge, and object-storage-service reaches its OpenBao-backed
-secret delivery boundary. OpenBao must accept operator root authority through a
-component-owned operator path, reconcile mounts, policies, and Nomad JWT roles
-from the boarded graph, then object-storage-service can retry and discover the
-next dependency. The authority must be able to read/write system mounts,
-policies, JWT auth config, and JWT auth roles; the local gamma bootstrap token
-tested in this run did not have that authority.
+The next recovery target is OpenBao baseline reconciliation. PostgreSQL,
+ClickHouse, Nomad Observer, NATS, and OTel Collector now converge, and
+object-storage-service reaches its OpenBao-backed secret delivery boundary.
+OpenBao must accept operator root authority through a component-owned operator
+path, reconcile mounts, policies, and Nomad JWT roles from the boarded graph,
+then object-storage-service can retry and discover the next dependency. The
+authority must be able to read/write system mounts, policies, JWT auth config,
+and JWT auth roles; the local gamma bootstrap token tested in this run did not
+have that authority.

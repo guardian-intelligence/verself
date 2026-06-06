@@ -26,6 +26,12 @@ filegroup(
     visibility = ["//src/infrastructure-components:__pkg__"],
 )
 
+filegroup(
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "runtime_artifact",
     out = "otelcol-runtime.tar",

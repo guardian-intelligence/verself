@@ -30,6 +30,11 @@ package v1alpha1
 			name:  #Identifier
 			owner: #Identifier
 		}]
+		roles?: [...{
+			name:   #Identifier
+			login?: bool
+			memberOf?: [...#Identifier]
+		}]
 		peerMappings?: [...{
 			systemUser:   #Identifier
 			postgresUser: #Identifier

@@ -472,6 +472,18 @@ def database_exists(spec, name):
     result = psql(spec, "-A", "-t", "-c", "select 1 from pg_database where datname = " + "'" + name.replace("'", "''") + "';")
     return result.stdout.strip() == "1"
 
+def reconcile_role(spec, role):
+    name = check_identifier(role["name"], "PostgreSQLCluster.spec.roles[].name")
+    login = bool(role.get("login", True))
+    if not role_exists(spec, name):
+        psql(spec, "-c", "create role " + quote_ident(name) + (" login;" if login else " nologin;"))
+    else:
+        psql(spec, "-c", "alter role " + quote_ident(name) + (" login;" if login else " nologin;"))
+    for parent in role.get("memberOf") or []:
+        parent = check_identifier(parent, "PostgreSQLCluster.spec.roles[].memberOf[]")
+        psql(spec, "-c", "grant " + quote_ident(parent) + " to " + quote_ident(name) + ";")
+    return name
+
 def reconcile_once():
     spec = load_spec()
     report_path = pathlib.Path(spec["reportPath"])
@@ -481,6 +493,8 @@ def reconcile_once():
     roles.add("postgres")
     for mapping in spec.get("peerMappings") or []:
         roles.add(check_identifier(mapping["postgresUser"], "PostgreSQLCluster.spec.peerMappings[].postgresUser"))
+    for role in spec.get("roles") or []:
+        roles.add(reconcile_role(spec, role))
     for role in sorted(roles):
         if not role_exists(spec, role):
             psql(spec, "-c", "create role " + quote_ident(role) + " login;")
