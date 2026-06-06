@@ -20,6 +20,7 @@ genrule(
         "@postgresql_tool_pgbackrest//file",
         "@postgresql_tool_postgresql_16//file",
         "@postgresql_tool_postgresql_client_16//file",
+        "//src/infrastructure-components/postgresql/cmd/postgresql-recovery",
     ],
     outs = ["postgresql_runtime.tar"],
     cmd = """
@@ -40,6 +41,7 @@ mkdir -p \
   "$$tmp/{root}/usr/share/postgresql" \
   "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
 cp -a "$$tmp/extract/usr/bin/pgbackrest" "$$tmp/{root}/usr/bin/pgbackrest"
+install -m 0755 "$(location //src/infrastructure-components/postgresql/cmd/postgresql-recovery:postgresql-recovery)" "$$tmp/{root}/usr/bin/postgresql-recovery"
 cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
 cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicudata.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicudata.so.74"

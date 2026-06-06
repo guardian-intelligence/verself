@@ -44,6 +44,17 @@ job "postgresql" {
         sidecar = false
       }
 
+      vault {
+        env  = false
+        role = "postgresql-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
       config {
         command = "/usr/bin/python3"
         args = ["-c", <<-PY
@@ -102,9 +113,52 @@ def required_int(spec, key):
         raise SystemExit(f"PostgreSQLCluster.spec.{key} must be a positive integer")
     return value
 
+def optional_bool(value, default=False):
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise SystemExit("PostgreSQLCluster backup boolean fields must be boolean")
+    return value
+
 def check_identifier(value, field):
     if not isinstance(value, str) or not identifier_pattern.match(value):
         raise SystemExit(f"{field} must be a PostgreSQL identifier")
+    return value
+
+def optional_backup(spec):
+    backup = spec.get("backup")
+    if backup is None:
+        return None
+    if not isinstance(backup, dict):
+        raise SystemExit("PostgreSQLCluster.spec.backup must be an object")
+    repository = backup.get("repository")
+    if not isinstance(repository, dict) or repository.get("type") != "s3":
+        raise SystemExit("PostgreSQLCluster.spec.backup.repository.type must be s3")
+    cipher_ref = backup.get("cipherPassRef")
+    if not isinstance(cipher_ref, dict) or cipher_ref.get("kind") != "SecretPath":
+        raise SystemExit("PostgreSQLCluster.spec.backup.cipherPassRef must reference a SecretPath")
+    return {
+        "stanza": check_identifier(backup.get("stanza"), "PostgreSQLCluster.spec.backup.stanza"),
+        "configPath": required_path(backup, "configPath"),
+        "spoolDir": required_path(backup, "spoolDir"),
+        "logDir": required_path(backup, "logDir"),
+        "archiveTimeout": require_nonempty(backup.get("archiveTimeout"), "PostgreSQLCluster.spec.backup.archiveTimeout"),
+        "processMax": required_int(backup, "processMax"),
+        "retentionFull": required_int(backup, "retentionFull"),
+        "destructiveRestoreAllowed": optional_bool(backup.get("destructiveRestoreAllowed"), False),
+        "recoveryCredentialOpenBaoPath": require_nonempty(backup.get("recoveryCredentialOpenBaoPath"), "PostgreSQLCluster.spec.backup.recoveryCredentialOpenBaoPath"),
+        "cipherPassName": require_nonempty(cipher_ref.get("name"), "PostgreSQLCluster.spec.backup.cipherPassRef.name"),
+        "repository": {
+            "endpoint": require_nonempty(repository.get("endpoint"), "PostgreSQLCluster.spec.backup.repository.endpoint"),
+            "region": require_nonempty(repository.get("region"), "PostgreSQLCluster.spec.backup.repository.region"),
+            "bucket": require_nonempty(repository.get("bucket"), "PostgreSQLCluster.spec.backup.repository.bucket"),
+            "path": required_path(repository, "path"),
+        },
+    }
+
+def require_nonempty(value, field):
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"{field} is required")
     return value
 
 def ensure_group(name):
@@ -194,7 +248,73 @@ def runtime_env(runtime_root):
         "LD_LIBRARY_PATH": str(current / "usr/lib/x86_64-linux-gnu") + ":" + str(current / "usr/lib/postgresql" / postgres_major / "lib"),
     }
 
-def write_config(spec, runtime_root, data_dir, config_dir, log_dir, socket_dir):
+def run_as_postgres(runtime_root, args, check=True, capture_output=False):
+    env = runtime_env(runtime_root)
+    command = [
+        "/usr/sbin/runuser",
+        "-u", "postgres",
+        "--",
+        "/usr/bin/env",
+        "HOME=" + env["HOME"],
+        "LD_LIBRARY_PATH=" + env["LD_LIBRARY_PATH"],
+    ]
+    command.extend(str(arg) for arg in args)
+    return subprocess.run(command, check=check, text=True, capture_output=capture_output)
+
+def recovery_binary(runtime_root):
+    path = runtime_root / "current/usr/bin/postgresql-recovery"
+    if not path.is_file():
+        raise SystemExit(f"PostgreSQL runtime artifact missing postgresql-recovery binary under {path}")
+    return path
+
+def read_secret_file(path, field):
+    value = pathlib.Path(path).read_text(encoding="utf-8").strip()
+    if not value:
+        raise SystemExit(f"{field} rendered empty")
+    return value
+
+def write_pgbackrest_config(backup, runtime_root, spec, data_dir, postgres_uid, postgres_gid):
+    if backup is None:
+        return
+    access_key = read_secret_file(os.environ["NOMAD_SECRETS_DIR"] + "/postgresql.pgbackrest.r2_access_key_id", "R2 recovery access key")
+    secret_key = read_secret_file(os.environ["NOMAD_SECRETS_DIR"] + "/postgresql.pgbackrest.r2_secret_access_key", "R2 recovery secret key")
+    cipher_pass = read_secret_file(os.environ["NOMAD_SECRETS_DIR"] + "/postgresql.pgbackrest.cipher_pass", "pgBackRest cipher pass")
+    mkdir(backup["configPath"].parent, postgres_uid, postgres_gid, 0o700)
+    mkdir(backup["spoolDir"], postgres_uid, postgres_gid, 0o700)
+    mkdir(backup["logDir"], postgres_uid, grp.getgrnam("adm").gr_gid, 0o750)
+    content = "\n".join([
+        "[global]",
+        "repo1-type=s3",
+        "repo1-s3-endpoint=" + backup["repository"]["endpoint"],
+        "repo1-s3-region=" + backup["repository"]["region"],
+        "repo1-s3-bucket=" + backup["repository"]["bucket"],
+        "repo1-s3-key=" + access_key,
+        "repo1-s3-key-secret=" + secret_key,
+        "repo1-path=" + str(backup["repository"]["path"]),
+        "repo1-cipher-type=aes-256-cbc",
+        "repo1-cipher-pass=" + cipher_pass,
+        "repo1-retention-full=" + str(backup["retentionFull"]),
+        "process-max=" + str(backup["processMax"]),
+        "start-fast=y",
+        "log-level-console=warn",
+        "log-level-file=detail",
+        "log-path=" + str(backup["logDir"]),
+        "spool-path=" + str(backup["spoolDir"]),
+        "",
+        "[" + backup["stanza"] + "]",
+        "pg1-path=" + str(data_dir),
+        "pg1-port=" + str(required_int(spec, "port")),
+        "pg1-socket-path=" + str(required_path(spec, "socketDir")),
+        "pg1-user=postgres",
+        "",
+    ])
+    tmp = backup["configPath"].with_name(backup["configPath"].name + "." + str(os.getpid()) + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.chown(tmp, postgres_uid, postgres_gid)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, backup["configPath"])
+
+def write_config(spec, runtime_root, data_dir, config_dir, log_dir, socket_dir, backup):
     listen_address = spec.get("listenAddress")
     if not isinstance(listen_address, str) or not listen_address:
         raise SystemExit("PostgreSQLCluster.spec.listenAddress is required")
@@ -230,6 +350,11 @@ track_commit_timestamp = on
 max_wal_size = 1GB
 min_wal_size = 80MB
 unix_socket_directories = '{socket_dir}'
+"""
+    if backup is not None:
+        postgresql_conf += f"""archive_mode = on
+archive_timeout = '{backup["archiveTimeout"]}'
+archive_command = '{runtime_root / "current/usr/bin/pgbackrest"} --config={backup["configPath"]} --stanza={backup["stanza"]} archive-push %p'
 """
     pg_hba = """local   all       all                peer map=verself_services
 host    all       all   127.0.0.1/32 scram-sha-256
@@ -277,42 +402,103 @@ def project_document(doc, postgres_uid, postgres_gid):
     os.chmod(tmp_doc_path, 0o640)
     os.replace(tmp_doc_path, projected_doc_path)
 
-doc, spec = load_resource()
-ensure_group("postgres")
-ensure_user("postgres")
-postgres = pwd.getpwnam("postgres")
-artifact = required_repo_path(spec, "runtimeArtifact")
-runtime_root = required_path(spec, "runtimeRoot")
-data_dir = required_path(spec, "dataDir")
-config_dir = required_path(spec, "configDir")
-log_dir = required_path(spec, "logDir")
-socket_dir = required_path(spec, "socketDir")
-report_path = required_path(spec, "reportPath")
-if report_path.parent != projected_doc_path.parent:
-    raise SystemExit("PostgreSQLCluster.spec.reportPath must be under /run/verself/recovery/postgresql")
+def data_directory_status(data_dir):
+    # Check: PG_VERSION is the minimal marker for an existing PostgreSQL
+    # cluster; non-empty data without it is treated as invalid evidence.
+    if (data_dir / "PG_VERSION").is_file():
+        return "valid_cluster"
+    try:
+        entries = list(data_dir.iterdir())
+    except FileNotFoundError:
+        return "empty"
+    return "empty" if not entries else "invalid_cluster"
 
-mkdir(data_dir, postgres.pw_uid, postgres.pw_gid, 0o700)
-mkdir(config_dir, postgres.pw_uid, postgres.pw_gid, 0o700)
-mkdir(log_dir, postgres.pw_uid, grp.getgrnam("adm").gr_gid, 0o2755)
-mkdir(socket_dir, postgres.pw_uid, postgres.pw_gid, 0o755)
-install_runtime(artifact, runtime_root, postgres.pw_gid)
-write_config(spec, runtime_root, data_dir, config_dir, log_dir, socket_dir)
-project_document(doc, postgres.pw_uid, postgres.pw_gid)
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
 
-if not (data_dir / "PG_VERSION").is_file():
+def postmaster_status(data_dir):
+    # Check: a stale postmaster.pid can be safely reclaimed by the server task,
+    # but a live postmaster means setup must not mutate PGDATA.
+    pid_file = data_dir / "postmaster.pid"
+    if not pid_file.exists():
+        return "stopped"
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").splitlines()[0])
+    except Exception:
+        return "stale_pid"
+    return "running" if pid_alive(pid) else "stale_pid"
+
+def recovery_common_args(backup, runtime_root):
+    return [
+        recovery_binary(runtime_root),
+        "--stanza=" + backup["stanza"],
+        "--config=" + str(backup["configPath"]),
+        "--runtime-root=" + str(runtime_root / "current"),
+        "--process-max=" + str(backup["processMax"]),
+    ]
+
+def backup_repository_status(backup, runtime_root):
+    # Check: successful pgBackRest inventory with no backups is a reachable
+    # empty repository; command failure is treated as unreachable, not empty.
+    if backup is None:
+        return "not_configured"
+    result = run_as_postgres(
+        runtime_root,
+        recovery_common_args(backup, runtime_root) + ["--action=info"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        return "unreachable"
+    try:
+        payload = json.loads(result.stdout)
+    except Exception as exc:
+        raise SystemExit(f"parse pgBackRest info JSON: {exc}") from exc
+    backups = []
+    if isinstance(payload, list):
+        for stanza in payload:
+            if isinstance(stanza, dict):
+                backups.extend(stanza.get("backup") or [])
+    return "reachable_backed" if backups else "reachable_empty"
+
+def build_recovery_plan(backup, runtime_root, data_status, postmaster, repository):
+    args = [
+        recovery_binary(runtime_root),
+        "--action=plan",
+        "--plan-config=valid",
+        "--plan-data-directory=" + data_status,
+        "--plan-postmaster=" + postmaster,
+        "--plan-backup-repository=" + repository,
+        "--plan-destructive-restore-allowed=" + ("true" if backup and backup["destructiveRestoreAllowed"] else "false"),
+    ]
+    result = subprocess.run(args, check=True, text=True, capture_output=True, env=runtime_env(runtime_root))
+    return json.loads(result.stdout)
+
+def plan_contains(plan, state):
+    if plan.get("terminal") == state:
+        return True
+    return any(transition.get("from") == state or transition.get("to") == state for transition in plan.get("transitions") or [])
+
+def blocked_reason(plan):
+    transitions = plan.get("transitions") or []
+    if transitions:
+        return transitions[-1].get("reason", "PostgreSQL recovery blocked")
+    return "PostgreSQL recovery blocked"
+
+def initialize_cluster(runtime_root, data_dir, socket_dir, postgres_uid, postgres_gid):
     pwfile = socket_dir / ("initdb-password." + str(os.getpid()))
     pwfile.write_text(subprocess.check_output(["/usr/bin/openssl", "rand", "-base64", "48"], text=True), encoding="utf-8")
-    os.chown(pwfile, postgres.pw_uid, postgres.pw_gid)
+    os.chown(pwfile, postgres_uid, postgres_gid)
     os.chmod(pwfile, 0o600)
     try:
-        run([
-            "/usr/sbin/runuser",
-            "-u", "postgres",
-            "--",
-            "/usr/bin/env",
-            "HOME=/var/lib/postgresql",
-            "LD_LIBRARY_PATH=" + runtime_env(runtime_root)["LD_LIBRARY_PATH"],
-            str(runtime_root / "current/usr/lib/postgresql" / postgres_major / "bin/initdb"),
+        run_as_postgres(runtime_root, [
+            runtime_root / "current/usr/lib/postgresql" / postgres_major / "bin/initdb",
             "--pgdata=" + str(data_dir),
             "--auth-local=peer",
             "--auth-host=scram-sha-256",
@@ -326,6 +512,52 @@ if not (data_dir / "PG_VERSION").is_file():
             pwfile.unlink()
         except FileNotFoundError:
             pass
+
+def restore_cluster(backup, runtime_root, data_dir):
+    args = recovery_common_args(backup, runtime_root) + [
+        "--action=restore",
+        "--pgdata=" + str(data_dir),
+        "--restore-type=default",
+        "--target-action=promote",
+    ]
+    if backup["destructiveRestoreAllowed"]:
+        args.append("--destructive-restore-allowed")
+    run_as_postgres(runtime_root, args)
+
+doc, spec = load_resource()
+ensure_group("postgres")
+ensure_user("postgres")
+postgres = pwd.getpwnam("postgres")
+artifact = required_repo_path(spec, "runtimeArtifact")
+runtime_root = required_path(spec, "runtimeRoot")
+data_dir = required_path(spec, "dataDir")
+config_dir = required_path(spec, "configDir")
+log_dir = required_path(spec, "logDir")
+socket_dir = required_path(spec, "socketDir")
+report_path = required_path(spec, "reportPath")
+backup = optional_backup(spec)
+if report_path.parent != projected_doc_path.parent:
+    raise SystemExit("PostgreSQLCluster.spec.reportPath must be under /run/verself/recovery/postgresql")
+
+mkdir(data_dir, postgres.pw_uid, postgres.pw_gid, 0o700)
+mkdir(config_dir, postgres.pw_uid, postgres.pw_gid, 0o700)
+mkdir(log_dir, postgres.pw_uid, grp.getgrnam("adm").gr_gid, 0o2755)
+mkdir(socket_dir, postgres.pw_uid, postgres.pw_gid, 0o755)
+install_runtime(artifact, runtime_root, postgres.pw_gid)
+write_pgbackrest_config(backup, runtime_root, spec, data_dir, postgres.pw_uid, postgres.pw_gid)
+write_config(spec, runtime_root, data_dir, config_dir, log_dir, socket_dir, backup)
+project_document(doc, postgres.pw_uid, postgres.pw_gid)
+
+data_status = data_directory_status(data_dir)
+postmaster = postmaster_status(data_dir)
+repository = backup_repository_status(backup, runtime_root)
+plan = build_recovery_plan(backup, runtime_root, data_status, postmaster, repository)
+if plan.get("terminal") == "blocked":
+    raise SystemExit(blocked_reason(plan))
+if plan_contains(plan, "restore_backup"):
+    restore_cluster(backup, runtime_root, data_dir)
+elif plan_contains(plan, "initialize_fresh_cluster"):
+    initialize_cluster(runtime_root, data_dir, socket_dir, postgres.pw_uid, postgres.pw_gid)
 PY
         ]
       }
@@ -333,6 +565,33 @@ PY
       resources {
         cpu    = 100
         memory = 256
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/postgresql.pgbackrest.r2_access_key_id"
+        perms       = "0600"
+        data        = <<-EOT
+{{ with secret "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery" }}{{ .Data.data.access_key_id }}{{ end }}
+EOT
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/postgresql.pgbackrest.r2_secret_access_key"
+        perms       = "0600"
+        data        = <<-EOT
+{{ with secret "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery" }}{{ .Data.data.secret_access_key }}{{ end }}
+EOT
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/postgresql.pgbackrest.cipher_pass"
+        perms       = "0600"
+        data        = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/postgresql.pgbackrest.cipher_pass" }}{{ .Data.data.value }}{{ end }}
+EOT
       }
     }
 
@@ -506,6 +765,62 @@ def command_env(spec):
         "LD_LIBRARY_PATH": str(current / "usr/lib/x86_64-linux-gnu") + ":" + str(current / "usr/lib/postgresql" / postgres_major / "lib"),
     }
 
+def backup_spec(spec):
+    backup = spec.get("backup")
+    if not isinstance(backup, dict):
+        return None
+    return backup
+
+def recovery_command(spec, backup, action, *extra):
+    runtime_root = pathlib.Path(spec["runtimeRoot"])
+    command = [
+        str(runtime_root / "current/usr/bin/postgresql-recovery"),
+        "--action=" + action,
+        "--stanza=" + backup["stanza"],
+        "--config=" + backup["configPath"],
+        "--runtime-root=" + str(runtime_root / "current"),
+        "--process-max=" + str(backup["processMax"]),
+    ]
+    command.extend(extra)
+    return command
+
+def run_recovery(spec, backup, action, *extra, check=True, capture_output=False):
+    return subprocess.run(
+        recovery_command(spec, backup, action, *extra),
+        check=check,
+        text=True,
+        capture_output=capture_output,
+        env=command_env(spec),
+    )
+
+def pgbackrest_info(spec, backup):
+    result = run_recovery(spec, backup, "info", check=False, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "pgBackRest info failed").strip())
+    try:
+        payload = json.loads(result.stdout)
+    except Exception as exc:
+        raise RuntimeError(f"parse pgBackRest info JSON: {exc}") from exc
+    return payload
+
+def pgbackrest_backup_count(payload):
+    count = 0
+    if isinstance(payload, list):
+        for stanza in payload:
+            if isinstance(stanza, dict):
+                count += len(stanza.get("backup") or [])
+    return count
+
+def pgbackrest_stanza_missing(payload):
+    if not isinstance(payload, list):
+        return False
+    for stanza in payload:
+        for repo in (stanza.get("repo") or []) if isinstance(stanza, dict) else []:
+            status = repo.get("status") or {}
+            if "missing stanza" in str(status.get("message", "")):
+                return True
+    return False
+
 def psql(spec, *args, input_text=None):
     runtime_root = pathlib.Path(spec["runtimeRoot"])
     command = [
@@ -529,6 +844,23 @@ def wait_for_ready(spec):
             last_error = (exc.stderr or exc.stdout or str(exc)).strip()
             time.sleep(1)
     raise RuntimeError("PostgreSQL did not become ready: " + str(last_error))
+
+def ensure_backup_discipline(spec):
+    # Check: fully recovered PostgreSQL must have a reachable pgBackRest
+    # repository and at least one usable physical backup.
+    backup = backup_spec(spec)
+    if backup is None:
+        raise RuntimeError("PostgreSQLCluster.spec.backup is required for recovery health")
+    info = pgbackrest_info(spec, backup)
+    backup_count = pgbackrest_backup_count(info)
+    if backup_count == 0:
+        if pgbackrest_stanza_missing(info):
+            run_recovery(spec, backup, "stanza-create")
+        run_recovery(spec, backup, "check")
+        run_recovery(spec, backup, "backup", "--backup-type=full")
+        return "initial_full_backup_created"
+    run_recovery(spec, backup, "check")
+    return "repository_backed"
 
 def role_exists(spec, name):
     result = psql(spec, "-A", "-t", "-c", "select 1 from pg_roles where rolname = " + "'" + name.replace("'", "''") + "';")
@@ -569,10 +901,12 @@ def reconcile_once():
         owner = check_identifier(database["owner"], "PostgreSQLCluster.spec.databases[].owner")
         if not database_exists(spec, name):
             psql(spec, "-c", "create database " + quote_ident(name) + " owner " + quote_ident(owner) + ";")
+    backup_status = ensure_backup_discipline(spec)
     report = {
         "component": "postgresql",
         "resource": resource_name,
         "status": "healthy",
+        "backup_status": backup_status,
         "socket_dir": spec["socketDir"],
         "port": spec["port"],
         "databases": sorted(database["name"] for database in spec.get("databases") or []),

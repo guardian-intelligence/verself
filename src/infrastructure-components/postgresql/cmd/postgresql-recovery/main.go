@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	actionBackup  = "backup"
-	actionCheck   = "check"
-	actionInfo    = "info"
-	actionPlan    = "plan"
-	actionRestore = "restore"
+	actionBackup       = "backup"
+	actionCheck        = "check"
+	actionInfo         = "info"
+	actionPlan         = "plan"
+	actionRestore      = "restore"
+	actionStanzaCreate = "stanza-create"
 
 	defaultConfigPath  = "/etc/pgbackrest/pgbackrest.conf"
 	defaultRuntimeRoot = "/var/lib/postgresql/runtime/current"
@@ -32,6 +33,7 @@ type config struct {
 	runtimeRoot               string
 	pgData                    string
 	processMax                int
+	startFast                 bool
 	repo                      int
 	backupType                string
 	restoreType               string
@@ -60,6 +62,8 @@ func run(args []string) error {
 		return runPgBackRest(cfg, []string{"info", "--output=json"})
 	case actionCheck:
 		return runPgBackRest(cfg, []string{"check"})
+	case actionStanzaCreate:
+		return runPgBackRest(cfg, []string{"stanza-create"})
 	case actionBackup:
 		return runPgBackRest(cfg, backupArgs(cfg))
 	case actionRestore:
@@ -88,12 +92,13 @@ func parseConfig(args []string) (config, error) {
 		},
 	}
 	fs := flag.NewFlagSet("postgresql-recovery", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "", "Action: plan, info, check, backup, or restore.")
+	fs.StringVar(&cfg.action, "action", "", "Action: plan, info, stanza-create, check, backup, or restore.")
 	fs.StringVar(&cfg.stanza, "stanza", "", "pgBackRest stanza.")
 	fs.StringVar(&cfg.configPath, "config", cfg.configPath, "pgBackRest config path.")
 	fs.StringVar(&cfg.runtimeRoot, "runtime-root", cfg.runtimeRoot, "PostgreSQL runtime root containing usr/bin/pgbackrest.")
 	fs.StringVar(&cfg.pgData, "pgdata", "", "PostgreSQL data directory.")
 	fs.IntVar(&cfg.processMax, "process-max", cfg.processMax, "pgBackRest process-max.")
+	fs.BoolVar(&cfg.startFast, "start-fast", true, "Pass --start-fast to pgBackRest backup.")
 	fs.IntVar(&cfg.repo, "repo", cfg.repo, "Optional pgBackRest repository number.")
 	fs.StringVar(&cfg.backupType, "backup-type", cfg.backupType, "Backup type: full, diff, or incr.")
 	fs.StringVar(&cfg.restoreType, "restore-type", cfg.restoreType, "Restore type: default, immediate, time, lsn, name, xid, standby, preserve, none.")
@@ -212,7 +217,11 @@ func commonPgBackRestArgs(cfg config) []string {
 }
 
 func backupArgs(cfg config) []string {
-	return []string{"backup", "--type=" + cfg.backupType}
+	args := []string{"backup", "--type=" + cfg.backupType}
+	if cfg.startFast {
+		args = append(args, "--start-fast")
+	}
+	return args
 }
 
 func restoreArgs(cfg config) []string {
