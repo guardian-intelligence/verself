@@ -16,6 +16,7 @@ consecutive submissions do not create unexpected allocation churn.
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Boarded nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Boarded NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
+| Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Boarded Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation and OpenBao-backed R2 credentials |
@@ -32,14 +33,15 @@ Observed results:
 
 - boarding verified the extracted repo tree on gamma;
 - latest resource graph digest:
-  `sha256:9afc88e10532c075e0b09106526572abe36c32c1b696e3be0204f1d1064749ad`;
+  `sha256:4f0ae3c51824210dfd9cbf210c6b6d54ae0e0be4358fa9af4d91c09cb8912470`;
 - latest verified upload digest:
-  `sha256:5e51bb68ce6d17fe6673b069c82e818416772308219f575ddeaa06070ecc6d0f`;
+  `sha256:62423234ac5e575bbc0fc6bde5ce634c0a4694ddfcc49e4150ebb9af6744b727`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
-  PostgreSQL, ClickHouse, nftables, NATS, Cloudflare, HAProxy, object-storage,
-  substrate, and public-origin resources;
+  PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, Cloudflare, HAProxy,
+  object-storage, substrate, and public-origin resources;
 - remote Nomad validation succeeds for OpenBao, PostgreSQL, ClickHouse,
-  nftables, NATS, HAProxy, Cloudflare, and object-storage job files;
+  nftables, NATS, Nomad Observer, HAProxy, Cloudflare, and object-storage job
+  files;
 - Nomad is running and reachable on gamma;
 - OpenBao initialized a Shamir store with PGP-encrypted init material and is
   unsealed, but baseline reconciliation is blocked until operator root
@@ -117,6 +119,24 @@ Observed results:
   `spiffe://gamma.verself.sh/svc/nats` and refreshed the X.509 material;
 - re-submitting the same NATS job produced evaluation `74dac43a` without
   allocation churn; allocation `7d67f12d` remained the only running allocation;
+- Nomad Observer now has a component CRD and a component-owned Nomad service
+  job;
+- Nomad Observer recovery installs the boarded `nomad-observer.tar`, creates
+  the `nomad_observer` account, projects the boarded graph into
+  `/run/verself/recovery/nomad-observer/document.json`, and reports
+  `NomadObserverRecoveryComplete=True` in
+  `/run/verself/recovery/nomad-observer/report.json`;
+- Nomad Observer runtime digest:
+  `sha256:9c6b2f38c68d873ed6e504899b323afe8694629bea56ad898402da277cee0cd0`;
+- live Nomad Observer allocation `23774120` is running, deployment `794fbda2`
+  completed successfully, and re-submitting the same job produced evaluation
+  `2eafecab` without allocation churn;
+- Nomad Observer wrote fresh ClickHouse fleet evidence:
+  `verself.fleet_nodes` had one row newer than five minutes with
+  `max(observed_at) = 2026-06-06 06:00:18.497`;
+- the projected Nomad Observer graph and report are `root:nomad_observer`
+  `0640`, allowing the service user to read configuration without exposing the
+  boarded workspace tree broadly;
 - object-storage-service setup now exits successfully and reaches past
   migrations through the component-owned `object-storage-service recover`
   command;
@@ -160,6 +180,7 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -addre
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/haproxy/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nftables/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nats/nomad.hcl'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nomad-observer/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/clickhouse/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/services/object-storage-service/nomad.hcl'
@@ -185,6 +206,10 @@ ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/nats/report.json'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default nats'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 7d67f12d'
 ssh -T ubuntu@206.223.228.87 'curl -fsS http://127.0.0.1:8222/varz'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/nomad-observer/report.json'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default nomad-observer'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 23774120'
+ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(observed_at) FROM verself.fleet_nodes WHERE observed_at > now() - INTERVAL 5 MINUTE"'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 

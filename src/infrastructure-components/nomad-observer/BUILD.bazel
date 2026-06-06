@@ -9,6 +9,12 @@ deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 spire_identity(
     name = "spiffe_identity",
     component = "nomad_observer",

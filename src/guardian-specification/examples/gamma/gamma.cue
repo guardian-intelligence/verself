@@ -340,6 +340,39 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "nomadobserver.guardianintelligence.org/v1alpha1"
+		kind:       "NomadObserver"
+		metadata: name: "nomad-observer"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar"
+			runtimeRoot:     "/var/lib/nomad-observer/runtime"
+			dataDir:         "/var/lib/nomad-observer"
+			graphPath:       "/run/verself/recovery/nomad-observer/document.json"
+			reportPath:      "/run/verself/recovery/nomad-observer/report.json"
+			user:            "nomad_observer"
+			group:           "nomad_observer"
+			supplementaryGroups: ["spire_workload"]
+			nomad: {
+				address:   "http://127.0.0.1:4646"
+				namespace: "default"
+			}
+			otel: exporterEndpoint: "http://127.0.0.1:4317"
+			capture: {
+				workers:         4
+				queueSize:       128
+				stderrTailBytes: 65536
+				stdoutTailBytes: 32768
+			}
+			fleet: snapshotIntervalSeconds: 30
+			clickhouse: {
+				address:    "127.0.0.1:9440"
+				user:       "nomad_observer"
+				caCertPath: "/etc/verself/clickhouse/server-ca.pem"
+			}
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+	{
 		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 		kind:       "PGPRecipient"
 		metadata: name:        "operator-a"

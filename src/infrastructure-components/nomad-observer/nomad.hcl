@@ -1,44 +1,61 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current"
+}
+
+variable "nomad_observer_resource_name" {
+  type    = string
+  default = "nomad-observer"
+}
+
 job "nomad-observer" {
-  name = "nomad-observer"
+  name        = "nomad-observer"
   datacenters = ["*"]
-  type = "service"
+  type        = "service"
 
   group "observer" {
     count = 1
 
-    task "observer" {
+    task "recover" {
       driver = "raw_exec"
-      # Runs as a dedicated identity (not nobody): it presents an x509-SVID to
-      # write the fleet projection to ClickHouse over mTLS, and is a member of
-      # the spire_workload group for agent-socket access.
-      user = "nomad_observer"
-      kill_signal = "SIGTERM"
-      kill_timeout = "15s"
+      user   = "root"
 
-      artifact {
-        source = "verself-artifact://nomad-observer"
-        destination = "local"
-        chown = true
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
       }
 
       config {
-        command = "local/bin/nomad-observer"
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer_/nomad-observer"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.nomad_observer_resource_name}",
+        ]
       }
 
-      env {
-        NOMAD_ADDR = "http://127.0.0.1:4646"
-        NOMAD_NAMESPACE = "default"
-        NOMAD_OBSERVER_CAPTURE_WORKERS = "4"
-        NOMAD_OBSERVER_CAPTURE_QUEUE_SIZE = "128"
-        NOMAD_OBSERVER_STDERR_TAIL_BYTES = "65536"
-        NOMAD_OBSERVER_STDOUT_TAIL_BYTES = "32768"
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_SERVICE_NAME = "nomad-observer"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
-        VERSELF_CLICKHOUSE_USER = "nomad_observer"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
-        VERSELF_SUPERVISOR = "nomad"
+      resources {
+        cpu    = 50
+        memory = 64
+      }
+    }
+
+    task "observer" {
+      driver = "raw_exec"
+      user   = "nomad_observer"
+
+      kill_signal = "SIGTERM"
+      kill_timeout = "15s"
+
+      config {
+        command = "/var/lib/nomad-observer/runtime/current/bin/nomad-observer"
+        args = [
+          "run",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=/run/verself/recovery/nomad-observer/document.json",
+          "--resource-name=${var.nomad_observer_resource_name}",
+        ]
       }
 
       resources {
