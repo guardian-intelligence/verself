@@ -32,7 +32,7 @@ job "openbao" {
       }
     }
 
-    task "setup" {
+    task "prepare" {
       driver = "raw_exec"
       user   = "root"
 
@@ -67,8 +67,10 @@ job "openbao" {
       }
 
       restart {
-        attempts = 0
-        mode     = "fail"
+        attempts = 3
+        delay    = "15s"
+        interval = "300s"
+        mode     = "delay"
       }
 
       env {
@@ -92,27 +94,41 @@ job "openbao" {
       }
     }
 
-    task "recover" {
+    task "reconcile" {
       driver = "raw_exec"
       user   = "root"
 
       restart {
-        attempts = 0
-        mode     = "fail"
+        attempts = 3
+        delay    = "15s"
+        interval = "300s"
+        mode     = "delay"
       }
 
       lifecycle {
         hook    = "poststart"
-        sidecar = false
+        sidecar = true
+      }
+
+      identity {
+        name     = "vault_default"
+        aud      = ["vault.io"]
+        ttl      = "1h"
+        file     = true
+        filepath = "secrets/openbao-reconcile.jwt"
       }
 
       config {
         command = "/var/lib/openbao/runtime/current/bin/openbao-recover"
         args = [
           "recover",
+          "--loop",
+          "--loop-interval=5s",
           "--repo-root=${var.guardian_repo_root}",
           "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
           "--resource-name=openbao",
+          "--nomad-workload-jwt-file=$${NOMAD_SECRETS_DIR}/openbao-reconcile.jwt",
+          "--nomad-workload-role=openbao-reconcile-runtime",
         ]
       }
 

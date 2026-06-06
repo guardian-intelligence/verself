@@ -44,9 +44,6 @@ resources: [
 							if sudo python3 -c 'import json, sys; doc=json.load(open(sys.argv[1], encoding="utf-8")); conditions=doc.get("conditions", []); sys.exit(0 if any(c.get("type") == "OpenBaoRecoveryComplete" and c.get("status") == "True" for c in conditions) else 1)' "$report"; then
 								exit 0
 							fi
-							if sudo python3 -c 'import json, sys; doc=json.load(open(sys.argv[1], encoding="utf-8")); conditions=doc.get("conditions", []); sys.exit(0 if any(c.get("type") == "OpenBaoRecoveryComplete" and c.get("status") == "False" for c in conditions) else 1)' "$report"; then
-								exit 1
-							fi
 						fi
 						sleep 1
 					done
@@ -272,6 +269,38 @@ resources: [
 				]
 				policies: [
 					{
+						name: "openbao-reconcile-runtime"
+						hcl: """
+							path "sys/mounts" {
+							  capabilities = ["read", "sudo"]
+							}
+							path "sys/mounts/*" {
+							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
+							}
+							path "sys/auth" {
+							  capabilities = ["read", "sudo"]
+							}
+							path "sys/auth/*" {
+							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
+							}
+							path "sys/policies/acl/*" {
+							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
+							}
+							path "auth/jwt-nomad/config" {
+							  capabilities = ["create", "update", "read", "sudo"]
+							}
+							path "auth/jwt-nomad/role/*" {
+							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
+							}
+							path "kv-runtime/data/secret/org/*" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
+					{
 						name: "cloudflare-integration-recovery-runtime"
 						hcl: """
 							path "kv-controller/data/integrations/cloudflare/account-admin" {
@@ -466,6 +495,23 @@ resources: [
 					jwksURL:     "http://127.0.0.1:4646/.well-known/jwks.json"
 					supportedAlgs: ["RS256", "EdDSA"]
 					roles: [
+						{
+							name:     "openbao-reconcile-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "openbao"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["openbao-reconcile-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
 						{
 							name:     "cloudflare-integration-recovery-runtime"
 							roleType: "jwt"

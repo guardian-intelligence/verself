@@ -70,6 +70,10 @@ type config struct {
 	tokenStdin                  bool
 	unsealStdin                 bool
 	breakglassGenerateRootStdin bool
+	loop                        bool
+	loopInterval                time.Duration
+	nomadWorkloadJWTFile        string
+	nomadWorkloadRole           string
 	resourceGraph               string
 	resourceName                string
 	pgpKeyDir                   string
@@ -195,6 +199,7 @@ type openBaoClient interface {
 	SaveSnapshot(context.Context, string) ([]byte, error)
 	ReconcileBaseline(context.Context, string, openBaoBaselineSpec) error
 	RevokeSelf(context.Context, string) error
+	LoginJWT(context.Context, string, string, string) (string, error)
 	GenerateRootInit(context.Context) (generateRootAttempt, error)
 	GenerateRootUpdate(context.Context, string, string) (generateRootAttempt, error)
 	GenerateRootCancel(context.Context) error
@@ -230,6 +235,9 @@ func run(ctx context.Context, args []string, stdout io.Writer, stdin io.Reader) 
 		client, err := newRealOpenBaoClient(cfg)
 		if err != nil {
 			return err
+		}
+		if cfg.loop {
+			return recoverLoop(ctx, cfg, client, stdout, stdin)
 		}
 		rep := recoverOnce(ctx, cfg, client, stdin)
 		return writeRecoveryReport(stdout, cfg.reportPath, rep)
@@ -316,6 +324,7 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		caCert:       defaultCACert,
 		keyShares:    defaultKeyShares,
 		threshold:    defaultThreshold,
+		loopInterval: 5 * time.Second,
 		resourceName: "openbao",
 		pgpKeyDir:    "/run/verself/recovery/openbao/pgp",
 	}
@@ -341,6 +350,10 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		fs.BoolVar(&cfg.unsealStdin, "unseal-stdin", false, "read unseal shares from stdin, one per line")
 		fs.BoolVar(&cfg.tokenStdin, "operator-token-stdin", false, "read an operator token from stdin")
 		fs.BoolVar(&cfg.breakglassGenerateRootStdin, "breakglass-generate-root-token-stdin", false, "BREAKGLASS: use deprecated OpenBao generate-root endpoints with stdin unseal shares")
+		fs.BoolVar(&cfg.loop, "loop", false, "run recover as a level-triggered controller")
+		fs.DurationVar(&cfg.loopInterval, "loop-interval", cfg.loopInterval, "recover controller observation interval")
+		fs.StringVar(&cfg.nomadWorkloadJWTFile, "nomad-workload-jwt-file", "", "Nomad workload identity JWT file used for baseline reconciliation")
+		fs.StringVar(&cfg.nomadWorkloadRole, "nomad-workload-role", "", "OpenBao JWT role used for baseline reconciliation")
 	}
 	if snapshotFlags {
 		fs.StringVar(&cfg.snapshotPath, "snapshot", "", "snapshot path to verify")
@@ -372,6 +385,15 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 	if cfg.tokenStdin && cfg.breakglassGenerateRootStdin {
 		return config{}, errors.New("--operator-token-stdin and --breakglass-generate-root-token-stdin are mutually exclusive")
 	}
+	if cfg.loop && (cfg.tokenStdin || cfg.unsealStdin || cfg.breakglassGenerateRootStdin) {
+		return config{}, errors.New("--loop cannot read operator material from stdin")
+	}
+	if (cfg.nomadWorkloadJWTFile == "") != (cfg.nomadWorkloadRole == "") {
+		return config{}, errors.New("--nomad-workload-jwt-file and --nomad-workload-role must be provided together")
+	}
+	if cfg.loopInterval <= 0 {
+		return config{}, errors.New("--loop-interval must be positive")
+	}
 	return cfg, nil
 }
 
@@ -400,6 +422,8 @@ func normalizeConfig(cfg config) config {
 	cfg.snapshotOut = strings.TrimSpace(cfg.snapshotOut)
 	cfg.manifestOut = strings.TrimSpace(cfg.manifestOut)
 	cfg.initOutputPath = strings.TrimSpace(cfg.initOutputPath)
+	cfg.nomadWorkloadJWTFile = strings.TrimSpace(cfg.nomadWorkloadJWTFile)
+	cfg.nomadWorkloadRole = strings.TrimSpace(cfg.nomadWorkloadRole)
 	cfg.resourceGraph = strings.TrimSpace(cfg.resourceGraph)
 	cfg.resourceName = strings.TrimSpace(cfg.resourceName)
 	cfg.pgpKeyDir = strings.TrimSpace(cfg.pgpKeyDir)
@@ -699,7 +723,9 @@ usage:
 Recovery reports contain conditions and fingerprints only. Unseal shares,
 recovery shares, and operator tokens must be provided through ephemeral operator
 paths, not host files. Generate-root support is breakglass-only; autonomous
-recovery should use auto-unseal and scoped workload identity.
+recovery should use auto-unseal and scoped workload identity. Nomad-managed
+reconciliation should run recover --loop with --nomad-workload-jwt-file and
+--nomad-workload-role.
 `)
 }
 
@@ -731,14 +757,14 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 	switch classify(status) {
 	case "InitializedUnsealed":
-		if cfg.baseline.Reconcile && !cfg.tokenStdin && !cfg.breakglassGenerateRootStdin {
+		if cfg.baseline.Reconcile && !baselineAuthorityConfigured(cfg) {
 			rep.Conditions = append(rep.Conditions,
 				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 			)
 			return rep
 		}
-		if !cfg.tokenStdin && !cfg.breakglassGenerateRootStdin {
+		if !baselineAuthorityConfigured(cfg) {
 			rep.Conditions = append(rep.Conditions,
 				conditionTrue("OpenBaoRecoveryComplete", "Available", "openbao", "OpenBao is initialized, unsealed, and available"),
 			)
@@ -765,6 +791,9 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 			}
 			extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
 			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
+		}
+		if hasNomadWorkloadAuthority(cfg) {
+			return reconcileBaselineWithNomadWorkload(ctx, cfg, client, rep, nil)
 		}
 		token, err := readToken(stdin, true)
 		if err != nil {
@@ -808,24 +837,27 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		rep.Evidence = statusEvidence(status)
 		if cfg.baseline.Reconcile {
 			rep.Conditions = append(rep.Conditions, conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"))
-			if !cfg.breakglassGenerateRootStdin {
-				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-				)
-				return rep
+			if cfg.breakglassGenerateRootStdin {
+				token, err := generateRootTokenFromShares(ctx, client, shares)
+				if err != nil {
+					rep.Conditions = append(rep.Conditions,
+						conditionFalse("OpenBaoBreakglassRootToken", "BreakglassGenerateRootFailed", "openbao", err.Error()),
+						conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
+						conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+					)
+					return rep
+				}
+				extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
+				return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
 			}
-			token, err := generateRootTokenFromShares(ctx, client, shares)
-			if err != nil {
-				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoBreakglassRootToken", "BreakglassGenerateRootFailed", "openbao", err.Error()),
-					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-				)
-				return rep
+			if hasNomadWorkloadAuthority(cfg) {
+				return reconcileBaselineWithNomadWorkload(ctx, cfg, client, rep, nil)
 			}
-			extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
-			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
+			rep.Conditions = append(rep.Conditions,
+				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
+				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+			)
+			return rep
 		}
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"),
@@ -841,6 +873,81 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		rep.Conditions = append(rep.Conditions, conditionFalse("OpenBaoRecoveryComplete", "UnknownState", "openbao", "OpenBao status did not map to a recovery state"))
 		return rep
 	}
+}
+
+func recoverLoop(ctx context.Context, cfg config, client openBaoClient, stdout io.Writer, stdin io.Reader) error {
+	for {
+		rep := recoverOnce(ctx, cfg, client, stdin)
+		if err := writeReport(stdout, cfg.reportPath, rep); err != nil {
+			return err
+		}
+		timer := time.NewTimer(cfg.loopInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return nil
+		case <-timer.C:
+		}
+	}
+}
+
+func baselineAuthorityConfigured(cfg config) bool {
+	return cfg.tokenStdin || cfg.breakglassGenerateRootStdin || hasNomadWorkloadAuthority(cfg)
+}
+
+func hasNomadWorkloadAuthority(cfg config) bool {
+	return cfg.nomadWorkloadJWTFile != "" && cfg.nomadWorkloadRole != ""
+}
+
+func reconcileBaselineWithNomadWorkload(ctx context.Context, cfg config, client openBaoClient, rep report, extra []condition) report {
+	if cfg.baseline.NomadJWT == nil || strings.TrimSpace(cfg.baseline.NomadJWT.Path) == "" {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionFalse("OpenBaoWorkloadToken", "JWTAuthUnavailable", "openbao", "Nomad workload JWT auth is not configured"),
+			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
+			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+		)
+		return rep
+	}
+	jwt, err := readNomadWorkloadJWT(cfg.nomadWorkloadJWTFile)
+	if err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionFalse("OpenBaoWorkloadToken", "JWTUnavailable", "openbao", err.Error()),
+			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
+			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+		)
+		return rep
+	}
+	token, err := client.LoginJWT(ctx, cfg.baseline.NomadJWT.Path, cfg.nomadWorkloadRole, jwt)
+	if err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionFalse("OpenBaoWorkloadToken", "JWTLoginFailed", "openbao", err.Error()),
+			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
+			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+		)
+		return rep
+	}
+	extra = append(extra, conditionTrue("OpenBaoWorkloadToken", "JWTAccepted", "openbao", "Nomad workload identity issued a scoped OpenBao token"))
+	return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
+}
+
+func readNomadWorkloadJWT(path string) (string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read Nomad workload JWT: %w", err)
+	}
+	jwt := strings.TrimSpace(string(body))
+	if jwt == "" {
+		return "", errors.New("Nomad workload JWT file is empty")
+	}
+	return jwt, nil
 }
 
 func reconcileBaselineWithToken(ctx context.Context, baseline openBaoBaselineSpec, client openBaoClient, rep report, token string, extra []condition) report {
@@ -1961,6 +2068,31 @@ func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken str
 
 func (c *realOpenBaoClient) RevokeSelf(ctx context.Context, token string) error {
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/token/revoke-self", map[string]any{}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) LoginJWT(ctx context.Context, authPath string, role string, jwt string) (string, error) {
+	authPath = strings.Trim(strings.TrimSpace(authPath), "/")
+	role = strings.TrimSpace(role)
+	jwt = strings.TrimSpace(jwt)
+	if authPath == "" || role == "" || jwt == "" {
+		return "", errors.New("OpenBao JWT auth path, role, and JWT are required")
+	}
+	var response struct {
+		Auth struct {
+			ClientToken string `json:"client_token"`
+		} `json:"auth"`
+	}
+	if err := c.apiJSON(ctx, "", http.MethodPost, "auth/"+authPath+"/login", map[string]string{
+		"role": role,
+		"jwt":  jwt,
+	}, &response, http.StatusOK); err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(response.Auth.ClientToken)
+	if token == "" {
+		return "", errors.New("OpenBao JWT login returned an empty token")
+	}
+	return token, nil
 }
 
 func (c *realOpenBaoClient) GenerateRootInit(ctx context.Context) (generateRootAttempt, error) {

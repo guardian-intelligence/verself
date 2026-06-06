@@ -29,6 +29,11 @@ type fakeOpenBaoClient struct {
 	snapshot               []byte
 	baselineTokens         []string
 	baselines              []openBaoBaselineSpec
+	jwtAuthPath            string
+	jwtRole                string
+	jwtToken               string
+	jwtLoginToken          string
+	jwtLoginErr            error
 	revokedTokens          []string
 	restored               bool
 	reconcileErrs          []error
@@ -108,6 +113,19 @@ func (f *fakeOpenBaoClient) ReconcileBaseline(_ context.Context, token string, b
 func (f *fakeOpenBaoClient) RevokeSelf(_ context.Context, token string) error {
 	f.revokedTokens = append(f.revokedTokens, token)
 	return f.revokeErr
+}
+
+func (f *fakeOpenBaoClient) LoginJWT(_ context.Context, authPath string, role string, jwt string) (string, error) {
+	f.jwtAuthPath = authPath
+	f.jwtRole = role
+	f.jwtToken = jwt
+	if f.jwtLoginErr != nil {
+		return "", f.jwtLoginErr
+	}
+	if strings.TrimSpace(f.jwtLoginToken) == "" {
+		return "", errors.New("jwt login token is empty")
+	}
+	return f.jwtLoginToken, nil
 }
 
 func (f *fakeOpenBaoClient) GenerateRootInit(context.Context) (generateRootAttempt, error) {
@@ -398,6 +416,44 @@ func TestUnsealedOpenBaoReportsBaselineBlockedWithoutOperatorToken(t *testing.T)
 	if len(client.baselineTokens) != 0 {
 		t.Fatalf("baseline reconciled without an operator token")
 	}
+}
+
+func TestUnsealedOpenBaoUsesNomadWorkloadJWTForBaseline(t *testing.T) {
+	jwt := randomSecret(t)
+	token := randomSecret(t)
+	jwtFile := filepath.Join(t.TempDir(), "openbao-reconcile.jwt")
+	if err := os.WriteFile(jwtFile, []byte(jwt+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeOpenBaoClient{
+		status:        baoStatus{Initialized: true, Sealed: false},
+		jwtLoginToken: token,
+	}
+	cfg := testConfig(t)
+	cfg.nomadWorkloadJWTFile = jwtFile
+	cfg.nomadWorkloadRole = "openbao-reconcile-runtime"
+	cfg.baseline = openBaoBaselineSpec{
+		Reconcile: true,
+		NomadJWT:  &openBaoNomadJWTAuthSpec{Path: "jwt-nomad"},
+	}
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "OpenBaoWorkloadToken", "True", "JWTAccepted")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if client.jwtAuthPath != "jwt-nomad" || client.jwtRole != "openbao-reconcile-runtime" || client.jwtToken != jwt {
+		t.Fatalf("jwt login = path %q role %q token %q", client.jwtAuthPath, client.jwtRole, client.jwtToken)
+	}
+	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
+		t.Fatalf("baseline did not use workload token")
+	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("workload token was not revoked after baseline reconciliation")
+	}
+	assertReportDoesNotContain(t, rep, jwt)
+	assertReportDoesNotContain(t, rep, token)
 }
 
 func TestUnsealedOpenBaoUsesOperatorTokenFromStdin(t *testing.T) {
