@@ -121,35 +121,6 @@ resources: [
 		spec: url:      "https://gamma.guardianintelligence.org"
 	},
 	{
-		apiVersion: "nomad.guardianintelligence.org/v1alpha1"
-		kind:       "NomadCluster"
-		metadata: name: "nomad"
-		spec: {
-			address:         "http://127.0.0.1:4646"
-			datacenter:      "iad1"
-			namespace:       "default"
-			runtimeArtifact: "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
-			installRoot:     "/opt/verself/profile"
-			configPath:      "/etc/nomad/nomad.hcl"
-			servicePath:     "/etc/systemd/system/nomad.service"
-			dataDir:         "/var/lib/nomad"
-			nodePool:        "default"
-			dynamicPorts: {
-				min: 20000
-				max: 32000
-			}
-			openbao: {
-				address:            "https://127.0.0.1:8200"
-				caFile:             "/etc/openbao/tls/cert.pem"
-				jwtAuthBackendPath: "jwt-nomad"
-				defaultIdentity: {
-					audience: ["vault.io"]
-					ttl: "1h"
-				}
-			}
-		}
-	},
-	{
 		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 		kind:       "OpenBaoCluster"
 		metadata: name: "openbao"

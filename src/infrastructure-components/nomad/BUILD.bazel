@@ -1,11 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
-filegroup(
-    name = "guardian_crd",
-    srcs = glob(["guardian/**/*.cue"]),
-    visibility = ["//visibility:public"],
-)
-
 genrule(
     name = "nomad_bin",
     srcs = ["@nomad_tool_nomad//file"],

@@ -89,16 +89,16 @@ Component schemas live beside the component that owns the behavior:
 
 ```text
 src/infrastructure-components/openbao/guardian/v1alpha1/schema.cue
-src/infrastructure-components/nomad/guardian/v1alpha1/schema.cue
 src/infrastructure-components/haproxy/guardian/v1alpha1/schema.cue
 src/integrations/cloudflare/control-plane/guardian/v1alpha1/schema.cue
 src/services/object-storage-service/guardian/v1alpha1/schema.cue
 ```
 
-Config examples may import the base schema and any component schemas needed by
-the selected graph. A site-specific file such as `examples/gamma/gamma.cue` is
-a bundle of selected resources, provider identifiers, origins, and substrate
-hooks. The site name is an operator label.
+Config examples import the base schema. Component schemas live beside their
+owners and validate component resources through owner-local tests, component
+runtime parsers, and future registry tooling. A site-specific file such as
+`examples/gamma/gamma.cue` is a bundle of selected resources, provider
+identifiers, origins, and substrate hooks. The site name is an operator label.
 
 ## Base Spec
 
@@ -140,6 +140,8 @@ component: provider account IDs, public resource names, OpenBao paths, Nomad
 workload roles, backup object locations, runtime artifact paths, policy names,
 and references to shared resources. A reader should be able to understand a
 component's intended static state from its CRD and referenced shared resources.
+Site examples instantiate component resources; schema fields are authored in
+the owner-local `guardian/v1alpha1/schema.cue`.
 
 Static configuration means declarative inputs that can be validated without
 performing the operation: names, URLs, artifact paths, socket paths, policy
@@ -200,9 +202,11 @@ Use `prestart` lifecycle tasks for idempotent recovery work that must complete
 before the main task starts. Use a long-running task only when the component
 needs continuous reconciliation after startup.
 
-Nomad itself may have a component-local CRD because it is an infrastructure
-component with static configuration. That CRD remains outside the base Guardian
-schema.
+Nomad agent bootstrap is host runtime machinery for the current alpha slice.
+The pinned Nomad runtime and `nomad-recover` binary are shipped in the boarded
+repo and use component-owned defaults. Add a Nomad component CRD only when
+there is static Nomad configuration that cannot live in the recovery binary or
+job file defaults.
 
 ## Evidence
 

@@ -10,7 +10,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Component | CRD | Current State | Blocking Conditions | Dependencies Needed For Convergence |
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
-| Nomad | `nomad.guardianintelligence.org/v1alpha1/NomadCluster/nomad` | Converged | None | Boarded repo, Nomad runtime artifact, root access for systemd and host config |
+| Nomad runtime | component bootstrap machinery | Converged | None | Boarded repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
 | OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator root authority: a valid operator token or threshold unseal shares that can generate a transient root token |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` through the component import action |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
@@ -29,11 +29,13 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --strea
 Observed results:
 
 - boarding verified the extracted repo tree on gamma;
+- latest resource graph digest:
+  `sha256:77b29d7e2cfccbf92577f6e060ae22b7bbbda11ae3053edb11db22deddb004e9`;
 - latest verified upload digest:
-  `sha256:814740680b1f097a391f69e164ac1c608fbd094477d48d256bd6c349a79fe771`;
-- the boarded repo contains `.guardian/fly/document.json` with Nomad, OpenBao,
-  PostgreSQL, ClickHouse, Cloudflare, HAProxy, and object-storage component
-  CRDs;
+  `sha256:df15263c66a1a8d7235ad2e2f57e964988c1d4073a1ee7cb22b6da2876c3aa53`;
+- the boarded repo contains `.guardian/fly/document.json` with OpenBao,
+  PostgreSQL, ClickHouse, Cloudflare, HAProxy, object-storage, substrate, and
+  public-origin resources;
 - remote Nomad validation succeeds for OpenBao, PostgreSQL, ClickHouse,
   HAProxy, Cloudflare, and object-storage job files;
 - Nomad is running and reachable on gamma;
