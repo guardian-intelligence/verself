@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -33,12 +34,12 @@ import (
 )
 
 const (
+	defaultRepoRoot               = "/home/ubuntu/.local/state/guardian/repo/current"
 	defaultZitadelBin             = "local/bin/zitadel"
 	defaultZitadelConfig          = "/etc/zitadel/config.yaml"
 	defaultZitadelSteps           = "/etc/zitadel/steps.yaml"
 	defaultZitadelMasterkeySecret = "zitadel.masterkey"
 	defaultZitadelAdminPAT        = ""
-	defaultDiscoveryHosts         = "/etc/verself/auth-discovery-hosts"
 	defaultZitadelUser            = "zitadel"
 	defaultZitadelGroup           = "zitadel"
 )
@@ -51,22 +52,42 @@ const (
 )
 
 type config struct {
-	mode               mode
-	domain             string
-	zitadelBin         string
-	zitadelConfigPath  string
-	zitadelStepsPath   string
-	masterkeySecret    string
-	adminPATPath       string
-	adminPATSecrets    []string
-	discoveryHostsPath string
-	zitadelUser        string
-	zitadelGroup       string
-	openBaoAddr        string
-	openBaoCACert      string
-	openBaoToken       string
-	openBaoTokenFile   string
-	runSetup           bool
+	mode                mode
+	domain              string
+	zitadelBin          string
+	zitadelConfigPath   string
+	zitadelConfigSource string
+	zitadelStepsPath    string
+	zitadelStepsSource  string
+	masterkeySecret     string
+	adminPATPath        string
+	adminPATSecrets     []string
+	adminPasswordSecret string
+	smtpPasswordSecret  string
+	zitadelUser         string
+	zitadelGroup        string
+	openBaoAddr         string
+	openBaoCACert       string
+	openBaoToken        string
+	openBaoTokenFile    string
+	runSetup            bool
+	repoRoot            string
+	resourceGraph       string
+	resourceName        string
+	runtimeArtifact     string
+	runtimeRoot         string
+	instanceName        string
+	instanceOrgName     string
+	humanUserName       string
+	humanFirstName      string
+	humanLastName       string
+	humanEmail          string
+	machineUserName     string
+	machineName         string
+	smtpHost            string
+	smtpUser            string
+	smtpFrom            string
+	smtpFromName        string
 }
 
 func main() {
@@ -78,20 +99,21 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	cfg := config{
-		mode:               mode(envOr("VERSELF_ZITADEL_MODE", string(modeSetup))),
-		domain:             envOr("VERSELF_ZITADEL_EXTERNAL_DOMAIN", ""),
-		zitadelBin:         envOr("VERSELF_ZITADEL_BIN", defaultZitadelBin),
-		zitadelConfigPath:  envOr("VERSELF_ZITADEL_CONFIG_PATH", defaultZitadelConfig),
-		zitadelStepsPath:   envOr("VERSELF_ZITADEL_STEPS_PATH", defaultZitadelSteps),
-		masterkeySecret:    envOr("VERSELF_ZITADEL_MASTERKEY_OPENBAO_SECRET", defaultZitadelMasterkeySecret),
-		adminPATPath:       envOr("VERSELF_ZITADEL_ADMIN_PAT_PATH", defaultZitadelAdminPAT),
-		adminPATSecrets:    splitCSV(envOr("VERSELF_ZITADEL_ADMIN_PAT_OPENBAO_SECRETS", "")),
-		discoveryHostsPath: envOr("VERSELF_AUTH_DISCOVERY_HOSTS_PATH", defaultDiscoveryHosts),
-		zitadelUser:        envOr("VERSELF_ZITADEL_USER", defaultZitadelUser),
-		zitadelGroup:       envOr("VERSELF_ZITADEL_GROUP", defaultZitadelGroup),
-		openBaoAddr:        envOr("BAO_ADDR", envOr("VAULT_ADDR", "")),
-		openBaoCACert:      envOr("BAO_CACERT", envOr("VAULT_CACERT", "")),
-		runSetup:           true,
+		mode:              mode(envOr("VERSELF_ZITADEL_MODE", string(modeSetup))),
+		domain:            envOr("VERSELF_ZITADEL_EXTERNAL_DOMAIN", ""),
+		zitadelBin:        envOr("VERSELF_ZITADEL_BIN", defaultZitadelBin),
+		zitadelConfigPath: envOr("VERSELF_ZITADEL_CONFIG_PATH", defaultZitadelConfig),
+		zitadelStepsPath:  envOr("VERSELF_ZITADEL_STEPS_PATH", defaultZitadelSteps),
+		masterkeySecret:   envOr("VERSELF_ZITADEL_MASTERKEY_OPENBAO_SECRET", defaultZitadelMasterkeySecret),
+		adminPATPath:      envOr("VERSELF_ZITADEL_ADMIN_PAT_PATH", defaultZitadelAdminPAT),
+		adminPATSecrets:   splitCSV(envOr("VERSELF_ZITADEL_ADMIN_PAT_OPENBAO_SECRETS", "")),
+		zitadelUser:       envOr("VERSELF_ZITADEL_USER", defaultZitadelUser),
+		zitadelGroup:      envOr("VERSELF_ZITADEL_GROUP", defaultZitadelGroup),
+		openBaoAddr:       "",
+		openBaoCACert:     "",
+		runSetup:          true,
+		repoRoot:          defaultRepoRoot,
+		resourceName:      "zitadel",
 	}
 	fs := flag.NewFlagSet("zitadel-setup-apply", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -103,15 +125,24 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fs.StringVar(&cfg.zitadelStepsPath, "steps", cfg.zitadelStepsPath, "Zitadel setup steps path.")
 	fs.StringVar(&cfg.masterkeySecret, "masterkey-openbao-secret", cfg.masterkeySecret, "OpenBao runtime secret containing the Zitadel masterkey.")
 	fs.StringVar(&cfg.adminPATPath, "admin-pat-path", cfg.adminPATPath, "Zitadel admin PAT path.")
-	fs.StringVar(&cfg.discoveryHostsPath, "discovery-hosts", cfg.discoveryHostsPath, "Local discovery hosts file path.")
 	fs.StringVar(&cfg.zitadelUser, "zitadel-user", cfg.zitadelUser, "User to run zitadel setup as.")
 	fs.StringVar(&cfg.zitadelGroup, "zitadel-group", cfg.zitadelGroup, "Group to own Zitadel config files.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", cfg.openBaoAddr, "OpenBao address for publishing generated Zitadel admin PATs.")
 	fs.StringVar(&cfg.openBaoCACert, "openbao-ca-cert", cfg.openBaoCACert, "OpenBao CA certificate path.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", cfg.openBaoTokenFile, "File containing the OpenBao workload token.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", cfg.repoRoot, "Boarded repo root.")
+	fs.StringVar(&cfg.resourceGraph, "resource-graph", cfg.resourceGraph, "Guardian resource graph document path.")
+	fs.StringVar(&cfg.resourceName, "resource-name", cfg.resourceName, "ZitadelCluster resource name.")
 	fs.BoolVar(&cfg.runSetup, "run-setup", cfg.runSetup, "Run zitadel setup after applying config.")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if cfg.resourceGraph != "" {
+		next, err := applyResourceGraphConfig(cfg)
+		if err != nil {
+			return err
+		}
+		cfg = next
 	}
 	if fs.NArg() != 0 {
 		return fmt.Errorf("unexpected positional args: %s", strings.Join(fs.Args(), " "))
@@ -161,9 +192,32 @@ func (cfg config) validate() error {
 	}
 	if cfg.mode == modeSetup {
 		for name, value := range map[string]string{
-			"--steps":           cfg.zitadelStepsPath,
-			"--admin-pat-path":  cfg.adminPATPath,
-			"--discovery-hosts": cfg.discoveryHostsPath,
+			"--steps":          cfg.zitadelStepsPath,
+			"--admin-pat-path": cfg.adminPATPath,
+		} {
+			if strings.TrimSpace(value) == "" {
+				missing = append(missing, name)
+			}
+		}
+	}
+	if cfg.resourceGraph != "" {
+		for name, value := range map[string]string{
+			"ZitadelCluster.spec.runtimeArtifact":           cfg.runtimeArtifact,
+			"ZitadelCluster.spec.runtimeRoot":               cfg.runtimeRoot,
+			"ZitadelCluster.spec.openBao.adminPasswordRef":  cfg.adminPasswordSecret,
+			"ZitadelCluster.spec.openBao.smtpPasswordRef":   cfg.smtpPasswordSecret,
+			"ZitadelCluster.spec.instance.name":             cfg.instanceName,
+			"ZitadelCluster.spec.instance.orgName":          cfg.instanceOrgName,
+			"ZitadelCluster.spec.instance.human.userName":   cfg.humanUserName,
+			"ZitadelCluster.spec.instance.human.firstName":  cfg.humanFirstName,
+			"ZitadelCluster.spec.instance.human.lastName":   cfg.humanLastName,
+			"ZitadelCluster.spec.instance.human.email":      cfg.humanEmail,
+			"ZitadelCluster.spec.instance.machine.userName": cfg.machineUserName,
+			"ZitadelCluster.spec.instance.machine.name":     cfg.machineName,
+			"ZitadelCluster.spec.smtp.host":                 cfg.smtpHost,
+			"ZitadelCluster.spec.smtp.user":                 cfg.smtpUser,
+			"ZitadelCluster.spec.smtp.from":                 cfg.smtpFrom,
+			"ZitadelCluster.spec.smtp.fromName":             cfg.smtpFromName,
 		} {
 			if strings.TrimSpace(value) == "" {
 				missing = append(missing, name)
@@ -217,6 +271,168 @@ func readRequiredCredentialFile(path, flagName string) (string, error) {
 	return value, nil
 }
 
+func requireRegularFile(path, flagName string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("%s is required", flagName)
+	}
+	stat, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", flagName, err)
+	}
+	if !stat.Mode().IsRegular() {
+		return fmt.Errorf("%s must be a regular file: %s", flagName, path)
+	}
+	return nil
+}
+
+type guardianDocument struct {
+	Entrypoint json.RawMessage    `json:"entrypoint,omitempty"`
+	Resources  []guardianResource `json:"resources"`
+}
+
+type guardianResource struct {
+	APIVersion string          `json:"apiVersion"`
+	Kind       string          `json:"kind"`
+	Metadata   resourceMeta    `json:"metadata"`
+	Spec       json.RawMessage `json:"spec"`
+}
+
+type resourceMeta struct {
+	Name string `json:"name"`
+}
+
+type objectRef struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+type zitadelClusterSpec struct {
+	ExternalDomain  string `json:"externalDomain"`
+	RuntimeArtifact string `json:"runtimeArtifact"`
+	RuntimeRoot     string `json:"runtimeRoot"`
+	ConfigFile      string `json:"configFile"`
+	SetupStepsFile  string `json:"setupStepsFile"`
+	AdminPATPath    string `json:"adminPATPath"`
+	User            string `json:"user"`
+	Group           string `json:"group"`
+	OpenBao         struct {
+		Address            string      `json:"address"`
+		CACert             string      `json:"caCert"`
+		MasterkeySecretRef objectRef   `json:"masterkeySecretRef"`
+		AdminPasswordRef   objectRef   `json:"adminPasswordRef"`
+		AdminPATSecretRefs []objectRef `json:"adminPATSecretRefs"`
+		SMTPPasswordRef    objectRef   `json:"smtpPasswordRef"`
+	} `json:"openBao"`
+	Instance struct {
+		Name    string `json:"name"`
+		OrgName string `json:"orgName"`
+		Human   struct {
+			UserName  string `json:"userName"`
+			FirstName string `json:"firstName"`
+			LastName  string `json:"lastName"`
+			Email     string `json:"email"`
+		} `json:"human"`
+		Machine struct {
+			UserName string `json:"userName"`
+			Name     string `json:"name"`
+		} `json:"machine"`
+	} `json:"instance"`
+	SMTP struct {
+		Host     string `json:"host"`
+		User     string `json:"user"`
+		From     string `json:"from"`
+		FromName string `json:"fromName"`
+	} `json:"smtp"`
+}
+
+func applyResourceGraphConfig(cfg config) (config, error) {
+	body, err := os.ReadFile(cfg.resourceGraph)
+	if err != nil {
+		return config{}, fmt.Errorf("read Guardian resource graph: %w", err)
+	}
+	var doc guardianDocument
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&doc); err != nil {
+		return config{}, fmt.Errorf("decode Guardian resource graph: %w", err)
+	}
+	name := strings.TrimSpace(cfg.resourceName)
+	if name == "" {
+		name = "zitadel"
+	}
+	var matches []guardianResource
+	for _, resource := range doc.Resources {
+		if resource.APIVersion == "zitadel.guardianintelligence.org/v1alpha1" && resource.Kind == "ZitadelCluster" && resource.Metadata.Name == name {
+			matches = append(matches, resource)
+		}
+	}
+	if len(matches) != 1 {
+		return config{}, fmt.Errorf("expected exactly one ZitadelCluster resource named %q, found %d", name, len(matches))
+	}
+	var spec zitadelClusterSpec
+	specDecoder := json.NewDecoder(bytes.NewReader(matches[0].Spec))
+	specDecoder.DisallowUnknownFields()
+	if err := specDecoder.Decode(&spec); err != nil {
+		return config{}, fmt.Errorf("decode ZitadelCluster %q: %w", name, err)
+	}
+	cfg.domain = spec.ExternalDomain
+	cfg.runtimeArtifact = spec.RuntimeArtifact
+	cfg.runtimeRoot = spec.RuntimeRoot
+	cfg.zitadelBin = filepath.Join(spec.RuntimeRoot, "current", "bin", "zitadel")
+	cfg.zitadelConfigSource, err = repoWorkspacePath(cfg.repoRoot, spec.ConfigFile)
+	if err != nil {
+		return config{}, fmt.Errorf("ZitadelCluster %q spec.configFile: %w", name, err)
+	}
+	cfg.zitadelStepsSource, err = repoWorkspacePath(cfg.repoRoot, spec.SetupStepsFile)
+	if err != nil {
+		return config{}, fmt.Errorf("ZitadelCluster %q spec.setupStepsFile: %w", name, err)
+	}
+	cfg.zitadelConfigPath = defaultZitadelConfig
+	cfg.zitadelStepsPath = defaultZitadelSteps
+	cfg.adminPATPath = spec.AdminPATPath
+	cfg.zitadelUser = spec.User
+	cfg.zitadelGroup = spec.Group
+	cfg.openBaoAddr = spec.OpenBao.Address
+	cfg.openBaoCACert = spec.OpenBao.CACert
+	cfg.masterkeySecret = refName(spec.OpenBao.MasterkeySecretRef)
+	cfg.adminPasswordSecret = refName(spec.OpenBao.AdminPasswordRef)
+	cfg.smtpPasswordSecret = refName(spec.OpenBao.SMTPPasswordRef)
+	cfg.adminPATSecrets = nil
+	for _, ref := range spec.OpenBao.AdminPATSecretRefs {
+		cfg.adminPATSecrets = append(cfg.adminPATSecrets, refName(ref))
+	}
+	cfg.instanceName = spec.Instance.Name
+	cfg.instanceOrgName = spec.Instance.OrgName
+	cfg.humanUserName = spec.Instance.Human.UserName
+	cfg.humanFirstName = spec.Instance.Human.FirstName
+	cfg.humanLastName = spec.Instance.Human.LastName
+	cfg.humanEmail = spec.Instance.Human.Email
+	cfg.machineUserName = spec.Instance.Machine.UserName
+	cfg.machineName = spec.Instance.Machine.Name
+	cfg.smtpHost = spec.SMTP.Host
+	cfg.smtpUser = spec.SMTP.User
+	cfg.smtpFrom = spec.SMTP.From
+	cfg.smtpFromName = spec.SMTP.FromName
+	if cfg.resourceGraph == "" {
+		cfg.resourceGraph = filepath.Join(cfg.repoRoot, "workspace/.guardian/fly/document.json")
+	}
+	return cfg, nil
+}
+
+func repoWorkspacePath(repoRoot, rel string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" || filepath.IsAbs(rel) || containsParent(rel) {
+		return "", fmt.Errorf("must be a repo-relative path: %s", rel)
+	}
+	return filepath.Join(repoRoot, "workspace", filepath.FromSlash(rel)), nil
+}
+
+func refName(ref objectRef) string {
+	return strings.TrimSpace(ref.Name)
+}
+
 func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -232,6 +448,13 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 	ctx, span := tracer.Start(ctx, "zitadel_setup.apply")
 	defer span.End()
 	span.SetAttributes(attribute.String("zitadel.external_domain", cfg.domain))
+	if cfg.runtimeArtifact != "" {
+		if err := installRuntimeArtifact(cfg); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+	}
 	if err := ensureSystemAccount(cfg.zitadelUser, cfg.zitadelGroup); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -243,10 +466,22 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureDirectory(filepath.Dir(cfg.zitadelConfigPath), uid, gid, 0o700); err != nil {
+	if err := installStaticConfigFiles(cfg, uid, gid); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+	if err := requireRegularFile(cfg.zitadelConfigPath, "--config"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if cfg.mode == modeSetup {
+		if err := requireRegularFile(cfg.zitadelStepsPath, "--steps"); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
 	}
 	if err := ensureDirectory("/var/lib/zitadel", uid, gid, 0o700); err != nil {
 		span.RecordError(err)
@@ -268,27 +503,12 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		span.SetStatus(codes.Ok, "")
 		return nil
 	}
+	if err := ensureDirectory(filepath.Dir(filepath.Dir(cfg.adminPATPath)), uid, gid, 0o700); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	if err := ensureDirectory(filepath.Dir(cfg.adminPATPath), uid, gid, 0o700); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	if err := ensureDirectory(filepath.Dir(cfg.discoveryHostsPath), 0, 0, 0o755); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	if err := normalizeConfigFile(cfg.zitadelConfigPath, cfg.domain, uid, gid); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	if err := chmodChownExisting(cfg.zitadelStepsPath, uid, gid, 0o600); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	if err := writeFileIfChanged(cfg.discoveryHostsPath, renderDiscoveryHosts(cfg.domain), 0, 0, 0o644); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -316,40 +536,204 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func normalizeConfigFile(path, domain string, uid, gid int) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+func installRuntimeArtifact(cfg config) error {
+	if filepath.IsAbs(cfg.runtimeArtifact) || containsParent(cfg.runtimeArtifact) {
+		return fmt.Errorf("runtime artifact must be repo-relative: %s", cfg.runtimeArtifact)
 	}
-	next, err := normalizeExternalDomain(raw, domain)
-	if err != nil {
-		return fmt.Errorf("normalize %s: %w", path, err)
+	if strings.TrimSpace(cfg.runtimeRoot) == "" || !filepath.IsAbs(cfg.runtimeRoot) {
+		return fmt.Errorf("runtime root must be absolute: %s", cfg.runtimeRoot)
 	}
-	return writeFileIfChanged(path, next, uid, gid, 0o600)
-}
-
-func normalizeExternalDomain(content []byte, domain string) ([]byte, error) {
-	text := strings.ReplaceAll(string(content), "\r\n", "\n")
-	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	found := false
-	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "ExternalDomain:") {
-			lines[i] = leadingWhitespace(line) + "ExternalDomain: " + domain
-			found = true
+	artifact := filepath.Join(cfg.repoRoot, filepath.FromSlash(cfg.runtimeArtifact))
+	digest, err := fileSHA256(artifact)
+	if err != nil {
+		return err
+	}
+	release := filepath.Join(cfg.runtimeRoot, "releases", strings.ReplaceAll(digest, ":", "-"))
+	if !regularFile(filepath.Join(release, "bin/zitadel")) {
+		if err := extractRuntimeArtifact(artifact, release); err != nil {
+			return err
 		}
 	}
-	if !found {
-		return nil, errors.New("ExternalDomain key is missing")
+	if err := os.Chmod(release, 0o755); err != nil {
+		return fmt.Errorf("chmod runtime release: %w", err)
 	}
-	return []byte(strings.Join(lines, "\n") + "\n"), nil
+	return promoteRuntime(cfg.runtimeRoot, release)
 }
 
-func leadingWhitespace(value string) string {
-	return value[:len(value)-len(strings.TrimLeft(value, " \t"))]
+func installStaticConfigFiles(cfg config, uid, gid int) error {
+	if strings.TrimSpace(cfg.zitadelConfigSource) != "" {
+		if err := ensureDirectory(filepath.Dir(cfg.zitadelConfigPath), uid, gid, 0o700); err != nil {
+			return err
+		}
+		if err := installStaticFile(cfg.zitadelConfigSource, cfg.zitadelConfigPath, uid, gid, 0o600); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(cfg.zitadelStepsSource) != "" {
+		if err := ensureDirectory(filepath.Dir(cfg.zitadelStepsPath), uid, gid, 0o700); err != nil {
+			return err
+		}
+		if err := installStaticFile(cfg.zitadelStepsSource, cfg.zitadelStepsPath, uid, gid, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func renderDiscoveryHosts(domain string) []byte {
-	return []byte("127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.0.1 " + domain + "\n")
+func installStaticFile(source, dest string, uid, gid int, mode fs.FileMode) error {
+	body, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("read static config %s: %w", source, err)
+	}
+	return writeFileIfChanged(dest, body, uid, gid, mode)
+}
+
+func containsParent(path string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open runtime artifact: %w", err)
+	}
+	defer file.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", fmt.Errorf("hash runtime artifact: %w", err)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func regularFile(path string) bool {
+	stat, err := os.Stat(path)
+	return err == nil && stat.Mode().IsRegular()
+}
+
+func extractRuntimeArtifact(artifact string, release string) error {
+	if err := os.MkdirAll(filepath.Dir(release), 0o755); err != nil {
+		return fmt.Errorf("create runtime release parent: %w", err)
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(release), "."+filepath.Base(release)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create runtime staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return fmt.Errorf("chmod runtime staging directory: %w", err)
+	}
+	if err := extractTar(artifact, tmp); err != nil {
+		return err
+	}
+	if !regularFile(filepath.Join(tmp, "bin/zitadel")) {
+		return errors.New("Zitadel runtime artifact missing bin/zitadel")
+	}
+	if err := os.RemoveAll(release); err != nil {
+		return fmt.Errorf("remove stale runtime release: %w", err)
+	}
+	if err := os.Rename(tmp, release); err != nil {
+		return fmt.Errorf("publish runtime release: %w", err)
+	}
+	return nil
+}
+
+func extractTar(artifact string, dest string) error {
+	file, err := os.Open(artifact)
+	if err != nil {
+		return fmt.Errorf("open runtime artifact: %w", err)
+	}
+	defer file.Close()
+	destAbs, err := filepath.Abs(dest)
+	if err != nil {
+		return err
+	}
+	tr := tar.NewReader(file)
+	for {
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read runtime artifact tar: %w", err)
+		}
+		target, err := safeTarTarget(destAbs, header.Name)
+		if err != nil {
+			return err
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, modeOrDefault(header.Mode, 0o755)); err != nil {
+				return fmt.Errorf("create runtime directory %s: %w", header.Name, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("create runtime parent %s: %w", header.Name, err)
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, modeOrDefault(header.Mode, 0o644))
+			if err != nil {
+				return fmt.Errorf("create runtime file %s: %w", header.Name, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				_ = out.Close()
+				return fmt.Errorf("write runtime file %s: %w", header.Name, err)
+			}
+			if err := out.Close(); err != nil {
+				return fmt.Errorf("close runtime file %s: %w", header.Name, err)
+			}
+		default:
+			return fmt.Errorf("unsupported runtime artifact tar entry %s type %d", header.Name, header.Typeflag)
+		}
+	}
+}
+
+func safeTarTarget(destAbs string, name string) (string, error) {
+	if filepath.IsAbs(name) || containsParent(name) {
+		return "", fmt.Errorf("unsafe runtime artifact tar entry %s", name)
+	}
+	target := filepath.Join(destAbs, name)
+	targetAbs, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	if targetAbs != destAbs && !strings.HasPrefix(targetAbs, destAbs+string(os.PathSeparator)) {
+		return "", fmt.Errorf("unsafe runtime artifact tar entry %s", name)
+	}
+	return targetAbs, nil
+}
+
+func modeOrDefault(mode int64, fallback os.FileMode) os.FileMode {
+	if mode == 0 {
+		return fallback
+	}
+	return os.FileMode(mode).Perm()
+}
+
+func promoteRuntime(root string, release string) error {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return fmt.Errorf("create runtime root: %w", err)
+	}
+	next := filepath.Join(root, "current.next")
+	current := filepath.Join(root, "current")
+	if err := os.Remove(next); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove stale runtime current symlink: %w", err)
+	}
+	if err := os.Symlink(release, next); err != nil {
+		return fmt.Errorf("create runtime current symlink: %w", err)
+	}
+	if stat, err := os.Lstat(current); err == nil && stat.Mode()&os.ModeSymlink == 0 {
+		if err := os.RemoveAll(current); err != nil {
+			return fmt.Errorf("remove non-symlink runtime current path: %w", err)
+		}
+	}
+	if err := os.Rename(next, current); err != nil {
+		return fmt.Errorf("publish runtime current symlink: %w", err)
+	}
+	return nil
 }
 
 func readMasterkey(ctx context.Context, cfg config) (string, error) {
@@ -389,9 +773,6 @@ func runZitadelBootstrap(ctx context.Context, cfg config, masterkey string, uid,
 }
 
 func runZitadelServer(ctx context.Context, cfg config, masterkey string, uid, gid int, stdout, stderr io.Writer) error {
-	if err := normalizeConfigFile(cfg.zitadelConfigPath, cfg.domain, uid, gid); err != nil {
-		return err
-	}
 	return runZitadelCommand(ctx, cfg, masterkey, uid, gid, stdout, stderr,
 		"start",
 		"--masterkeyFromEnv",
@@ -403,12 +784,74 @@ func runZitadelCommand(ctx context.Context, cfg config, masterkey string, uid, g
 	cmd := exec.CommandContext(ctx, cfg.zitadelBin, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	cmd.Env = append(os.Environ(), "HOME=/var/lib/zitadel", "ZITADEL_MASTERKEY="+strings.TrimSpace(masterkey))
+	env, err := buildZitadelEnv(ctx, cfg, masterkey)
+	if err != nil {
+		return err
+	}
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}}
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func buildZitadelEnv(ctx context.Context, cfg config, masterkey string) ([]string, error) {
+	env := append(os.Environ(),
+		"HOME=/var/lib/zitadel",
+		"ZITADEL_MASTERKEY="+strings.TrimSpace(masterkey),
+		"ZITADEL_EXTERNALDOMAIN="+strings.TrimSpace(cfg.domain),
+		"ZITADEL_EXTERNALPORT=443",
+		"ZITADEL_EXTERNALSECURE=true",
+		"ZITADEL_TLS_ENABLED=false",
+	)
+	if cfg.resourceGraph == "" {
+		return env, nil
+	}
+	client, err := newBaoClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	smtpPassword, found, err := client.readRuntimeSecret(ctx, cfg.smtpPasswordSecret)
+	if err != nil {
+		return nil, err
+	}
+	if found && strings.TrimSpace(smtpPassword) != "" {
+		env = append(env,
+			"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_HOST="+strings.TrimSpace(cfg.smtpHost),
+			"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_USER="+strings.TrimSpace(cfg.smtpUser),
+			"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD="+strings.TrimSpace(smtpPassword),
+			"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_TLS=true",
+			"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROM="+strings.TrimSpace(cfg.smtpFrom),
+			"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_FROMNAME="+strings.TrimSpace(cfg.smtpFromName),
+		)
+	}
+	if cfg.mode != modeSetup {
+		return env, nil
+	}
+	adminPassword, found, err := client.readRuntimeSecret(ctx, cfg.adminPasswordSecret)
+	if err != nil {
+		return nil, err
+	}
+	if !found || strings.TrimSpace(adminPassword) == "" {
+		return nil, fmt.Errorf("OpenBao runtime secret %s is empty or missing", cfg.adminPasswordSecret)
+	}
+	env = append(env,
+		"ZITADEL_FIRSTINSTANCE_INSTANCENAME="+strings.TrimSpace(cfg.instanceName),
+		"ZITADEL_FIRSTINSTANCE_PATPATH="+strings.TrimSpace(cfg.adminPATPath),
+		"ZITADEL_FIRSTINSTANCE_ORG_NAME="+strings.TrimSpace(cfg.instanceOrgName),
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME="+strings.TrimSpace(cfg.humanUserName),
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_FIRSTNAME="+strings.TrimSpace(cfg.humanFirstName),
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_LASTNAME="+strings.TrimSpace(cfg.humanLastName),
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_ADDRESS="+strings.TrimSpace(cfg.humanEmail),
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_EMAIL_VERIFIED=true",
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD="+strings.TrimSpace(adminPassword),
+		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false",
+		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME="+strings.TrimSpace(cfg.machineUserName),
+		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME="+strings.TrimSpace(cfg.machineName),
+		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE=2099-01-01T00:00:00Z",
+	)
+	return env, nil
 }
 
 func publishAdminPAT(ctx context.Context, cfg config, stdout io.Writer) error {

@@ -21,15 +21,14 @@ package v1alpha1
 	kind:       "ZitadelCluster"
 	metadata:   #Metadata
 	spec: {
-		externalDomain:     #DNSName
-		runtimeArtifact:    #RepoPath
-		runtimeRoot:        #AbsolutePath
-		configPath:         #AbsolutePath
-		stepsPath:          #AbsolutePath
-		adminPATPath:       #AbsolutePath
-		discoveryHostsPath: #AbsolutePath
-		user:               #NonEmptyString
-		group:              #NonEmptyString
+		externalDomain:  #DNSName
+		runtimeArtifact: #RepoPath
+		runtimeRoot:     #AbsolutePath
+		configFile:      #RepoPath
+		setupStepsFile:  #RepoPath
+		adminPATPath:    #AbsolutePath
+		user:            #NonEmptyString
+		group:           #NonEmptyString
 		openBao: {
 			address:            #HTTPURL
 			caCert:             #AbsolutePath
