@@ -3,6 +3,12 @@ load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 deploy_declarations(visibility = ["//visibility:public"])
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 nomad_component(
     name = "nomad_component",
     artifacts = {
@@ -19,10 +25,10 @@ nomad_component(
 genrule(
     name = "runtime_artifact",
     srcs = [
-        "runtime/config.yaml",
         "runtime/package-lock.json",
         "runtime/package.json",
         "@verdaccio_tool_nodejs//file",
+        "//src/infrastructure-components/verdaccio/cmd/verdaccio-recover",
     ],
     outs = ["verdaccio-runtime.tar"],
     cmd = """
@@ -30,21 +36,15 @@ set -euo pipefail
 out="$$(pwd)/$@"
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
-mkdir -p "$$tmp/node" "$$tmp/runtime" "$$tmp/out/bin" "$$tmp/out/etc/verdaccio" "$$tmp/out/lib"
+mkdir -p "$$tmp/node" "$$tmp/runtime" "$$tmp/out/bin" "$$tmp/out/lib"
 tar -xJf "$(location @verdaccio_tool_nodejs//file)" -C "$$tmp/node" --strip-components=1
 install -m 0755 "$$tmp/node/bin/node" "$$tmp/out/bin/node"
+install -m 0755 "$(location //src/infrastructure-components/verdaccio/cmd/verdaccio-recover:verdaccio-recover)" "$$tmp/out/bin/verdaccio-recover"
 cp "$(location runtime/package.json)" "$$tmp/runtime/package.json"
 cp "$(location runtime/package-lock.json)" "$$tmp/runtime/package-lock.json"
-install -m 0644 "$(location runtime/config.yaml)" "$$tmp/out/etc/verdaccio/config.yaml"
 cd "$$tmp/runtime"
 "$$tmp/node/bin/node" "$$tmp/node/lib/node_modules/npm/bin/npm-cli.js" ci --omit=dev --ignore-scripts --audit=false --fund=false --cache "$$tmp/npm-cache"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$$tmp/out/lib/node_modules.tar" node_modules
-cat > "$$tmp/out/bin/verdaccio" <<'EOF'
-#!/bin/sh
-root="$$(CDPATH= cd -- "$$(dirname -- "$$0")/.." && pwd)"
-exec "$$root/bin/node" "$$root/lib/node_modules/verdaccio/bin/verdaccio" "$$@"
-EOF
-chmod 0755 "$$tmp/out/bin/verdaccio"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$$out" -C "$$tmp/out" .
 """,
     visibility = ["//visibility:public"],

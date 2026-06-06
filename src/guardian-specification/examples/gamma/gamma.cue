@@ -692,6 +692,33 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "verdaccio.guardianintelligence.org/v1alpha1"
+		kind:       "VerdaccioRegistry"
+		metadata: name: "verdaccio"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar"
+			runtimeRoot:     "/var/lib/verdaccio/runtime"
+			configPath:      "/etc/verdaccio/config.yaml"
+			storageDir:      "/var/lib/verdaccio/storage"
+			htpasswdPath:    "/var/lib/verdaccio/htpasswd"
+			reportPath:      "/run/verself/recovery/verdaccio/report.json"
+			user:            "verdaccio"
+			group:           "verdaccio"
+			host:            "127.0.0.1"
+			port:            4873
+			maxBodySize:     "100mb"
+			uplink: {
+				name:      "npmjs"
+				url:       "https://registry.npmjs.org/"
+				cache:     true
+				maxAge:    "30m"
+				strictSSL: true
+			}
+			packageFilter: minAgeDays: 3
+			log: level: "http"
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"
