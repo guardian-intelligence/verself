@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -333,6 +334,18 @@ func installArtifact(repoRoot string, artifactPath string, root string, required
 	if err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", fmt.Errorf("create artifact root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(root, ".install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("open artifact install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return "", fmt.Errorf("lock artifact install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	release := filepath.Join(root, "releases", strings.ReplaceAll(digest, ":", "-"))
 	if !requiredInstalled(release, requiredFiles) {
 		if err := extractArtifact(artifact, release, requiredFiles); err != nil {
