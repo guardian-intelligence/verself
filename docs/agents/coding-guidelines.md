@@ -1,3 +1,4 @@
 * Between competing options in the same problem space, seek the high-taste modern option. NATS JetStream over Kafka, TanStack over Next.js. Viteplus over assorted frontend tooling. Zig over C.
 * Building on-ramps to our platform from existing platforms is extremely highly valued. That's why a GitHub App is our primary product service.
 * The optimal frontend is a real-time server-rendered optimistically-updating with periodic resync thin client. TanStack + Electric solves most of this. We're moving to add a write-path sync engine.
+* Do not write TOML/YAML/JSON by hand. Author in CUE and ensure compilation to other static formats is supported.
