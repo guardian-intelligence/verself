@@ -20,7 +20,7 @@ consecutive submissions do not create unexpected allocation churn.
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Boarded OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation and OpenBao-backed R2 credentials |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
 
@@ -34,9 +34,9 @@ Observed results:
 
 - boarding verified the extracted repo tree on gamma;
 - latest resource graph digest:
-  `sha256:978976a3feb5a40f9dd8e794df1f4b27ef73a0ce08f3007eea7b364ddee423a1`;
+  `sha256:a59a715e62978f2efc39a374951fc101309ccd882a8402df1269639d0424c8d1`;
 - latest verified upload digest:
-  `sha256:6d069debd4aa33cffb7f07544b5b382901343e28fc5ba6121b1771585aa33da4`;
+  `sha256:92ebc7b0d0642b2d93cd748de953c6a788fb5699c3f8596f7d60164d5d691b80`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, OTel Collector,
   Cloudflare, HAProxy, object-storage, substrate, and public-origin resources;
@@ -203,6 +203,21 @@ Observed results:
 - the missing OpenBao role is caused by baseline reconciliation requiring a
   valid operator token with authority to reconcile mounts, policies, auth, and
   Nomad JWT roles.
+- OpenBao now has explicit `SecretPath` resources for the object-storage
+  secrets referenced by the `ObjectStorageService` CRD;
+- OpenBao baseline reconciliation can create generated secret values only when
+  absent; the declared `object-storage-service.credential_kek` value is
+  generated as 32 random bytes encoded as hex on fresh bootstrap and left
+  untouched when restored from an existing store;
+- object-storage R2 credential paths are declared as produced by
+  `CloudflareControlPlane/gamma-cloudflare`;
+- `iam-service.zitadel.auth_audience` is declared as produced by the future
+  Zitadel/auth-control-plane recovery path;
+- running the updated boarded OpenBao recovery binary without operator material
+  on gamma still reports `RootTrustMaterialAvailable=False` and
+  `OpenBaoBaselineReconciled=False` with reason
+  `OperatorRootCredentialsRequired`, confirming the graph parses cleanly and
+  the remaining blocker is root authority.
 
 Evidence commands:
 
@@ -279,12 +294,14 @@ cloudflare-control-plane \
 
 ## Next Component
 
-The next recovery target is OpenBao baseline reconciliation. PostgreSQL,
+The next recovery target is still OpenBao baseline reconciliation. PostgreSQL,
 ClickHouse, Nomad Observer, NATS, and OTel Collector now converge, and
 object-storage-service reaches its OpenBao-backed secret delivery boundary.
 OpenBao must accept operator root authority through a component-owned operator
-path, reconcile mounts, policies, and Nomad JWT roles from the boarded graph,
-then object-storage-service can retry and discover the next dependency. The
-authority must be able to read/write system mounts, policies, JWT auth config,
-and JWT auth roles; the local gamma bootstrap token tested in this run did not
-have that authority.
+path, reconcile mounts, policies, generated secret paths, and Nomad JWT roles
+from the boarded graph, then object-storage-service can retry. The next expected
+dependencies after baseline are Cloudflare-produced R2 credentials and the
+Zitadel-produced auth audience. The authority must be able to read/write system
+mounts, policies, JWT auth config, JWT auth roles, and declared generated
+secrets; the local gamma bootstrap token tested in this run did not have that
+authority.

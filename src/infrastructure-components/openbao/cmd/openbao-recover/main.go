@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -479,10 +480,11 @@ type openBaoSnapshotSaveSpec struct {
 }
 
 type openBaoBaselineSpec struct {
-	Reconcile bool                     `json:"reconcile"`
-	Mounts    []openBaoMountSpec       `json:"mounts"`
-	Policies  []openBaoPolicySpec      `json:"policies"`
-	NomadJWT  *openBaoNomadJWTAuthSpec `json:"nomadJWT"`
+	Reconcile   bool                     `json:"reconcile"`
+	Mounts      []openBaoMountSpec       `json:"mounts"`
+	Policies    []openBaoPolicySpec      `json:"policies"`
+	NomadJWT    *openBaoNomadJWTAuthSpec `json:"nomadJWT"`
+	SecretPaths []openBaoSecretPathSpec  `json:"-"`
 }
 
 type openBaoMountSpec struct {
@@ -517,6 +519,20 @@ type openBaoNomadJWTRoleSpec struct {
 	TokenPolicies        []string          `json:"tokenPolicies"`
 	TokenPeriod          string            `json:"tokenPeriod"`
 	TokenExplicitMaxTTL  int               `json:"tokenExplicitMaxTTL"`
+}
+
+type openBaoSecretPathSpec struct {
+	Name        string
+	Path        string               `json:"path"`
+	Key         string               `json:"key"`
+	Source      string               `json:"source"`
+	Generate    *openBaoGenerateSpec `json:"generate"`
+	ProducerRef *objectRef           `json:"producerRef"`
+}
+
+type openBaoGenerateSpec struct {
+	Bytes    int    `json:"bytes"`
+	Encoding string `json:"encoding"`
 }
 
 type pgpRecipientSpec struct {
@@ -563,6 +579,11 @@ func applyResourceGraphConfig(cfg config) (config, error) {
 	cfg.keyShares = spec.Seal.Shamir.KeyShares
 	cfg.threshold = spec.Seal.Shamir.KeyThreshold
 	cfg.baseline = spec.Baseline
+	secretPaths, err := loadOpenBaoSecretPaths(resources)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.baseline.SecretPaths = secretPaths
 	if spec.LoopInterval != "" {
 		interval, err := time.ParseDuration(spec.LoopInterval)
 		if err != nil {
@@ -627,6 +648,55 @@ func materializePGPRecipients(cfg config, resources map[string]guardianResource,
 		out = append(out, path)
 	}
 	return out, nil
+}
+
+func loadOpenBaoSecretPaths(resources map[string]guardianResource) ([]openBaoSecretPathSpec, error) {
+	var paths []openBaoSecretPathSpec
+	for _, resource := range resources {
+		if resource.APIVersion != "openbao.guardianintelligence.org/v1alpha1" || resource.Kind != "SecretPath" {
+			continue
+		}
+		var spec openBaoSecretPathSpec
+		decoder := json.NewDecoder(bytes.NewReader(resource.Spec))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&spec); err != nil {
+			return nil, fmt.Errorf("decode SecretPath %q: %w", resource.Metadata.Name, err)
+		}
+		spec.Name = resource.Metadata.Name
+		if err := validateSecretPath(spec); err != nil {
+			return nil, fmt.Errorf("SecretPath %q: %w", resource.Metadata.Name, err)
+		}
+		paths = append(paths, spec)
+	}
+	return paths, nil
+}
+
+func validateSecretPath(spec openBaoSecretPathSpec) error {
+	if strings.TrimSpace(spec.Name) == "" || strings.Trim(strings.TrimSpace(spec.Path), "/") == "" || strings.TrimSpace(spec.Key) == "" {
+		return errors.New("metadata.name, spec.path, and spec.key are required")
+	}
+	switch spec.Source {
+	case "generated":
+		if spec.Generate == nil {
+			return errors.New("spec.generate is required when spec.source is generated")
+		}
+		if spec.Generate.Bytes <= 0 {
+			return errors.New("spec.generate.bytes must be positive")
+		}
+		switch spec.Generate.Encoding {
+		case "hex", "base64url":
+		default:
+			return errors.New("spec.generate.encoding must be hex or base64url")
+		}
+	case "producedBy":
+		if spec.ProducerRef == nil {
+			return errors.New("spec.producerRef is required when spec.source is producedBy")
+		}
+	case "operatorImport":
+	default:
+		return errors.New("spec.source must be generated, producedBy, or operatorImport")
+	}
+	return nil
 }
 
 func resourceKey(apiVersion string, kind string, name string) string {
@@ -1699,6 +1769,14 @@ func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken str
 			return err
 		}
 	}
+	for _, secretPath := range baseline.SecretPaths {
+		if secretPath.Source != "generated" {
+			continue
+		}
+		if err := c.ensureGeneratedSecret(ctx, rootToken, secretPath); err != nil {
+			return err
+		}
+	}
 	if baseline.NomadJWT == nil {
 		return nil
 	}
@@ -1816,6 +1894,54 @@ func (c *realOpenBaoClient) writePolicy(ctx context.Context, token string, polic
 	}, nil, http.StatusNoContent, http.StatusOK)
 }
 
+func (c *realOpenBaoClient) ensureGeneratedSecret(ctx context.Context, token string, secretPath openBaoSecretPathSpec) error {
+	path := strings.Trim(strings.TrimSpace(secretPath.Path), "/")
+	key := strings.TrimSpace(secretPath.Key)
+	if path == "" || key == "" || secretPath.Generate == nil {
+		return errors.New("OpenBao generated secret path, key, and generation config are required")
+	}
+	exists, err := c.secretExists(ctx, token, path)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	value, err := generatedSecretValue(*secretPath.Generate)
+	if err != nil {
+		return err
+	}
+	return c.apiJSON(ctx, token, http.MethodPost, path, map[string]any{
+		"data": map[string]string{key: value},
+	}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) secretExists(ctx context.Context, token string, path string) (bool, error) {
+	status, _, err := c.apiRawStatus(ctx, token, http.MethodGet, path, nil, "", http.StatusOK, http.StatusNotFound)
+	if err != nil {
+		return false, err
+	}
+	return status == http.StatusOK, nil
+}
+
+func generatedSecretValue(spec openBaoGenerateSpec) (string, error) {
+	if spec.Bytes <= 0 {
+		return "", errors.New("OpenBao generated secret bytes must be positive")
+	}
+	raw := make([]byte, spec.Bytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate OpenBao secret material: %w", err)
+	}
+	switch spec.Encoding {
+	case "hex":
+		return hex.EncodeToString(raw), nil
+	case "base64url":
+		return base64.RawURLEncoding.EncodeToString(raw), nil
+	default:
+		return "", fmt.Errorf("unsupported OpenBao generated secret encoding %q", spec.Encoding)
+	}
+}
+
 func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoNomadJWTAuthSpec) error {
 	path := strings.Trim(strings.TrimSpace(auth.Path), "/")
 	jwksURL := strings.TrimSpace(auth.JWKSURL)
@@ -1923,6 +2049,34 @@ func (c *realOpenBaoClient) apiRaw(ctx context.Context, token string, method str
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	return fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+}
+
+func (c *realOpenBaoClient) apiRawStatus(ctx context.Context, token string, method string, path string, body io.Reader, contentType string, expected ...int) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.cfg.addr, "/")+"/v1/"+path, body)
+	if err != nil {
+		return 0, nil, err
+	}
+	if token != "" {
+		req.Header.Set("X-Vault-Token", token)
+	}
+	if body != nil && contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, nil, fmt.Errorf("openbao %s %s: %w", method, path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if readErr != nil {
+		return resp.StatusCode, nil, fmt.Errorf("read openbao %s %s response: %w", method, path, readErr)
+	}
+	for _, status := range expected {
+		if resp.StatusCode == status {
+			return resp.StatusCode, raw, nil
+		}
+	}
+	return resp.StatusCode, raw, fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
 }
 
 func apiClient(cfg config) (*http.Client, error) {

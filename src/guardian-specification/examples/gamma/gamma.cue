@@ -687,6 +687,95 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "object-storage-service.credential_kek"
+		spec: {
+			path:   "kv-runtime/data/secret/org/object-storage-service.credential_kek"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "hex"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "object-storage-service.r2.admin_access_key_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+				kind:       "CloudflareControlPlane"
+				name:       "gamma-cloudflare"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "object-storage-service.r2.admin_secret_access_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+				kind:       "CloudflareControlPlane"
+				name:       "gamma-cloudflare"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "object-storage-service.r2.proxy_access_key_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+				kind:       "CloudflareControlPlane"
+				name:       "gamma-cloudflare"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "object-storage-service.r2.proxy_secret_access_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+				kind:       "CloudflareControlPlane"
+				name:       "gamma-cloudflare"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.auth_audience"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelCluster"
+				name:       "zitadel"
+			}
+		}
+	},
+	{
 		apiVersion: "objectstorage.guardianintelligence.org/v1alpha1"
 		kind:       "ObjectStorageService"
 		metadata: name: "object-storage"

@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -758,6 +760,15 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 			pgpRecipient("operator-b", "pubkey-b"),
 			pgpRecipient("operator-c", "pubkey-c"),
 			pgpRecipient("operator-root", "pubkey-root"),
+			secretPath("object-storage-service.credential_kek", map[string]any{
+				"path":   "kv-runtime/data/secret/org/object-storage-service.credential_kek",
+				"key":    "value",
+				"source": "generated",
+				"generate": map[string]any{
+					"bytes":    32,
+					"encoding": "hex",
+				},
+			}),
 		},
 	}
 	body, err := json.Marshal(doc)
@@ -792,6 +803,12 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 	if !cfg.baseline.Reconcile || cfg.baseline.NomadJWT == nil || len(cfg.baseline.NomadJWT.Roles) != 1 {
 		t.Fatalf("baseline = %#v", cfg.baseline)
 	}
+	if len(cfg.baseline.SecretPaths) != 1 {
+		t.Fatalf("secret paths = %#v", cfg.baseline.SecretPaths)
+	}
+	if got := cfg.baseline.SecretPaths[0].Path; got != "kv-runtime/data/secret/org/object-storage-service.credential_kek" {
+		t.Fatalf("secret path = %q", got)
+	}
 	for _, path := range append([]string(cfg.pgpKeys), cfg.rootTokenPGPKey) {
 		body, err := os.ReadFile(path)
 		if err != nil {
@@ -800,6 +817,87 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 		if !strings.HasPrefix(string(body), "pubkey-") {
 			t.Fatalf("unexpected PGP key body in %s: %q", path, body)
 		}
+	}
+}
+
+func TestGeneratedSecretValue(t *testing.T) {
+	hexValue, err := generatedSecretValue(openBaoGenerateSpec{Bytes: 32, Encoding: "hex"})
+	if err != nil {
+		t.Fatalf("generatedSecretValue hex: %v", err)
+	}
+	if len(hexValue) != 64 {
+		t.Fatalf("hex generated length = %d", len(hexValue))
+	}
+	if _, err := hex.DecodeString(hexValue); err != nil {
+		t.Fatalf("hex generated value did not decode: %v", err)
+	}
+
+	base64Value, err := generatedSecretValue(openBaoGenerateSpec{Bytes: 32, Encoding: "base64url"})
+	if err != nil {
+		t.Fatalf("generatedSecretValue base64url: %v", err)
+	}
+	if strings.ContainsAny(base64Value, "+/=") {
+		t.Fatalf("base64url generated value used non-url characters: %q", base64Value)
+	}
+}
+
+func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {
+	secret := openBaoSecretPathSpec{
+		Name:   "object-storage-service.credential_kek",
+		Path:   "kv-runtime/data/secret/org/object-storage-service.credential_kek",
+		Key:    "value",
+		Source: "generated",
+		Generate: &openBaoGenerateSpec{
+			Bytes:    32,
+			Encoding: "hex",
+		},
+	}
+	var posts int
+	exists := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Vault-Token") != "root-token" {
+			t.Fatalf("OpenBao token header = %q", r.Header.Get("X-Vault-Token"))
+		}
+		if r.URL.Path != "/v1/"+secret.Path {
+			t.Fatalf("OpenBao path = %s", r.URL.Path)
+		}
+		switch r.Method {
+		case http.MethodGet:
+			if exists {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"data":{"data":{"value":"existing"}}}`))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"errors":[]}`))
+		case http.MethodPost:
+			posts++
+			exists = true
+			var body struct {
+				Data map[string]string `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode write body: %v", err)
+			}
+			if len(body.Data["value"]) != 64 {
+				t.Fatalf("generated value length = %d", len(body.Data["value"]))
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected OpenBao method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	client := &realOpenBaoClient{cfg: config{addr: server.URL}, client: server.Client()}
+
+	if err := client.ensureGeneratedSecret(context.Background(), "root-token", secret); err != nil {
+		t.Fatalf("first ensureGeneratedSecret: %v", err)
+	}
+	if err := client.ensureGeneratedSecret(context.Background(), "root-token", secret); err != nil {
+		t.Fatalf("second ensureGeneratedSecret: %v", err)
+	}
+	if posts != 1 {
+		t.Fatalf("generated secret writes = %d", posts)
 	}
 }
 
@@ -813,6 +911,17 @@ func pgpRecipient(name string, publicKey string) map[string]any {
 		"spec": map[string]any{
 			"publicKeyBase64": publicKey,
 		},
+	}
+}
+
+func secretPath(name string, spec map[string]any) map[string]any {
+	return map[string]any{
+		"apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+		"kind":       "SecretPath",
+		"metadata": map[string]any{
+			"name": name,
+		},
+		"spec": spec,
 	}
 }
 

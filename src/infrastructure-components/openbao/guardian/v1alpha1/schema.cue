@@ -88,6 +88,26 @@ package v1alpha1
 	}
 }
 
+#SecretPath: {
+	apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+	kind:       "SecretPath"
+	metadata:   #Metadata
+	spec: {
+		path: #NonEmptyString
+		key:  #NonEmptyString
+		source: "generated" | "producedBy" | "operatorImport"
+		if source == "generated" {
+			generate: {
+				bytes:    int & >0
+				encoding: "hex" | "base64url"
+			}
+		}
+		if source == "producedBy" {
+			producerRef: #ObjectRef
+		}
+	}
+}
+
 #PGPRecipient: {
 	apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 	kind:       "PGPRecipient"
