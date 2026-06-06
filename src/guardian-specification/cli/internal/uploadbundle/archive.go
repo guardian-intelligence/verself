@@ -171,6 +171,16 @@ var RequiredBuildArtifacts = []RequiredArtifact{
 		Mode:   "0755",
 	},
 	{
+		Source: "bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover",
+		Target: "bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover",
+		Mode:   "0755",
+	},
+	{
 		Source: "bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar",
 		Target: "bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar",
 		Mode:   "0644",

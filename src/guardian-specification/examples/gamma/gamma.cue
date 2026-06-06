@@ -304,6 +304,17 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "grafana-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/grafana.admin_password" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/grafana.secret_key" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -393,6 +404,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["spicedb-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "grafana-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "grafana"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["grafana-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -580,6 +608,10 @@ resources: [
 					name:  "spicedb"
 					owner: "spicedb"
 				},
+				{
+					name:  "grafana"
+					owner: "grafana"
+				},
 			]
 			roles: [
 				{
@@ -593,6 +625,10 @@ resources: [
 				},
 				{
 					name:  "spicedb"
+					login: true
+				},
+				{
+					name:  "grafana"
 					login: true
 				},
 			]
@@ -616,6 +652,10 @@ resources: [
 				{
 					systemUser:   "spicedb"
 					postgresUser: "spicedb"
+				},
+				{
+					systemUser:   "grafana"
+					postgresUser: "grafana"
 				},
 			]
 		}
@@ -790,6 +830,56 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "grafana.guardianintelligence.org/v1alpha1"
+		kind:       "GrafanaInstance"
+		metadata: name: "grafana"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar"
+			runtimeRoot:     "/var/lib/grafana/runtime"
+			configPath:      "/etc/grafana/grafana.ini"
+			dataDir:         "/var/lib/grafana"
+			logDir:          "/var/log/grafana"
+			reportPath:      "/run/verself/recovery/grafana/report.json"
+			user:            "grafana"
+			group:           "grafana"
+			server: {
+				httpAddr: "127.0.0.1"
+				httpPort: 4300
+				domain:   "dashboard.gamma.verself.sh"
+				rootURL:  "https://dashboard.gamma.verself.sh/"
+			}
+			database: {
+				host:    "/var/run/postgresql"
+				name:    "grafana"
+				user:    "grafana"
+				sslMode: "disable"
+			}
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+				adminPasswordRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "grafana.admin_password"
+				}
+				secretKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "grafana.secret_key"
+				}
+			}
+			authJWT: {
+				enabled:      true
+				headerName:   "X-Pomerium-Jwt-Assertion"
+				emailClaim:   "email"
+				usernameClaim: "email"
+				jwkSetURL:    "https://dashboard.gamma.verself.sh/.well-known/pomerium/jwks.json"
+				cacheTTL:     "60m"
+				autoSignUp:   true
+			}
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"
@@ -941,6 +1031,16 @@ resources: [
 					}
 					hostname: "deployments.api.gamma.verself.sh"
 					backend:  "be_route_product_deployments_api_deployment_service_public_api"
+				},
+				{
+					name: "dashboard"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "dashboard.gamma.verself.sh"
+					backend:  "be_route_product_dashboard_grafana_operator_ui"
 				},
 			]
 			readiness: paths: ["/.well-known/guardian/ready"]
@@ -1141,6 +1241,34 @@ resources: [
 			generate: {
 				bytes:    64
 				encoding: "alphanumeric"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "grafana.admin_password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/grafana.admin_password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "grafana.secret_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/grafana.secret_key"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    48
+				encoding: "base64url"
 			}
 		}
 	},
