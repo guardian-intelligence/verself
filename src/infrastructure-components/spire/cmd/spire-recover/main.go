@@ -154,6 +154,9 @@ func recover(args []string) error {
 	if err := prepareDirectories(cfg); err != nil {
 		return err
 	}
+	if err := clearJoinToken(cfg); err != nil {
+		return err
+	}
 	if err := writeServerConfig(cfg); err != nil {
 		return err
 	}
@@ -166,6 +169,7 @@ func recover(args []string) error {
 		RuntimeArtifactDigest: digest,
 		Conditions: []condition{
 			conditionTrue("SPIRERuntimeInstalled", "RuntimeReady", "repo-built SPIRE runtime is installed"),
+			conditionTrue("SPIREJoinTokenCleared", "JoinTokenReset", "stale agent join token state is cleared"),
 			conditionTrue("SPIREConfigWritten", "ConfigReady", "SPIRE server and agent config are written"),
 		},
 	}
@@ -218,10 +222,22 @@ func reconcileOnce(repoRoot string, resourceName string, cfg config) error {
 	if err := waitForCommand(90*time.Second, filepath.Join(cfg.RuntimeRoot, "current/bin/spire-server"), "healthcheck", "-socketPath", cfg.ServerSocketPath); err != nil {
 		return err
 	}
-	if err := issueJoinToken(cfg); err != nil {
-		return err
+	attestationReason := "ExistingAgentSVID"
+	attestationMessage := "SPIRE agent already has a healthy SVID"
+	if !agentHealthy(cfg) {
+		if err := clearJoinToken(cfg); err != nil {
+			return err
+		}
+		if err := issueJoinToken(cfg); err != nil {
+			return err
+		}
+		attestationReason = "JoinTokenIssued"
+		attestationMessage = "fresh agent join token was issued"
 	}
 	if err := waitForCommand(90*time.Second, filepath.Join(cfg.RuntimeRoot, "current/bin/spire-agent"), "healthcheck", "-socketPath", cfg.AgentSocketPath); err != nil {
+		return err
+	}
+	if err := clearJoinToken(cfg); err != nil {
 		return err
 	}
 	if err := repairAgentSocketPermissions(cfg); err != nil {
@@ -237,7 +253,7 @@ func reconcileOnce(repoRoot string, resourceName string, cfg config) error {
 		RegisteredIdentities: registered,
 		Conditions: []condition{
 			conditionTrue("SPIREServerHealthy", "ServerReady", "SPIRE server API is healthy"),
-			conditionTrue("SPIREJoinTokenIssued", "JoinTokenReady", "agent join token was issued"),
+			conditionTrue("SPIREAgentAttested", attestationReason, attestationMessage),
 			conditionTrue("SPIREAgentHealthy", "AgentReady", "SPIRE agent API is healthy"),
 			conditionTrue("SPIREWorkloadSocketReady", "SocketReady", "SPIRE workload API socket is accessible to workload identities"),
 			conditionTrue("SPIREIdentityRegistryReconciled", "IdentityRegistryReady", "component-owned SPIFFE identities are registered"),
@@ -528,6 +544,13 @@ func prepareDirectories(cfg config) error {
 	return nil
 }
 
+func clearJoinToken(cfg config) error {
+	if err := os.Remove(cfg.JoinTokenPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove stale SPIRE join token: %w", err)
+	}
+	return nil
+}
+
 func installRuntime(repoRoot string, cfg config) (string, error) {
 	artifact := filepath.Join(repoRoot, filepath.FromSlash(cfg.RuntimeArtifact))
 	digest, err := fileSHA256(artifact)
@@ -776,6 +799,12 @@ func issueJoinToken(cfg config) error {
 		return errors.New("SPIRE server generated an empty join token")
 	}
 	return writePrivateFile(cfg.JoinTokenPath, []byte(token.Value+"\n"), 0o600)
+}
+
+func agentHealthy(cfg config) bool {
+	agent := filepath.Join(cfg.RuntimeRoot, "current/bin/spire-agent")
+	_, _, err := commandOutput(agent, "healthcheck", "-socketPath", cfg.AgentSocketPath)
+	return err == nil
 }
 
 func reconcileIdentityRegistry(repoRoot string, cfg config) (int, error) {

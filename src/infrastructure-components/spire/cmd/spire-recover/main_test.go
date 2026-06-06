@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"errors"
+	"os"
+	"testing"
+)
 
 func TestParseOptionsDefaultsResourceGraph(t *testing.T) {
 	opts, err := parseOptions([]string{"--repo-root=/tmp/repo"}, false)
@@ -39,6 +43,23 @@ func TestValidateIdentityRejectsUnsupportedSelector(t *testing.T) {
 	}
 	if _, err := identitySelector(id); err == nil {
 		t.Fatal("identitySelector accepted unsupported selector")
+	}
+}
+
+func TestClearJoinTokenRemovesStaleToken(t *testing.T) {
+	cfg := validConfig()
+	cfg.JoinTokenPath = t.TempDir() + "/join-token"
+	if err := os.WriteFile(cfg.JoinTokenPath, []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearJoinToken(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearJoinToken(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cfg.JoinTokenPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected stale token to be removed, stat err = %v", err)
 	}
 }
 
