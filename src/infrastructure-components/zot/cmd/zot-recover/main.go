@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -126,6 +128,9 @@ func run(args []string) error {
 		if err := verifyConfig(cfg); err != nil {
 			return err
 		}
+		if err := reclaimStaleServer(cfg); err != nil {
+			return err
+		}
 		rep := report{
 			Component:             "zot",
 			ResourceName:          opts.resourceName,
@@ -133,6 +138,7 @@ func run(args []string) error {
 			Conditions: []condition{
 				conditionTrue("ZotRuntimeInstalled", "RuntimeReady", "repo-built Zot runtime is installed"),
 				conditionTrue("ZotConfigWritten", "ConfigReady", "Zot config and htpasswd are written"),
+				conditionTrue("ZotStaleProcessReclaimed", "PortAvailable", "Zot's configured port is available for Nomad"),
 				conditionTrue("ZotRecoveryComplete", "Recovered", "Zot is ready for Nomad to start"),
 			},
 		}
@@ -473,6 +479,214 @@ type zotScrubConfig struct {
 
 func verifyConfig(cfg config) error {
 	return command(filepath.Join(cfg.RuntimeRoot, "current/bin/zot"), "verify", cfg.ConfigPath)
+}
+
+func reclaimStaleServer(cfg config) error {
+	pids, err := pidsListeningOnPort(cfg.Port)
+	if err != nil {
+		return err
+	}
+	for _, pid := range pids {
+		cmdline, err := readCmdline(pid)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read process %d command line: %w", pid, err)
+		}
+		if !isZotProcess(cmdline) {
+			return fmt.Errorf("configured Zot port %d is occupied by non-Zot process %d: %s", cfg.Port, pid, cmdline)
+		}
+		if err := terminateProcess(pid, 5*time.Second); err != nil {
+			return fmt.Errorf("terminate stale Zot process %d: %w", pid, err)
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pids, err := pidsListeningOnPort(cfg.Port)
+		if err != nil {
+			return err
+		}
+		if len(pids) == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("configured Zot port %d is still occupied by pids %v", cfg.Port, pids)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func pidsListeningOnPort(port int) ([]int, error) {
+	inodes, err := socketInodesListeningOnPort(port)
+	if err != nil {
+		return nil, err
+	}
+	if len(inodes) == 0 {
+		return nil, nil
+	}
+	return pidsForSocketInodes(inodes)
+}
+
+func socketInodesListeningOnPort(port int) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	for _, path := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		file, err := os.Open(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("open %s: %w", path, err)
+		}
+		inodes, parseErr := listenerInodesFromTCPTable(file, port)
+		closeErr := file.Close()
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, parseErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close %s: %w", path, closeErr)
+		}
+		for inode := range inodes {
+			out[inode] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
+func listenerInodesFromTCPTable(r io.Reader, port int) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 10 || fields[0] == "sl" {
+			continue
+		}
+		if fields[3] != "0A" {
+			continue
+		}
+		_, rawPort, ok := strings.Cut(fields[1], ":")
+		if !ok {
+			continue
+		}
+		parsed, err := strconv.ParseInt(rawPort, 16, 32)
+		if err != nil {
+			return nil, err
+		}
+		if int(parsed) == port {
+			out[fields[9]] = struct{}{}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func pidsForSocketInodes(inodes map[string]struct{}) ([]int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, fmt.Errorf("read /proc: %w", err)
+	}
+	seen := map[int]struct{}{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue
+		}
+		fds, err := os.ReadDir(filepath.Join("/proc", entry.Name(), "fd"))
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read /proc/%d/fd: %w", pid, err)
+		}
+		for _, fd := range fds {
+			target, err := os.Readlink(filepath.Join("/proc", entry.Name(), "fd", fd.Name()))
+			if err != nil {
+				continue
+			}
+			if !strings.HasPrefix(target, "socket:[") || !strings.HasSuffix(target, "]") {
+				continue
+			}
+			inode := strings.TrimSuffix(strings.TrimPrefix(target, "socket:["), "]")
+			if _, ok := inodes[inode]; ok {
+				seen[pid] = struct{}{}
+			}
+		}
+	}
+	pids := make([]int, 0, len(seen))
+	for pid := range seen {
+		pids = append(pids, pid)
+	}
+	return pids, nil
+}
+
+func readCmdline(pid int) (string, error) {
+	body, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(strings.ReplaceAll(string(body), "\x00", " ")), nil
+}
+
+func isZotProcess(cmdline string) bool {
+	fields := strings.Fields(cmdline)
+	return len(fields) > 0 && strings.Contains(filepath.Base(fields[0]), "zot")
+}
+
+func terminateProcess(pid int, timeout time.Duration) error {
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	deadline := time.Now().Add(timeout)
+	for processAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !processAlive(pid) {
+		return nil
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	killDeadline := time.Now().Add(time.Second)
+	for processAlive(pid) && time.Now().Before(killDeadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if processAlive(pid) {
+		return errors.New("process survived SIGKILL")
+	}
+	return nil
+}
+
+func processAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	if err != nil && !errors.Is(err, syscall.EPERM) {
+		return false
+	}
+	body, statErr := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if errors.Is(statErr, os.ErrNotExist) {
+		return false
+	}
+	if statErr != nil {
+		return true
+	}
+	state, ok := processStateFromStat(string(body))
+	return !ok || (state != "Z" && state != "X")
+}
+
+func processStateFromStat(body string) (string, bool) {
+	_, tail, ok := strings.Cut(body, ") ")
+	if !ok {
+		return "", false
+	}
+	fields := strings.Fields(tail)
+	if len(fields) == 0 {
+		return "", false
+	}
+	return fields[0], true
 }
 
 func writeOwnedFile(path string, body []byte, uid int, gid int, mode os.FileMode) error {
