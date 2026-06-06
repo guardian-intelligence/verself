@@ -26,6 +26,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
@@ -1401,6 +1402,18 @@ func installRuntime(cfg config) error {
 	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(cfg.runtimeRoot, 0o755); err != nil {
+		return fmt.Errorf("create OpenBao runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(cfg.runtimeRoot, "install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open OpenBao runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock OpenBao runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	release := filepath.Join(cfg.runtimeRoot, "releases", releaseName)
 	if runtimeInstalled(release) {
 		return promoteRuntime(cfg.runtimeRoot, release)
