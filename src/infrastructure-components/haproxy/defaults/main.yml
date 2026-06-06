@@ -85,7 +85,6 @@ haproxy_firecracker_host_service_interface: "{{ firecracker_host_service_interfa
 haproxy_firecracker_host_service_ip: "{{ firecracker_host_service_ip | default('10.255.0.1') }}"
 haproxy_metrics_address: 127.0.0.1:8404
 haproxy_public_route_declaration_files:
-  - "{{ playbook_dir }}/../../../../src/infrastructure-components/forgejo/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/infrastructure-components/grafana/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/infrastructure-components/pomerium/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/infrastructure-components/stalwart/deploy/public-routes.yml"

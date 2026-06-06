@@ -315,6 +315,26 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "forgejo-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/forgejo.secret_key" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/forgejo.internal_token" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/forgejo.lfs_jwt_secret" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/forgejo.oauth_jwt_secret" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -421,6 +441,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["grafana-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "forgejo-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "forgejo"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["forgejo-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -880,6 +917,58 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "forgejo.guardianintelligence.org/v1alpha1"
+		kind:       "ForgejoInstance"
+		metadata: name: "forgejo"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/forgejo/forgejo-runtime.tar"
+			runtimeRoot:     "/var/lib/forgejo/runtime"
+			configPath:      "/etc/forgejo/app.ini"
+			workDir:         "/var/lib/forgejo"
+			dataDir:         "/var/lib/forgejo/data"
+			logDir:          "/var/lib/forgejo/log"
+			repositoriesDir: "/var/lib/forgejo/repositories"
+			reportPath:      "/run/verself/recovery/forgejo/report.json"
+			user:            "forgejo"
+			group:           "forgejo"
+			server: {
+				httpAddr: "127.0.0.1"
+				httpPort: 3000
+				domain:   "git.gamma.verself.sh"
+				rootURL:  "https://git.gamma.verself.sh/"
+			}
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+				secretKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "forgejo.secret_key"
+				}
+				internalTokenRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "forgejo.internal_token"
+				}
+				lfsJWTSecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "forgejo.lfs_jwt_secret"
+				}
+				oauthJWTSecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "forgejo.oauth_jwt_secret"
+				}
+				automationTokenRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "source-code-hosting-service.forgejo.automation_token"
+				}
+			}
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"
@@ -1269,6 +1358,77 @@ resources: [
 			generate: {
 				bytes:    48
 				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "forgejo.secret_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/forgejo.secret_key"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "forgejo.internal_token"
+		spec: {
+			path:   "kv-runtime/data/secret/org/forgejo.internal_token"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    48
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "forgejo.lfs_jwt_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/forgejo.lfs_jwt_secret"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "forgejo.oauth_jwt_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/forgejo.oauth_jwt_secret"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "source-code-hosting-service.forgejo.automation_token"
+		spec: {
+			path:   "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "forgejo.guardianintelligence.org/v1alpha1"
+				kind:       "ForgejoInstance"
+				name:       "forgejo"
 			}
 		}
 	},
