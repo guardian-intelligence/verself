@@ -1,19 +1,21 @@
-# Boarding
+# Preflight
 
-Boarding is the first stop point in the Guardian convergence state machine.
+Preflight is the first stop point in the Guardian convergence state machine.
 
 ```sh
-guardian board gamma.cue -o yaml
+guardian preflight gamma -o yaml
+guardian preflight -f gamma.cue -o yaml
 ```
 
-The command loads a resource graph, verifies local build artifacts are present,
-runs the entrypoint's referenced `Substrate` access hook, runs the `Substrate`
-upload hooks, verifies the repo on the target, prepares the fixed kernel
-executor, and stops before fly submits a Nomad job.
+The command resolves a profile, loads a resource graph, verifies local build
+artifacts are present, runs the entrypoint's referenced `Substrate` access
+hook, runs the `Substrate` upload hooks, verifies the repo on the target,
+prepares the fixed kernel executor, and stops before fly submits a Nomad job.
 
 Before upload hooks run, Guardian writes `.guardian/fly/document.json` in the
 workspace. Upload hooks are expected to materialize that generated graph on the
-target so Nomad tasks can consume static configuration from the boarded repo.
+target so Nomad tasks can consume static configuration from the materialized
+repo.
 
 ## Config Shape
 
@@ -49,7 +51,7 @@ resources:
 
 Lifecycle hooks are self-contained commands. `Substrate.spec.access` proves the
 target can be reached. Upload hooks can use SSH, WireGuard, rsync, AWS SSM, or
-another operator-provided mechanism. The upload phase leaves the boarded
+another operator-provided mechanism. The upload phase leaves the prepared
 substrate with a materialized repo tree where component Nomad jobs can run
 repo-bundled artifacts.
 
@@ -71,22 +73,22 @@ the Bazel-pinned controller rsync at
 explicit built artifacts needed by the current graph with symlinks dereferenced,
 atomically promote the uploaded tree, then use `rsync --dry-run --checksum` to
 prove the remote tree still matches the local tree. This first cut still
-requires remote rsync to be available on the substrate; absence is a boarding
+requires remote rsync to be available on the substrate; absence is a preflight
 failure, not an implicit install step.
 
-`board.upload.verify` must verify the boarded tree and print a sha256 digest.
-JSON output with a `digest`, `observed_digest`, `upload_digest`, or `sha256`
-field is accepted. Plain `sha256sum` output is also accepted.
+`preflight.upload.verify` must verify the materialized tree and print a sha256
+digest. JSON output with a `digest`, `observed_digest`, `upload_digest`, or
+`sha256` field is accepted. Plain `sha256sum` output is also accepted.
 
 ## Command Result
 
-`board` emits `ready_to_fly`, `resource_digest`, access status,
+`preflight` emits `ready_to_fly`, `resource_digest`, access status,
 `upload.digest`, kernel hook status, and stable conditions. Command results
 never contain secret values.
 
 `ready_to_fly: yes` means the repo tree is present on the target, the upload
 verify hook proved it matches the local tree, and Nomad can run component-owned
 recovery jobs with OpenBao integration inputs already present. It does not mean
-component runtime convergence has completed. `guardian fly` performs boarding
+component runtime convergence has completed. `guardian fly` performs preflight
 again before component convergence, so it does not depend on a stored report
-from an earlier `guardian board` invocation.
+from an earlier `guardian preflight` invocation.

@@ -1,11 +1,13 @@
 # CLI
 
-`guardian` reads one resource graph document and runs the Guardian convergence
-state machine to the requested stop point.
+`guardian` resolves repo-owned tools and Guardian profiles, then runs the
+convergence state machine to the requested stop point.
 
 ```sh
-guardian board src/guardian-specification/examples/gamma/gamma.cue -o json
-guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run -o yaml
+guardian run bazel -- test //src/guardian-specification/...
+guardian preflight gamma -o json
+guardian fly gamma --dry-run -o yaml
+guardian fly run gamma -- nomad status
 ```
 
 The stable command response is written to stdout. Progress events are written
@@ -28,29 +30,46 @@ CUE is the preferred authoring format. YAML, JSON, TOML, and TOON are accepted
 as runtime input formats when they encode the same entrypoint and resource
 graph.
 
-The CLI exposes only `board` and `fly`. Format conversion belongs in
-development tooling, not in the runtime command surface.
+Normal usage discovers `.config/guardian/guardian.cue` from the workspace root
+and selects a named profile. `-f <config>` is the file override for explicit
+config files or standalone Guardian documents.
 
-## Boarding
+## Tool Execution
 
-`board` runs through substrate readiness and stops. It resolves the entrypoint
+`guardian run <tool> -- <args...>` resolves a repo-declared catalog tool,
+verifies its admitted digest, materializes it in the Guardian cache, and
+executes it without consulting `PATH`.
+
+## Profiles
+
+`guardian profiles list` shows available profiles and the repo default.
+`guardian profiles show [profile]` shows the resolved Guardian document.
+
+Profiles are named contexts. There is no mutable local profile selection.
+
+## Preflight
+
+`preflight` runs through substrate readiness and stops. It resolves the profile
 and referenced `Substrate`, verifies local build artifacts exist, runs the
 access and upload lifecycle hooks, materializes the repo tree on the target,
-prepares OpenBao integration inputs, and starts the Nomad executor. Boarding
+prepares OpenBao integration inputs, and starts the Nomad executor. Preflight
 writes `.guardian/fly/document.json` before upload hooks run so component-owned
-Nomad jobs can read the graph from the boarded workspace.
+Nomad jobs can read the graph from the materialized workspace.
 
 `ready_to_fly: yes` means the access hook completed, the upload was extracted,
-the verify hook proved the boarded tree and printed a sha256 digest, and Nomad
-can run component-owned recovery jobs. Missing build artifacts, failed hooks,
-missing verify digests, or kernel blockers produce `ready_to_fly: no` with
-stable condition reasons.
+the verify hook proved the materialized tree and printed a sha256 digest, and
+Nomad can run component-owned recovery jobs. Missing build artifacts, failed
+hooks, missing verify digests, or kernel blockers produce `ready_to_fly: no`
+with stable condition reasons.
 
 ## Fly
 
-`fly` starts with the same boarding phase. `fly --dry-run` validates the graph
-and verifies local boarding inputs without mutating the target.
+`fly` starts with the same preflight phase. `fly --dry-run` validates the graph
+and verifies local preflight inputs without mutating the target.
 
-Live `fly` boards the target and runs the configured Nomad job hook. Components
-own provider reconciliation, backup restore, health waiting, and other runtime
-behavior through their job files and owner-local binaries.
+Live `fly` prepares the target and runs the configured Nomad job hook.
+Components own provider reconciliation, backup restore, health waiting, and
+other runtime behavior through their job files and owner-local binaries.
+
+`fly run <profile> -- <tool> <args...>` runs `fly` first, verifies the remote
+Guardian and remote catalog tool, then streams the remote tool output.

@@ -18,7 +18,7 @@ component-owned Nomad job.
 Each service and infrastructure component owns a CRD schema for its own
 configuration. The component CRD is the source for static component
 configuration, provider references, backup policy, and runtime invariants.
-Guardian reads one root graph and writes it into the boarded workspace;
+Guardian reads one root graph and writes it into the materialized workspace;
 component jobs project the resources they need.
 
 ## Configuration Classes

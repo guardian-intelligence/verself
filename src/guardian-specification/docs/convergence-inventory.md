@@ -2,25 +2,25 @@
 
 This inventory records the current gamma recovery state for each component that
 has a component CRD in the Guardian graph. A component is converged when the
-boarded graph is current, the component-owned Nomad job is healthy, and two
+materialized graph is current, the component-owned Nomad job is healthy, and two
 consecutive submissions do not create unexpected allocation churn.
 
 ## Gamma
 
 | Component | CRD | Current State | Blocking Conditions | Dependencies Needed For Convergence |
 | --- | --- | --- | --- | --- |
-| Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
-| Nomad runtime | component bootstrap machinery | Converged | None | Boarded repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Boarded OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
+| Substrate preflight | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
+| Nomad runtime | component bootstrap machinery | Converged | None | Materialized repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Previous recovery completed; not yet re-submitted after latest wipe | Provider parent credential still requires operator import if no restored OpenBao snapshot provides it | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin`; OpenBao recovery creates the Cloudflare runtime role |
-| HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
-| nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Boarded nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
-| NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Boarded NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
-| Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Boarded Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
-| OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Boarded OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
+| HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to preflight-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
+| nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
+| NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Materialized NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
+| Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Materialized Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
+| OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | Runtime jobs still need artifact/config CRD cutover and live verification against the latest bootstrapped graph | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
-| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Previous job running; not yet re-submitted after latest wipe | Cloudflare recovery has not produced the recovery R2 capability on this host | Boarded PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
-| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
+| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Previous job running; not yet re-submitted after latest wipe | Cloudflare recovery has not produced the recovery R2 capability on this host | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
+| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; not yet re-submitted after latest wipe | Cloudflare-produced R2 credentials and Zitadel-produced auth audience are not yet available on this host | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
@@ -34,15 +34,15 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --strea
 Observed results from the latest destructive gamma run on June 6, 2026:
 
 - `guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json
-  --stream` boarded gamma and submitted the OpenBao Nomad job;
-- board reported `ready_to_fly: yes`;
+  --stream` materialized gamma and submitted the OpenBao Nomad job;
+- preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
   `sha256:d9d8f38e10375ffbedb3a070e7dfa969e25cf25b990478e2b01d9454b0615f8b`;
 - latest verified upload digest:
   `sha256:7d6786e99b9bfc44b210b2854bbfc8a0801cfcdf592998099ee8bc5aec0e6ba2`;
-- board prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
+- preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
-  OpenBao during board;
+  OpenBao during preflight;
 - Nomad reports `openbao` status `running`, deployment `successful`, one
   healthy allocation, and no failed allocations;
 - allocation task states: `setup` and `recover` exited `0`; `server` remains
@@ -55,19 +55,19 @@ Observed results from the latest destructive gamma run on June 6, 2026:
   `/run/verself/recovery/openbao/init-material.json`, unsealed using in-memory
   init shares, reconciled baseline mounts/auth/policies, and revoked the
   transient initial root token;
-- after boarding the breakglass cleanup, the live empty-stdin breakglass probe
-  reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
+- after preflight and breakglass cleanup, the live empty-stdin breakglass
+  probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
   closed before generating a token.
 
 Previous observed results:
 
-- boarding verified the extracted repo tree on gamma;
+- preflight verified the extracted repo tree on gamma;
 - latest resource graph digest:
   `sha256:be740b4ecd230e6fca468331ce9e5821ee6671b1fcfaa6e86865969e6b5b6570`;
 - latest verified upload digest:
   `sha256:f66d2ca778795159238c43bc23437eb55dbb3c58ba5cfb0cdd266d7c77619e98`;
-- the boarded repo contains `.guardian/fly/document.json` with OpenBao,
+- the materialized repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, OTel Collector,
   Cloudflare, HAProxy, object-storage, substrate, and public-origin resources;
 - remote Nomad validation succeeds for OpenBao, PostgreSQL, ClickHouse,
@@ -94,19 +94,19 @@ Previous observed results:
   a JSON stdin payload;
 - submitting the updated HAProxy job exercises the component-owned prestart and
   fails on missing `/etc/haproxy/certs/gamma.guardianintelligence.org.pem`;
-- Nomad auto-reverts HAProxy to the previous board-only allocation after the
+- Nomad auto-reverts HAProxy to the previous preflight-only allocation after the
   failed public-edge update;
 - component truth comes from Nomad status, component report files, service
   health checks, and telemetry rather than Guardian command output.
 - object-storage-service now reads its static runtime configuration from its
-  `ObjectStorageService` CRD and uses the boarded repo artifact instead of
+  `ObjectStorageService` CRD and uses the materialized repo artifact instead of
   deployment-service artifact URIs;
 - object-storage-service Nomad validation succeeds and the runtime artifact is
-  present in the boarded tree;
-- object-storage-service setup projects the boarded graph into
+  present in the materialized tree;
+- object-storage-service setup projects the materialized graph into
   `/run/verself/recovery/object-storage/document.json` for the service user;
 - PostgreSQL now has a component CRD and a component-owned Nomad job that
-  installs the boarded runtime artifact, initializes the data directory when
+  installs the materialized runtime artifact, initializes the data directory when
   empty, starts `postgres`, and runs a poststart reconciliation loop;
 - PostgreSQL reports healthy in Nomad, writes
   `/run/verself/recovery/postgresql/report.json`, and exposes
@@ -116,7 +116,7 @@ Previous observed results:
 - PostgreSQL reconciled the `otelcol` peer role and granted `pg_monitor` for
   the OTel PostgreSQL receiver;
 - ClickHouse now has a component CRD and a component-owned Nomad job;
-- ClickHouse installs the boarded runtime artifact, writes TLS/SPIFFE/systemd
+- ClickHouse installs the materialized runtime artifact, writes TLS/SPIFFE/systemd
   config, starts ClickHouse through systemd, applies repo migrations, and
   keeps a Nomad monitor task tied to live operator queries;
 - ClickHouse reports `ClickHouseRecoveryComplete=True` in
@@ -127,7 +127,7 @@ Previous observed results:
   `sha256:35cc339b28bdc76533edc965ddbe65fa4a6e66f61bcabbbe38b59f6c018b0e6d`;
 - a live operator query reports 32 tables in the `verself` database;
 - nftables now has a component CRD and a component-owned Nomad batch job;
-- nftables installs the boarded runtime tar into `/opt/verself/nftables`,
+- nftables installs the materialized runtime tar into `/opt/verself/nftables`,
   writes `/etc/nftables.conf`, `/etc/nftables.d/host-firewall.nft`,
   `/etc/nftables.d/nomad.nft`, and component-owned systemd units;
 - two fresh nftables Nomad batch submissions completed successfully, latest
@@ -140,7 +140,7 @@ Previous observed results:
 - `verself-nftables.service` is enabled and `verself-firewall.target` is
   active;
 - NATS now has a component CRD and a component-owned Nomad service job;
-- NATS recovery installs the boarded `nats-runtime.tar`, writes
+- NATS recovery installs the materialized `nats-runtime.tar`, writes
   `/etc/nats/nats-server.conf`, writes
   `/etc/nats/nats-spiffe-helper.conf`, and reports
   `NATSRecoveryComplete=True` in
@@ -159,8 +159,8 @@ Previous observed results:
   allocation churn; allocation `7d67f12d` remained the only running allocation;
 - Nomad Observer now has a component CRD and a component-owned Nomad service
   job;
-- Nomad Observer recovery installs the boarded `nomad-observer.tar`, creates
-  the `nomad_observer` account, projects the boarded graph into
+- Nomad Observer recovery installs the materialized `nomad-observer.tar`, creates
+  the `nomad_observer` account, projects the materialized graph into
   `/run/verself/recovery/nomad-observer/document.json`, and reports
   `NomadObserverRecoveryComplete=True` in
   `/run/verself/recovery/nomad-observer/report.json`;
@@ -174,10 +174,10 @@ Previous observed results:
   `max(observed_at) = 2026-06-06 06:00:18.497`;
 - the projected Nomad Observer graph and report are `root:nomad_observer`
   `0640`, allowing the service user to read configuration without exposing the
-  boarded workspace tree broadly;
+  materialized workspace tree broadly;
 - OTel Collector now has a component CRD and a component-owned Nomad service
   job;
-- OTel Collector recovery installs the boarded `otelcol-runtime.tar` and
+- OTel Collector recovery installs the materialized `otelcol-runtime.tar` and
   `otelcol-config.tar`, creates the `otelcol` account, and reports
   `OtelCollectorRecoveryComplete=True` in
   `/run/verself/recovery/otelcol/report.json`;
@@ -203,8 +203,8 @@ Previous observed results:
   allocation;
 - artifact-only changes are not visible to Nomad when the job HCL is unchanged;
   the live OTel config update required an explicit allocation restart after
-  boarding the new artifact. Future `fly` submission logic should carry a
-  boarded artifact or upload digest into Nomad submission if artifact-only
+  materializing the new artifact. Future `fly` submission logic should carry a
+  materialized artifact or upload digest into Nomad submission if artifact-only
   changes must roll automatically;
 - object-storage-service setup now exits successfully and reaches past
   migrations through the component-owned `object-storage-service recover`
@@ -231,7 +231,7 @@ Previous observed results:
 - the live `--breakglass-generate-root-token-stdin </dev/null` path reports
   `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and does not
   attempt baseline reconciliation without threshold material;
-- the patched OpenBao recovery binary was boarded to gamma in upload
+- the patched OpenBao recovery binary was materialized to gamma in upload
   `sha256:d99aac0a65a886a951fea7e9935b580c8063be1eb8ccb6916a9306a65ff28b22`;
 - the available gamma bootstrap token is not sufficient for baseline
   reconciliation: OpenBao returned 403 on `sys/mounts` and 403 on
@@ -250,7 +250,7 @@ Previous observed results:
   `CloudflareControlPlane/gamma-cloudflare`;
 - `iam-service.zitadel.auth_audience` is declared as produced by the future
   Zitadel/auth-control-plane recovery path;
-- running the updated boarded OpenBao recovery binary against the previous
+- running the updated materialized OpenBao recovery binary against the previous
   allocation without operator material still reports
   `OpenBaoBaselineReconciled=False/BaselineAuthorityRequired`; the next proof is
   a destructive OpenBao allocation restart so the prestart wipe and fresh-init
@@ -266,7 +266,7 @@ Previous observed results:
   material remain operator-import/provider-owned inputs;
 - the current Zitadel Nomad job files still validate but remain in the old
   runtime-artifact and site-token shape; the next Zitadel slice is the runtime
-  cutover to boarded artifacts plus CRD-loaded config.
+  cutover to materialized artifacts plus CRD-loaded config.
 
 Evidence commands:
 
@@ -347,7 +347,7 @@ The next mechanical recovery target is the Zitadel runtime cutover. OpenBao
 baseline reconciliation remains externally gated on operator authority, but
 the graph now declares the Zitadel/OpenBao/PostgreSQL dependencies that baseline
 will apply once authority is presented. Zitadel still needs to consume its CRDs
-at runtime and install boarded artifacts instead of legacy runtime-artifact
+at runtime and install materialized artifacts instead of legacy runtime-artifact
 sources. After that, OpenBao baseline authority can be presented and the next
 live run should expose whether Zitadel reaches service health or blocks on
 operator-imported SMTP/GitHub material.

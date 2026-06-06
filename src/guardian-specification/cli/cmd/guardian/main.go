@@ -21,7 +21,10 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/load"
 	"github.com/verself/guardian-specification/internal/formatio"
+	"github.com/verself/guardian-specification/internal/guardianconfig"
 	"github.com/verself/guardian-specification/internal/specdoc"
+	"github.com/verself/guardian-specification/internal/toolcatalog"
+	"github.com/verself/guardian-specification/internal/toolrun"
 )
 
 const (
@@ -43,8 +46,10 @@ type condition struct {
 	Resource string `json:"resource,omitempty" yaml:"resource,omitempty" toml:"resource,omitempty" toon:"resource,omitempty"`
 }
 
-type boardResult struct {
+type preflightResult struct {
+	Profile        string            `json:"profile" yaml:"profile" toml:"profile" toon:"profile"`
 	Name           string            `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	Status         string            `json:"status" yaml:"status" toml:"status" toon:"status"`
 	ReadyToFly     string            `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
 	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
@@ -86,7 +91,9 @@ type kernelResult struct {
 }
 
 type flyResult struct {
+	Profile        string            `json:"profile" yaml:"profile" toml:"profile" toon:"profile"`
 	Name           string            `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	Status         string            `json:"status" yaml:"status" toml:"status" toon:"status"`
 	ReadyToFly     string            `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
 	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
@@ -97,7 +104,8 @@ type flyResult struct {
 }
 
 type commandOptions struct {
-	File          string
+	Config        string
+	Profile       string
 	Output        string
 	WorkspaceRoot string
 	Stream        bool
@@ -118,7 +126,11 @@ type progressEvent struct {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	args := os.Args[1:]
+	if toolName := invokedToolName(os.Args[0]); toolName != "" {
+		args = append([]string{"run", toolName, "--"}, args...)
+	}
+	os.Exit(run(args, os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -127,10 +139,16 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
-	case "board":
-		return runBoard(args[1:], stdout, stderr)
+	case "run":
+		return runTool(args[1:], stdout, stderr)
+	case "tool":
+		return runToolCommand(args[1:], stdout, stderr)
+	case "preflight":
+		return runPreflight(args[1:], stdout, stderr)
+	case "profiles":
+		return runProfiles(args[1:], stdout, stderr)
 	case "fly":
-		return runFly(args[1:], stdout, stderr)
+		return runFlyCommand(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		usage(stderr)
 		return 0
@@ -141,20 +159,311 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 }
 
-func runBoard(args []string, stdout io.Writer, stderr io.Writer) int {
-	opts, ok := parseCommonFlags("guardian board", args, stderr)
+func invokedToolName(arg0 string) string {
+	base := filepath.Base(arg0)
+	base = strings.TrimSuffix(base, ".exe")
+	if base == "" || base == "guardian" {
+		return ""
+	}
+	return base
+}
+
+func runTool(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) < 1 {
+		_, _ = fmt.Fprintln(stderr, "guardian run: tool name is required")
+		return 2
+	}
+	toolName := args[0]
+	toolArgs, ok := splitToolInvocationArgs(args[1:])
+	if !ok {
+		_, _ = fmt.Fprintln(stderr, "guardian run: expected -- before tool arguments")
+		return 2
+	}
+	workspaceRoot, ok := commandWorkspaceRoot("guardian run", stderr)
+	if !ok {
+		return 1
+	}
+	tool, err := toolcatalog.Resolve(workspaceRoot, toolName)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
+		return 1
+	}
+	return toolrun.Exec(context.Background(), tool, toolArgs, toolrun.Options{
+		WorkDir: workspaceRoot,
+		Stdout:  stdout,
+		Stderr:  stderr,
+	})
+}
+
+func splitToolInvocationArgs(args []string) ([]string, bool) {
+	for i, arg := range args {
+		if arg == "--" {
+			return append([]string(nil), args[i+1:]...), true
+		}
+	}
+	return nil, false
+}
+
+func runToolCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) < 1 {
+		_, _ = fmt.Fprintln(stderr, "guardian tool: expected list, which, verify, or install-shims")
+		return 2
+	}
+	switch args[0] {
+	case "list":
+		return runToolList(args[1:], stdout, stderr)
+	case "which":
+		return runToolWhich(args[1:], stdout, stderr)
+	case "verify":
+		return runToolVerify(args[1:], stdout, stderr)
+	case "install-shims":
+		return runToolInstallShims(args[1:], stdout, stderr)
+	default:
+		_, _ = fmt.Fprintf(stderr, "guardian tool: unknown command: %s\n", args[0])
+		return 2
+	}
+}
+
+func runToolList(args []string, stdout io.Writer, stderr io.Writer) int {
+	opts, ok := parseToolInfoFlags("guardian tool list", args, stderr)
+	if !ok {
+		return 2
+	}
+	workspaceRoot, ok := commandWorkspaceRoot("guardian tool list", stderr)
+	if !ok {
+		return 1
+	}
+	names, err := toolcatalog.ToolNames(workspaceRoot)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool list: %v\n", err)
+		return 1
+	}
+	if err := writeOutput(stdout, opts.Output, toolListResult{Tools: names}); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool list: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func runToolWhich(args []string, stdout io.Writer, stderr io.Writer) int {
+	opts, operands, ok := parseToolOperandFlags("guardian tool which", args, stderr)
+	if !ok {
+		return 2
+	}
+	if len(operands) != 1 {
+		_, _ = fmt.Fprintf(stderr, "guardian tool which: expected one tool, got %d\n", len(operands))
+		return 2
+	}
+	result, code := resolveAndEnsureTool("guardian tool which", operands[0], stderr)
+	if code != 0 {
+		return code
+	}
+	if err := writeOutput(stdout, opts.Output, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool which: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func runToolVerify(args []string, stdout io.Writer, stderr io.Writer) int {
+	opts, operands, ok := parseToolOperandFlags("guardian tool verify", args, stderr)
+	if !ok {
+		return 2
+	}
+	if len(operands) != 1 {
+		_, _ = fmt.Fprintf(stderr, "guardian tool verify: expected one tool, got %d\n", len(operands))
+		return 2
+	}
+	result, code := resolveAndEnsureTool("guardian tool verify", operands[0], stderr)
+	if code != 0 {
+		return code
+	}
+	result.Status = "ready"
+	if err := writeOutput(stdout, opts.Output, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool verify: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func resolveAndEnsureTool(commandName string, toolName string, stderr io.Writer) (toolWhichResult, int) {
+	workspaceRoot, ok := commandWorkspaceRoot(commandName, stderr)
+	if !ok {
+		return toolWhichResult{}, 1
+	}
+	tool, err := toolcatalog.Resolve(workspaceRoot, toolName)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
+		return toolWhichResult{}, 1
+	}
+	path, err := toolrun.EnsureExecutable(context.Background(), tool, toolrun.Options{WorkDir: workspaceRoot, Stderr: stderr})
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
+		return toolWhichResult{}, 1
+	}
+	return toolWhichResult{
+		Tool:       tool.Name,
+		Platform:   tool.Platform,
+		Ref:        tool.Ref,
+		Digest:     tool.Digest,
+		Admission:  tool.Admission,
+		Executable: path,
+		Status:     "present",
+	}, 0
+}
+
+func runToolInstallShims(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet("guardian tool install-shims", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var binDir string
+	var output string
+	fs.StringVar(&binDir, "bin-dir", "", "directory for Guardian tool shims")
+	fs.StringVar(&output, "o", "yaml", "output format: yaml | json | toml | toon")
+	fs.StringVar(&output, "output", "yaml", "output format: yaml | json | toml | toon")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(binDir) == "" {
+		_, _ = fmt.Fprintln(stderr, "guardian tool install-shims: --bin-dir is required")
+		return 2
+	}
+	if fs.NArg() != 0 {
+		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: unexpected operands: %s\n", strings.Join(fs.Args(), " "))
+		return 2
+	}
+	workspaceRoot, ok := commandWorkspaceRoot("guardian tool install-shims", stderr)
+	if !ok {
+		return 1
+	}
+	tools, err := toolcatalog.ResolveAll(workspaceRoot)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: %v\n", err)
+		return 1
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: resolve guardian executable: %v\n", err)
+		return 1
+	}
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: create %s: %v\n", binDir, err)
+		return 1
+	}
+	var installed []string
+	for _, tool := range tools {
+		path := filepath.Join(binDir, tool.Name)
+		if err := installShim(path, executable); err != nil {
+			_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: %v\n", err)
+			return 1
+		}
+		installed = append(installed, path)
+	}
+	if err := writeOutput(stdout, output, toolShimResult{Installed: installed}); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func installShim(path string, target string) error {
+	if current, err := os.Readlink(path); err == nil {
+		if current == target {
+			return nil
+		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("replace shim %s: %w", path, err)
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return fmt.Errorf("%s exists and is not a Guardian shim symlink", path)
+		}
+		return fmt.Errorf("inspect shim %s: %w", path, err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		return fmt.Errorf("create shim %s -> %s: %w", path, target, err)
+	}
+	return nil
+}
+
+type toolInfoOptions struct {
+	Output string
+}
+
+type toolListResult struct {
+	Tools []string `json:"tools" yaml:"tools" toml:"tools" toon:"tools"`
+}
+
+type toolWhichResult struct {
+	Tool       string `json:"tool" yaml:"tool" toml:"tool" toon:"tool"`
+	Platform   string `json:"platform" yaml:"platform" toml:"platform" toon:"platform"`
+	Ref        string `json:"ref" yaml:"ref" toml:"ref" toon:"ref"`
+	Digest     string `json:"digest" yaml:"digest" toml:"digest" toon:"digest"`
+	Admission  string `json:"admission" yaml:"admission" toml:"admission" toon:"admission"`
+	Executable string `json:"executable" yaml:"executable" toml:"executable" toon:"executable"`
+	Status     string `json:"status" yaml:"status" toml:"status" toon:"status"`
+}
+
+type toolShimResult struct {
+	Installed []string `json:"installed" yaml:"installed" toml:"installed" toon:"installed"`
+}
+
+func parseToolInfoFlags(name string, args []string, stderr io.Writer) (toolInfoOptions, bool) {
+	opts, operands, ok := parseToolOperandFlags(name, args, stderr)
+	if !ok {
+		return toolInfoOptions{}, false
+	}
+	if len(operands) != 0 {
+		_, _ = fmt.Fprintf(stderr, "%s: unexpected operands: %s\n", name, strings.Join(operands, " "))
+		return toolInfoOptions{}, false
+	}
+	return opts, true
+}
+
+func parseToolOperandFlags(name string, args []string, stderr io.Writer) (toolInfoOptions, []string, bool) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	opts := toolInfoOptions{Output: "yaml"}
+	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon")
+	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
+	flagArgs, operands, err := splitCommandArgs(args)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		return toolInfoOptions{}, nil, false
+	}
+	if err := fs.Parse(flagArgs); err != nil {
+		return toolInfoOptions{}, nil, false
+	}
+	operands = append(operands, fs.Args()...)
+	return opts, operands, true
+}
+
+func commandWorkspaceRoot(commandName string, stderr io.Writer) (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s: cwd: %v\n", commandName, err)
+		return "", false
+	}
+	workspaceRoot, err := guardianconfig.DiscoverWorkspaceRoot(cwd)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
+		return "", false
+	}
+	return workspaceRoot, true
+}
+
+func runPreflight(args []string, stdout io.Writer, stderr io.Writer) int {
+	opts, ok := parseProfileFlags("guardian preflight", args, stderr)
 	if !ok {
 		return 2
 	}
 	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
-	doc, err := loadDocument(opts.File)
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian board: %v\n", err)
+	doc, ok := resolveDocument("guardian preflight", &opts, stderr)
+	if !ok {
 		return 1
 	}
-	result := evaluateBoard(doc, opts, emitter)
+	result := evaluatePreflight(doc, opts, emitter)
 	if err := writeOutput(stdout, opts.Output, result); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian board: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian preflight: %v\n", err)
 		return 2
 	}
 	if hasFalseCondition(result.Conditions) {
@@ -163,15 +472,21 @@ func runBoard(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func runFlyCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "run" {
+		return runFlyRun(args[1:], stdout, stderr)
+	}
+	return runFly(args, stdout, stderr)
+}
+
 func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
-	opts, ok := parseCommonFlags("guardian fly", args, stderr)
+	opts, ok := parseProfileFlags("guardian fly", args, stderr)
 	if !ok {
 		return 2
 	}
 	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
-	doc, err := loadDocument(opts.File)
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian fly: %v\n", err)
+	doc, ok := resolveDocument("guardian fly", &opts, stderr)
+	if !ok {
 		return 1
 	}
 	result := evaluateFly(doc, opts, emitter)
@@ -185,7 +500,188 @@ func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
-func parseCommonFlags(name string, args []string, stderr io.Writer) (commandOptions, bool) {
+func runFlyRun(args []string, stdout io.Writer, stderr io.Writer) int {
+	before, remoteArgs, ok := splitFlyRunArgs(args)
+	if !ok {
+		_, _ = fmt.Fprintln(stderr, "guardian fly run: expected -- before remote tool")
+		return 2
+	}
+	if len(remoteArgs) == 0 {
+		_, _ = fmt.Fprintln(stderr, "guardian fly run: remote tool is required")
+		return 2
+	}
+	opts, ok := parseProfileFlags("guardian fly run", before, stderr)
+	if !ok {
+		return 2
+	}
+	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
+	doc, ok := resolveDocument("guardian fly run", &opts, stderr)
+	if !ok {
+		return 1
+	}
+	fly := evaluateFly(doc, opts, emitter)
+	if hasFalseCondition(fly.Conditions) || fly.Status != "ready" {
+		_, _ = fmt.Fprintf(stderr, "guardian fly run: fly did not converge for profile %q\n", opts.Profile)
+		return 1
+	}
+	toolName := remoteArgs[0]
+	if _, err := toolcatalog.Resolve(opts.WorkspaceRoot, toolName); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian fly run: %v\n", err)
+		return 1
+	}
+	return runRemoteGuardianTool(doc.Compiled.SubstrateSpec.Remote, toolName, remoteArgs[1:], stdout, stderr)
+}
+
+func splitFlyRunArgs(args []string) ([]string, []string, bool) {
+	for i, arg := range args {
+		if arg == "--" {
+			return append([]string(nil), args[:i]...), append([]string(nil), args[i+1:]...), true
+		}
+	}
+	return nil, nil, false
+}
+
+func runRemoteGuardianTool(remote specdoc.Remote, toolName string, toolArgs []string, stdout io.Writer, stderr io.Writer) int {
+	if len(remote.SSH) == 0 || strings.TrimSpace(remote.Guardian) == "" || strings.TrimSpace(remote.RepoRoot) == "" {
+		_, _ = fmt.Fprintln(stderr, "guardian fly run: substrate remote guardian is not configured")
+		return 1
+	}
+	verify := remoteGuardianCommand(remote, []string{"tool", "verify", toolName, "-o", "json"})
+	if output, err := execRemoteCommand(context.Background(), remote.SSH, verify, nil, nil); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian fly run: remote tool verification failed: %v\n%s", err, outputTail(output, 1600))
+		return 1
+	}
+	runArgs := append([]string{"run", toolName, "--"}, toolArgs...)
+	command := remoteGuardianCommand(remote, runArgs)
+	_, err := execRemoteCommand(context.Background(), remote.SSH, command, stdout, stderr)
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	_, _ = fmt.Fprintf(stderr, "guardian fly run: remote command failed: %v\n", err)
+	return 1
+}
+
+func remoteGuardianCommand(remote specdoc.Remote, guardianArgs []string) string {
+	workspace := filepath.Join(remote.RepoRoot, "workspace")
+	parts := []string{"cd", shellQuote(workspace), "&&", "exec", shellQuote(remote.Guardian)}
+	for _, arg := range guardianArgs {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func execRemoteCommand(ctx context.Context, ssh []string, remoteCommand string, stdout io.Writer, stderr io.Writer) ([]byte, error) {
+	if len(ssh) == 0 {
+		return nil, errors.New("ssh argv is empty")
+	}
+	argv := append(append([]string(nil), ssh[1:]...), remoteCommand)
+	cmd := exec.CommandContext(ctx, ssh[0], argv...)
+	if stdout != nil || stderr != nil {
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		return nil, cmd.Run()
+	}
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	err := cmd.Run()
+	return output.Bytes(), err
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func runProfiles(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) < 1 {
+		_, _ = fmt.Fprintln(stderr, "guardian profiles: expected list or show")
+		return 2
+	}
+	switch args[0] {
+	case "list":
+		return runProfilesList(args[1:], stdout, stderr)
+	case "show":
+		return runProfilesShow(args[1:], stdout, stderr)
+	default:
+		_, _ = fmt.Fprintf(stderr, "guardian profiles: unknown command: %s\n", args[0])
+		return 2
+	}
+}
+
+func runProfilesList(args []string, stdout io.Writer, stderr io.Writer) int {
+	opts, ok := parseProfileFlags("guardian profiles list", args, stderr)
+	if !ok {
+		return 2
+	}
+	resolution, err := guardianconfig.ResolveProfile(guardianconfig.ResolveOptions{
+		ConfigPath: opts.Config,
+		Profile:    opts.Profile,
+	})
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian profiles list: %v\n", err)
+		return 1
+	}
+	writeWarnings(stderr, resolution.Warnings)
+	result := profilesListResult{
+		DefaultProfile: resolution.RootConfig.DefaultProfile,
+		Profiles:       guardianconfig.ListProfiles(resolution),
+	}
+	if err := writeOutput(stdout, opts.Output, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian profiles list: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+func runProfilesShow(args []string, stdout io.Writer, stderr io.Writer) int {
+	opts, ok := parseProfileFlags("guardian profiles show", args, stderr)
+	if !ok {
+		return 2
+	}
+	resolution, err := guardianconfig.ResolveProfile(guardianconfig.ResolveOptions{
+		ConfigPath: opts.Config,
+		Profile:    opts.Profile,
+	})
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian profiles show: %v\n", err)
+		return 1
+	}
+	writeWarnings(stderr, resolution.Warnings)
+	result := profileShowResult{
+		Profile:        resolution.ProfileName,
+		Default:        resolution.ProfileName == resolution.RootConfig.DefaultProfile,
+		ConfigRoot:     resolution.ConfigRoot,
+		RootConfigPath: resolution.RootConfigPath,
+		DocumentPath:   resolution.DocumentPath,
+	}
+	if err := writeOutput(stdout, opts.Output, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian profiles show: %v\n", err)
+		return 2
+	}
+	return 0
+}
+
+type profilesListResult struct {
+	DefaultProfile string   `json:"default_profile" yaml:"default_profile" toml:"default_profile" toon:"default_profile"`
+	Profiles       []string `json:"profiles" yaml:"profiles" toml:"profiles" toon:"profiles"`
+}
+
+type profileShowResult struct {
+	Profile        string `json:"profile" yaml:"profile" toml:"profile" toon:"profile"`
+	Default        bool   `json:"default" yaml:"default" toml:"default" toon:"default"`
+	ConfigRoot     string `json:"config_root,omitempty" yaml:"config_root,omitempty" toml:"config_root,omitempty" toon:"config_root,omitempty"`
+	RootConfigPath string `json:"root_config_path,omitempty" yaml:"root_config_path,omitempty" toml:"root_config_path,omitempty" toon:"root_config_path,omitempty"`
+	DocumentPath   string `json:"document_path" yaml:"document_path" toml:"document_path" toon:"document_path"`
+}
+
+func parseProfileFlags(name string, args []string, stderr io.Writer) (commandOptions, bool) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	opts := commandOptions{}
@@ -198,7 +694,7 @@ func parseCommonFlags(name string, args []string, stderr io.Writer) (commandOpti
 	if err := fs.Parse(flagArgs); err != nil {
 		return commandOptions{}, false
 	}
-	if err := setPositionalFile(&opts, operands); err != nil {
+	if err := setPositionalProfile(&opts, operands); err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s: %v\n", name, err)
 		return commandOptions{}, false
 	}
@@ -210,8 +706,8 @@ func parseCommonFlags(name string, args []string, stderr io.Writer) (commandOpti
 }
 
 func bindCommonFlags(fs *flag.FlagSet, opts *commandOptions) {
-	fs.StringVar(&opts.File, "f", "", "Guardian config document path")
-	fs.StringVar(&opts.File, "file", "", "Guardian config document path")
+	fs.StringVar(&opts.Config, "f", "", "Guardian config override path")
+	fs.StringVar(&opts.Config, "config", "", "Guardian config override path")
 	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.Output, "format", "yaml", "alias for --output")
@@ -251,64 +747,53 @@ func flagRequiresValue(arg string) bool {
 		name = before
 	}
 	switch name {
-	case "f", "file", "format", "o", "output":
+	case "f", "config", "format", "o", "output":
 		return true
 	default:
 		return false
 	}
 }
 
-func setPositionalFile(opts *commandOptions, operands []string) error {
+func setPositionalProfile(opts *commandOptions, operands []string) error {
 	if len(operands) > 1 {
-		return fmt.Errorf("expected one file operand, got %d", len(operands))
+		return fmt.Errorf("expected at most one profile operand, got %d", len(operands))
 	}
 	if len(operands) == 0 {
 		return nil
 	}
-	if opts.File != "" {
-		return errors.New("file specified by both --file and positional operand")
-	}
-	opts.File = operands[0]
+	opts.Profile = operands[0]
 	return nil
 }
 
 func normalizeCommonOptions(opts *commandOptions) error {
-	if strings.TrimSpace(opts.File) == "" {
-		return errors.New("file is required")
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("cwd: %w", err)
-	}
-	workspaceRoot, err := discoverWorkspaceRoot(cwd)
-	if err != nil {
-		return err
-	}
-	opts.WorkspaceRoot = workspaceRoot
 	opts.Output = strings.TrimSpace(opts.Output)
 	return nil
 }
 
-func discoverWorkspaceRoot(start string) (string, error) {
-	dir, err := filepath.Abs(start)
+func resolveDocument(commandName string, opts *commandOptions, stderr io.Writer) (guardianDocument, bool) {
+	resolution, err := guardianconfig.ResolveProfile(guardianconfig.ResolveOptions{
+		ConfigPath: opts.Config,
+		Profile:    opts.Profile,
+	})
 	if err != nil {
-		return "", fmt.Errorf("resolve cwd: %w", err)
+		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
+		return guardianDocument{}, false
 	}
-	for {
-		if stat, err := os.Stat(filepath.Join(dir, "MODULE.bazel")); err == nil && stat.Mode().IsRegular() {
-			return dir, nil
-		}
-		if stat, err := os.Stat(filepath.Join(dir, "WORKSPACE")); err == nil && stat.Mode().IsRegular() {
-			return dir, nil
-		}
-		if stat, err := os.Stat(filepath.Join(dir, "WORKSPACE.bazel")); err == nil && stat.Mode().IsRegular() {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("guardian must be run from inside a Bazel workspace")
-		}
-		dir = parent
+	writeWarnings(stderr, resolution.Warnings)
+	opts.WorkspaceRoot = resolution.WorkspaceRoot
+	opts.Profile = resolution.ProfileName
+	opts.Config = resolution.DocumentPath
+	doc, err := loadDocument(resolution.DocumentPath)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
+		return guardianDocument{}, false
+	}
+	return doc, true
+}
+
+func writeWarnings(stderr io.Writer, warnings []string) {
+	for _, warning := range warnings {
+		_, _ = fmt.Fprintln(stderr, warning)
 	}
 }
 
@@ -389,15 +874,17 @@ func findCUEModuleRoot(start string) (string, error) {
 	}
 }
 
-func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWriter) boardResult {
-	emitter.emit("board.load", "ok", "", "loaded Guardian config document")
+func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventWriter) preflightResult {
+	emitter.emit("preflight.load", "ok", "", "loaded Guardian config document")
 	mode := "preflight"
 	if opts.DryRun {
 		mode = "dry_run"
 	}
 	substrateSpec := doc.Compiled.SubstrateSpec
-	result := boardResult{
+	result := preflightResult{
+		Profile:        opts.Profile,
 		Name:           doc.Compiled.Fly.Metadata.Name,
+		Status:         "blocked",
 		ReadyToFly:     "no",
 		ExecutionMode:  mode,
 		ResourceDigest: digestValue(doc.Source.Resources),
@@ -412,88 +899,90 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		},
 		Kernel: kernelPending(substrateSpec.Kernel),
 	}
+	result.Conditions = append(result.Conditions, conditionTrue("ProfileLoaded", "ProfileResolved", "Guardian profile resolved to a resource graph", "profile."+opts.Profile))
 	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphResolved", "RefsResolved", "Guardian resource refs resolved", "resources"))
-	result.Conditions = append(result.Conditions, conditionTrue("AccessHookConfigured", "HookConfigured", "access lifecycle hook is configured", "board.access"))
-	result.Conditions = append(result.Conditions, conditionTrue("UploadHooksConfigured", "HooksConfigured", "upload lifecycle hooks are configured", "board.upload"))
-	result.Conditions = append(result.Conditions, conditionTrue("KernelHooksConfigured", "HooksConfigured", "Nomad executor kernel hooks are configured", "board.kernel"))
+	result.Conditions = append(result.Conditions, conditionTrue("AccessHookConfigured", "HookConfigured", "access lifecycle hook is configured", "preflight.access"))
+	result.Conditions = append(result.Conditions, conditionTrue("UploadHooksConfigured", "HooksConfigured", "upload lifecycle hooks are configured", "preflight.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("KernelHooksConfigured", "HooksConfigured", "Nomad executor kernel hooks are configured", "preflight.kernel"))
 	if err := writeFlyDocument(opts.WorkspaceRoot, doc.Source); err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "ResourceGraphWriteFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("ResourceGraphMaterialized", "WriteFailed", err.Error(), "board.resources"))
+		result.Conditions = append(result.Conditions, conditionFalse("FlyDocumentMaterialized", "WriteFailed", err.Error(), "preflight.resources"))
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphMaterialized", "DocumentWritten", "Guardian resource graph was written for component-owned Nomad tasks", "board.resources"))
-	if err := prepareBoardWorkspace(opts.WorkspaceRoot); err != nil {
+	result.Conditions = append(result.Conditions, conditionTrue("FlyDocumentMaterialized", "DocumentWritten", "Guardian resource graph was written for component-owned Nomad tasks", "preflight.resources"))
+	if err := preparePreflightWorkspace(opts.WorkspaceRoot); err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "BuildArtifactsMissing"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadPrepared", "BuildArtifactsMissing", err.Error(), "board.upload"))
+		result.Conditions = append(result.Conditions, conditionFalse("LocalArtifactsPresent", "BuildArtifactsMissing", err.Error(), "preflight.upload"))
 		return result
 	}
 	result.Upload.Status = "prepared"
 	result.Upload.Reason = "WorkspaceReady"
-	result.Conditions = append(result.Conditions, conditionTrue("UploadPrepared", "WorkspaceReady", "workspace graph and build artifacts are present locally", "board.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and build artifacts are present locally", "preflight.upload"))
 	if hasFalseCondition(result.Conditions) {
 		return result
 	}
 	if opts.DryRun {
-		result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "DryRun", "dry run did not execute the access hook", "board.access"))
-		result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "DryRun", "dry run did not materialize the workspace on the target", "board.upload.extract"))
-		result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DryRun", "dry run verified local boarding inputs without mutating the target", "board.upload.verify"))
-		result.Conditions = append(result.Conditions, conditionTrue("KernelReady", "DryRun", "dry run did not execute kernel recovery hooks", "board.kernel"))
+		result.Status = "ready"
+		result.Conditions = append(result.Conditions, conditionTrue("SubstrateConnected", "DryRun", "dry run did not execute the access hook", "preflight.access"))
+		result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeMaterialized", "DryRun", "dry run did not materialize the workspace on the target", "preflight.upload.extract"))
+		result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "DryRun", "dry run verified local preflight inputs without mutating the target", "preflight.upload.verify"))
+		result.Conditions = append(result.Conditions, conditionTrue("KernelReady", "DryRun", "dry run did not execute kernel recovery hooks", "preflight.kernel"))
 		return result
 	}
-	accessResult, _ := runLifecycleHook("board.access", substrateSpec.Access, opts.WorkspaceRoot, emitter)
+	accessResult, _ := runLifecycleHook("preflight.access", substrateSpec.Access, opts.WorkspaceRoot, emitter)
 	result.Access = accessResult
 	if accessResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "AccessHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("BoardAccess", accessResult.Reason, hookFailureMessage("access hook failed", accessResult), "board.access"))
+		result.Conditions = append(result.Conditions, conditionFalse("SubstrateConnected", accessResult.Reason, hookFailureMessage("access hook failed", accessResult), "preflight.access"))
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "HookSucceeded", "access hook completed", "board.access"))
-	runResult, _ := runLifecycleHook("board.upload.run", substrateSpec.Upload.Run, opts.WorkspaceRoot, emitter)
+	result.Conditions = append(result.Conditions, conditionTrue("SubstrateConnected", "HookSucceeded", "access hook completed", "preflight.access"))
+	runResult, _ := runLifecycleHook("preflight.upload.run", substrateSpec.Upload.Run, opts.WorkspaceRoot, emitter)
 	result.Upload.Run = runResult
 	if runResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "UploadHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadRun", runResult.Reason, hookFailureMessage("upload run hook failed", runResult), "board.upload.run"))
+		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeMaterialized", runResult.Reason, hookFailureMessage("upload run hook failed", runResult), "preflight.upload.run"))
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("UploadRun", "HookSucceeded", "upload run hook completed", "board.upload.run"))
-	extractResult, _ := runLifecycleHook("board.upload.extract", substrateSpec.Upload.Extract, opts.WorkspaceRoot, emitter)
+	extractResult, _ := runLifecycleHook("preflight.upload.extract", substrateSpec.Upload.Extract, opts.WorkspaceRoot, emitter)
 	result.Upload.Extract = extractResult
 	if extractResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "ExtractHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadExtract", extractResult.Reason, hookFailureMessage("upload extract hook failed", extractResult), "board.upload.extract"))
+		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeMaterialized", extractResult.Reason, hookFailureMessage("upload extract hook failed", extractResult), "preflight.upload.extract"))
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "HookSucceeded", "upload extract hook completed", "board.upload.extract"))
-	verifyResult, verifyStdout := runLifecycleHook("board.upload.verify", substrateSpec.Upload.Verify, opts.WorkspaceRoot, emitter)
+	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeMaterialized", "HookSucceeded", "remote repo tree was materialized", "preflight.upload.extract"))
+	verifyResult, verifyStdout := runLifecycleHook("preflight.upload.verify", substrateSpec.Upload.Verify, opts.WorkspaceRoot, emitter)
 	result.Upload.Verify = verifyResult
 	if verifyResult.Status != "ready" {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "VerifyHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", verifyResult.Reason, hookFailureMessage("upload verify hook failed", verifyResult), "board.upload.verify"))
+		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeVerified", verifyResult.Reason, hookFailureMessage("upload verify hook failed", verifyResult), "preflight.upload.verify"))
 		return result
 	}
 	observedDigest, err := extractObservedDigest(string(verifyStdout))
 	if err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "DigestMissing"
-		result.Conditions = append(result.Conditions, conditionFalse("UploadVerify", "DigestMissing", err.Error(), "board.upload.verify"))
+		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeVerified", "DigestMissing", err.Error(), "preflight.upload.verify"))
 		return result
 	}
 	result.Upload.Digest = observedDigest
 	result.Upload.Status = "ready"
 	result.Upload.Reason = "TreeVerified"
-	result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "TreeVerified", "verify hook proved the boarded workspace tree and printed its digest", "board.upload.verify"))
-	result.Conditions = append(result.Conditions, conditionTrue("UploadReady", "UploadVerified", "workspace upload is extracted and verified", "board.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "TreeVerified", "verify hook proved the remote workspace tree and printed its digest", "preflight.upload.verify"))
+	result.Conditions = append(result.Conditions, conditionTrue("RemoteGuardianVerified", "TreeVerified", "remote Guardian artifacts were verified as part of the repo tree", "preflight.upload.verify"))
 	if !runKernelHooks(&result, substrateSpec.Kernel, opts.WorkspaceRoot, emitter) {
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("KernelReady", "KernelBootstrapped", "Nomad is running with OpenBao integration inputs available", "board.kernel"))
-	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "KernelBootstrapped", "Nomad can run component-owned recovery jobs", "board.kernel"))
+	result.Conditions = append(result.Conditions, conditionTrue("KernelVerified", "KernelBootstrapped", "Nomad is running with OpenBao integration inputs available", "preflight.kernel"))
+	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "KernelBootstrapped", "Nomad can run component-owned recovery jobs", "preflight.kernel"))
+	result.Status = "ready"
 	result.ReadyToFly = "yes"
 	return result
 }
@@ -512,7 +1001,7 @@ func kernelPending(kernel specdoc.Kernel) kernelResult {
 	}
 }
 
-func runKernelHooks(result *boardResult, kernel specdoc.Kernel, workspaceRoot string, emitter eventWriter) bool {
+func runKernelHooks(result *preflightResult, kernel specdoc.Kernel, workspaceRoot string, emitter eventWriter) bool {
 	result.Kernel.Status = "running"
 	result.Kernel.Reason = "KernelRecoveryStarted"
 	steps := []struct {
@@ -524,24 +1013,24 @@ func runKernelHooks(result *boardResult, kernel specdoc.Kernel, workspaceRoot st
 		message   string
 	}{
 		{
-			name:      "board.kernel.openbao_prepare",
-			resource:  "board.kernel.openbao_prepare",
+			name:      "preflight.kernel.openbao_prepare",
+			resource:  "preflight.kernel.openbao_prepare",
 			hook:      kernel.OpenBaoPrepare,
 			assign:    func(h hookResult) { result.Kernel.OpenBaoPrepare = h },
-			condition: "OpenBaoRuntimePrepared",
+			condition: "OpenBaoInputsPrepared",
 			message:   "OpenBao runtime and CA are prepared before Nomad starts",
 		},
 		{
-			name:      "board.kernel.nomad",
-			resource:  "board.kernel.nomad",
+			name:      "preflight.kernel.nomad",
+			resource:  "preflight.kernel.nomad",
 			hook:      kernel.Nomad,
 			assign:    func(h hookResult) { result.Kernel.Nomad = h },
-			condition: "NomadKernelReady",
+			condition: "NomadActive",
 			message:   "Nomad agent is running with OpenBao integration available",
 		},
 		{
-			name:      "board.kernel.verify",
-			resource:  "board.kernel.verify",
+			name:      "preflight.kernel.verify",
+			resource:  "preflight.kernel.verify",
 			hook:      kernel.Verify,
 			assign:    func(h hookResult) { result.Kernel.Verify = h },
 			condition: "KernelVerified",
@@ -564,7 +1053,7 @@ func runKernelHooks(result *boardResult, kernel specdoc.Kernel, workspaceRoot st
 	return true
 }
 
-func prepareBoardWorkspace(workspaceRoot string) error {
+func preparePreflightWorkspace(workspaceRoot string) error {
 	for _, rel := range []string{
 		defaultFlyDocumentPath,
 		"bazel-bin",
@@ -572,7 +1061,7 @@ func prepareBoardWorkspace(workspaceRoot string) error {
 		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s is missing; build the repo before boarding", rel)
+				return fmt.Errorf("%s is missing; build the repo before preflight", rel)
 			}
 			return fmt.Errorf("stat %s: %w", rel, err)
 		}
@@ -722,27 +1211,30 @@ func digestValue(value any) string {
 
 func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter) flyResult {
 	emitter.emit("fly.load", "ok", "", "loaded Guardian config document")
-	boardResult := evaluateBoard(doc, opts, emitter)
+	preflightResult := evaluatePreflight(doc, opts, emitter)
 	mode := "apply"
 	if opts.DryRun {
 		mode = "dry_run"
 	}
 	result := flyResult{
+		Profile:        opts.Profile,
 		Name:           doc.Compiled.Fly.Metadata.Name,
+		Status:         "blocked",
 		ReadyToFly:     "no",
 		ExecutionMode:  mode,
-		ResourceDigest: boardResult.ResourceDigest,
-		UploadDigest:   boardResult.Upload.Digest,
-		Entrypoint:     boardResult.Entrypoint,
+		ResourceDigest: preflightResult.ResourceDigest,
+		UploadDigest:   preflightResult.Upload.Digest,
+		Entrypoint:     preflightResult.Entrypoint,
 		Nomad:          hookPending(doc.Compiled.FlySpec.Nomad.Run),
 	}
-	result.Conditions = append(result.Conditions, conditionFromBoard(boardResult, opts.DryRun))
-	boardReadyForFly := boardResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(boardResult.Conditions))
-	if !boardReadyForFly {
+	result.Conditions = append(result.Conditions, conditionFromPreflight(preflightResult, opts.DryRun))
+	preflightReadyForFly := preflightResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(preflightResult.Conditions))
+	if !preflightReadyForFly {
 		return result
 	}
 	if opts.DryRun {
 		result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "DryRun", "dry run did not submit a Nomad job", "fly.nomad"))
+		result.Status = "ready"
 		result.ReadyToFly = "yes"
 		return result
 	}
@@ -753,6 +1245,7 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "HookSucceeded", "Nomad job hook completed", "fly.nomad"))
+	result.Status = "ready"
 	result.ReadyToFly = "yes"
 	return result
 }
@@ -774,14 +1267,14 @@ func writeFlyDocument(workspaceRoot string, doc specdoc.Document) error {
 	return writeWorkspaceFile(path, body, 0o644)
 }
 
-func conditionFromBoard(result boardResult, dryRun bool) condition {
+func conditionFromPreflight(result preflightResult, dryRun bool) condition {
 	if result.ReadyToFly == "yes" {
-		return conditionTrue("BoardingReady", "ReadyToFly", "workspace upload is verified on the target", "board")
+		return conditionTrue("PreflightReady", "ReadyToFly", "remote repo tree and kernel prerequisites are verified", "preflight")
 	}
 	if dryRun && !hasFalseCondition(result.Conditions) {
-		return conditionTrue("BoardingReady", "DryRun", "dry run verified local boarding inputs without proving remote boarding", "board")
+		return conditionTrue("PreflightReady", "DryRun", "dry run verified local preflight inputs without mutating the target", "preflight")
 	}
-	return conditionFalse("BoardingReady", "NotReadyToFly", "workspace upload is not present on the target", "board")
+	return conditionFalse("PreflightReady", "NotReadyToFly", "preflight did not prove the target is ready for fly", "preflight")
 }
 
 func hasFalseCondition(conditions []condition) bool {
@@ -823,14 +1316,25 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `guardian
 
 usage:
-  guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon] [--dry-run] [--stream]
-  guardian fly <config.cue|yaml|json|toml|toon> [--dry-run] [-o yaml|json|toml|toon] [--stream]
+  guardian run <tool> -- <args...>
+  guardian tool list [-o yaml|json|toml|toon]
+  guardian tool which <tool> [-o yaml|json|toml|toon]
+  guardian tool verify <tool> [-o yaml|json|toml|toon]
+  guardian tool install-shims --bin-dir <dir>
+  guardian profiles list [-o yaml|json|toml|toon]
+  guardian profiles show [profile] [-o yaml|json|toml|toon]
+  guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
+  guardian fly [-f <config>] [profile] [--dry-run] [-o yaml|json|toml|toon] [--stream]
+  guardian fly run [-f <config>] [profile] -- <tool> <args...>
 
-board loads a FlyProcedure config document, verifies local build artifacts,
-runs the Substrate access, upload, and kernel lifecycle hooks, and reports
-whether the target is ready for Nomad-driven fly.
+preflight resolves a Guardian profile, writes the generated fly document,
+verifies local build artifacts, runs the Substrate access, upload, and kernel
+lifecycle hooks, and reports whether the target is ready for Nomad-driven fly.
 
-fly runs the same boarding phase and then runs the FlyProcedure Nomad job hook
-from the boarded workspace.
+fly runs the same preflight phase and then runs the FlyProcedure Nomad job hook
+from the materialized workspace.
+
+run resolves a repo-declared catalog tool, verifies its digest and admission,
+and executes it locally without consulting PATH.
 	`)
 }

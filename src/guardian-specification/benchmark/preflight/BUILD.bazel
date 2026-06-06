@@ -7,12 +7,12 @@ alias(
 )
 
 go_test(
-    name = "board_benchmark",
+    name = "preflight_benchmark",
     timeout = "long",
-    srcs = ["board_benchmark_test.go"],
+    srcs = ["preflight_benchmark_test.go"],
     args = [
         "-test.run=__benchmark_only__",
-        "-test.bench=BenchmarkGuardianBoard",
+        "-test.bench=BenchmarkGuardianPreflight",
         "-test.benchtime=10x",
         "-test.benchmem",
     ],

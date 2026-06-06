@@ -251,7 +251,7 @@ operator reaches the node over SSH
 
 Deployment-service-managed deploys require S0-S7 to pass in under one second:
 S0 site metadata, S1 Nomad allocation evidence, S2 recovery SSH
-handoff declaration, S3 `bazelisk` and `git`, S4 OpenBao runtime secret
+handoff declaration, S3 Guardian-resolved `bazel` and `git`, S4 OpenBao runtime secret
 delivery, S6 Nomad, S7 Postgres, deployment repo, and artifact publishing
 through `object-storage-service`. `aspect deploy` reports
 `deployment_service_unavailable` with the failed stage and does not SSH or run

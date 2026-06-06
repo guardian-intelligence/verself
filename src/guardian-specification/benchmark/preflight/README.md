@@ -1,14 +1,14 @@
-# Board Benchmark
+# Preflight Benchmark
 
-Guardian owns a pinned `hyperfine` binary for command-level board benchmarks.
+Guardian owns a pinned `hyperfine` binary for command-level preflight benchmarks.
 
 ```sh
-bazelisk build //src/guardian-specification/benchmark/board:hyperfine
-build_output="$(bazelisk cquery --output=files //src/guardian-specification/benchmark/board:hyperfine)"
+guardian run bazel -- build //src/guardian-specification/benchmark/preflight:hyperfine
+build_output="$(guardian run bazel -- cquery --output=files //src/guardian-specification/benchmark/preflight:hyperfine)"
 "$build_output" \
   --warmup 1 \
   --runs 5 \
-  'guardian board src/guardian-specification/examples/gamma/gamma.cue -o json'
+  'guardian preflight -f src/guardian-specification/examples/gamma/gamma.cue -o json'
 ```
 
 Run this from the repo root with `guardian` on `PATH`. The benchmarked command

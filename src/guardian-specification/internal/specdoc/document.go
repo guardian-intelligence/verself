@@ -53,6 +53,7 @@ type SubstrateSpec struct {
 	Access LifecycleHook `json:"access,omitempty" yaml:"access,omitempty" toml:"access,omitempty" toon:"access,omitempty"`
 	Upload Upload        `json:"upload,omitempty" yaml:"upload,omitempty" toml:"upload,omitempty" toon:"upload,omitempty"`
 	Kernel Kernel        `json:"kernel,omitempty" yaml:"kernel,omitempty" toml:"kernel,omitempty" toon:"kernel,omitempty"`
+	Remote Remote        `json:"remote,omitempty" yaml:"remote,omitempty" toml:"remote,omitempty" toon:"remote,omitempty"`
 }
 
 type PublicOriginSpec struct {
@@ -77,6 +78,12 @@ type Upload struct {
 	Run     LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
 	Extract LifecycleHook `json:"extract,omitempty" yaml:"extract,omitempty" toml:"extract,omitempty" toon:"extract,omitempty"`
 	Verify  LifecycleHook `json:"verify,omitempty" yaml:"verify,omitempty" toml:"verify,omitempty" toon:"verify,omitempty"`
+}
+
+type Remote struct {
+	RepoRoot string   `json:"repoRoot,omitempty" yaml:"repoRoot,omitempty" toml:"repoRoot,omitempty" toon:"repoRoot,omitempty"`
+	Guardian string   `json:"guardian,omitempty" yaml:"guardian,omitempty" toml:"guardian,omitempty" toon:"guardian,omitempty"`
+	SSH      []string `json:"ssh,omitempty" yaml:"ssh,omitempty" toml:"ssh,omitempty" toon:"ssh,omitempty"`
 }
 
 type CompiledDocument struct {
@@ -225,7 +232,10 @@ func validateResourceSpec(resource Resource) error {
 		if err := validateHook("spec.kernel.nomad", spec.Kernel.Nomad); err != nil {
 			return err
 		}
-		return validateHook("spec.kernel.verify", spec.Kernel.Verify)
+		if err := validateHook("spec.kernel.verify", spec.Kernel.Verify); err != nil {
+			return err
+		}
+		return validateRemote("spec.remote", spec.Remote)
 	case APINetworking + "/" + KindPublicOrigin:
 		spec, err := DecodeResourceSpec[PublicOriginSpec](resource.Spec)
 		if err != nil {
@@ -320,6 +330,27 @@ func validateHook(name string, hook LifecycleHook) error {
 	for i, arg := range hook.Argv {
 		if strings.TrimSpace(arg) == "" {
 			return fmt.Errorf("%s.argv[%d] must not be empty", name, i)
+		}
+	}
+	return nil
+}
+
+func validateRemote(name string, remote Remote) error {
+	if remote.RepoRoot == "" && remote.Guardian == "" && len(remote.SSH) == 0 {
+		return nil
+	}
+	if !strings.HasPrefix(remote.RepoRoot, "/") {
+		return fmt.Errorf("%s.repoRoot must be an absolute path", name)
+	}
+	if !strings.HasPrefix(remote.Guardian, "/") {
+		return fmt.Errorf("%s.guardian must be an absolute path", name)
+	}
+	if len(remote.SSH) == 0 {
+		return fmt.Errorf("%s.ssh is required", name)
+	}
+	for i, arg := range remote.SSH {
+		if strings.TrimSpace(arg) == "" {
+			return fmt.Errorf("%s.ssh[%d] must not be empty", name, i)
 		}
 	}
 	return nil

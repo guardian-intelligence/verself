@@ -1,18 +1,19 @@
 # Fly
 
-`fly` runs Guardian boarding and then submits the configured Nomad job from the
-boarded workspace.
+`fly` runs Guardian preflight and then submits the configured Nomad job from
+the materialized workspace.
 
 ```sh
-guardian fly gamma.cue --dry-run -o yaml
-guardian fly gamma.cue
+guardian fly gamma --dry-run -o yaml
+guardian fly gamma
+guardian fly -f gamma.cue
 ```
 
-The command loads the same resource graph used by `board`, writes the graph to
-`.guardian/fly/document.json`, runs the boarding phase, and verifies the
-boarded repo tree and kernel prerequisites. Re-running `fly` is the normal way
-to refresh the boarded workspace before Nomad jobs run their owner-defined
-lifecycle tasks.
+The command resolves a profile, writes the graph to
+`.guardian/fly/document.json`, runs the preflight phase, and verifies the
+materialized repo tree and kernel prerequisites. Re-running `fly` is the normal
+way to refresh the materialized workspace before Nomad jobs run their
+owner-defined lifecycle tasks.
 
 ## Config Shape
 
@@ -61,18 +62,18 @@ reads static inputs from its CRD.
 ## Dry Run
 
 `guardian fly --dry-run` runs non-mutating checks: resource validation and
-local boarding input validation. It does not run kernel hooks or submit Nomad
+local preflight input validation. It does not run kernel hooks or submit Nomad
 jobs.
 
 ## Live Run
 
-`guardian fly` performs boarding, then runs `FlyProcedure.spec.nomad.run`. In
-this repo that hook uses the boarded Nomad binary to submit and monitor a
+`guardian fly` performs preflight, then runs `FlyProcedure.spec.nomad.run`. In
+this repo that hook uses the materialized Nomad binary to submit and monitor a
 Nomad job. Owner job files use lifecycle tasks to install runtime artifacts,
 restore or initialize state, reconcile configuration, and block loudly when
 external authority is missing.
 
-On a wiped node, boarding prepares OpenBao before Nomad starts. The
+On a wiped node, preflight prepares OpenBao before Nomad starts. The
 `openbao-recover prepare` hook installs the repo-built OpenBao runtime, writes
 host-local config, and creates the CA file Nomad needs for Vault integration
 without initializing or unsealing OpenBao. Nomad recovery then starts the
@@ -107,18 +108,18 @@ task "recover" {
 }
 ```
 
-The recovery task reads the boarded graph, selects its component CRD, installs
-repo-built artifacts, reconciles static configuration, restores durable state
-when configured, and reports conditions when external authority is missing.
-Nomad handles retries and health-driven scheduling. A healthy component treats
-the recovery task as a no-op.
+The recovery task reads the materialized graph, selects its component CRD,
+installs repo-built artifacts, reconciles static configuration, restores
+durable state when configured, and reports conditions when external authority
+is missing. Nomad handles retries and health-driven scheduling. A healthy
+component treats the recovery task as a no-op.
 
 ## Repeatability
 
-`guardian fly` is safely repeatable. Each run boards the substrate and refreshes
-the graph available to component Nomad jobs. Components that are already healthy
-perform no-op recovery. Components that are degraded attempt to repair or block
-loudly with stable conditions.
+`guardian fly` is safely repeatable. Each run preflights the substrate and
+refreshes the graph available to component Nomad jobs. Components that are
+already healthy perform no-op recovery. Components that are degraded attempt to
+repair or block loudly with stable conditions.
 
 The second consecutive successful `fly` run for the same config should produce
 the same upload digest and no unexpected allocation churn after component Nomad
@@ -129,7 +130,7 @@ jobs are run. This is the primary steady-state regression signal.
 Component readiness for `fly` is measured in levels:
 
 - the component has an owner-defined Nomad job with a recovery prestart task;
-- the job starts on an empty boarded host;
+- the job starts on an empty materialized host;
 - recovery detects absent, initialized/sealed, initialized/unsealed, and
   degraded states;
 - prestart tasks bootstrap empty state;

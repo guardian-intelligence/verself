@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,19 +48,19 @@ func TestProjectionOutputFormatsRejected(t *testing.T) {
 	}
 }
 
-func TestPositionalFileAllowsFlagsAfterOperand(t *testing.T) {
+func TestPositionalProfileAllowsFlagsAfterOperand(t *testing.T) {
 	dir, _ := writeTestCUEDocument(t)
 	var stderr bytes.Buffer
 	var opts commandOptions
 	var ok bool
 	withWorkingDir(t, dir, func() {
-		opts, ok = parseCommonFlags("guardian board", []string{"gamma.cue", "-o", "json", "--dry-run"}, &stderr)
+		opts, ok = parseProfileFlags("guardian preflight", []string{"gamma", "-o", "json", "--dry-run"}, &stderr)
 	})
 	if !ok {
-		t.Fatalf("parseCommonFlags failed: %s", stderr.String())
+		t.Fatalf("parseProfileFlags failed: %s", stderr.String())
 	}
-	if opts.File != "gamma.cue" {
-		t.Fatalf("File = %q, want gamma.cue", opts.File)
+	if opts.Profile != "gamma" {
+		t.Fatalf("Profile = %q, want gamma", opts.Profile)
 	}
 	if opts.Output != "json" {
 		t.Fatalf("Output = %q, want json", opts.Output)
@@ -74,7 +75,7 @@ func TestRenderFlagRejected(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	withWorkingDir(t, dir, func() {
-		code := run([]string{"board", path, "--render", "-o", "json"}, &stdout, &stderr)
+		code := run([]string{"preflight", "-f", path, "--render", "-o", "json"}, &stdout, &stderr)
 		if code != 2 {
 			t.Fatalf("run exited %d, want 2; stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
 		}
@@ -84,23 +85,29 @@ func TestRenderFlagRejected(t *testing.T) {
 	}
 }
 
-func TestBoardCUEDocument(t *testing.T) {
+func TestPreflightCUEDocument(t *testing.T) {
 	dir, path := writeTestCUEDocument(t)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	var code int
 	withWorkingDir(t, dir, func() {
-		code = run([]string{"board", path, "--dry-run", "-o", "json"}, &stdout, &stderr)
+		code = run([]string{"preflight", "-f", path, "--dry-run", "-o", "json"}, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
 	}
-	var result boardResult
+	var result preflightResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("decode board result: %v\n%s", err, stdout.String())
+		t.Fatalf("decode preflight result: %v\n%s", err, stdout.String())
 	}
 	if result.ReadyToFly != "no" {
 		t.Fatalf("ready_to_fly = %q, want no for dry run\n%s", result.ReadyToFly, stdout.String())
+	}
+	if result.Profile != "gamma" {
+		t.Fatalf("profile = %q, want gamma", result.Profile)
+	}
+	if result.Status != "ready" {
+		t.Fatalf("status = %q, want ready for dry run", result.Status)
 	}
 	if result.Access.Status != "pending" {
 		t.Fatalf("dry-run access status = %q, want pending", result.Access.Status)
@@ -113,20 +120,66 @@ func TestBoardCUEDocument(t *testing.T) {
 	}
 }
 
-func TestBoardHooksVerifyDigest(t *testing.T) {
+func TestPreflightExplicitRootConfigFile(t *testing.T) {
+	dir, _ := writeTestCUEDocument(t)
+	writeTestGuardianConfig(t, dir)
+	configPath := filepath.Join(dir, ".config", "guardian", "guardian.cue")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var code int
+	withWorkingDir(t, dir, func() {
+		code = run([]string{"preflight", "-f", configPath, "gamma", "--dry-run", "-o", "json"}, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+	}
+	var result preflightResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode preflight result: %v\n%s", err, stdout.String())
+	}
+	if result.Profile != "gamma" {
+		t.Fatalf("profile = %q, want gamma", result.Profile)
+	}
+	if result.Status != "ready" {
+		t.Fatalf("status = %q, want ready", result.Status)
+	}
+}
+
+func TestPreflightProfileDiscovery(t *testing.T) {
+	dir, _ := writeTestCUEDocument(t)
+	writeTestGuardianConfig(t, dir)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var code int
+	withWorkingDir(t, dir, func() {
+		code = run([]string{"preflight", "gamma", "--dry-run", "-o", "json"}, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+	}
+	var result preflightResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode preflight result: %v\n%s", err, stdout.String())
+	}
+	if result.Profile != "gamma" {
+		t.Fatalf("profile = %q, want gamma", result.Profile)
+	}
+}
+
+func TestPreflightHooksVerifyDigest(t *testing.T) {
 	dir, path := writeTestCUEDocument(t)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	var code int
 	withWorkingDir(t, dir, func() {
-		code = run([]string{"board", path, "-o", "json"}, &stdout, &stderr)
+		code = run([]string{"preflight", "-f", path, "-o", "json"}, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("run exited %d, stderr:\n%s\nstdout:\n%s", code, stderr.String(), stdout.String())
 	}
-	var result boardResult
+	var result preflightResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-		t.Fatalf("decode board result: %v\n%s", err, stdout.String())
+		t.Fatalf("decode preflight result: %v\n%s", err, stdout.String())
 	}
 	if result.ReadyToFly != "yes" {
 		t.Fatalf("ready_to_fly = %q, want yes\n%s", result.ReadyToFly, stdout.String())
@@ -151,7 +204,7 @@ func TestFlyDryRunCUEDocument(t *testing.T) {
 	var stderr bytes.Buffer
 	var code int
 	withWorkingDir(t, dir, func() {
-		code = run([]string{"fly", path, "--dry-run", "-o", "json"}, &stdout, &stderr)
+		code = run([]string{"fly", "-f", path, "--dry-run", "-o", "json"}, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
@@ -174,7 +227,7 @@ func TestFlyLiveCUEDocument(t *testing.T) {
 	var stderr bytes.Buffer
 	var code int
 	withWorkingDir(t, dir, func() {
-		code = run([]string{"fly", path, "-o", "json"}, &stdout, &stderr)
+		code = run([]string{"fly", "-f", path, "-o", "json"}, &stdout, &stderr)
 	})
 	if code != 0 {
 		t.Fatalf("run exited %d, stderr:\n%s\nstdout:\n%s", code, stderr.String(), stdout.String())
@@ -188,12 +241,50 @@ func TestFlyLiveCUEDocument(t *testing.T) {
 	}
 	found := false
 	for _, cond := range result.Conditions {
-		if cond.Type == "BoardingReady" && cond.Status == "True" && cond.Reason == "ReadyToFly" {
+		if cond.Type == "PreflightReady" && cond.Status == "True" && cond.Reason == "ReadyToFly" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("BoardingReady true condition not found: %#v", result.Conditions)
+		t.Fatalf("PreflightReady true condition not found: %#v", result.Conditions)
+	}
+}
+
+func TestFlyRunExecutesVerifiedRemoteCatalogTool(t *testing.T) {
+	dir, path := writeTestCUEDocument(t)
+	writeTestToolCatalog(t, dir)
+	repoRoot := filepath.Join(dir, "remote-repo")
+	if err := os.MkdirAll(filepath.Join(repoRoot, "workspace"), 0o755); err != nil {
+		t.Fatalf("mkdir remote workspace: %v", err)
+	}
+	remoteGuardian := filepath.Join(dir, "remote-guardian")
+	if err := os.WriteFile(remoteGuardian, []byte(`#!/bin/sh
+set -eu
+if [ "$1" = "tool" ] && [ "$2" = "verify" ] && [ "$3" = "bazel" ]; then
+  printf '{"status":"ready"}\n'
+  exit 0
+fi
+if [ "$1" = "run" ] && [ "$2" = "bazel" ] && [ "$3" = "--" ]; then
+  shift 3
+  printf 'remote bazel: %s\n' "$*"
+  exit 0
+fi
+exit 64
+`), 0o755); err != nil {
+		t.Fatalf("write remote guardian: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var code int
+	withWorkingDir(t, dir, func() {
+		code = run([]string{"fly", "run", "-f", path, "--", "bazel", "test", "//src/guardian-specification/..."}, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("run exited %d, stderr:\n%s\nstdout:\n%s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "remote bazel: test //src/guardian-specification/...") {
+		t.Fatalf("stdout omitted remote bazel invocation:\n%s", stdout.String())
 	}
 }
 
@@ -215,12 +306,41 @@ func testFlyResult() flyResult {
 			Reason: "HookSucceeded",
 		},
 		Conditions: []condition{{
-			Type:     "BoardingReady",
+			Type:     "PreflightReady",
 			Status:   "True",
 			Reason:   "ReadyToFly",
-			Message:  "boarding inputs are ready for fly",
-			Resource: "board",
+			Message:  "preflight inputs are ready for fly",
+			Resource: "preflight",
 		}},
+	}
+}
+
+func writeTestToolCatalog(t *testing.T, dir string) {
+	t.Helper()
+	configDir := filepath.Join(dir, ".config", "guardian")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir guardian config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "tools.cue"), []byte(`tools: bazel: platforms: "linux/amd64": {
+	ref: "oci.verself.sh/tools/bazel@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	executable: "bazel"
+	admission: "admitted"
+}
+`), 0o644); err != nil {
+		t.Fatalf("write tool catalog: %v", err)
+	}
+}
+
+func writeTestGuardianConfig(t *testing.T, dir string) {
+	t.Helper()
+	configDir := filepath.Join(dir, ".config", "guardian")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir guardian config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "guardian.cue"), []byte(`defaultProfile: "gamma"
+profiles: gamma: document: "../../gamma.cue"
+`), 0o644); err != nil {
+		t.Fatalf("write guardian config: %v", err)
 	}
 }
 
@@ -275,7 +395,9 @@ language: version: "v0.11.0"
 		t.Fatalf("write built artifact: %v", err)
 	}
 	path := filepath.Join(dir, "gamma.cue")
-	if err := os.WriteFile(path, []byte(`package gamma
+	repoRoot := filepath.Join(dir, "remote-repo")
+	remoteGuardian := filepath.Join(dir, "remote-guardian")
+	document := fmt.Sprintf(`package gamma
 
 entrypoint: {
 	apiVersion: "guardian.guardianintelligence.org/v1alpha1"
@@ -313,6 +435,11 @@ resources: [
 						nomad: argv: ["sh", "-c", "test -d extracted"]
 						verify: argv: ["sh", "-c", "test -d extracted"]
 					}
+					remote: {
+						repoRoot: %q
+						guardian: %q
+						ssh: ["sh", "-c"]
+					}
 			}
 		},
 	{
@@ -328,7 +455,8 @@ resources: [
 		spec: url: "https://gamma.verself.sh"
 	},
 ]
-`), 0o644); err != nil {
+`, repoRoot, remoteGuardian)
+	if err := os.WriteFile(path, []byte(document), 0o644); err != nil {
 		t.Fatalf("write gamma.cue: %v", err)
 	}
 	return dir, path

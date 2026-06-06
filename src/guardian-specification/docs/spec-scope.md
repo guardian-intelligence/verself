@@ -1,7 +1,7 @@
 # Spec Scope
 
 Guardian alpha keeps the base protocol small. The base spec defines the
-resource graph envelope, the boarding entrypoint, substrate access/upload
+resource graph envelope, the preflight entrypoint, substrate access/upload
 hooks, shared public-origin facts, command response shape, and stable condition
 names for cross-component blockers.
 
@@ -23,8 +23,8 @@ configuration. Runtime actions are implemented by the owning component.
 The base spec answers two questions:
 
 - Which resource graph should the implementation load?
-- How should the implementation board a substrate enough for component control
-  loops to run?
+- How should the implementation preflight a substrate enough for component
+  control loops to run?
 
 Component schemas answer what a component should know before it starts.
 Component Nomad jobs and owner-local binaries answer what the component should
@@ -52,8 +52,8 @@ schema and runtime implementation.
 
 ## Authoring Convention
 
-The base Guardian schema is the shared envelope plus boarding substrate facts.
-After boarding, the resource graph is static input for component-owned runtime
+The base Guardian schema is the shared envelope plus preflight substrate facts.
+After preflight, the resource graph is static input for component-owned runtime
 code.
 
 Use this convention when authoring a graph:
@@ -65,8 +65,8 @@ Use this convention when authoring a graph:
 - make the component schema complete for static inputs: public names, provider
   account identifiers, OpenBao paths, artifact paths, socket paths, backup
   object names, policy names, and refs to shared resources;
-- let component Nomad jobs read `.guardian/fly/document.json` from the boarded
-  workspace and select the resources they own;
+- let component Nomad jobs read `.guardian/fly/document.json` from the
+  materialized workspace and select the resources they own;
 - express restore, initialize, unseal, migrate, wait, import, publish, and
   health-check actions in component lifecycle tasks or owner-local binaries;
 - report blockers as command conditions, component reports, Nomad state,
@@ -141,7 +141,7 @@ defines static configuration and invariants for that component:
 - references to other resources in the graph.
 
 Component CRDs describe desired inputs that component-owned code can read from
-the boarded graph. They do not describe step order.
+the materialized graph. They do not describe step order.
 
 The component CUE schema is the semantic source for static configuration. Go
 structs, Nomad templates, generated validators, and docs may mirror that schema
@@ -183,7 +183,7 @@ Use these checks before adding a field:
 
 | Proposed field describes | Placement |
 | --- | --- |
-| How `guardian board` reaches, uploads to, extracts on, or verifies a substrate | `Substrate` |
+| How `guardian preflight` reaches, uploads to, extracts on, or verifies a substrate | `Substrate` |
 | A URL that multiple components consume as public configuration | `PublicOrigin` |
 | Which host daemon, service, provider, backup object, policy, or runtime path a component owns | Component CRD |
 | A component operation such as init, restore, unseal, certificate issuance, bucket creation, schema migration, or health wait | Nomad lifecycle task or owner-local binary |
@@ -197,7 +197,7 @@ owns OpenBao-specific seal, policy, auth, and backup configuration.
 ## Nomad Convention
 
 Component convergence and deployment are Nomad conventions. A component job
-file is checked into the component directory and shipped inside the boarded
+file is checked into the component directory and shipped inside the materialized
 repo. The job file may include lifecycle tasks that:
 
 - read `/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json`;
@@ -217,9 +217,10 @@ before the main task starts. Use a long-running task only when the component
 needs continuous reconciliation after startup.
 
 Nomad agent recovery is kernel machinery for the current alpha slice. The
-pinned Nomad runtime and `nomad-recover` binary are shipped in the boarded repo
-and use component-owned defaults. Add a Nomad component CRD when static Nomad
-configuration no longer fits in the owner-local binary or job file defaults.
+pinned Nomad runtime and `nomad-recover` binary are shipped in the
+materialized repo and use component-owned defaults. Add a Nomad component CRD
+when static Nomad configuration no longer fits in the owner-local binary or job
+file defaults.
 
 ## Evidence
 

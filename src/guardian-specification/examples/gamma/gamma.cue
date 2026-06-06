@@ -81,6 +81,7 @@ resources: [
 						remote=ubuntu@206.223.228.87
 						remote_root=/home/ubuntu/.local/state/guardian/repo
 						artifact_paths='
+						bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
 						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
 						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
@@ -123,6 +124,7 @@ resources: [
 						remote=ubuntu@206.223.228.87
 						remote_root=/home/ubuntu/.local/state/guardian/repo
 						artifact_paths='
+						bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
 						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
 						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
@@ -175,6 +177,19 @@ resources: [
 							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/postgresql/nomad.hcl
 							REMOTE
 						""",
+				]
+			}
+			remote: {
+				repoRoot:  "/home/ubuntu/.local/state/guardian/repo/current"
+				guardian:  "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian"
+				ssh: [
+					"ssh",
+					"-T",
+					"-o", "BatchMode=yes",
+					"-o", "StrictHostKeyChecking=yes",
+					"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+					"-o", "ConnectTimeout=10",
+					"ubuntu@206.223.228.87",
 				]
 			}
 		}

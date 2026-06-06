@@ -1,4 +1,4 @@
-package board
+package preflight
 
 import (
 	"encoding/json"
@@ -9,17 +9,17 @@ import (
 	"testing"
 )
 
-type boardResult struct {
+type preflightResult struct {
 	ReadyToFly string `json:"ready_to_fly"`
 	Upload     struct {
 		Digest string `json:"digest"`
 	} `json:"upload"`
 }
 
-func BenchmarkGuardianBoard(b *testing.B) {
+func BenchmarkGuardianPreflight(b *testing.B) {
 	crd := "src/guardian-specification/examples/gamma/gamma.cue"
 	guardian := "guardian"
-	warm := runBoard(b, guardian, crd)
+	warm := runPreflight(b, guardian, crd)
 	if warm.ReadyToFly != "yes" {
 		b.Fatalf("warmup ready_to_fly = %q, want yes", warm.ReadyToFly)
 	}
@@ -30,7 +30,7 @@ func BenchmarkGuardianBoard(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		result := runBoard(b, guardian, crd)
+		result := runPreflight(b, guardian, crd)
 		if result.ReadyToFly != "yes" {
 			b.Fatalf("ready_to_fly = %q, want yes", result.ReadyToFly)
 		}
@@ -40,27 +40,27 @@ func BenchmarkGuardianBoard(b *testing.B) {
 	}
 }
 
-func runBoard(tb testing.TB, guardian string, crd string) boardResult {
+func runPreflight(tb testing.TB, guardian string, crd string) preflightResult {
 	tb.Helper()
 	workspaceRoot, err := discoverWorkspaceRoot()
 	if err != nil {
 		tb.Fatal(err)
 	}
-	cmd := exec.Command(guardian, "board", crd, "-o", "json")
+	cmd := exec.Command(guardian, "preflight", "-f", crd, "-o", "json")
 	cmd.Dir = workspaceRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		tb.Fatalf("%s: %v\n%s", commandString(guardian, crd), err, output)
 	}
-	var result boardResult
+	var result preflightResult
 	if err := json.Unmarshal(output, &result); err != nil {
-		tb.Fatalf("decode guardian board output: %v\n%s", err, output)
+		tb.Fatalf("decode guardian preflight output: %v\n%s", err, output)
 	}
 	return result
 }
 
 func commandString(guardian string, crd string) string {
-	return fmt.Sprintf("%s board %s -o json", guardian, crd)
+	return fmt.Sprintf("%s preflight -f %s -o json", guardian, crd)
 }
 
 func discoverWorkspaceRoot() (string, error) {

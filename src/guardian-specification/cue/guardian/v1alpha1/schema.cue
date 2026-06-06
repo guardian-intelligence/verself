@@ -69,6 +69,11 @@ package v1alpha1
 			nomad:          #LifecycleHook
 			verify:         #LifecycleHook
 		}
+		remote?: {
+			repoRoot: #AbsolutePath
+			guardian: #AbsolutePath
+			ssh: [#NonEmptyString, ...#NonEmptyString]
+		}
 	}
 }
 
@@ -84,3 +89,5 @@ package v1alpha1
 #LifecycleHook: {
 	argv: [#NonEmptyString, ...#NonEmptyString]
 }
+
+#AbsolutePath: string & =~"^/.+"

@@ -22,14 +22,14 @@ protocol, component CRDs, component-owned Nomad jobs, and runtime evidence.
 
 ## Operations
 
-`board` runs the state machine through substrate readiness. It resolves the
-entrypoint and referenced substrate, checks local build artifacts, computes the
-upload digest, runs the `Substrate` access/upload/kernel lifecycle hooks, and
-emits a structured command result with `ready_to_fly`, upload details, hook
-details, and stable conditions. Kernel hooks recover the fixed Nomad/OpenBao
-substrate prerequisites.
+`preflight` runs the state machine through substrate readiness. It resolves the
+profile, entrypoint, and referenced substrate, checks local build artifacts,
+computes the upload digest, runs the `Substrate` access/upload/kernel lifecycle
+hooks, and emits a structured command result with `ready_to_fly`, upload
+details, hook details, and stable conditions. Kernel hooks recover the fixed
+Nomad/OpenBao substrate prerequisites.
 
-`fly` starts with boarding and writes the resource graph into the boarded
+`fly` starts with preflight and writes the resource graph into the materialized
 workspace, then runs the configured Nomad job hook. Component behavior is
 expressed in component-owned Nomad job files, typically as lifecycle tasks that
 install, restore, reconcile, or block with stable health evidence.

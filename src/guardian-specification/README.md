@@ -1,34 +1,38 @@
 # Guardian Specification
 
 Guardian Specification defines a configuration protocol for converging a built
-repo on a substrate. The reference CLI reads one resource graph, boards the
-target by moving verified repo artifacts into place, prepares OpenBao host
-integration inputs, starts the Nomad executor, and writes the resolved resource
-graph into the boarded workspace for component-owned Nomad jobs.
+repo on a substrate. The reference CLI resolves a profile, materializes a
+verified repo tree on the target, prepares OpenBao host integration inputs,
+starts the Nomad executor, and writes the resolved resource graph into the
+materialized workspace for component-owned Nomad jobs.
 
 The command surface:
 
 ```sh
-guardian board src/guardian-specification/examples/gamma/gamma.cue -o <yaml|json|toml|toon>
-guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run -o yaml
-guardian fly src/guardian-specification/examples/gamma/gamma.cue
+guardian run bazel -- test //src/guardian-specification/...
+guardian preflight gamma -o <yaml|json|toml|toon>
+guardian fly gamma --dry-run -o yaml
+guardian fly gamma
+guardian fly run gamma -- nomad status
 ```
 
-`board` is the first cut point in the convergence state machine. It loads the
-resource graph, verifies local build artifacts are present, runs the referenced
-`Substrate` lifecycle hooks, verifies the boarded repo tree, prepares OpenBao
-integration material for Nomad, starts the Nomad executor, and stops.
+`preflight` is the first cut point in the convergence state machine. It
+resolves the profile, loads the resource graph, verifies local build artifacts
+are present, runs the referenced `Substrate` lifecycle hooks, verifies the
+remote repo tree, prepares OpenBao integration material for Nomad, starts the
+Nomad executor, and stops.
 
-`fly` starts with the same boarding phase and then runs the configured Nomad
-job hook. Component runtime behavior is a Nomad convention: owner job files
-include lifecycle tasks and consume the boarded resource graph. The base
-protocol does not encode component internals. Infrastructure components own
-their binaries, backup retrieval, credential import, health checks, and
-stabilization logic.
+`fly` starts with the same preflight phase and then runs the configured Nomad
+job hook. `fly run` converges first, then invokes a verified catalog tool
+through the remote Guardian binary. Component runtime behavior is a Nomad
+convention: owner job files include lifecycle tasks and consume the
+materialized resource graph. The base protocol does not encode component
+internals. Infrastructure components own their binaries, backup retrieval,
+credential import, health checks, and stabilization logic.
 
 ## Scope Convention
 
-The base protocol stays limited to graph loading, boarding, upload
+The base protocol stays limited to graph loading, preflight, upload
 verification, fixed Nomad executor bootstrap hooks, shared public-origin facts,
 stable command responses, and cross-component conditions. Component
 configuration lives in component CRDs beside the owning service or
@@ -56,7 +60,7 @@ the base Guardian resource kind set.
 - [Overview](docs/overview.md)
 - [Spec Scope](docs/spec-scope.md)
 - [Resource Model](docs/resource-model.md)
-- [Boarding](docs/boarding.md)
+- [Preflight](docs/preflight.md)
 - [Fly](docs/fly.md)
 - [CLI](docs/cli.md)
 - [Configuration and Credentials](docs/configuration-and-credentials.md)

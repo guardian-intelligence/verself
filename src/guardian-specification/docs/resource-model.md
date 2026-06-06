@@ -29,9 +29,10 @@ resources:
       url: https://gamma.verself.sh
 ```
 
-`board` and `fly` read the same graph. `board` stops after verified upload and
-Nomad executor readiness. `fly` performs the same boarding work, materializes
-the graph in the boarded workspace, and runs the configured Nomad job hook.
+`preflight` and `fly` read the same graph. `preflight` stops after verified
+upload and Nomad executor readiness. `fly` performs the same preflight work,
+materializes the graph in the remote workspace, and runs the configured Nomad
+job hook.
 
 The input graph uses the Kubernetes-style `spec` convention for desired input.
 It does not define `status`. Observed state is reported through command
@@ -43,7 +44,7 @@ responses and component evidence.
 procedure stays a small entrypoint into the graph.
 
 `Substrate` contains the access hook and upload hooks. Guardian executes them
-as argv commands after verifying local boarding inputs. The hooks own access,
+as argv commands after verifying local preflight inputs. The hooks own access,
 transfer, extraction, permissions, and remote tooling.
 
 `PublicOrigin` is the shared URL abstraction. Components that need an external
@@ -75,7 +76,7 @@ src/services/object-storage-service/guardian/v1alpha1/schema.cue
 The component schema is the place to define component-specific static
 configuration. The root graph selects component resources from those schemas.
 The base Guardian schema stays limited to the common resource envelope,
-boarding entrypoint, substrate lifecycle hooks, shared origins, and stable
+preflight entrypoint, substrate lifecycle hooks, shared origins, and stable
 condition vocabulary.
 
 Component schemas should model facts that can be checked before running the

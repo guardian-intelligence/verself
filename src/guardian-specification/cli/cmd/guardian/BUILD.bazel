@@ -7,7 +7,10 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/guardian-specification/internal/formatio",
+        "//src/guardian-specification/internal/guardianconfig",
         "//src/guardian-specification/internal/specdoc",
+        "//src/guardian-specification/internal/toolcatalog",
+        "//src/guardian-specification/internal/toolrun",
         "@org_cuelang_go//cue",
         "@org_cuelang_go//cue/cuecontext",
         "@org_cuelang_go//cue/load",

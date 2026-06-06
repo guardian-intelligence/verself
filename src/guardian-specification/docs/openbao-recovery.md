@@ -1,9 +1,9 @@
 # OpenBao Recovery
 
-OpenBao is the first root-of-trust recovery target after a boarded host has a
-minimal executor. The OpenBao infrastructure component owns installation,
-status detection, snapshot restore, initialization, unseal, baseline
-configuration, and health reporting.
+OpenBao is the first root-of-trust recovery target after a host has passed
+preflight and has a minimal executor. The OpenBao infrastructure component owns
+installation, status detection, snapshot restore, initialization, unseal,
+baseline configuration, and health reporting.
 
 Guardian reports OpenBao blockers through component conditions. The base
 protocol does not encode OpenBao-specific recovery fields.
@@ -12,7 +12,7 @@ protocol does not encode OpenBao-specific recovery fields.
 
 OpenBao recovery consumes:
 
-- boarded repo artifacts, including the repo-bundled OpenBao binary and
+- materialized repo artifacts, including the repo-bundled OpenBao binary and
   recovery binary;
 - the OpenBao component CRD, including component-owned config templates,
   backup policy, recovery policy, and baseline policy;
@@ -47,7 +47,7 @@ Nomad task arguments, environment variables, or durable host files.
 
 ```text
 absent
-  -> install OpenBao binary/config from boarded repo
+  -> install OpenBao binary/config from materialized repo
   -> start server
   -> read status
 

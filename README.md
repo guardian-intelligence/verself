@@ -43,7 +43,10 @@ Choose the controller platform that is running the repo commands.
 # 1. Toolchain (one time per controller).
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
-bazelisk mod tidy
+guardian_target=//src/guardian-specification/cli/cmd/guardian:guardian
+bazelisk build "${guardian_target}"
+guardian_bin=./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
+"${guardian_bin}" run bazel -- mod tidy
 aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
 ```
@@ -54,17 +57,21 @@ export PATH="${HOME}/.local/bin:${PATH}"
 # 1. Toolchain (one time per controller).
 ./src/tools/dev/bootstrap/bootstrap-darwin-arm64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
-bazelisk mod tidy
+guardian_target=//src/guardian-specification/cli/cmd/guardian:guardian
+bazelisk build "${guardian_target}"
+guardian_bin=./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
+"${guardian_bin}" run bazel -- mod tidy
 aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
 `src/tools/dev/bootstrap/bootstrap-linux-amd64` and
 `src/tools/dev/bootstrap/bootstrap-darwin-arm64` are the only sanctioned shell
-scripts in the repo. Everything else is done through `aspect` and `bazelisk`.
-The two scripts just get any fresh developer/agent environment set up. They
-install into `${HOME}/.cache/verself/bootstrap-bin` by default and
-automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
-file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
-directory. Local shells need that directory on `PATH` before invoking `aspect`
-or `bazelisk`.
+scripts in the repo. They install the temporary stage-zero tooling needed to
+build the first Guardian binary. After that, repo-owned Bazel execution goes
+through `guardian run bazel -- ...`; Bazelisk is not the operational tool
+authority. The bootstrap scripts install into
+`${HOME}/.cache/verself/bootstrap-bin` by default and automatically add that
+directory to GitHub Actions via `GITHUB_PATH` when that file is present. Set
+`BOOTSTRAP_INSTALL_DIR` to opt into a different install directory. Local shells
+need that directory on `PATH` before invoking the stage-zero build step.

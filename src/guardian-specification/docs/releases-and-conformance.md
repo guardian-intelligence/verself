@@ -15,7 +15,7 @@ Guardian release that publishes them.
 
 Conformance is a development-only API. Conformance fixtures verify
 implementations during development and release qualification. Production
-`board` and `fly` inputs use the production resource graph schema.
+`preflight` and `fly` inputs use the production resource graph schema.
 
 Conformance suites test:
 
