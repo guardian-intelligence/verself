@@ -45,9 +45,8 @@ uninitialized + snapshot available
 uninitialized + no snapshot
   -> require operator PGP recipient identities
   -> initialize fresh with PGP-encrypted unseal shares
-  -> configure baseline mounts/policies/auth with the transient root token
-  -> revoke the transient root token
   -> emit encrypted init material to operators/offsite escrow
+  -> wait for operator-held root trust material
 
 initialized + sealed
   -> obtain threshold unseal material from external trust source
@@ -58,7 +57,8 @@ initialized + unsealed
   -> report available
 
 baseline reconciliation requested by OpenBao component CRD
-  -> require a transient operator token or freshly-created root token
+  -> require a transient operator token or threshold unseal material
+  -> optionally generate a transient root token through OpenBao generate-root
   -> reconcile mounts/policies/auth/secret paths
   -> revoke transient root token or presented operator token
 ```
@@ -117,11 +117,9 @@ or backup decrypt keys.
 Fresh initialization is used only when no usable snapshot is selected.
 
 The recovery binary initializes OpenBao with PGP-encrypted unseal shares for
-operator recipients. The initial root token is held only in process memory long
-enough to configure baseline mounts, policies, audit devices, and auth methods,
-then revoked. If the implementation cannot keep the root token ephemeral, it
-reports `RootTrustMaterialAvailable=False` with
-`OperatorRootCredentialsRequired`.
+operator recipients. The initial root token is encrypted for the configured
+operator recipient and included in the encrypted init-material handoff. The
+recovery report does not contain the root token or plaintext unseal shares.
 
 Encrypted init material is delivered to operators or offsite escrow and removed
 from the host after delivery. The recovery report records recipient
@@ -139,6 +137,8 @@ OpenBao recovery uses these condition reasons:
 - `InitRecipientIdentityRequired`: fresh init needs operator PGP recipients;
 - `BackupRetrievalAuthorityRequired`: the component cannot retrieve the selected
   offsite snapshot;
+- `GenerateRootFailed`: threshold unseal material did not produce a transient
+  root token;
 - `OperatorRootCredentialsRequired`: a human root operation is required.
 
 ## Baseline Reconciliation
@@ -164,6 +164,23 @@ openbao-recover recover \
   --operator-token-stdin < <operator-token-file>
 ```
 
+When the operator has threshold unseal material instead of an existing root
+token, recovery can generate a transient root token through OpenBao's
+generate-root flow:
+
+```sh
+openbao-recover recover \
+  --repo-root=/home/ubuntu/.local/state/guardian/repo/current \
+  --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json \
+  --resource-name=openbao \
+  --generate-root-token-stdin < <unseal-shares-file>
+```
+
+The recovery binary starts a generate-root attempt, submits shares from stdin,
+uses OpenBao's decode-token endpoint to decode the returned token, reconciles
+baseline state, and then calls `auth/token/revoke-self`. Incomplete attempts
+are canceled.
+
 The token is not accepted through argv or environment variables. A successful
 baseline run attempts `auth/token/revoke-self` before reporting recovery
 complete. If the presented token lacks system authority, recovery reports
@@ -179,5 +196,8 @@ provider parent credential is required and no restored secret exists.
 
 - OpenBao seal/unseal: https://openbao.org/docs/concepts/seal/
 - OpenBao operator init: https://openbao.org/docs/2.3.x/commands/operator/init/
+- OpenBao generate-root command: https://openbao.org/docs/commands/operator/generate-root/
+- OpenBao generate-root API: https://openbao.org/api-docs/system/generate-root/
+- OpenBao decode-token API: https://openbao.org/api-docs/2.3.x/system/decode-token/
 - OpenBao Raft snapshot API: https://openbao.org/api-docs/2.3.x/system/storage/raft/
 - Vault snapshot restore sequence: https://developer.hashicorp.com/vault/docs/sysadmin/snapshots/restore

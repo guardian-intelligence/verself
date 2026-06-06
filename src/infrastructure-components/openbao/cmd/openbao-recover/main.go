@@ -41,30 +41,31 @@ const (
 )
 
 type config struct {
-	repoRoot         string
-	runtimeRoot      string
-	dataDir          string
-	configPath       string
-	reportPath       string
-	addr             string
-	caCert           string
-	bao              string
-	keyShares        int
-	threshold        int
-	pgpKeys          stringList
-	rootTokenPGPKey  string
-	initOutputPath   string
-	snapshotPath     string
-	snapshotManifest string
-	snapshotOut      string
-	manifestOut      string
-	tokenStdin       bool
-	unsealStdin      bool
-	loopInterval     time.Duration
-	resourceGraph    string
-	resourceName     string
-	pgpKeyDir        string
-	baseline         openBaoBaselineSpec
+	repoRoot          string
+	runtimeRoot       string
+	dataDir           string
+	configPath        string
+	reportPath        string
+	addr              string
+	caCert            string
+	bao               string
+	keyShares         int
+	threshold         int
+	pgpKeys           stringList
+	rootTokenPGPKey   string
+	initOutputPath    string
+	snapshotPath      string
+	snapshotManifest  string
+	snapshotOut       string
+	manifestOut       string
+	tokenStdin        bool
+	unsealStdin       bool
+	generateRootStdin bool
+	loopInterval      time.Duration
+	resourceGraph     string
+	resourceName      string
+	pgpKeyDir         string
+	baseline          openBaoBaselineSpec
 }
 
 type stringList []string
@@ -147,6 +148,19 @@ type initResponse struct {
 	RecoveryKeysB64 []string `json:"recovery_keys_b64"`
 }
 
+type generateRootAttempt struct {
+	Started          bool   `json:"started"`
+	Nonce            string `json:"nonce"`
+	Progress         int    `json:"progress"`
+	Required         int    `json:"required"`
+	Complete         bool   `json:"complete"`
+	EncodedToken     string `json:"encoded_token"`
+	EncodedRootToken string `json:"encoded_root_token"`
+	PGPFingerprint   string `json:"pgp_fingerprint"`
+	OTP              string `json:"otp"`
+	OTPLength        int    `json:"otp_length"`
+}
+
 type encryptedInitMaterial struct {
 	APIVersion string                    `json:"apiVersion"`
 	Kind       string                    `json:"kind"`
@@ -177,6 +191,10 @@ type openBaoClient interface {
 	SaveSnapshot(context.Context, string) ([]byte, error)
 	ReconcileBaseline(context.Context, string, openBaoBaselineSpec) error
 	RevokeSelf(context.Context, string) error
+	GenerateRootInit(context.Context) (generateRootAttempt, error)
+	GenerateRootUpdate(context.Context, string, string) (generateRootAttempt, error)
+	GenerateRootCancel(context.Context) error
+	DecodeGeneratedRootToken(context.Context, string, string) (string, error)
 }
 
 func main() {
@@ -331,6 +349,7 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		fs.StringVar(&cfg.snapshotManifest, "snapshot-manifest", "", "snapshot manifest path")
 		fs.BoolVar(&cfg.unsealStdin, "unseal-stdin", false, "read unseal shares from stdin, one per line")
 		fs.BoolVar(&cfg.tokenStdin, "operator-token-stdin", false, "read an operator token from stdin")
+		fs.BoolVar(&cfg.generateRootStdin, "generate-root-token-stdin", false, "generate a transient root token from stdin unseal shares")
 	}
 	if snapshotFlags {
 		fs.StringVar(&cfg.snapshotPath, "snapshot", "", "snapshot path to verify")
@@ -353,6 +372,9 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 			next.bao = ""
 		}
 		cfg = normalizeConfig(next)
+	}
+	if cfg.tokenStdin && cfg.generateRootStdin {
+		return config{}, errors.New("--operator-token-stdin and --generate-root-token-stdin are mutually exclusive")
 	}
 	return cfg, nil
 }
@@ -676,20 +698,45 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 	switch classify(status) {
 	case "InitializedUnsealed":
-		if cfg.baseline.Reconcile && !cfg.tokenStdin {
+		if cfg.baseline.Reconcile && !cfg.tokenStdin && !cfg.generateRootStdin {
 			rep.Conditions = append(rep.Conditions,
-				conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires an operator token"),
-				conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires an operator token"),
+				conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires operator root authority"),
+				conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires operator root authority"),
 				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 			)
 			return rep
 		}
-		if !cfg.tokenStdin {
+		if !cfg.tokenStdin && !cfg.generateRootStdin {
 			rep.Conditions = append(rep.Conditions,
 				conditionTrue("RootTrustMaterialAvailable", "NotRequired", "openbao", "OpenBao is already unsealed"),
 				conditionTrue("OpenBaoRecoveryComplete", "Available", "openbao", "OpenBao is initialized, unsealed, and available"),
 			)
 			return rep
+		}
+		if cfg.generateRootStdin {
+			shares, err := readUnsealShares(stdin, true)
+			if err != nil {
+				rep.Conditions = append(rep.Conditions,
+					conditionFalse("RootTrustMaterialAvailable", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required to generate a transient root token"),
+					conditionFalse("OpenBaoGeneratedRootToken", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required to generate a transient root token"),
+					conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires root authority"),
+					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+				)
+				return rep
+			}
+			token, err := generateRootTokenFromShares(ctx, client, shares)
+			if err != nil {
+				rep.Conditions = append(rep.Conditions,
+					conditionFalse("RootTrustMaterialAvailable", "GenerateRootFailed", "openbao", "threshold unseal material did not produce a transient root token"),
+					conditionFalse("OpenBaoGeneratedRootToken", "GenerateRootFailed", "openbao", err.Error()),
+					conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires root authority"),
+					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+				)
+				return rep
+			}
+			rootTrust := conditionTrue("RootTrustMaterialAvailable", "GeneratedRootToken", "openbao", "threshold unseal material generated a transient root token")
+			extra := []condition{conditionTrue("OpenBaoGeneratedRootToken", "Generated", "openbao", "transient root token was generated from threshold unseal material")}
+			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, rootTrust, extra)
 		}
 		token, err := readToken(stdin, true)
 		if err != nil {
@@ -700,28 +747,8 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 			)
 			return rep
 		}
-		if err := client.ReconcileBaseline(ctx, token, cfg.baseline); err != nil {
-			rep.Conditions = append(rep.Conditions, baselineReconcileFailureConditions(err)...)
-			rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, token))
-			return rep
-		}
-		revokeCondition := revokePresentedToken(ctx, client, token)
-		if revokeCondition.Status != "True" {
-			rep.Conditions = append(rep.Conditions,
-				conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
-				conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-				revokeCondition,
-				conditionFalse("OpenBaoRecoveryComplete", "OperatorTokenRevocationFailed", "openbao", "baseline was reconciled but the presented operator token could not be revoked"),
-			)
-			return rep
-		}
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
-			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-			revokeCondition,
-			conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
-		)
-		return rep
+		rootTrust := conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin")
+		return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, rootTrust, nil)
 	case "InitializedSealed":
 		shares, err := readUnsealShares(stdin, cfg.unsealStdin)
 		if err != nil {
@@ -770,7 +797,35 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 }
 
-func baselineReconcileFailureConditions(err error) []condition {
+func reconcileBaselineWithToken(ctx context.Context, baseline openBaoBaselineSpec, client openBaoClient, rep report, token string, rootTrust condition, extra []condition) report {
+	if err := client.ReconcileBaseline(ctx, token, baseline); err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions, baselineReconcileFailureConditions(err, rootTrust)...)
+		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, token))
+		return rep
+	}
+	revokeCondition := revokePresentedToken(ctx, client, token)
+	if revokeCondition.Status != "True" {
+		rep.Conditions = append(rep.Conditions, rootTrust)
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+			revokeCondition,
+			conditionFalse("OpenBaoRecoveryComplete", "OperatorTokenRevocationFailed", "openbao", "baseline was reconciled but the presented operator token could not be revoked"),
+		)
+		return rep
+	}
+	rep.Conditions = append(rep.Conditions, rootTrust)
+	rep.Conditions = append(rep.Conditions, extra...)
+	rep.Conditions = append(rep.Conditions,
+		conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+		revokeCondition,
+		conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
+	)
+	return rep
+}
+
+func baselineReconcileFailureConditions(err error, rootTrust condition) []condition {
 	if isOpenBaoPermissionDenied(err) {
 		return []condition{
 			conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "presented operator token does not have baseline reconciliation authority"),
@@ -779,7 +834,7 @@ func baselineReconcileFailureConditions(err error) []condition {
 		}
 	}
 	return []condition{
-		conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
+		rootTrust,
 		conditionFalse("OpenBaoBaselineReconciled", "ReconcileFailed", "openbao", err.Error()),
 		conditionFalse("OpenBaoRecoveryComplete", "BaselineFailed", "openbao", "baseline reconciliation failed"),
 	}
@@ -794,6 +849,47 @@ func revokePresentedToken(ctx context.Context, client openBaoClient, token strin
 		return conditionFalse("OpenBaoOperatorTokenRevoked", reason, "openbao", err.Error())
 	}
 	return conditionTrue("OpenBaoOperatorTokenRevoked", "Revoked", "openbao", "presented operator token was revoked")
+}
+
+func generateRootTokenFromShares(ctx context.Context, client openBaoClient, shares []string) (string, error) {
+	if len(shares) == 0 {
+		return "", errors.New("at least one unseal share is required to generate a root token")
+	}
+	init, err := client.GenerateRootInit(ctx)
+	if err != nil {
+		return "", err
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = client.GenerateRootCancel(context.Background())
+		}
+	}()
+	if !init.Started || init.Nonce == "" || init.OTP == "" {
+		return "", errors.New("OpenBao generate-root did not start with a nonce and OTP")
+	}
+	attempt := init
+	for _, share := range shares {
+		attempt, err = client.GenerateRootUpdate(ctx, share, init.Nonce)
+		if err != nil {
+			return "", err
+		}
+		if attempt.Complete {
+			complete = true
+			break
+		}
+	}
+	if !complete {
+		return "", fmt.Errorf("OpenBao generate-root incomplete after %d shares; required %d", attempt.Progress, attempt.Required)
+	}
+	encoded := strings.TrimSpace(attempt.EncodedToken)
+	if encoded == "" {
+		encoded = strings.TrimSpace(attempt.EncodedRootToken)
+	}
+	if encoded == "" {
+		return "", errors.New("OpenBao generate-root completed without an encoded token")
+	}
+	return client.DecodeGeneratedRootToken(ctx, encoded, init.OTP)
 }
 
 func isOpenBaoPermissionDenied(err error) bool {
@@ -1599,6 +1695,48 @@ func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken str
 
 func (c *realOpenBaoClient) RevokeSelf(ctx context.Context, token string) error {
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/token/revoke-self", map[string]any{}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) GenerateRootInit(ctx context.Context) (generateRootAttempt, error) {
+	var attempt generateRootAttempt
+	if err := c.apiJSON(ctx, "", http.MethodPost, "sys/generate-root/attempt", map[string]any{}, &attempt, http.StatusOK); err != nil {
+		return generateRootAttempt{}, err
+	}
+	return attempt, nil
+}
+
+func (c *realOpenBaoClient) GenerateRootUpdate(ctx context.Context, share string, nonce string) (generateRootAttempt, error) {
+	var attempt generateRootAttempt
+	if err := c.apiJSON(ctx, "", http.MethodPost, "sys/generate-root/update", map[string]string{
+		"key":   share,
+		"nonce": nonce,
+	}, &attempt, http.StatusOK); err != nil {
+		return generateRootAttempt{}, err
+	}
+	return attempt, nil
+}
+
+func (c *realOpenBaoClient) GenerateRootCancel(ctx context.Context) error {
+	return c.apiJSON(ctx, "", http.MethodDelete, "sys/generate-root/attempt", nil, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) DecodeGeneratedRootToken(ctx context.Context, encoded string, otp string) (string, error) {
+	var response struct {
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
+	}
+	if err := c.apiJSON(ctx, "", http.MethodPost, "sys/decode-token", map[string]string{
+		"encoded_token": strings.TrimSpace(encoded),
+		"otp":           strings.TrimSpace(otp),
+	}, &response, http.StatusOK); err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(response.Data.Token)
+	if token == "" {
+		return "", errors.New("OpenBao decode-token returned an empty token")
+	}
+	return token, nil
 }
 
 func (c *realOpenBaoClient) ensureMount(ctx context.Context, token string, path string, mountType string, description string, options map[string]any) error {

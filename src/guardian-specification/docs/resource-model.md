@@ -33,6 +33,10 @@ resources:
 `fly` performs the same boarding work and materializes the graph in the boarded
 workspace for component-owned Nomad jobs.
 
+The input graph uses the Kubernetes-style `spec` convention for desired input.
+It does not define `status`. Observed state is reported through command
+responses and component evidence.
+
 ## Desired Inputs
 
 `FlyProcedure` is the entrypoint. It references the substrate. The base
@@ -80,6 +84,12 @@ provider account identifiers, OpenBao paths, policy names, workload role names,
 and references to shared resources. Component runtime behavior is represented by
 the component's Nomad job and recovery binary.
 
+Static configuration should be complete enough that a component can derive its
+runtime plan without hidden Guardian fields. For example, OpenBao declares
+mounts, policies, seal recipients, and snapshot locations in its component CRD;
+the OpenBao recovery task decides whether the live state requires init, unseal,
+restore, reconcile, or no-op.
+
 ## Site Files
 
 A site file is a selected resource graph for one deployment target. Names such
@@ -99,6 +109,7 @@ Site files should avoid:
 
 - component recovery steps;
 - `recovery` fields in the base Guardian schema;
+- `status` fields;
 - Nomad submission order;
 - component-specific environment projection;
 - host file paths for secret values;

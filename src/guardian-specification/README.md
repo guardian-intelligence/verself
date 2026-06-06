@@ -26,11 +26,11 @@ credential import, health checks, and stabilization logic.
 
 ## Scope Convention
 
-The base protocol stays limited to graph loading, boarding, upload verification,
-shared public-origin facts, stable command responses, and cross-component
-conditions. Component configuration lives in component CRDs beside the owning
-service or infrastructure component. Component recovery behavior lives in the
-component Nomad job and recovery binary.
+The base protocol stays limited to graph loading, boarding, upload
+verification, shared public-origin facts, stable command responses, and
+cross-component conditions. Component configuration lives in component CRDs
+beside the owning service or infrastructure component. Component recovery
+behavior lives in the component Nomad job and recovery binary.
 
 Static component configuration goes in the owning component schema under
 `guardian/v1alpha1/schema.cue`. Actions such as restore, initialize, unseal,
@@ -38,6 +38,12 @@ migrate, import, publish, and health waiting are Nomad lifecycle conventions
 implemented by the component. The base Guardian schema should not grow fields
 for component recovery programs, Nomad submission order, component-specific
 environment projection, or provider secret file paths.
+
+Treat [Spec Scope](docs/spec-scope.md) as the review checklist for every new
+field. If a field describes a component fact, it belongs in the component CRD.
+If a field describes an operation, it belongs in a component Nomad lifecycle
+task or recovery binary. If a field describes observed state, it belongs in a
+command response, component report, health endpoint, Nomad state, or telemetry.
 
 Site files such as `examples/gamma/gamma.cue` select a set of resources and
 nonsecret configuration for one target. Site names are operator labels outside

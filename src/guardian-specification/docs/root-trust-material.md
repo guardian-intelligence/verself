@@ -74,7 +74,7 @@ Recovery evidence records identifiers and digests:
 - PGP recipient fingerprints;
 - provider credential fingerprint;
 - root-token or operator-token revocation status, including
-  `OpenBaoOperatorTokenRevoked`.
+  `OpenBaoGeneratedRootToken` and `OpenBaoOperatorTokenRevoked`.
 
 Evidence records MUST NOT include plaintext shares, root tokens, provider API
 tokens, private keys, or backup decrypt keys.

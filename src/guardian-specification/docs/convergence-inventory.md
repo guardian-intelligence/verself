@@ -11,7 +11,7 @@ consecutive submissions do not create unexpected allocation churn.
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad | `nomad.guardianintelligence.org/v1alpha1/NomadCluster/nomad` | Converged | None | Boarded repo, Nomad runtime artifact, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator token with baseline reconciliation authority |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator root authority: a valid operator token or threshold unseal shares that can generate a transient root token |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` through the component import action |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
@@ -28,19 +28,21 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --strea
 Observed results:
 
 - boarding verified the extracted repo tree on gamma;
+- latest verified upload digest:
+  `sha256:c3beff6749c09070e726b02848f25c2c5106d6cfe97d29b729f14d52992220e4`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
   Cloudflare, HAProxy, and object-storage component CRDs;
 - remote Nomad validation succeeds for OpenBao, HAProxy, and Cloudflare job
   files;
 - Nomad is running and reachable on gamma;
-- OpenBao initialized a Shamir store with PGP-encrypted init material, accepted
-  threshold unseal shares over stdin, and reconciled baseline mounts, policies,
-  and Nomad JWT auth roles after an operator root token was presented over
-  stdin;
-- Cloudflare can derive its Nomad workload OpenBao token and start its recovery
-  task;
-- Cloudflare recovery now blocks on missing account-admin authority in OpenBao:
-  `kv-controller/data/integrations/cloudflare/account-admin` returns 404;
+- OpenBao initialized a Shamir store with PGP-encrypted init material and is
+  unsealed, but baseline reconciliation is blocked until operator root
+  authority is presented;
+- Cloudflare cannot derive its Nomad workload OpenBao token until the OpenBao
+  baseline creates the `cloudflare-integration-recovery-runtime` role;
+- after OpenBao baseline reconciliation, Cloudflare recovery is expected to
+  block on missing account-admin authority in OpenBao:
+  `kv-controller/data/integrations/cloudflare/account-admin`;
 - the Cloudflare CRD carries the OpenBao account-admin path and omits durable
   host file paths for provider token values;
 - the Cloudflare CRD declares `accountAdminOpenBaoPath`, and the component
@@ -72,12 +74,19 @@ Observed results:
 - object-storage-service runtime and admin tasks still fail before process start
   because Nomad cannot derive an OpenBao token: role
   `object-storage-service-runtime` does not exist;
-- OpenBao recovery now reports the hidden blocker explicitly:
+- OpenBao recovery reports the hidden blocker explicitly:
   `RootTrustMaterialAvailable=False`,
   `OpenBaoBaselineReconciled=False`, and
   `OpenBaoRecoveryComplete=False` with reason `BaselineBlocked`;
 - OpenBao baseline reconciliation through `--operator-token-stdin` is
   scriptable and consumes the token through stdin;
+- OpenBao baseline reconciliation through `--generate-root-token-stdin` is
+  implemented as a component-owned operator path that starts OpenBao
+  generate-root, decodes the transient token, reconciles baseline state, and
+  revokes the generated token;
+- the live `--generate-root-token-stdin </dev/null` path reports
+  `RootTrustMaterialAvailable=False/UnsealQuorumIncomplete` and does not
+  attempt baseline reconciliation without threshold material;
 - the available gamma bootstrap token is not sufficient for baseline
   reconciliation: OpenBao returned 403 on `sys/mounts` and 403 on
   `auth/token/revoke-self`;
@@ -134,9 +143,9 @@ cloudflare-control-plane \
 
 The next recovery target is OpenBao baseline reconciliation. PostgreSQL now
 converges and object-storage-service reaches its OpenBao-backed secret delivery
-boundary. OpenBao must accept an operator root token through a component-owned
+boundary. OpenBao must accept operator root authority through a component-owned
 operator path, reconcile mounts, policies, and Nomad JWT roles from the boarded
 graph, then object-storage-service can retry and discover the next dependency.
-The token must be able to read/write system mounts, policies, JWT auth config,
-and JWT auth roles; the local gamma bootstrap token tested in this run did not
-have that authority.
+The authority must be able to read/write system mounts, policies, JWT auth
+config, and JWT auth roles; the local gamma bootstrap token tested in this run
+did not have that authority.

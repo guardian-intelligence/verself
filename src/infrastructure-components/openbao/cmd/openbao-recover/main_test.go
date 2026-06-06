@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,16 +18,26 @@ import (
 )
 
 type fakeOpenBaoClient struct {
-	status         baoStatus
-	rootToken      string
-	unsealShares   []string
-	snapshot       []byte
-	baselineTokens []string
-	baselines      []openBaoBaselineSpec
-	revokedTokens  []string
-	restored       bool
-	reconcileErr   error
-	revokeErr      error
+	status                 baoStatus
+	rootToken              string
+	unsealShares           []string
+	snapshot               []byte
+	baselineTokens         []string
+	baselines              []openBaoBaselineSpec
+	revokedTokens          []string
+	restored               bool
+	reconcileErr           error
+	revokeErr              error
+	generatedRootToken     string
+	generateRootNonce      string
+	generateRootOTP        string
+	generateRootEncoded    string
+	generateRootShares     []string
+	generateRootCanceled   bool
+	generateRootInitErr    error
+	generateRootUpdateErr  error
+	generateRootCancelErr  error
+	decodeGeneratedRootErr error
 }
 
 func (f *fakeOpenBaoClient) Status(context.Context) (baoStatus, error) {
@@ -93,6 +104,77 @@ func (f *fakeOpenBaoClient) ReconcileBaseline(_ context.Context, token string, b
 func (f *fakeOpenBaoClient) RevokeSelf(_ context.Context, token string) error {
 	f.revokedTokens = append(f.revokedTokens, token)
 	return f.revokeErr
+}
+
+func (f *fakeOpenBaoClient) GenerateRootInit(context.Context) (generateRootAttempt, error) {
+	if f.generateRootInitErr != nil {
+		return generateRootAttempt{}, f.generateRootInitErr
+	}
+	if f.generateRootNonce == "" {
+		f.generateRootNonce = "nonce-" + randomHex(8)
+	}
+	if f.generateRootOTP == "" {
+		f.generateRootOTP = "otp-" + randomHex(8)
+	}
+	if f.generateRootEncoded == "" {
+		f.generateRootEncoded = "encoded-" + randomHex(8)
+	}
+	required := f.status.Threshold
+	if required <= 0 {
+		required = 2
+	}
+	return generateRootAttempt{
+		Started:  true,
+		Nonce:    f.generateRootNonce,
+		Required: required,
+		OTP:      f.generateRootOTP,
+	}, nil
+}
+
+func (f *fakeOpenBaoClient) GenerateRootUpdate(_ context.Context, share string, nonce string) (generateRootAttempt, error) {
+	if f.generateRootUpdateErr != nil {
+		return generateRootAttempt{}, f.generateRootUpdateErr
+	}
+	if nonce != f.generateRootNonce {
+		return generateRootAttempt{}, fmt.Errorf("unexpected nonce %q", nonce)
+	}
+	f.generateRootShares = append(f.generateRootShares, share)
+	required := f.status.Threshold
+	if required <= 0 {
+		required = 2
+	}
+	attempt := generateRootAttempt{
+		Started:  true,
+		Nonce:    f.generateRootNonce,
+		Progress: len(f.generateRootShares),
+		Required: required,
+	}
+	if len(f.generateRootShares) >= required {
+		attempt.Complete = true
+		attempt.EncodedToken = f.generateRootEncoded
+	}
+	return attempt, nil
+}
+
+func (f *fakeOpenBaoClient) GenerateRootCancel(context.Context) error {
+	f.generateRootCanceled = true
+	return f.generateRootCancelErr
+}
+
+func (f *fakeOpenBaoClient) DecodeGeneratedRootToken(_ context.Context, encoded string, otp string) (string, error) {
+	if f.decodeGeneratedRootErr != nil {
+		return "", f.decodeGeneratedRootErr
+	}
+	if encoded != f.generateRootEncoded {
+		return "", fmt.Errorf("unexpected encoded token %q", encoded)
+	}
+	if otp != f.generateRootOTP {
+		return "", fmt.Errorf("unexpected OTP %q", otp)
+	}
+	if strings.TrimSpace(f.generatedRootToken) == "" {
+		return "", errors.New("generated root token is empty")
+	}
+	return f.generatedRootToken, nil
 }
 
 func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
@@ -297,6 +379,68 @@ func TestUnsealedOpenBaoReportsOperatorTokenRevocationFailure(t *testing.T) {
 	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "False", "RevokeSelfFailed")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "OperatorTokenRevocationFailed")
 	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestUnsealedOpenBaoGeneratesRootTokenFromUnsealSharesForBaseline(t *testing.T) {
+	token := randomSecret(t)
+	shareA := randomSecret(t)
+	shareB := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:             baoStatus{Initialized: true, Sealed: false, Threshold: 2},
+		generatedRootToken: token,
+	}
+	cfg := testConfig(t)
+	cfg.generateRootStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(shareA+"\n"+shareB+"\n"))
+
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "GeneratedRootToken")
+	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "True", "Generated")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
+		t.Fatalf("baseline did not use generated root token")
+	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("generated root token was not revoked after baseline reconciliation")
+	}
+	if client.generateRootCanceled {
+		t.Fatalf("completed generate-root attempt was canceled")
+	}
+	assertReportDoesNotContain(t, rep, token)
+	assertReportDoesNotContain(t, rep, shareA)
+	assertReportDoesNotContain(t, rep, shareB)
+}
+
+func TestUnsealedOpenBaoCancelsIncompleteGenerateRootAttempt(t *testing.T) {
+	token := randomSecret(t)
+	share := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:             baoStatus{Initialized: true, Sealed: false, Threshold: 2},
+		generatedRootToken: token,
+	}
+	cfg := testConfig(t)
+	cfg.generateRootStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
+
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "GenerateRootFailed")
+	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "False", "GenerateRootFailed")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
+	if !client.generateRootCanceled {
+		t.Fatalf("incomplete generate-root attempt was not canceled")
+	}
+	if len(client.baselineTokens) != 0 {
+		t.Fatalf("baseline reconciled without generated root token")
+	}
+	if len(client.revokedTokens) != 0 {
+		t.Fatalf("token revocation ran without a generated root token")
+	}
+	assertReportDoesNotContain(t, rep, token)
+	assertReportDoesNotContain(t, rep, share)
 }
 
 func TestUnsealedOpenBaoClassifiesOperatorTokenRevocationPermissionDenied(t *testing.T) {
@@ -824,6 +968,14 @@ func randomSecret(t *testing.T) string {
 	body := make([]byte, 32)
 	if _, err := rand.Read(body); err != nil {
 		t.Fatal(err)
+	}
+	return hex.EncodeToString(body)
+}
+
+func randomHex(n int) string {
+	body := make([]byte, n)
+	if _, err := rand.Read(body); err != nil {
+		panic(err)
 	}
 	return hex.EncodeToString(body)
 }

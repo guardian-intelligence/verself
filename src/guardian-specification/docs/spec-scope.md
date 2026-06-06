@@ -18,6 +18,21 @@ spec: {}
 Component resources use the same envelope and carry component-owned static
 configuration. Runtime actions are implemented by the owning component.
 
+## Operating Rule
+
+The base spec answers two questions:
+
+- Which resource graph should the implementation load?
+- How should the implementation board a substrate enough for component control
+  loops to run?
+
+Component schemas answer what a component should know before it starts.
+Component Nomad jobs and recovery binaries answer what the component should do
+at runtime. Runtime evidence answers what happened.
+
+The root graph is static input. It is not a script, playbook, job-ordering
+document, evidence store, or secret store.
+
 ## Placement Convention
 
 Place every new concept at the narrowest layer that can validate and use it.
@@ -53,11 +68,11 @@ Use this convention when authoring a graph:
 - report blockers as command conditions, component reports, Nomad state,
   health endpoints, or telemetry.
 
-The base schema has no component operation fields. Avoid adding base fields for
+The base schema has no component operation fields. Do not add base fields for
 `recovery`, job ordering, Nomad submission details, component environment
-projection, host-local secret paths, or provider-token files. Those details
-belong to the component schema when they are static config and to the component
-runtime when they are actions.
+projection, host-local secret paths, provider-token files, or report resources.
+Those details belong to the component schema when they are static config and to
+the component runtime when they are actions.
 
 ## Schema Locations
 
@@ -113,6 +128,10 @@ defines static configuration and invariants for that component:
 Component CRDs do not define Guardian execution steps. They describe desired
 inputs that component-owned code can read from the boarded graph.
 
+The component CUE schema is the semantic source for static configuration. Go
+structs, Nomad templates, generated validators, and docs may mirror that schema
+for runtime use, but they do not define additional configuration fields.
+
 Component schemas should contain the full static configuration needed by that
 component: provider account IDs, public resource names, OpenBao paths, Nomad
 workload roles, backup object locations, runtime artifact paths, policy names,
@@ -125,6 +144,12 @@ performing the operation: names, URLs, artifact paths, socket paths, policy
 names, nonsecret provider identifiers, backup object names, and references to
 other graph resources. A static field may describe where a component should find
 authority; it does not contain the secret authority value.
+
+Component schemas may include desired baseline state such as OpenBao mounts,
+Nomad workload roles, PostgreSQL roles, HAProxy routes, object storage buckets,
+backup object names, or provider account identifiers. They should not include a
+sequence of operations such as "restore then unseal then migrate"; the owning
+Nomad task derives those operations from observed component state.
 
 Secret values stay out of component CRDs. A component that needs root or
 provider authority declares the nonsecret authority location or recipient
@@ -169,6 +194,10 @@ job file may include lifecycle tasks that:
 The component job is the runtime boundary. Guardian keeps the graph available;
 Nomad and component code decide how to start, retry, block, and converge.
 
+Use `prestart` lifecycle tasks for idempotent recovery work that must complete
+before the main task starts. Use a long-running task only when the component
+needs continuous reconciliation after startup.
+
 Nomad itself may have a component-local CRD because it is an infrastructure
 component with static configuration. That CRD remains outside the base Guardian
 schema.
@@ -207,3 +236,9 @@ Before adding a field or resource to the base spec, answer these questions:
   internal services?
 
 If any answer is no, keep the shape in the owning component CRD or Nomad job.
+
+## References
+
+- Kubernetes custom resources: https://kubernetes.io/docs/concepts/api-extension/custom-resources/
+- Kubernetes object spec/status convention: https://kubernetes.io/docs/concepts/overview/working-with-objects/
+- Nomad task lifecycle hooks: https://developer.hashicorp.com/nomad/docs/job-specification/lifecycle
