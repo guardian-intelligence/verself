@@ -101,6 +101,7 @@ src/infrastructure-components/nftables/guardian/v1alpha1/schema.cue
 src/infrastructure-components/nats/guardian/v1alpha1/schema.cue
 src/infrastructure-components/nomad-observer/guardian/v1alpha1/schema.cue
 src/infrastructure-components/otelcol/guardian/v1alpha1/schema.cue
+src/infrastructure-components/zitadel/guardian/v1alpha1/schema.cue
 src/infrastructure-components/haproxy/guardian/v1alpha1/schema.cue
 src/integrations/cloudflare/control-plane/guardian/v1alpha1/schema.cue
 src/services/object-storage-service/guardian/v1alpha1/schema.cue

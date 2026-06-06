@@ -839,6 +839,19 @@ func TestGeneratedSecretValue(t *testing.T) {
 	if strings.ContainsAny(base64Value, "+/=") {
 		t.Fatalf("base64url generated value used non-url characters: %q", base64Value)
 	}
+
+	alphanumericValue, err := generatedSecretValue(openBaoGenerateSpec{Bytes: 32, Encoding: "alphanumeric"})
+	if err != nil {
+		t.Fatalf("generatedSecretValue alphanumeric: %v", err)
+	}
+	if len(alphanumericValue) != 32 {
+		t.Fatalf("alphanumeric generated length = %d", len(alphanumericValue))
+	}
+	for _, char := range alphanumericValue {
+		if !strings.ContainsRune("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", char) {
+			t.Fatalf("alphanumeric generated value used invalid character %q in %q", char, alphanumericValue)
+		}
+	}
 }
 
 func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {

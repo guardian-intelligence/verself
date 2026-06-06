@@ -93,13 +93,13 @@ package v1alpha1
 	kind:       "SecretPath"
 	metadata:   #Metadata
 	spec: {
-		path: #NonEmptyString
-		key:  #NonEmptyString
+		path:   #NonEmptyString
+		key:    #NonEmptyString
 		source: "generated" | "producedBy" | "operatorImport"
 		if source == "generated" {
 			generate: {
 				bytes:    int & >0
-				encoding: "hex" | "base64url"
+				encoding: "hex" | "base64url" | "alphanumeric"
 			}
 		}
 		if source == "producedBy" {

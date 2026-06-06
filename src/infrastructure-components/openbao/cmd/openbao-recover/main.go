@@ -684,9 +684,9 @@ func validateSecretPath(spec openBaoSecretPathSpec) error {
 			return errors.New("spec.generate.bytes must be positive")
 		}
 		switch spec.Generate.Encoding {
-		case "hex", "base64url":
+		case "hex", "base64url", "alphanumeric":
 		default:
-			return errors.New("spec.generate.encoding must be hex or base64url")
+			return errors.New("spec.generate.encoding must be hex, base64url, or alphanumeric")
 		}
 	case "producedBy":
 		if spec.ProducerRef == nil {
@@ -1937,9 +1937,28 @@ func generatedSecretValue(spec openBaoGenerateSpec) (string, error) {
 		return hex.EncodeToString(raw), nil
 	case "base64url":
 		return base64.RawURLEncoding.EncodeToString(raw), nil
+	case "alphanumeric":
+		return randomAlphanumeric(spec.Bytes)
 	default:
 		return "", fmt.Errorf("unsupported OpenBao generated secret encoding %q", spec.Encoding)
 	}
+}
+
+func randomAlphanumeric(length int) (string, error) {
+	if length <= 0 {
+		return "", errors.New("OpenBao generated alphanumeric secret length must be positive")
+	}
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	out := make([]byte, length)
+	max := big.NewInt(int64(len(alphabet)))
+	for i := range out {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", fmt.Errorf("generate OpenBao alphanumeric secret material: %w", err)
+		}
+		out[i] = alphabet[n.Int64()]
+	}
+	return string(out), nil
 }
 
 func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoNomadJWTAuthSpec) error {

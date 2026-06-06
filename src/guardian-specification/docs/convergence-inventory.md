@@ -18,6 +18,7 @@ consecutive submissions do not create unexpected allocation churn.
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Boarded NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Boarded Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Boarded OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
+| Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | OpenBao baseline blocked; runtime jobs still need artifact/config CRD cutover | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
@@ -34,9 +35,9 @@ Observed results:
 
 - boarding verified the extracted repo tree on gamma;
 - latest resource graph digest:
-  `sha256:a59a715e62978f2efc39a374951fc101309ccd882a8402df1269639d0424c8d1`;
+  `sha256:07e3488cfc808a99506a2d791b0336bfab9873c856ad4e6c33d0651c28b3c014`;
 - latest verified upload digest:
-  `sha256:92ebc7b0d0642b2d93cd748de953c6a788fb5699c3f8596f7d60164d5d691b80`;
+  `sha256:7a9424f90cade7092efef8b9b07fa7cfb8bf48bc198e95ca5133908f3fa69a3c`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, OTel Collector,
   Cloudflare, HAProxy, object-storage, substrate, and public-origin resources;
@@ -218,6 +219,19 @@ Observed results:
   `OpenBaoBaselineReconciled=False` with reason
   `OperatorRootCredentialsRequired`, confirming the graph parses cleanly and
   the remaining blocker is root authority.
+- Zitadel now has component CRDs for the service cluster and auth-control-plane
+  batch job, and the gamma graph declares the `zitadel` PostgreSQL database,
+  peer role, OpenBao JWT roles, and OpenBao secret paths that the two jobs need;
+- OpenBao can generate `zitadel.masterkey` as 32 alphanumeric characters and
+  `zitadel.admin_password` as 32 random bytes encoded with base64url when those
+  paths are absent;
+- Zitadel-produced admin PATs and auth-control-plane-produced IAM OIDC values
+  are declared as `SecretPath` resources, while SMTP and GitHub OAuth input
+  material remain operator-import/provider-owned inputs;
+- the current Zitadel Nomad job files still validate but remain in the old
+  runtime-artifact and placeholder shape; the next Zitadel slice is the runtime
+  cutover from `verself-artifact://` and `__VERSELF_*` placeholders to boarded
+  artifacts plus CRD-loaded config.
 
 Evidence commands:
 
@@ -294,14 +308,12 @@ cloudflare-control-plane \
 
 ## Next Component
 
-The next recovery target is still OpenBao baseline reconciliation. PostgreSQL,
-ClickHouse, Nomad Observer, NATS, and OTel Collector now converge, and
-object-storage-service reaches its OpenBao-backed secret delivery boundary.
-OpenBao must accept operator root authority through a component-owned operator
-path, reconcile mounts, policies, generated secret paths, and Nomad JWT roles
-from the boarded graph, then object-storage-service can retry. The next expected
-dependencies after baseline are Cloudflare-produced R2 credentials and the
-Zitadel-produced auth audience. The authority must be able to read/write system
-mounts, policies, JWT auth config, JWT auth roles, and declared generated
-secrets; the local gamma bootstrap token tested in this run did not have that
-authority.
+The next mechanical recovery target is the Zitadel runtime cutover. OpenBao
+baseline reconciliation remains externally gated on operator root authority, but
+the graph now declares the Zitadel/OpenBao/PostgreSQL dependencies that baseline
+will apply once authority is presented. Zitadel still needs to consume its CRDs
+at runtime, install boarded artifacts instead of `verself-artifact://` sources,
+and remove `__VERSELF_*` placeholders from its Nomad jobs. After that, OpenBao
+baseline authority can be presented and the next live run should expose whether
+Zitadel reaches service health or blocks on operator-imported SMTP/GitHub
+material.

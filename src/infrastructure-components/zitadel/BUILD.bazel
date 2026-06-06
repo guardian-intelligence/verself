@@ -16,6 +16,12 @@ pkg_tar(
 )
 
 filegroup(
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "role_sources",
     srcs = glob(
         [

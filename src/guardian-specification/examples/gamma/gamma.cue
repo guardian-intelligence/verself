@@ -240,6 +240,67 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "zitadel-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/zitadel.masterkey" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/zitadel.admin_password" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/zitadel.smtp.password" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
+					{
+						name: "auth-control-plane-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_app_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_project_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_cli_app_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_cli_client_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_cli_project_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -278,6 +339,40 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["object-storage-service-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "zitadel-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "zitadel"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["zitadel-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "auth-control-plane-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "auth-control-plane"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["auth-control-plane-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -437,12 +532,20 @@ resources: [
 					name:  "object_storage_service"
 					owner: "object_storage_service"
 				},
+				{
+					name:  "zitadel"
+					owner: "zitadel"
+				},
 			]
 			roles: [
 				{
 					name:  "otelcol"
 					login: true
 					memberOf: ["pg_monitor"]
+				},
+				{
+					name:  "zitadel"
+					login: true
 				},
 			]
 			peerMappings: [
@@ -457,6 +560,10 @@ resources: [
 				{
 					systemUser:   "otelcol"
 					postgresUser: "otelcol"
+				},
+				{
+					systemUser:   "zitadel"
+					postgresUser: "zitadel"
 				},
 			]
 		}
@@ -687,6 +794,177 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+		kind:       "ZitadelCluster"
+		metadata: name: "zitadel"
+		spec: {
+			externalDomain:     "gamma.verself.sh"
+			runtimeArtifact:    "bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar"
+			runtimeRoot:        "/var/lib/zitadel/runtime"
+			configPath:         "/etc/zitadel/config.yaml"
+			stepsPath:          "/etc/zitadel/steps.yaml"
+			adminPATPath:       "/run/verself/recovery/zitadel/zitadel-admin/admin.pat"
+			discoveryHostsPath: "/etc/verself/auth-discovery-hosts"
+			user:               "zitadel"
+			group:              "zitadel"
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+				masterkeySecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "zitadel.masterkey"
+				}
+				adminPasswordRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "zitadel.admin_password"
+				}
+				adminPATSecretRefs: [
+					{
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "auth-control-plane.zitadel.admin_token"
+					},
+					{
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "iam-service.zitadel.admin_token"
+					},
+				]
+				smtpPasswordRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "zitadel.smtp.password"
+				}
+			}
+			instance: {
+				name:    "verself"
+				orgName: "Guardian Intelligence LLC"
+				human: {
+					userName:  "anveio"
+					firstName: "Anveio"
+					lastName:  "Platform"
+					email:     "anveio@gamma.verself.sh"
+				}
+				machine: {
+					userName: "verself-admin"
+					name:     "verself admin"
+				}
+			}
+			smtp: {
+				host:     "smtp.resend.com:465"
+				user:     "resend"
+				from:     "anveio@gamma.verself.sh"
+				fromName: "verself"
+			}
+		}
+	},
+	{
+		apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+		kind:       "ZitadelAuthControlPlane"
+		metadata: name: "auth-control-plane"
+		spec: {
+			zitadelBaseURL:   "http://127.0.0.1:8085"
+			zitadelHost:      "gamma.verself.sh"
+			verselfDomain:    "gamma.verself.sh"
+			iamServiceDomain: "iam.api.gamma.verself.sh"
+			projectName:      "verself-api"
+			browserAppName:   "verself-web"
+			cliAppName:       "verself-cli"
+			claimsTargetName: "verself-product-token-claims"
+			claimsActionPath: "/internal/zitadel/actions/product-token-claims"
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+				adminPATSecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "auth-control-plane.zitadel.admin_token"
+				}
+				githubLoginClientID: ""
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "zitadel.masterkey"
+		spec: {
+			path:   "kv-runtime/data/secret/org/zitadel.masterkey"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "alphanumeric"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "zitadel.admin_password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/zitadel.admin_password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "zitadel.smtp.password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/zitadel.smtp.password"
+			key:    "value"
+			source: "operatorImport"
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "auth-control-plane.zitadel.admin_token"
+		spec: {
+			path:   "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelCluster"
+				name:       "zitadel"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.admin_token"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.admin_token"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelCluster"
+				name:       "zitadel"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "auth-control-plane.github_login.oauth_client_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret"
+			key:    "value"
+			source: "operatorImport"
+		}
+	},
+	{
 		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 		kind:       "SecretPath"
 		metadata: name: "object-storage-service.credential_kek"
@@ -770,8 +1048,143 @@ resources: [
 			source: "producedBy"
 			producerRef: {
 				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
-				kind:       "ZitadelCluster"
-				name:       "zitadel"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_app_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_app_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_client_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_client_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_project_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_project_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_cli_app_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_cli_app_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_cli_client_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_cli_client_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.oidc_cli_project_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.oidc_cli_project_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.action_signing_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.zitadel.github_login_idp_id"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id"
+			key:    "value"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
+				kind:       "ZitadelAuthControlPlane"
+				name:       "auth-control-plane"
 			}
 		}
 	},
