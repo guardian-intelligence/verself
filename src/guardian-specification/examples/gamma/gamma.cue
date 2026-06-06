@@ -335,6 +335,14 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "stalwart-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/stalwart.admin_password" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -458,6 +466,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["forgejo-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "stalwart-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "stalwart"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["stalwart-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -650,6 +675,10 @@ resources: [
 					owner: "grafana"
 				},
 				{
+					name:  "stalwart"
+					owner: "stalwart"
+				},
+				{
 					name:  "temporal"
 					owner: "temporal"
 				},
@@ -674,6 +703,10 @@ resources: [
 				},
 				{
 					name:  "grafana"
+					login: true
+				},
+				{
+					name:  "stalwart"
 					login: true
 				},
 				{
@@ -705,6 +738,10 @@ resources: [
 				{
 					systemUser:   "grafana"
 					postgresUser: "grafana"
+				},
+				{
+					systemUser:   "stalwart"
+					postgresUser: "stalwart"
 				},
 				{
 					systemUser:   "temporal_server"
@@ -795,10 +832,10 @@ resources: [
 			clusterID:       0
 			replica:         0
 			replicaCount:    1
-			addresses:       ["127.0.0.1:3320"]
-			logLevel:        "info"
-			statsdAddress:   "127.0.0.1:8125"
-			experimental:    true
+			addresses: ["127.0.0.1:3320"]
+			logLevel:      "info"
+			statsdAddress: "127.0.0.1:8125"
+			experimental:  true
 		}
 	},
 	{
@@ -845,7 +882,7 @@ resources: [
 				strictSSL: true
 			}
 			packageFilter: minAgeDays: 3
-			log: level: "http"
+			log: level:                "http"
 		}
 	},
 	{
@@ -922,13 +959,13 @@ resources: [
 				}
 			}
 			authJWT: {
-				enabled:      true
-				headerName:   "X-Pomerium-Jwt-Assertion"
-				emailClaim:   "email"
+				enabled:       true
+				headerName:    "X-Pomerium-Jwt-Assertion"
+				emailClaim:    "email"
 				usernameClaim: "email"
-				jwkSetURL:    "https://dashboard.gamma.verself.sh/.well-known/pomerium/jwks.json"
-				cacheTTL:     "60m"
-				autoSignUp:   true
+				jwkSetURL:     "https://dashboard.gamma.verself.sh/.well-known/pomerium/jwks.json"
+				cacheTTL:      "60m"
+				autoSignUp:    true
 			}
 		}
 	},
@@ -980,6 +1017,43 @@ resources: [
 					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 					kind:       "SecretPath"
 					name:       "source-code-hosting-service.forgejo.automation_token"
+				}
+			}
+		}
+	},
+	{
+		apiVersion: "stalwart.guardianintelligence.org/v1alpha1"
+		kind:       "StalwartMailServer"
+		metadata: name: "stalwart"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/stalwart/stalwart-runtime.tar"
+			runtimeRoot:     "/var/lib/stalwart/runtime"
+			configPath:      "/etc/stalwart/config.toml"
+			dataDir:         "/var/lib/stalwart"
+			reportPath:      "/run/verself/recovery/stalwart/report.json"
+			user:            "stalwart"
+			group:           "stalwart"
+			server: {
+				hostname:     "mail.gamma.verself.sh"
+				baseURL:      "https://mail.gamma.verself.sh"
+				httpAddr:     "127.0.0.1"
+				httpPort:     8090
+				smtpAddr:     "127.0.0.1"
+				smtpPort:     25
+				otlpEndpoint: "http://127.0.0.1:4317"
+			}
+			database: {
+				host: "/var/run/postgresql"
+				name: "stalwart"
+				user: "stalwart"
+			}
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+				adminPasswordRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "stalwart.admin_password"
 				}
 			}
 		}
@@ -1502,6 +1576,20 @@ resources: [
 				apiVersion: "forgejo.guardianintelligence.org/v1alpha1"
 				kind:       "ForgejoInstance"
 				name:       "forgejo"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "stalwart.admin_password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/stalwart.admin_password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
 			}
 		}
 	},

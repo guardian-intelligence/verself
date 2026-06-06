@@ -1,5 +1,0 @@
-postgresql_service_databases:
-  - name: stalwart
-    owner: stalwart
-postgresql_peer_mappings:
-  - { system_user: stalwart, pg_user: stalwart }

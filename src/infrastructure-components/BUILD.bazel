@@ -25,7 +25,6 @@ filegroup(
         "//src/infrastructure-components/otelcol:role_sources",
         "//src/infrastructure-components/pomerium:role_sources",
         "//src/infrastructure-components/postgresql:role_sources",
-        "//src/infrastructure-components/stalwart:role_sources",
         "//src/infrastructure-components/tigerbeetle:role_sources",
         "//src/infrastructure-components/zitadel:role_sources",
         "//src/infrastructure-components/zot:role_sources",

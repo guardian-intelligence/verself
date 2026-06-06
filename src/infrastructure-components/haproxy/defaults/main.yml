@@ -87,7 +87,6 @@ haproxy_metrics_address: 127.0.0.1:8404
 haproxy_public_route_declaration_files:
   - "{{ playbook_dir }}/../../../../src/infrastructure-components/grafana/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/infrastructure-components/pomerium/deploy/public-routes.yml"
-  - "{{ playbook_dir }}/../../../../src/infrastructure-components/stalwart/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/infrastructure-components/verdaccio/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/services/analytics-service/deploy/public-routes.yml"
   - "{{ playbook_dir }}/../../../../src/services/billing-service/deploy/public-routes.yml"
