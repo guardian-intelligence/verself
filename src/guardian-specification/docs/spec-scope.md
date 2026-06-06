@@ -18,6 +18,45 @@ spec: {}
 Component resources use the same envelope and carry component-owned static
 configuration. Runtime actions are implemented by the owning component.
 
+## Placement Convention
+
+Place every new concept at the narrowest layer that can validate and use it.
+
+| Concept | Location | Example |
+| --- | --- | --- |
+| Graph envelope, entrypoint, upload hooks, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
+| Static configuration for one deployable component | Component CRD beside the owner | `OpenBaoCluster`, `HAProxyGateway`, `ObjectStorageService` |
+| Runtime behavior and recovery steps | Component-owned Nomad job and recovery binary | `task "recover"` prestart logic |
+| Provider root authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
+| Observed outcomes and forensic evidence | Command responses, Nomad, component reports, health endpoints, telemetry | allocation logs, `/run/verself/recovery/openbao/report.json`, `/recoveryz` |
+
+The base spec may add a field only when the field has portable,
+cross-component semantics. Component-specific behavior remains in the owner
+schema and runtime implementation.
+
+## Schema Locations
+
+The base schema lives under:
+
+```text
+src/guardian-specification/cue/guardian/v1alpha1/schema.cue
+```
+
+Component schemas live beside the component that owns the behavior:
+
+```text
+src/infrastructure-components/openbao/guardian/v1alpha1/schema.cue
+src/infrastructure-components/nomad/guardian/v1alpha1/schema.cue
+src/infrastructure-components/haproxy/guardian/v1alpha1/schema.cue
+src/integrations/cloudflare/control-plane/guardian/v1alpha1/schema.cue
+src/services/object-storage-service/guardian/v1alpha1/schema.cue
+```
+
+Config examples may import the base schema and any component schemas needed by
+the selected graph. A site-specific file such as `examples/gamma/gamma.cue` is
+a bundle of selected resources, provider identifiers, origins, and substrate
+hooks. The site name is an operator label, not a protocol concept.
+
 ## Base Spec
 
 The base spec owns:
@@ -63,6 +102,23 @@ Cloudflare recovery reads its account-admin credential from the OpenBao path it
 owns; if that path is absent, it reports `CloudflareAccountAuthorityAvailable`
 as false. The CRD does not point at a durable host file containing the provider
 token.
+
+## Field Placement
+
+Use these checks before adding a field:
+
+| Proposed field describes | Placement |
+| --- | --- |
+| How `guardian board` reaches, uploads to, extracts on, or verifies a substrate | `Substrate` |
+| A URL that multiple components consume as public configuration | `PublicOrigin` |
+| Which host daemon, service, provider, backup object, policy, or runtime path a component owns | Component CRD |
+| A component operation such as init, restore, unseal, certificate issuance, bucket creation, schema migration, or health wait | Nomad lifecycle task or component recovery binary |
+| A secret value or root credential | External trust path |
+| A status line, digest, allocation ID, failure reason, or recovery observation | CLI response or component evidence |
+
+When a component needs a shared base resource, it references that resource in
+its own CRD. For example, an edge component references `PublicOrigin`; OpenBao
+recovery owns OpenBao-specific seal, policy, auth, and backup configuration.
 
 ## Nomad Convention
 

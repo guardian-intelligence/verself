@@ -24,6 +24,18 @@ boarded resource graph. The base protocol does not encode component internals.
 Infrastructure components own their recovery binaries, backup retrieval,
 credential import, health checks, and stabilization logic.
 
+## Scope Convention
+
+The base protocol stays limited to graph loading, boarding, upload verification,
+shared public-origin facts, stable command responses, and cross-component
+conditions. Component configuration lives in component CRDs beside the owning
+service or infrastructure component. Component recovery behavior lives in the
+component Nomad job and recovery binary.
+
+Site files such as `examples/gamma/gamma.cue` select a set of resources and
+nonsecret configuration for one target. Site names are operator labels outside
+the base Guardian resource kind set.
+
 ## Documents
 
 - [Overview](docs/overview.md)

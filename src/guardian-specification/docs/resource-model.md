@@ -43,7 +43,7 @@ as argv commands after preparing the local upload bundle. The hooks own access,
 transfer, extraction, permissions, and remote tooling.
 
 `PublicOrigin` is the shared URL abstraction. Components that need an external
-origin reference it instead of reading a broad site object.
+origin reference it as a stable shared fact.
 
 Every service and infrastructure component owns its own CRD schema. That CRD
 defines the component's static configuration surface: public config, provider
@@ -56,6 +56,33 @@ Base-spec additions are gated by the scope test in [Spec Scope](spec-scope.md).
 Site differences are expressed by selecting a different root resource graph:
 different component CRDs, different origins, different provider authorities,
 and different substrate hooks.
+
+## Site Files
+
+A site file is a selected resource graph for one deployment target. Names such
+as `gamma`, `prod`, or `dev` are operator labels for different graph files.
+They sit outside the base protocol's resource kind set.
+
+Site files should contain:
+
+- one `FlyProcedure`;
+- one referenced `Substrate`;
+- shared `PublicOrigin` resources;
+- component CRDs for the components expected to converge on that target;
+- nonsecret provider identifiers, object names, account IDs, policy names, and
+  OpenBao paths needed by those component CRDs.
+
+Site files should avoid:
+
+- component recovery steps;
+- Nomad submission order;
+- component-specific environment projection;
+- host file paths for secret values;
+- report resources or other runtime evidence.
+
+Runtime component behavior belongs in the component's Nomad job and recovery
+binary. Runtime observations belong in command responses, Nomad state,
+component reports, health endpoints, and telemetry.
 
 ## Command Results
 
