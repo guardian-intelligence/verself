@@ -61,6 +61,10 @@ type config struct {
 	tokenStdin       bool
 	unsealStdin      bool
 	loopInterval     time.Duration
+	resourceGraph    string
+	resourceName     string
+	pgpKeyDir        string
+	baseline         openBaoBaselineSpec
 }
 
 type stringList []string
@@ -159,8 +163,10 @@ type encryptedInitMaterialSpec struct {
 	KeyShares                  int      `json:"keyShares"`
 	KeyThreshold               int      `json:"keyThreshold"`
 	PGPRecipientCount          int      `json:"pgpRecipientCount"`
+	RootTokenPGPRecipient      bool     `json:"rootTokenPGPRecipient"`
 	EncryptedUnsealSharesB64   []string `json:"encryptedUnsealSharesB64"`
 	EncryptedRecoverySharesB64 []string `json:"encryptedRecoverySharesB64,omitempty"`
+	EncryptedRootTokenB64      string   `json:"encryptedRootTokenB64,omitempty"`
 }
 
 type openBaoClient interface {
@@ -169,7 +175,7 @@ type openBaoClient interface {
 	Unseal(context.Context, string) (baoStatus, error)
 	RestoreSnapshot(context.Context, string, string) error
 	SaveSnapshot(context.Context, string) ([]byte, error)
-	ReconcileBaseline(context.Context, string) error
+	ReconcileBaseline(context.Context, string, openBaoBaselineSpec) error
 	RevokeSelf(context.Context, string) error
 }
 
@@ -299,6 +305,8 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		keyShares:    defaultKeyShares,
 		threshold:    defaultThreshold,
 		loopInterval: 15 * time.Second,
+		resourceName: "openbao",
+		pgpKeyDir:    "/run/verself/recovery/openbao/pgp",
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.StringVar(&cfg.repoRoot, "repo-root", cfg.repoRoot, "boarded repo root")
@@ -310,6 +318,9 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 	fs.StringVar(&cfg.caCert, "ca-cert", cfg.caCert, "OpenBao CA certificate path")
 	fs.StringVar(&cfg.bao, "bao", "", "bao binary path")
 	fs.DurationVar(&cfg.loopInterval, "loop-interval", cfg.loopInterval, "loop command interval")
+	fs.StringVar(&cfg.resourceGraph, "resource-graph", "", "Guardian resource graph document path")
+	fs.StringVar(&cfg.resourceName, "resource-name", cfg.resourceName, "OpenBaoCluster resource name")
+	fs.StringVar(&cfg.pgpKeyDir, "pgp-key-dir", cfg.pgpKeyDir, "directory for public PGP key files derived from the resource graph")
 	if recoveryFlags {
 		fs.IntVar(&cfg.keyShares, "key-shares", cfg.keyShares, "fresh init key shares")
 		fs.IntVar(&cfg.threshold, "key-threshold", cfg.threshold, "fresh init key threshold")
@@ -331,8 +342,30 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
+	baoExplicit := flagProvided(args, "bao")
 	cfg = normalizeConfig(cfg)
+	if cfg.resourceGraph != "" {
+		next, err := applyResourceGraphConfig(cfg)
+		if err != nil {
+			return config{}, err
+		}
+		if !baoExplicit {
+			next.bao = ""
+		}
+		cfg = normalizeConfig(next)
+	}
 	return cfg, nil
+}
+
+func flagProvided(args []string, name string) bool {
+	short := "-" + name
+	long := "--" + name
+	for _, arg := range args {
+		if arg == short || arg == long || strings.HasPrefix(arg, short+"=") || strings.HasPrefix(arg, long+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeConfig(cfg config) config {
@@ -350,10 +383,239 @@ func normalizeConfig(cfg config) config {
 	cfg.manifestOut = strings.TrimSpace(cfg.manifestOut)
 	cfg.rootTokenPGPKey = strings.TrimSpace(cfg.rootTokenPGPKey)
 	cfg.initOutputPath = strings.TrimSpace(cfg.initOutputPath)
+	cfg.resourceGraph = strings.TrimSpace(cfg.resourceGraph)
+	cfg.resourceName = strings.TrimSpace(cfg.resourceName)
+	cfg.pgpKeyDir = strings.TrimSpace(cfg.pgpKeyDir)
 	if cfg.bao == "" {
 		cfg.bao = filepath.Join(cfg.runtimeRoot, "current", "bin", "bao")
 	}
 	return cfg
+}
+
+type guardianDocument struct {
+	Entrypoint json.RawMessage    `json:"entrypoint"`
+	Resources  []guardianResource `json:"resources"`
+}
+
+type guardianResource struct {
+	APIVersion string          `json:"apiVersion"`
+	Kind       string          `json:"kind"`
+	Metadata   resourceMeta    `json:"metadata"`
+	Spec       json.RawMessage `json:"spec"`
+}
+
+type resourceMeta struct {
+	Name string `json:"name"`
+}
+
+type objectRef struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+type openBaoClusterSpec struct {
+	Address          string              `json:"address"`
+	CACert           string              `json:"caCert"`
+	RuntimeRoot      string              `json:"runtimeRoot"`
+	DataDir          string              `json:"dataDir"`
+	ConfigPath       string              `json:"configPath"`
+	ReportPath       string              `json:"reportPath"`
+	InitMaterialPath string              `json:"initMaterialPath"`
+	LoopInterval     string              `json:"loopInterval"`
+	Seal             openBaoSealSpec     `json:"seal"`
+	Snapshots        openBaoSnapshotSpec `json:"snapshots"`
+	Baseline         openBaoBaselineSpec `json:"baseline"`
+}
+
+type openBaoSealSpec struct {
+	Shamir openBaoShamirSpec `json:"shamir"`
+}
+
+type openBaoShamirSpec struct {
+	KeyShares             int         `json:"keyShares"`
+	KeyThreshold          int         `json:"keyThreshold"`
+	PGPRecipientRefs      []objectRef `json:"pgpRecipientRefs"`
+	RootTokenRecipientRef *objectRef  `json:"rootTokenRecipientRef"`
+}
+
+type openBaoSnapshotSpec struct {
+	Restore *openBaoSnapshotRestoreSpec `json:"restore"`
+	Save    *openBaoSnapshotSaveSpec    `json:"save"`
+}
+
+type openBaoSnapshotRestoreSpec struct {
+	ManifestPath string    `json:"manifestPath"`
+	SnapshotPath string    `json:"snapshotPath"`
+	SourceRef    objectRef `json:"sourceRef"`
+}
+
+type openBaoSnapshotSaveSpec struct {
+	ManifestPath   string    `json:"manifestPath"`
+	SnapshotPath   string    `json:"snapshotPath"`
+	DestinationRef objectRef `json:"destinationRef"`
+}
+
+type openBaoBaselineSpec struct {
+	Reconcile bool                     `json:"reconcile"`
+	Mounts    []openBaoMountSpec       `json:"mounts"`
+	Policies  []openBaoPolicySpec      `json:"policies"`
+	NomadJWT  *openBaoNomadJWTAuthSpec `json:"nomadJWT"`
+}
+
+type openBaoMountSpec struct {
+	Path        string            `json:"path"`
+	Type        string            `json:"type"`
+	Description string            `json:"description"`
+	Options     map[string]string `json:"options"`
+}
+
+type openBaoPolicySpec struct {
+	Name string `json:"name"`
+	HCL  string `json:"hcl"`
+}
+
+type openBaoNomadJWTAuthSpec struct {
+	Path          string                    `json:"path"`
+	Description   string                    `json:"description"`
+	JWKSURL       string                    `json:"jwksURL"`
+	SupportedAlgs []string                  `json:"supportedAlgs"`
+	Roles         []openBaoNomadJWTRoleSpec `json:"roles"`
+}
+
+type openBaoNomadJWTRoleSpec struct {
+	Name                 string            `json:"name"`
+	RoleType             string            `json:"roleType"`
+	BoundAudiences       []string          `json:"boundAudiences"`
+	BoundClaims          map[string]string `json:"boundClaims"`
+	UserClaim            string            `json:"userClaim"`
+	UserClaimJSONPointer bool              `json:"userClaimJSONPointer"`
+	ClaimMappings        map[string]string `json:"claimMappings"`
+	TokenType            string            `json:"tokenType"`
+	TokenPolicies        []string          `json:"tokenPolicies"`
+	TokenPeriod          string            `json:"tokenPeriod"`
+	TokenExplicitMaxTTL  int               `json:"tokenExplicitMaxTTL"`
+}
+
+type pgpRecipientSpec struct {
+	PublicKeyBase64 string `json:"publicKeyBase64"`
+}
+
+func applyResourceGraphConfig(cfg config) (config, error) {
+	body, err := os.ReadFile(cfg.resourceGraph)
+	if err != nil {
+		return config{}, fmt.Errorf("read Guardian resource graph: %w", err)
+	}
+	var doc guardianDocument
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&doc); err != nil {
+		return config{}, fmt.Errorf("decode Guardian resource graph: %w", err)
+	}
+	resources := map[string]guardianResource{}
+	for _, resource := range doc.Resources {
+		key := resourceKey(resource.APIVersion, resource.Kind, resource.Metadata.Name)
+		if _, exists := resources[key]; exists {
+			return config{}, fmt.Errorf("Guardian resource graph duplicates %s", key)
+		}
+		resources[key] = resource
+	}
+	name := defaultIfEmpty(cfg.resourceName, "openbao")
+	cluster, ok := resources[resourceKey("openbao.guardianintelligence.org/v1alpha1", "OpenBaoCluster", name)]
+	if !ok {
+		return config{}, fmt.Errorf("Guardian resource graph missing OpenBaoCluster %q", name)
+	}
+	var spec openBaoClusterSpec
+	clusterDecoder := json.NewDecoder(bytes.NewReader(cluster.Spec))
+	clusterDecoder.DisallowUnknownFields()
+	if err := clusterDecoder.Decode(&spec); err != nil {
+		return config{}, fmt.Errorf("decode OpenBaoCluster %q: %w", name, err)
+	}
+	cfg.addr = spec.Address
+	cfg.caCert = spec.CACert
+	cfg.runtimeRoot = spec.RuntimeRoot
+	cfg.dataDir = spec.DataDir
+	cfg.configPath = spec.ConfigPath
+	cfg.reportPath = spec.ReportPath
+	cfg.initOutputPath = spec.InitMaterialPath
+	cfg.keyShares = spec.Seal.Shamir.KeyShares
+	cfg.threshold = spec.Seal.Shamir.KeyThreshold
+	cfg.baseline = spec.Baseline
+	if spec.LoopInterval != "" {
+		interval, err := time.ParseDuration(spec.LoopInterval)
+		if err != nil {
+			return config{}, fmt.Errorf("OpenBaoCluster %q spec.loopInterval: %w", name, err)
+		}
+		cfg.loopInterval = interval
+	}
+	if spec.Snapshots.Restore != nil {
+		cfg.snapshotPath = spec.Snapshots.Restore.SnapshotPath
+		cfg.snapshotManifest = spec.Snapshots.Restore.ManifestPath
+	}
+	pgpFiles, err := materializePGPRecipients(cfg, resources, spec.Seal.Shamir.PGPRecipientRefs)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.pgpKeys = stringList(pgpFiles)
+	if spec.Seal.Shamir.RootTokenRecipientRef != nil {
+		rootFiles, err := materializePGPRecipients(cfg, resources, []objectRef{*spec.Seal.Shamir.RootTokenRecipientRef})
+		if err != nil {
+			return config{}, err
+		}
+		if len(rootFiles) == 1 {
+			cfg.rootTokenPGPKey = rootFiles[0]
+		}
+	}
+	return cfg, nil
+}
+
+func materializePGPRecipients(cfg config, resources map[string]guardianResource, refs []objectRef) ([]string, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if cfg.pgpKeyDir == "" {
+		return nil, errors.New("pgp-key-dir is required when OpenBao PGP recipient refs are configured")
+	}
+	if err := os.MkdirAll(cfg.pgpKeyDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create OpenBao PGP recipient dir: %w", err)
+	}
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		resource, ok := resources[resourceKey(ref.APIVersion, ref.Kind, ref.Name)]
+		if !ok {
+			return nil, fmt.Errorf("missing OpenBao PGP recipient %s/%s/%s", ref.APIVersion, ref.Kind, ref.Name)
+		}
+		if resource.APIVersion != "openbao.guardianintelligence.org/v1alpha1" || resource.Kind != "PGPRecipient" {
+			return nil, fmt.Errorf("OpenBao PGP recipient ref %s/%s/%s must target openbao.guardianintelligence.org/v1alpha1/PGPRecipient", ref.APIVersion, ref.Kind, ref.Name)
+		}
+		var spec pgpRecipientSpec
+		decoder := json.NewDecoder(bytes.NewReader(resource.Spec))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&spec); err != nil {
+			return nil, fmt.Errorf("decode PGPRecipient %q: %w", ref.Name, err)
+		}
+		publicKey := strings.TrimSpace(spec.PublicKeyBase64)
+		if publicKey == "" {
+			return nil, fmt.Errorf("PGPRecipient %q spec.publicKeyBase64 is required", ref.Name)
+		}
+		path := filepath.Join(cfg.pgpKeyDir, ref.Name+".pgp.b64")
+		if err := writeFileAtomic(path, []byte(publicKey+"\n"), 0o644); err != nil {
+			return nil, err
+		}
+		out = append(out, path)
+	}
+	return out, nil
+}
+
+func resourceKey(apiVersion string, kind string, name string) string {
+	return apiVersion + "/" + kind + "/" + name
+}
+
+func defaultIfEmpty(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func usage(w io.Writer) {
@@ -430,7 +692,7 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 			)
 			return rep
 		}
-		if err := client.ReconcileBaseline(ctx, token); err != nil {
+		if err := client.ReconcileBaseline(ctx, token, cfg.baseline); err != nil {
 			rep.Conditions = append(rep.Conditions,
 				conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
 				conditionFalse("OpenBaoBaselineReconciled", "ReconcileFailed", "openbao", err.Error()),
@@ -603,6 +865,13 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		)
 		return rep
 	}
+	if cfg.rootTokenPGPKey == "" {
+		rep.Conditions = append(rep.Conditions,
+			conditionFalse("RootTrustMaterialAvailable", "InitRootTokenRecipientIdentityRequired", "openbao", "fresh init requires a PGP recipient for the generated root token"),
+			conditionFalse("OpenBaoRecoveryComplete", "WaitingForRootTrustMaterial", "openbao", "fresh initialization needs an operator recipient identity for the generated root token"),
+		)
+		return rep
+	}
 	if cfg.initOutputPath == "" {
 		rep.Conditions = append(rep.Conditions,
 			conditionFalse("RootTrustMaterialAvailable", "InitMaterialDeliveryRequired", "openbao", "fresh init requires an encrypted init material delivery path"),
@@ -632,45 +901,12 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		)
 		return rep
 	}
-	rootToken := strings.TrimSpace(init.RootToken)
-	if rootToken == "" {
-		rep.Conditions = append(rep.Conditions,
-			conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires a transient root token"),
-			conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized with encrypted unseal material"),
-			conditionTrue("OpenBaoInitMaterialDelivered", "InitOutputWritten", "openbao", "encrypted init material was written to the configured handoff path"),
-			conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires a transient root token"),
-			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "fresh init completed but baseline reconciliation is blocked"),
-		)
-		return rep
-	}
-	if err := client.ReconcileBaseline(ctx, rootToken); err != nil {
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("RootTrustMaterialAvailable", "Created", "openbao", "PGP recipient identities were provided"),
-			conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized with encrypted unseal material"),
-			conditionTrue("OpenBaoInitMaterialDelivered", "InitOutputWritten", "openbao", "encrypted init material was written to the configured handoff path"),
-			conditionFalse("OpenBaoBaselineReconciled", "ReconcileFailed", "openbao", err.Error()),
-			conditionFalse("OpenBaoRecoveryComplete", "BaselineFailed", "openbao", "baseline reconciliation failed"),
-		)
-		return rep
-	}
-	if err := client.RevokeSelf(ctx, rootToken); err != nil {
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("RootTrustMaterialAvailable", "Created", "openbao", "PGP recipient identities were provided"),
-			conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized with encrypted unseal material"),
-			conditionTrue("OpenBaoInitMaterialDelivered", "InitOutputWritten", "openbao", "encrypted init material was written to the configured handoff path"),
-			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-			conditionFalse("OpenBaoRecoveryComplete", "RootTokenRevokeFailed", "openbao", err.Error()),
-		)
-		return rep
-	}
-	rep.State = "InitializedUnsealed"
+	rep.State = "InitializedSealed"
 	rep.Conditions = append(rep.Conditions,
 		conditionTrue("RootTrustMaterialAvailable", "Created", "openbao", "PGP recipient identities were provided"),
 		conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized with encrypted unseal material"),
 		conditionTrue("OpenBaoInitMaterialDelivered", "InitOutputWritten", "openbao", "encrypted init material was written to the configured handoff path"),
-		conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-		conditionTrue("OpenBaoRootTokenRevoked", "Revoked", "openbao", "transient root token was revoked"),
-		conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao fresh recovery completed"),
+		conditionFalse("OpenBaoRecoveryComplete", "WaitingForRootTrustMaterial", "openbao", "OpenBao is initialized and waiting for operator-held unseal material"),
 	)
 	return rep
 }
@@ -689,7 +925,9 @@ func writeEncryptedInitMaterial(cfg config, init initResponse) error {
 			KeyShares:                cfg.keyShares,
 			KeyThreshold:             cfg.threshold,
 			PGPRecipientCount:        len(cfg.pgpKeys),
+			RootTokenPGPRecipient:    cfg.rootTokenPGPKey != "",
 			EncryptedUnsealSharesB64: shares,
+			EncryptedRootTokenB64:    strings.TrimSpace(init.RootToken),
 		},
 	}
 	if len(init.RecoveryKeysB64) > 0 {
@@ -1270,30 +1508,55 @@ func (c *realOpenBaoClient) SaveSnapshot(ctx context.Context, token string) ([]b
 	return out.Bytes(), nil
 }
 
-func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken string) error {
-	if err := c.ensureMount(ctx, rootToken, "kv-runtime", "kv", map[string]any{"version": "2"}); err != nil {
+func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken string, baseline openBaoBaselineSpec) error {
+	if !baseline.Reconcile {
+		return nil
+	}
+	for _, mount := range baseline.Mounts {
+		options := map[string]any{}
+		for key, value := range mount.Options {
+			options[key] = value
+		}
+		if len(options) == 0 {
+			options = nil
+		}
+		if err := c.ensureMount(ctx, rootToken, mount.Path, mount.Type, mount.Description, options); err != nil {
+			return err
+		}
+	}
+	for _, policy := range baseline.Policies {
+		if err := c.writePolicy(ctx, rootToken, policy); err != nil {
+			return err
+		}
+	}
+	if baseline.NomadJWT == nil {
+		return nil
+	}
+	auth := *baseline.NomadJWT
+	if err := c.ensureAuth(ctx, rootToken, auth.Path, "jwt", auth.Description); err != nil {
 		return err
 	}
-	if err := c.ensureMount(ctx, rootToken, "kv-controller", "kv", map[string]any{"version": "2"}); err != nil {
+	if err := c.configureJWTAuth(ctx, rootToken, auth); err != nil {
 		return err
 	}
-	if err := c.ensureMount(ctx, rootToken, "transit", "transit", nil); err != nil {
-		return err
+	for _, role := range auth.Roles {
+		if err := c.writeJWTRole(ctx, rootToken, auth.Path, role); err != nil {
+			return err
+		}
 	}
-	if err := c.ensureAuth(ctx, rootToken, "jwt-nomad", "jwt", "Verself workload identity auth"); err != nil {
-		return err
-	}
-	return c.apiJSON(ctx, rootToken, http.MethodPost, "auth/jwt-nomad/config", map[string]any{
-		"jwks_url":           "http://127.0.0.1:4646/.well-known/jwks.json",
-		"jwt_supported_algs": []string{"RS256", "EdDSA"},
-	}, nil, http.StatusNoContent, http.StatusOK)
+	return nil
 }
 
 func (c *realOpenBaoClient) RevokeSelf(ctx context.Context, token string) error {
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/token/revoke-self", map[string]any{}, nil, http.StatusNoContent, http.StatusOK)
 }
 
-func (c *realOpenBaoClient) ensureMount(ctx context.Context, token string, path string, mountType string, options map[string]any) error {
+func (c *realOpenBaoClient) ensureMount(ctx context.Context, token string, path string, mountType string, description string, options map[string]any) error {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	mountType = strings.TrimSpace(mountType)
+	if path == "" || mountType == "" {
+		return errors.New("OpenBao baseline mount path and type are required")
+	}
 	var response map[string]any
 	if err := c.apiJSON(ctx, token, http.MethodGet, "sys/mounts", nil, &response, http.StatusOK); err != nil {
 		return err
@@ -1302,6 +1565,9 @@ func (c *realOpenBaoClient) ensureMount(ctx context.Context, token string, path 
 		return nil
 	}
 	body := map[string]any{"type": mountType}
+	if strings.TrimSpace(description) != "" {
+		body["description"] = strings.TrimSpace(description)
+	}
 	if options != nil {
 		body["options"] = options
 	}
@@ -1309,6 +1575,11 @@ func (c *realOpenBaoClient) ensureMount(ctx context.Context, token string, path 
 }
 
 func (c *realOpenBaoClient) ensureAuth(ctx context.Context, token string, path string, authType string, description string) error {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	authType = strings.TrimSpace(authType)
+	if path == "" || authType == "" {
+		return errors.New("OpenBao baseline auth path and type are required")
+	}
 	var response map[string]any
 	if err := c.apiJSON(ctx, token, http.MethodGet, "sys/auth", nil, &response, http.StatusOK); err != nil {
 		return err
@@ -1320,6 +1591,74 @@ func (c *realOpenBaoClient) ensureAuth(ctx context.Context, token string, path s
 		"type":        authType,
 		"description": description,
 	}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) writePolicy(ctx context.Context, token string, policy openBaoPolicySpec) error {
+	name := strings.TrimSpace(policy.Name)
+	hcl := strings.TrimSpace(policy.HCL)
+	if name == "" || hcl == "" {
+		return errors.New("OpenBao baseline policy name and hcl are required")
+	}
+	return c.apiJSON(ctx, token, http.MethodPost, "sys/policies/acl/"+name, map[string]any{
+		"policy": hcl,
+	}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoNomadJWTAuthSpec) error {
+	path := strings.Trim(strings.TrimSpace(auth.Path), "/")
+	jwksURL := strings.TrimSpace(auth.JWKSURL)
+	if path == "" || jwksURL == "" || len(auth.SupportedAlgs) == 0 {
+		return errors.New("OpenBao Nomad JWT auth path, jwksURL, and supportedAlgs are required")
+	}
+	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+path+"/config", map[string]any{
+		"jwks_url":           jwksURL,
+		"jwt_supported_algs": auth.SupportedAlgs,
+	}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) writeJWTRole(ctx context.Context, token string, authPath string, role openBaoNomadJWTRoleSpec) error {
+	authPath = strings.Trim(strings.TrimSpace(authPath), "/")
+	name := strings.TrimSpace(role.Name)
+	if authPath == "" || name == "" {
+		return errors.New("OpenBao Nomad JWT auth path and role name are required")
+	}
+	body := map[string]any{
+		"role_type":               role.RoleType,
+		"bound_audiences":         role.BoundAudiences,
+		"user_claim":              role.UserClaim,
+		"user_claim_json_pointer": role.UserClaimJSONPointer,
+		"claim_mappings":          role.ClaimMappings,
+		"token_type":              role.TokenType,
+		"token_policies":          role.TokenPolicies,
+		"token_period":            role.TokenPeriod,
+		"token_explicit_max_ttl":  role.TokenExplicitMaxTTL,
+	}
+	if len(role.BoundClaims) > 0 {
+		body["bound_claims"] = role.BoundClaims
+	}
+	if err := requireJWTString("roleType", role.RoleType); err != nil {
+		return err
+	}
+	if err := requireJWTString("userClaim", role.UserClaim); err != nil {
+		return err
+	}
+	if err := requireJWTString("tokenType", role.TokenType); err != nil {
+		return err
+	}
+	if err := requireJWTString("tokenPeriod", role.TokenPeriod); err != nil {
+		return err
+	}
+	if len(role.BoundAudiences) == 0 || len(role.TokenPolicies) == 0 {
+		return errors.New("OpenBao Nomad JWT role boundAudiences and tokenPolicies are required")
+	}
+	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+authPath+"/role/"+name, body, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func requireJWTString(field string, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("OpenBao Nomad JWT role %s is required", field)
+	}
+	return nil
 }
 
 func (c *realOpenBaoClient) apiJSON(ctx context.Context, token string, method string, path string, body any, out any, expected ...int) error {

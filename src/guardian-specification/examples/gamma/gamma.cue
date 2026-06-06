@@ -6,6 +6,10 @@ guardian.#Document
 
 let uploadBundlePath = ".guardian/board/upload.tar.gz"
 let uploadDigestPath = ".guardian/board/upload.sha256"
+let openbaoOperatorAPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAAYbADEfH17sDLX0SI7iAC9bcdPH8aotQRTtD8Zsmyf60TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYSA8b3BlcmF0b3ItYS5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEJb5vLYzeQToxU4BAPkVtbeOQmuDizUjl/gJO5SHezdDHWfyzoyUtackFBm5AP9TVpFLbOb0aFgw1LQxjdYLAZQkh0NlizTtFU1fGKgkDbg4BGojifkSCisGAQQBl1UBBQEBB0BuQaidG8ObtxFzAEwIrKZAChiP7TTpV1Xx/UJIDsZ6NwMBCAeIeAQYFgoAIBYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsMAAoJEJb5vLYzeQTo3JoA/0v35/RUCPblBuwSC7sdSnpUHBzfjyYr0roc+eJHHSltAQDXnVUtg/O/B2mibJt87LtT1hijA/Oiox4/D5fj/XdABA=="
+let openbaoOperatorBPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdA6bubGkccdirSzvgIIgVVpt4Fj3NcYhs/9wqeCPmfqz20TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYiA8b3BlcmF0b3ItYi5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJECsvVrVb81xIdjUBAMmkwKz1aZ6M6p/hy8VCERUaifleNguTvL0MoFOMt9KLAQDS4geMPEWp7Ot7m5vMZN9jMIDnLE7LE9ExT725kJXIArg4BGojifkSCisGAQQBl1UBBQEBB0BBzz6cUUJWeUMbPmL8AjY9bqGX+s6/NMwpisBbXXnvCwMBCAeIeAQYFgoAIBYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsMAAoJECsvVrVb81xIP6ABAKa68/nvx5mGA6Ukz05sJhQqcLMNMUzfFu50NfJS6DrvAPwMAkX/AKJKJv0kn/YLG/WS3PTjNNRhwZtef9lTQc9kDA=="
+let openbaoOperatorCPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAk8b33//YRFh+tnQTHdF8YBoRbdQlK0f9GTjc8uK3dcC0TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYyA8b3BlcmF0b3ItYy5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEOT897zG400NCVkA/iGDVuMteClIXDhC75Z5mQdD9xS3/k0g1zt1DihRPK2uAP0bmmC8TZObdVBNn7mQ8TxzMwisK0CDmtwJHp8yQ/H+A7g4BGojifkSCisGAQQBl1UBBQEBB0C8tq2q7d+EeFOMdkpP4c9xyGukm9M6FlFLV59zgiD0UQMBCAeIeAQYFgoAIBYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsMAAoJEOT897zG400NydsA/0oeRRJ3ZAoy7bMXsBXd3wgaUA4w8R+JgSH5RwbErvfXAQC8Ckpse31YZ3CF6d+PgXOiLeafNr8+B1hQU3+5ATGdAQ=="
+let openbaoOperatorRootPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdApCXuLXfnj0HFyjIhFl95zf4r4A/qjYTiVHVHLfVofoa0UkdhbW1hIE9wZW5CYW8gb3BlcmF0b3Itcm9vdCA8b3BlcmF0b3Itcm9vdC5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBE1X0ex4EEvEsAZ99v/rLwb9qUeDBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEP/rLwb9qUeD+lQBALOCKUzCNta2JiUdWdIRdz7nOAB1+PFngf2h62dQRPtTAQDDid/6qBml+eSJxY55QxXZtTCYFvpEV1s0fNYIJhTsD7g4BGojifkSCisGAQQBl1UBBQEBB0AaHTop0n/C+95X0P8BrRgGel6soPaXOZPgnaBWt/9tIgMBCAeIeAQYFgoAIBYhBE1X0ex4EEvEsAZ99v/rLwb9qUeDBQJqI4n5AhsMAAoJEP/rLwb9qUeDIbsBAN2NVXFxgN1ThCIWEb5KizmjAKEpDDmuQqRGoilrSwwCAQCeNJCG/BS56xx/CcnDJ5o/7gVDfJCVXVr6RxK5QboZBQ=="
 
 entrypoint: {
 	apiVersion: "guardian.guardianintelligence.org/v1alpha1"
@@ -41,9 +45,9 @@ resources: [
 				"true",
 			]
 			upload: {
-				bundlePath: uploadBundlePath
+				bundlePath:   uploadBundlePath
 				manifestPath: ".guardian/board/upload-manifest.json"
-				digestPath: uploadDigestPath
+				digestPath:   uploadDigestPath
 				run: argv: [
 					"sh",
 					"-c",
@@ -108,13 +112,13 @@ resources: [
 		apiVersion: "networking.guardianintelligence.org/v1alpha1"
 		kind:       "PublicOrigin"
 		metadata: name: "product"
-		spec: url: "https://gamma.verself.sh"
+		spec: url:      "https://gamma.verself.sh"
 	},
 	{
 		apiVersion: "networking.guardianintelligence.org/v1alpha1"
 		kind:       "PublicOrigin"
 		metadata: name: "company"
-		spec: url: "https://gamma.guardianintelligence.org"
+		spec: url:      "https://gamma.guardianintelligence.org"
 	},
 	{
 		apiVersion: "nomad.guardianintelligence.org/v1alpha1"
@@ -140,7 +144,7 @@ resources: [
 				jwtAuthBackendPath: "jwt-nomad"
 				defaultIdentity: {
 					audience: ["vault.io"]
-					ttl:      "1h"
+					ttl: "1h"
 				}
 			}
 		}
@@ -150,18 +154,39 @@ resources: [
 		kind:       "OpenBaoCluster"
 		metadata: name: "openbao"
 		spec: {
-			address:      "https://127.0.0.1:8200"
-			caCert:       "/etc/openbao/tls/cert.pem"
-			runtimeRoot:  "/var/lib/openbao/runtime"
-			dataDir:      "/var/lib/openbao/raft"
-			configPath:   "/etc/openbao/openbao.hcl"
-			reportPath:   "/run/verself/recovery/openbao/report.json"
+			address:          "https://127.0.0.1:8200"
+			caCert:           "/etc/openbao/tls/cert.pem"
+			runtimeRoot:      "/var/lib/openbao/runtime"
+			dataDir:          "/var/lib/openbao/raft"
+			configPath:       "/etc/openbao/openbao.hcl"
+			reportPath:       "/run/verself/recovery/openbao/report.json"
 			initMaterialPath: "/run/verself/recovery/openbao/init-material.json"
-			loopInterval: "15s"
+			loopInterval:     "15s"
 			seal: shamir: {
-				keyShares:        3
-				keyThreshold:     2
-				pgpRecipientRefs: []
+				keyShares:    3
+				keyThreshold: 2
+				pgpRecipientRefs: [
+					{
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "PGPRecipient"
+						name:       "operator-a"
+					},
+					{
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "PGPRecipient"
+						name:       "operator-b"
+					},
+					{
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "PGPRecipient"
+						name:       "operator-c"
+					},
+				]
+				rootTokenRecipientRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "PGPRecipient"
+					name:       "operator-root"
+				}
 			}
 			snapshots: {
 				restore: sourceRef: {
@@ -180,20 +205,108 @@ resources: [
 				}
 			}
 			baseline: {
-				reconcile:             false
-				operatorTokenRequired: false
+				reconcile: true
+				mounts: [
+					{
+						path:        "kv-runtime"
+						type:        "kv"
+						description: "runtime secret material"
+						options: version: "2"
+					},
+					{
+						path:        "kv-controller"
+						type:        "kv"
+						description: "controller secret material"
+						options: version: "2"
+					},
+					{
+						path:        "transit"
+						type:        "transit"
+						description: "controller cryptographic operations"
+					},
+				]
+				policies: [
+					{
+						name: "cloudflare-integration-recovery-runtime"
+						hcl: """
+							path "kv-controller/data/integrations/cloudflare/account-admin" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.admin_secret_access_key" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.proxy_access_key_id" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
+				]
+				nomadJWT: {
+					path:        "jwt-nomad"
+					description: "Verself Nomad workload identity auth"
+					jwksURL:     "http://127.0.0.1:4646/.well-known/jwks.json"
+					supportedAlgs: ["RS256", "EdDSA"]
+					roles: [
+						{
+							name:     "cloudflare-integration-recovery-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "cloudflare-integration-recovery"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["cloudflare-integration-recovery-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+					]
+				}
 			}
 		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "PGPRecipient"
+		metadata: name:        "operator-a"
+		spec: publicKeyBase64: openbaoOperatorAPublicKeyBase64
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "PGPRecipient"
+		metadata: name:        "operator-b"
+		spec: publicKeyBase64: openbaoOperatorBPublicKeyBase64
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "PGPRecipient"
+		metadata: name:        "operator-c"
+		spec: publicKeyBase64: openbaoOperatorCPublicKeyBase64
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "PGPRecipient"
+		metadata: name:        "operator-root"
+		spec: publicKeyBase64: openbaoOperatorRootPublicKeyBase64
 	},
 	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"
 		spec: {
-			site:                  "gamma"
-			accountID:             "c3eaeffaadf7d4847684d4775c16d598"
-			accountAdminTokenFile: "/run/verself/recovery/credentials/cloudflare-account-admin-api-token"
-			targetIPv4:            "206.223.228.87"
+			site:       "gamma"
+			accountID:  "c3eaeffaadf7d4847684d4775c16d598"
+			targetIPv4: "206.223.228.87"
 			openBao: {
 				address:    "https://127.0.0.1:8200"
 				tokenFile:  "${NOMAD_SECRETS_DIR}/vault_token"
@@ -254,7 +367,7 @@ resources: [
 						]
 					},
 					{
-						name:    "gamma.guardianintelligence.org"
+						name: "gamma.guardianintelligence.org"
 						domains: ["gamma.guardianintelligence.org"]
 					},
 				]
@@ -302,9 +415,9 @@ resources: [
 					pemPath: "/etc/haproxy/certs/gamma.verself.sh.pem"
 				},
 				{
-					name:     "gamma-company"
+					name: "gamma-company"
 					dnsNames: ["gamma.guardianintelligence.org"]
-					pemPath:  "/etc/haproxy/certs/gamma.guardianintelligence.org.pem"
+					pemPath: "/etc/haproxy/certs/gamma.guardianintelligence.org.pem"
 				},
 			]
 			routes: [

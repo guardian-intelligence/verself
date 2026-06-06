@@ -35,8 +35,6 @@ func (cfg *config) applyRecoveryConfig() error {
 	cfg.recovery = &doc
 	cfg.site = doc.Spec.Site
 	cfg.accountID = doc.Spec.AccountID
-	cfg.accountAdminAPITokenFile = expandRecoveryPath(doc.Spec.AccountAdminTokenFile)
-	cfg.cloudflareAPITokenFile = cfg.accountAdminAPITokenFile
 	cfg.openBaoAddr = doc.Spec.OpenBao.Address
 	cfg.openBaoTokenFile = expandRecoveryPath(doc.Spec.OpenBao.TokenFile)
 	cfg.openBaoCACertFile = expandRecoveryPath(doc.Spec.OpenBao.CACertFile)
@@ -58,37 +56,26 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 	if cfg.recovery == nil {
 		return fmt.Errorf("recovery document is required")
 	}
-	token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "Cloudflare account-admin API token")
+	accountAdmin, imported, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminOpenBaoPath(cfg))
+	if err != nil {
+		return fmt.Errorf("CloudflareAccountAuthorityAvailable=False: %w", err)
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(accountAdmin.APIToken, cfg.timeout)
 	if err != nil {
 		return err
 	}
-	defer clearBytes(token)
-
-	imported, err := verifyAccountAdminToken(ctx, cfg, string(token))
-	if err != nil {
-		return fmt.Errorf("verify Cloudflare account-admin token: %w", err)
-	}
-	parent := r2control.ParentCredentials{
-		Source:      "recovery-config:cloudflare-account-admin",
-		AccessKeyID: imported.tokenID,
-		APIToken:    string(token),
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	out := baseReport(cfg, parent.Source)
+	out := baseReport(cfg, accountAdmin.Source)
 	out.Action = "recover"
 	out.VerifiedWith = "cloudflare-recovery"
-	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(imported.tokenID)
-	out.AccountAdminStatus = imported.accountAdminStatus
+	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
+	out.AccountAdminStatus = imported
 	out.RecoveryConditions = append(out.RecoveryConditions, "AccountTokenVerified")
 
 	desiredDNS, err := dnsDesiredStateFromRecovery(*cfg.recovery)
 	if err != nil {
 		return err
 	}
-	dnsReport, err := reconcileDNSDesired(ctx, cfg, parent, apiClient, desiredDNS)
+	dnsReport, err := reconcileDNSDesired(ctx, cfg, accountAdmin, apiClient, desiredDNS)
 	if err != nil {
 		return err
 	}
@@ -104,7 +91,7 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	tlsReport, err := issueCertificatesWithClient(ctx, cfg, apiClient, certificates, zones, parent.Source)
+	tlsReport, err := issueCertificatesWithClient(ctx, cfg, apiClient, certificates, zones, accountAdmin.Source)
 	if err != nil {
 		return err
 	}
@@ -115,7 +102,7 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 	if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath(adminSecret)), "object-storage provider runtime secret projection"); err != nil {
 		return err
 	}
-	if err := provisionObjectStorageProviderCredential(ctx, cfg, parent, &out); err != nil {
+	if err := provisionObjectStorageProviderCredential(ctx, cfg, accountAdmin, &out); err != nil {
 		return err
 	}
 	out.RecoveryConditions = append(out.RecoveryConditions, "ObjectStorageCredentialsPersisted")

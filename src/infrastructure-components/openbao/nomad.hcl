@@ -3,16 +3,6 @@ variable "guardian_repo_root" {
   default = "/home/ubuntu/.local/state/guardian/repo/current"
 }
 
-variable "openbao_addr" {
-  type    = string
-  default = "https://127.0.0.1:8200"
-}
-
-variable "openbao_init_material_path" {
-  type    = string
-  default = "/run/verself/recovery/openbao/init-material.json"
-}
-
 job "openbao" {
   name        = "openbao"
   datacenters = ["*"]
@@ -51,12 +41,8 @@ job "openbao" {
         args = [
           "prepare",
           "--repo-root=${var.guardian_repo_root}",
-          "--runtime-root=/var/lib/openbao/runtime",
-          "--data-dir=/var/lib/openbao/raft",
-          "--config=/etc/openbao/openbao.hcl",
-          "--addr=${var.openbao_addr}",
-          "--ca-cert=/etc/openbao/tls/cert.pem",
-          "--report=/run/verself/recovery/openbao/report.json",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=openbao",
         ]
       }
 
@@ -81,8 +67,6 @@ job "openbao" {
       }
 
       env {
-        BAO_ADDR                    = "${var.openbao_addr}"
-        BAO_CACERT                  = "/etc/openbao/tls/cert.pem"
         HOME                        = "/var/lib/openbao"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES    = "verself.supervisor=nomad"
@@ -117,15 +101,8 @@ job "openbao" {
         args = [
           "loop",
           "--repo-root=${var.guardian_repo_root}",
-          "--runtime-root=/var/lib/openbao/runtime",
-          "--bao=/var/lib/openbao/runtime/current/bin/bao",
-          "--addr=${var.openbao_addr}",
-          "--ca-cert=/etc/openbao/tls/cert.pem",
-          "--data-dir=/var/lib/openbao/raft",
-          "--config=/etc/openbao/openbao.hcl",
-          "--report=/run/verself/recovery/openbao/report.json",
-          "--init-output=${var.openbao_init_material_path}",
-          "--loop-interval=15s",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=openbao",
         ]
       }
 

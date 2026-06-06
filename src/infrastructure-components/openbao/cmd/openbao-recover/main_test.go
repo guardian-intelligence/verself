@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeOpenBaoClient struct {
@@ -20,6 +21,7 @@ type fakeOpenBaoClient struct {
 	unsealShares   []string
 	snapshot       []byte
 	baselineTokens []string
+	baselines      []openBaoBaselineSpec
 	revokedTokens  []string
 	restored       bool
 }
@@ -46,8 +48,13 @@ func (f *fakeOpenBaoClient) Init(_ context.Context, opts initOptions) (initRespo
 			responseShares = append(responseShares, "encrypted:"+hex.EncodeToString(sum[:]))
 		}
 	}
+	rootToken := f.rootToken
+	if opts.RootTokenPGPKey != "" {
+		sum := sha256.Sum256([]byte(rootToken + opts.RootTokenPGPKey))
+		rootToken = "encrypted:" + hex.EncodeToString(sum[:])
+	}
 	return initResponse{
-		RootToken:     f.rootToken,
+		RootToken:     rootToken,
 		UnsealKeysB64: responseShares,
 	}, nil
 }
@@ -74,8 +81,9 @@ func (f *fakeOpenBaoClient) SaveSnapshot(context.Context, string) ([]byte, error
 	return f.snapshot, nil
 }
 
-func (f *fakeOpenBaoClient) ReconcileBaseline(_ context.Context, token string) error {
+func (f *fakeOpenBaoClient) ReconcileBaseline(_ context.Context, token string, baseline openBaoBaselineSpec) error {
 	f.baselineTokens = append(f.baselineTokens, token)
+	f.baselines = append(f.baselines, baseline)
 	return nil
 }
 
@@ -101,18 +109,19 @@ func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
 		cfg.keyShares = 3
 		cfg.threshold = 2
 		cfg.pgpKeys = stringList{"operator-a.asc", "operator-b.asc", "operator-c.asc"}
+		cfg.rootTokenPGPKey = "operator-root.asc"
 		cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
 
 		rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
 		assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "Created")
 		assertCondition(t, rep, "OpenBaoInitMaterialDelivered", "True", "InitOutputWritten")
-		assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
-		if len(client.baselineTokens) != 1 || client.baselineTokens[0] != rootToken {
-			t.Fatalf("baseline did not use transient root token")
+		assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForRootTrustMaterial")
+		if len(client.baselineTokens) != 0 {
+			t.Fatalf("baseline reconciled before unseal material was presented")
 		}
-		if len(client.revokedTokens) != 1 || client.revokedTokens[0] != rootToken {
-			t.Fatalf("transient root token was not revoked")
+		if len(client.revokedTokens) != 0 {
+			t.Fatalf("root token was revoked before operator decrypted and presented it")
 		}
 		assertReportDoesNotContain(t, rep, rootToken)
 		for _, share := range client.unsealShares {
@@ -129,6 +138,13 @@ func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
 			if bytes.Contains(material, []byte(share)) {
 				t.Fatalf("init material leaked unencrypted share %q: %s", share, material)
 			}
+		}
+		var decoded encryptedInitMaterial
+		if err := json.Unmarshal(material, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Spec.EncryptedRootTokenB64 == "" || !decoded.Spec.RootTokenPGPRecipient {
+			t.Fatalf("init material omitted encrypted root token handoff: %#v", decoded.Spec)
 		}
 	}
 }
@@ -200,6 +216,54 @@ func TestUnsealedOpenBaoUsesOperatorTokenFromStdin(t *testing.T) {
 		t.Fatalf("baseline did not use presented token")
 	}
 	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestUnsealedOpenBaoUsesBaselineFromResourceGraph(t *testing.T) {
+	token := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status: baoStatus{Initialized: true, Sealed: false},
+	}
+	cfg := testConfig(t)
+	cfg.tokenStdin = true
+	cfg.baseline = openBaoBaselineSpec{
+		Reconcile: true,
+		Mounts: []openBaoMountSpec{
+			{Path: "kv-runtime", Type: "kv", Options: map[string]string{"version": "2"}},
+		},
+		Policies: []openBaoPolicySpec{
+			{Name: "cloudflare-integration-recovery-runtime", HCL: `path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" { capabilities = ["create", "update"] }`},
+		},
+		NomadJWT: &openBaoNomadJWTAuthSpec{
+			Path:          "jwt-nomad",
+			Description:   "Verself Nomad workload identity auth",
+			JWKSURL:       "http://127.0.0.1:4646/.well-known/jwks.json",
+			SupportedAlgs: []string{"RS256", "EdDSA"},
+			Roles: []openBaoNomadJWTRoleSpec{
+				{
+					Name:                 "cloudflare-integration-recovery-runtime",
+					RoleType:             "jwt",
+					BoundAudiences:       []string{"vault.io"},
+					BoundClaims:          map[string]string{"nomad_job_id": "cloudflare-integration-recovery"},
+					UserClaim:            "/nomad_job_id",
+					UserClaimJSONPointer: true,
+					ClaimMappings:        map[string]string{"nomad_job_id": "nomad_job_id"},
+					TokenType:            "service",
+					TokenPolicies:        []string{"cloudflare-integration-recovery-runtime"},
+					TokenPeriod:          "30m",
+				},
+			},
+		},
+	}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	if len(client.baselines) != 1 {
+		t.Fatalf("baseline reconcile calls = %d", len(client.baselines))
+	}
+	if got := client.baselines[0].NomadJWT.Roles[0].Name; got != "cloudflare-integration-recovery-runtime" {
+		t.Fatalf("jwt role = %q", got)
+	}
 }
 
 func TestRestoreSnapshotVerifiesDigestAndThenRequiresSnapshotUnsealMaterial(t *testing.T) {
@@ -278,6 +342,7 @@ func TestFreshInitRequiresInitMaterialOutput(t *testing.T) {
 	cfg.keyShares = 3
 	cfg.threshold = 2
 	cfg.pgpKeys = stringList{"operator-a.asc", "operator-b.asc", "operator-c.asc"}
+	cfg.rootTokenPGPKey = "operator-root.asc"
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
@@ -287,6 +352,165 @@ func TestFreshInitRequiresInitMaterialOutput(t *testing.T) {
 		t.Fatalf("baseline reconciled before init material delivery was configured")
 	}
 	assertReportDoesNotContain(t, rep, client.rootToken)
+}
+
+func TestFreshInitRequiresRootTokenRecipientIdentity(t *testing.T) {
+	client := &fakeOpenBaoClient{
+		status: baoStatus{
+			Initialized: false,
+			Sealed:      true,
+		},
+		rootToken: randomSecret(t),
+	}
+	cfg := testConfig(t)
+	cfg.keyShares = 3
+	cfg.threshold = 2
+	cfg.pgpKeys = stringList{"operator-a.asc", "operator-b.asc", "operator-c.asc"}
+	cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "InitRootTokenRecipientIdentityRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForRootTrustMaterial")
+	if _, err := os.Stat(cfg.initOutputPath); !os.IsNotExist(err) {
+		t.Fatalf("init material should not be written without root token recipient, stat err=%v", err)
+	}
+}
+
+func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
+	dir := t.TempDir()
+	graphPath := filepath.Join(dir, "document.json")
+	pgpDir := filepath.Join(dir, "pgp")
+	doc := map[string]any{
+		"entrypoint": map[string]any{
+			"apiVersion": "guardian.guardianintelligence.org/v1alpha1",
+			"kind":       "FlyProcedure",
+			"name":       "gamma",
+		},
+		"resources": []map[string]any{
+			{
+				"apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+				"kind":       "OpenBaoCluster",
+				"metadata": map[string]any{
+					"name": "openbao",
+				},
+				"spec": map[string]any{
+					"address":          "https://127.0.0.1:8200",
+					"caCert":           "/etc/openbao/tls/cert.pem",
+					"runtimeRoot":      "/var/lib/openbao/runtime-from-graph",
+					"dataDir":          "/var/lib/openbao/raft-from-graph",
+					"configPath":       "/etc/openbao/openbao-from-graph.hcl",
+					"reportPath":       "/run/verself/recovery/openbao/report-from-graph.json",
+					"initMaterialPath": "/run/verself/recovery/openbao/init-material-from-graph.json",
+					"loopInterval":     "7s",
+					"seal": map[string]any{
+						"shamir": map[string]any{
+							"keyShares":    3,
+							"keyThreshold": 2,
+							"pgpRecipientRefs": []map[string]any{
+								{"apiVersion": "openbao.guardianintelligence.org/v1alpha1", "kind": "PGPRecipient", "name": "operator-a"},
+								{"apiVersion": "openbao.guardianintelligence.org/v1alpha1", "kind": "PGPRecipient", "name": "operator-b"},
+								{"apiVersion": "openbao.guardianintelligence.org/v1alpha1", "kind": "PGPRecipient", "name": "operator-c"},
+							},
+							"rootTokenRecipientRef": map[string]any{
+								"apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+								"kind":       "PGPRecipient",
+								"name":       "operator-root",
+							},
+						},
+					},
+					"baseline": map[string]any{
+						"reconcile": true,
+						"mounts": []map[string]any{
+							{"path": "kv-runtime", "type": "kv", "options": map[string]string{"version": "2"}},
+						},
+						"policies": []map[string]any{
+							{"name": "cloudflare-integration-recovery-runtime", "hcl": `path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" { capabilities = ["create", "update"] }`},
+						},
+						"nomadJWT": map[string]any{
+							"path":          "jwt-nomad",
+							"description":   "Verself Nomad workload identity auth",
+							"jwksURL":       "http://127.0.0.1:4646/.well-known/jwks.json",
+							"supportedAlgs": []string{"RS256", "EdDSA"},
+							"roles": []map[string]any{
+								{
+									"name":                 "cloudflare-integration-recovery-runtime",
+									"roleType":             "jwt",
+									"boundAudiences":       []string{"vault.io"},
+									"boundClaims":          map[string]string{"nomad_job_id": "cloudflare-integration-recovery"},
+									"userClaim":            "/nomad_job_id",
+									"userClaimJSONPointer": true,
+									"claimMappings":        map[string]string{"nomad_job_id": "nomad_job_id"},
+									"tokenType":            "service",
+									"tokenPolicies":        []string{"cloudflare-integration-recovery-runtime"},
+									"tokenPeriod":          "30m",
+									"tokenExplicitMaxTTL":  0,
+								},
+							},
+						},
+					},
+				},
+			},
+			pgpRecipient("operator-a", "pubkey-a"),
+			pgpRecipient("operator-b", "pubkey-b"),
+			pgpRecipient("operator-c", "pubkey-c"),
+			pgpRecipient("operator-root", "pubkey-root"),
+		},
+	}
+	body, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(graphPath, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := parseConfig("test", []string{
+		"--repo-root=" + dir,
+		"--resource-graph=" + graphPath,
+		"--resource-name=openbao",
+		"--pgp-key-dir=" + pgpDir,
+	}, true, false)
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.runtimeRoot != "/var/lib/openbao/runtime-from-graph" {
+		t.Fatalf("runtimeRoot = %q", cfg.runtimeRoot)
+	}
+	if cfg.bao != "/var/lib/openbao/runtime-from-graph/current/bin/bao" {
+		t.Fatalf("bao path was not derived from graph runtimeRoot: %q", cfg.bao)
+	}
+	if cfg.loopInterval != 7*time.Second {
+		t.Fatalf("loopInterval = %s", cfg.loopInterval)
+	}
+	if len(cfg.pgpKeys) != 3 {
+		t.Fatalf("pgpKeys = %#v", cfg.pgpKeys)
+	}
+	if !cfg.baseline.Reconcile || cfg.baseline.NomadJWT == nil || len(cfg.baseline.NomadJWT.Roles) != 1 {
+		t.Fatalf("baseline = %#v", cfg.baseline)
+	}
+	for _, path := range append([]string(cfg.pgpKeys), cfg.rootTokenPGPKey) {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read materialized PGP key %s: %v", path, err)
+		}
+		if !strings.HasPrefix(string(body), "pubkey-") {
+			t.Fatalf("unexpected PGP key body in %s: %q", path, body)
+		}
+	}
+}
+
+func pgpRecipient(name string, publicKey string) map[string]any {
+	return map[string]any{
+		"apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+		"kind":       "PGPRecipient",
+		"metadata": map[string]any{
+			"name": name,
+		},
+		"spec": map[string]any{
+			"publicKeyBase64": publicKey,
+		},
+	}
 }
 
 func TestSnapshotSaveWritesManifestWithoutSecretBytes(t *testing.T) {

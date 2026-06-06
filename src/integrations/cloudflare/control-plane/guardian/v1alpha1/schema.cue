@@ -23,10 +23,9 @@ package v1alpha1
 	kind:       "CloudflareControlPlane"
 	metadata:   #Metadata
 	spec: {
-		site:                  #NonEmptyString
-		accountID:             =~"^[a-f0-9]{32}$"
-		accountAdminTokenFile: #AbsolutePath
-		targetIPv4:            #IPv4
+		site:       #NonEmptyString
+		accountID:  =~"^[a-f0-9]{32}$"
+		targetIPv4: #IPv4
 		openBao: {
 			address:    #HTTPURL
 			tokenFile:  #NonEmptyString
@@ -54,7 +53,7 @@ package v1alpha1
 				renewBefore:        #NonEmptyString
 			}
 			certificates: [...{
-				name:    #DNSName
+				name: #DNSName
 				domains: [#NonEmptyString, ...#NonEmptyString]
 			}]
 		}

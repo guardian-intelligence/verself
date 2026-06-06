@@ -383,7 +383,6 @@ metadata:
 spec:
   site: gamma
   accountID: 0123456789abcdef0123456789abcdef
-  accountAdminTokenFile: /run/verself/recovery/credentials/cloudflare-account-admin-api-token
   targetIPv4: 203.0.113.10
   openBao:
     address: https://127.0.0.1:8200

@@ -11,8 +11,8 @@ consecutive submissions do not create unexpected allocation churn.
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad | `nomad.guardianintelligence.org/v1alpha1/NomadCluster/nomad` | Converged | None | Boarded repo, Nomad runtime artifact, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Blocked | `RootTrustMaterialAvailable=False`, `OpenBaoRecoveryComplete=False` | PGP recipient identities for fresh initialization, or matching unseal/recovery material for an existing or restored store |
-| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Declared, not submitted | `CloudflareAccountAuthorityAvailable=False`, `CloudflareRuntimeSecretStoreAvailable=False`, `CloudflarePublicTLSMaterialReady=False` | Operator-provided Cloudflare account-admin token, recovered OpenBao runtime secret store |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Converged | None | PGP recipient identities, threshold unseal material, root token for baseline reconciliation |
+| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Declared, not yet submitted | Not evaluated by component job | OpenBao-backed R2 credentials, PostgreSQL, ClickHouse, SPIFFE |
 
@@ -27,16 +27,21 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --strea
 Observed results:
 
 - boarding verified the extracted repo tree on gamma;
-- the boarded repo contains `.guardian/fly/document.json` with Cloudflare and
-  HAProxy component CRDs;
-- remote Nomad validation succeeds for the updated HAProxy and Cloudflare job
+- the boarded repo contains `.guardian/fly/document.json` with OpenBao,
+  Cloudflare, HAProxy, and object-storage component CRDs;
+- remote Nomad validation succeeds for OpenBao, HAProxy, and Cloudflare job
   files;
 - Nomad is running and reachable on gamma;
-- OpenBao reported an uninitialized Shamir store and blocked on missing PGP
-  recipient identities;
-- Cloudflare is declared in the boarded graph but cannot recover runtime
-  secrets until OpenBao and operator provider authority are available; the
-  Cloudflare account-admin token is absent on gamma;
+- OpenBao initialized a Shamir store with PGP-encrypted init material, accepted
+  threshold unseal shares over stdin, and reconciled baseline mounts, policies,
+  and Nomad JWT auth roles after an operator root token was presented over
+  stdin;
+- Cloudflare can derive its Nomad workload OpenBao token and start its recovery
+  task;
+- Cloudflare recovery now blocks on missing account-admin authority in OpenBao:
+  `kv-controller/data/integrations/cloudflare/account-admin` returns 404;
+- the Cloudflare CRD no longer points at a durable host file for the provider
+  token;
 - submitting the updated HAProxy job exercises the component-owned prestart and
   fails on missing `/etc/haproxy/certs/gamma.guardianintelligence.org.pem`;
 - Nomad auto-reverts HAProxy to the previous board-only allocation after the
@@ -50,11 +55,11 @@ Evidence commands:
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default openbao'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default cloudflare-integration-recovery'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default haproxy-upstreams'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/haproxy/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl'
-ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task setup 4bdf671f'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task recover <cloudflare-allocation-id>'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/openbao/report.json'
-ssh -T ubuntu@206.223.228.87 'sudo test -f /run/verself/recovery/credentials/cloudflare-account-admin-api-token && echo cloudflare-token:present || echo cloudflare-token:missing'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 

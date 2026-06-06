@@ -49,6 +49,21 @@ defines static configuration and invariants for that component:
 Component CRDs do not define Guardian execution steps. They describe desired
 inputs that component-owned code can read from the boarded graph.
 
+Component schemas should contain the full static configuration needed by that
+component: provider account IDs, public resource names, OpenBao paths, Nomad
+workload roles, backup object locations, runtime artifact paths, policy names,
+and references to shared resources. A component should not require a reader to
+combine a base Guardian field with undocumented component defaults to understand
+what it will reconcile.
+
+Secret values stay out of component CRDs. A component that needs root or
+provider authority declares the nonsecret authority location or recipient
+identity and reports a condition when the authority is absent. For example,
+Cloudflare recovery reads its account-admin credential from the OpenBao path it
+owns; if that path is absent, it reports `CloudflareAccountAuthorityAvailable`
+as false. The CRD does not point at a durable host file containing the provider
+token.
+
 ## Nomad Convention
 
 Component recovery and deployment are Nomad conventions. A component job file is
