@@ -16,6 +16,11 @@ job "clickhouse" {
   group "clickhouse" {
     count = 1
 
+    reschedule {
+      attempts  = 0
+      unlimited = false
+    }
+
     network {
       mode = "host"
 
@@ -29,6 +34,11 @@ job "clickhouse" {
     task "recover" {
       driver = "raw_exec"
       user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
 
       lifecycle {
         hook    = "prestart"
@@ -55,8 +65,13 @@ job "clickhouse" {
       driver = "raw_exec"
       user   = "root"
 
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
+
       config {
-        command = "/var/lib/clickhouse/runtime/current/bin/clickhouse-recover"
+        command = "/opt/verself/clickhouse/current/bin/clickhouse-recover"
         args = [
           "monitor",
           "--repo-root=${var.guardian_repo_root}",

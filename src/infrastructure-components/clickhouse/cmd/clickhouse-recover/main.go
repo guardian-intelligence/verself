@@ -465,6 +465,9 @@ func convergeHost(cfg config) error {
 	if err := mkdir(cfg.LogDir, serverUser.uid, serverGroup.gid, 0o750); err != nil {
 		return err
 	}
+	if err := mkdir(filepath.Dir(cfg.SPIFFE.ServerHelperConfig), 0, serverGroup.gid, 0o750); err != nil {
+		return err
+	}
 	if err := mkdir(filepath.Dir(cfg.ConfigPath), 0, serverGroup.gid, 0o750); err != nil {
 		return err
 	}
@@ -716,7 +719,12 @@ func startServices(cfg config) error {
 	if err := waitForQuery(cfg, 60*time.Second); err != nil {
 		return err
 	}
-	_ = command(filepath.Join(cfg.RuntimeRoot, "current/bin/clickhouse-spiffe-bundle-reload"), "--bundle", filepath.Join(cfg.SPIFFE.ServerDir, "bundle.pem"), "--state-path", cfg.SPIFFE.BundleReloadState, "--unit", "clickhouse-server.service")
+	if err := command(filepath.Join(cfg.RuntimeRoot, "current/bin/clickhouse-spiffe-bundle-reload"), "--bundle", filepath.Join(cfg.SPIFFE.ServerDir, "bundle.pem"), "--state-path", cfg.SPIFFE.BundleReloadState, "--unit", "clickhouse-server.service"); err != nil {
+		return err
+	}
+	if err := waitForQuery(cfg, 60*time.Second); err != nil {
+		return err
+	}
 	if err := command("/bin/systemctl", "enable", "--now", "clickhouse-server-spiffe-bundle-reload.path"); err != nil {
 		return err
 	}
@@ -923,6 +931,7 @@ func serverXML(cfg config) string {
 
     <users>
         <default>
+            <no_password/>
             <access_management>0</access_management>
             <networks>
                 <ip>127.0.0.1</ip>

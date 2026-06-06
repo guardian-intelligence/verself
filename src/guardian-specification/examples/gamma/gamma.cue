@@ -589,7 +589,7 @@ resources: [
 		metadata: name: "clickhouse"
 		spec: {
 			runtimeArtifact: "bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar"
-			runtimeRoot:     "/var/lib/clickhouse/runtime"
+			runtimeRoot:     "/opt/verself/clickhouse"
 			dataDir:         "/var/lib/clickhouse"
 			backupDir:       "/var/lib/clickhouse/backups"
 			backupDiskName:  "verself_recovery_backups"
@@ -614,7 +614,7 @@ resources: [
 				trustDomain:          "gamma.verself.sh"
 				servicePrefix:        "spiffe://gamma.verself.sh/svc"
 				agentSocket:          "/run/spire-agent/sockets/agent.sock"
-				helperPath:           "/var/lib/clickhouse/runtime/current/bin/spiffe-helper"
+				helperPath:           "/opt/verself/clickhouse/current/bin/spiffe-helper"
 				serverID:             "spiffe://gamma.verself.sh/svc/clickhouse-server"
 				operatorID:           "spiffe://gamma.verself.sh/svc/clickhouse-operator"
 				serverDir:            "/var/lib/clickhouse/spiffe"
