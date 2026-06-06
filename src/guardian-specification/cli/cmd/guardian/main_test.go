@@ -346,6 +346,8 @@ func writeRequiredArtifacts(t *testing.T, dir string) {
 		"bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar":                                                     []byte("haproxy runtime\n"),
 		"bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar":                                                   []byte("nftables runtime\n"),
 		"bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply":                      []byte("nftables apply\n"),
+		"bazel-bin/src/infrastructure-components/nats/nats-runtime.tar":                                                           []byte("nats runtime\n"),
+		"bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover":                                []byte("nats recover\n"),
 		"bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar":                                               []byte("postgresql runtime\n"),
 		"bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar":                                               []byte("clickhouse runtime\n"),
 		"bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover":        []byte("clickhouse recover\n"),

@@ -303,6 +303,43 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "nats.guardianintelligence.org/v1alpha1"
+		kind:       "NATSCluster"
+		metadata: name: "nats"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/nats/nats-runtime.tar"
+			runtimeRoot:     "/var/lib/nats/runtime"
+			configPath:      "/etc/nats/nats-server.conf"
+			helperConfigPath: "/etc/nats/nats-spiffe-helper.conf"
+			dataDir:         "/var/lib/nats"
+			jetStreamDir:    "/var/lib/nats/jetstream"
+			pidPath:         "/var/lib/nats/nats.pid"
+			reportPath:      "/run/verself/recovery/nats/report.json"
+			user:            "nats"
+			group:           "nats"
+			workloadGroup:   "spire_workload"
+			serverName:      "verself-nats"
+			host:            "127.0.0.1"
+			clientPort:      4222
+			monitoringPort:  8222
+			jetstream: {
+				maxMemStore:  "256Mb"
+				maxFileStore: "4Gb"
+			}
+			spiffe: {
+				agentSocket: "/run/spire-agent/sockets/agent.sock"
+				certDir:     "/var/lib/nats/spiffe"
+			}
+			authorization: users: [
+				{
+					spiffeID:       "spiffe://gamma.verself.sh/svc/notifications-service"
+					publishAllow:   ["events.>", "$JS.API.>", "$JS.ACK.>"]
+					subscribeAllow: ["_INBOX.>"]
+				},
+			]
+		}
+	},
+	{
 		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 		kind:       "PGPRecipient"
 		metadata: name:        "operator-a"

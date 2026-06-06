@@ -4,14 +4,22 @@ load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 exports_files(["tools.lock.json"])
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "runtime_artifact",
     out = "nats-runtime.tar",
     files = {
         "@nats_tools//tools/nats-server": "bin/nats-server",
         "@nats_tools//tools/spiffe-helper": "bin/spiffe-helper",
+        "//src/infrastructure-components/nats/cmd/nats-recover:nats-recover": "bin/nats-recover",
     },
     modes = {
+        "bin/nats-recover": "0755",
         "bin/nats-server": "0755",
         "bin/spiffe-helper": "0755",
     },
