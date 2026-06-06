@@ -29,6 +29,13 @@ http_file(
 )
 
 http_file(
+    name = "postgresql_tool_libicu74",
+    downloaded_file_path = "libicu74_74.2-1ubuntu3.1_amd64.deb",
+    sha256 = "c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu74_74.2-1ubuntu3.1_amd64.deb",
+)
+
+http_file(
     name = "postgresql_tool_pgbackrest",
     downloaded_file_path = "pgbackrest_2.58.0-1.pgdg24.04+1_amd64.deb",
     sha256 = "f2eddd27246e85fb4842a030fee21ebc036ba22a81627e932d2c01796f616546",

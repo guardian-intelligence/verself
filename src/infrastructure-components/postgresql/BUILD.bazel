@@ -26,6 +26,7 @@ filegroup(
 genrule(
     name = "postgresql_runtime",
     srcs = [
+        "@postgresql_tool_libicu74//file",
         "@postgresql_tool_libpq5//file",
         "@postgresql_tool_libxml2//file",
         "@postgresql_tool_postgresql_16//file",
@@ -37,6 +38,7 @@ set -euo pipefail
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 mkdir -p "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libicu74//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_libpq5//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_libxml2//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_postgresql_client_16//file)" "$$tmp/extract"
@@ -47,6 +49,9 @@ mkdir -p \
   "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
 cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
 cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicudata.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicudata.so.74"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicui18n.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicui18n.so.74"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicuuc.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicuuc.so.74"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libpq.so.5" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libpq.so.5"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libxml2.so.2" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libxml2.so.2"
 rm -rf "$$tmp/extract"

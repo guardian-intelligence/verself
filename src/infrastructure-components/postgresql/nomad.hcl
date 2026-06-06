@@ -16,6 +16,11 @@ job "postgresql" {
   group "postgresql" {
     count = 1
 
+    reschedule {
+      attempts  = 0
+      unlimited = false
+    }
+
     network {
       mode = "host"
       port "postgres" {
@@ -28,6 +33,11 @@ job "postgresql" {
     task "setup" {
       driver = "raw_exec"
       user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
 
       lifecycle {
         hook    = "prestart"
@@ -328,11 +338,22 @@ PY
 
     task "server" {
       driver = "raw_exec"
-      user   = "postgres"
+      user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
 
       config {
-        command = "/usr/bin/python3"
-        args = ["-c", <<-PY
+        command = "/usr/sbin/runuser"
+        args = [
+          "-u",
+          "postgres",
+          "--",
+          "/usr/bin/python3",
+          "-c",
+          <<-PY
 import json
 import os
 import pathlib
@@ -388,7 +409,12 @@ PY
 
     task "reconcile" {
       driver = "raw_exec"
-      user   = "postgres"
+      user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
 
       lifecycle {
         hook    = "poststart"
@@ -396,8 +422,14 @@ PY
       }
 
       config {
-        command = "/usr/bin/python3"
-        args = ["-c", <<-PY
+        command = "/usr/sbin/runuser"
+        args = [
+          "-u",
+          "postgres",
+          "--",
+          "/usr/bin/python3",
+          "-c",
+          <<-PY
 import json
 import os
 import pathlib
