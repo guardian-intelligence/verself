@@ -106,35 +106,11 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = [
-        "//src/infrastructure-components:__pkg__",
-        "//src/infrastructure-components/spire:__pkg__",
-    ],
-)
-
 go_test(
     name = "frontend_policy_test",
     srcs = ["frontend_policy_test.go"],
     data = [
         "nomad.hcl",
-        "templates/haproxy.cfg.j2",
-        "templates/nomad-upstreams.cfg.j2",
     ],
 )
 
@@ -167,16 +143,15 @@ filegroup(
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "haproxy-runtime",
-    },
     component = "haproxy_upstreams",
     deploy_phase = "edge",
     digest_inputs = [
         ":public_route_declarations",
-        ":role_sources",
     ],
     job_id = "haproxy-upstreams",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "haproxy-runtime",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
