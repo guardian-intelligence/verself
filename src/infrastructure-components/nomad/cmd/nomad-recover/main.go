@@ -43,7 +43,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.dataDir, "data-dir", "/var/lib/nomad", "Nomad data directory.")
 	fs.StringVar(&cfg.datacenter, "datacenter", "iad1", "Nomad datacenter.")
 	fs.StringVar(&cfg.address, "address", "http://127.0.0.1:4646", "Nomad HTTP address to verify.")
-	fs.StringVar(&cfg.vaultCAFile, "vault-ca-file", "/etc/openbao/tls/cert.pem", "OpenBao CA file. Vault integration is enabled only when this file exists.")
+	fs.StringVar(&cfg.vaultCAFile, "vault-ca-file", "/etc/verself/openbao/ca.pem", "OpenBao CA file. Vault integration is enabled only when this file exists.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -56,16 +56,22 @@ func run(args []string) error {
 	if err := installRuntime(cfg); err != nil {
 		return err
 	}
-	if err := writeConfig(cfg); err != nil {
+	configChanged, err := writeConfig(cfg)
+	if err != nil {
 		return err
 	}
-	if err := writeService(cfg); err != nil {
+	serviceChanged, err := writeService(cfg)
+	if err != nil {
 		return err
 	}
 	if err := systemctl("daemon-reload"); err != nil {
 		return err
 	}
-	if err := systemctl("enable", "--now", "nomad.service"); err != nil {
+	if configChanged || serviceChanged {
+		if err := systemctl("restart", "nomad.service"); err != nil {
+			return err
+		}
+	} else if err := systemctl("enable", "--now", "nomad.service"); err != nil {
 		return err
 	}
 	return waitHealthy(cfg)
@@ -203,12 +209,12 @@ func installTree(srcRoot string, destRoot string) error {
 	})
 }
 
-func writeConfig(cfg config) error {
+func writeConfig(cfg config) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.configPath), 0o755); err != nil {
-		return fmt.Errorf("create config dir: %w", err)
+		return false, fmt.Errorf("create config dir: %w", err)
 	}
 	if err := os.MkdirAll(cfg.dataDir, 0o755); err != nil {
-		return fmt.Errorf("create data dir: %w", err)
+		return false, fmt.Errorf("create data dir: %w", err)
 	}
 	vault := ""
 	if regularFile(cfg.vaultCAFile) {
@@ -283,19 +289,12 @@ acl {
   enabled = false
 }
 `, cfg.dataDir, cfg.datacenter, vault)
-	tmp := cfg.configPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("write temp config: %w", err)
-	}
-	if err := os.Rename(tmp, cfg.configPath); err != nil {
-		return fmt.Errorf("install config: %w", err)
-	}
-	return nil
+	return writeFileIfChanged(cfg.configPath, []byte(body), 0o644)
 }
 
-func writeService(cfg config) error {
+func writeService(cfg config) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(cfg.servicePath), 0o755); err != nil {
-		return fmt.Errorf("create service dir: %w", err)
+		return false, fmt.Errorf("create service dir: %w", err)
 	}
 	nomad := filepath.Join(cfg.installRoot, "bin", "nomad")
 	body := fmt.Sprintf(`[Unit]
@@ -315,14 +314,29 @@ TasksMax=infinity
 [Install]
 WantedBy=multi-user.target
 `, nomad, cfg.configPath)
-	tmp := cfg.servicePath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(body), 0o644); err != nil {
-		return fmt.Errorf("write temp service: %w", err)
+	return writeFileIfChanged(cfg.servicePath, []byte(body), 0o644)
+}
+
+func writeFileIfChanged(path string, body []byte, mode os.FileMode) (bool, error) {
+	existing, err := os.ReadFile(path)
+	if err == nil && string(existing) == string(body) {
+		if chmodErr := os.Chmod(path, mode); chmodErr != nil {
+			return false, fmt.Errorf("chmod %s: %w", path, chmodErr)
+		}
+		return false, nil
 	}
-	if err := os.Rename(tmp, cfg.servicePath); err != nil {
-		return fmt.Errorf("install service: %w", err)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("read %s: %w", path, err)
 	}
-	return nil
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, body, mode); err != nil {
+		return false, fmt.Errorf("write temp %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return false, fmt.Errorf("install %s: %w", path, err)
+	}
+	return true, nil
 }
 
 func waitHealthy(cfg config) error {
