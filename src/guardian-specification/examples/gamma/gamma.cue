@@ -287,6 +287,22 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "nftables.guardianintelligence.org/v1alpha1"
+		kind:       "NftablesFirewall"
+		metadata: name: "nftables"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar"
+			runtimeRoot:     "/opt/verself/nftables"
+			configPath:      "/etc/nftables.conf"
+			rulesDir:        "/etc/nftables.d"
+			manageSystemd:   true
+			systemd: {
+				serviceUnitPath:    "/etc/systemd/system/verself-nftables.service"
+				firewallTargetPath: "/etc/systemd/system/verself-firewall.target"
+			}
+		}
+	},
+	{
 		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 		kind:       "PGPRecipient"
 		metadata: name:        "operator-a"
