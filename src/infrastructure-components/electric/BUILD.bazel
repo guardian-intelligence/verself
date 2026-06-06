@@ -12,6 +12,7 @@ pkg_tar(
     name = "runtime_artifact",
     out = "electric-runtime.tar",
     files = {
+        "//src/infrastructure-components/electric/cmd/electric-recover:electric-recover": "bin/electric-recover",
         "//src/infrastructure-components/electric/cmd/electric-nomad-runner:electric-nomad-runner": "bin/electric-nomad-runner",
         "@electric_tools//tools/containerd": "bin/containerd",
         "@electric_tools//tools/containerd-shim-runc-v2": "bin/containerd-shim-runc-v2",
@@ -21,29 +22,33 @@ pkg_tar(
     modes = {
         "bin/containerd": "0755",
         "bin/containerd-shim-runc-v2": "0755",
+        "bin/electric-recover": "0755",
         "bin/ctr": "0755",
         "bin/electric-nomad-runner": "0755",
         "bin/runc": "0755",
     },
 )
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 nomad_component(
     name = "containerd_nomad_component",
-    artifacts = {
-        ":runtime_artifact": "electric-runtime",
-    },
     component = "electric",
     deploy_phase = "platform",
     job_id = "electric-containerd",
     job_spec = "containerd.nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "electric-runtime",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "electric-runtime",
-    },
     component = "electric",
     deploy_phase = "projection",
     digest_inputs = [
@@ -54,5 +59,8 @@ nomad_component(
     ],
     job_id = "electric",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "electric-runtime",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

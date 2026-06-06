@@ -343,6 +343,29 @@ resources: [
 							}
 							"""
 					},
+					{
+						name: "electric-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/electric.pg.password" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/electric.api_secret" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/electric-notifications.pg.password" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/electric-notifications.api_secret" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/electric-iam.pg.password" {
+							  capabilities = ["create", "update", "read"]
+							}
+							path "kv-runtime/data/secret/org/electric-iam.api_secret" {
+							  capabilities = ["create", "update", "read"]
+							}
+							"""
+					},
 				]
 				nomadJWT: {
 					path:        "jwt-nomad"
@@ -483,6 +506,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["stalwart-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "electric-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "electric"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["electric-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -1059,6 +1099,92 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "electric.guardianintelligence.org/v1alpha1"
+		kind:       "ElectricDeployment"
+		metadata: name: "electric"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/electric/electric-runtime.tar"
+			runtimeRoot:     "/var/lib/electric/runtime"
+			image:           "docker.io/electricsql/electric:1.5.0@sha256:f311edc272e227ddaea593c5205a02c3d1e5969c2db0f7655a039a5e24abb176"
+			containerd: {
+				socketPath: "/run/electric-containerd/containerd.sock"
+				stateDir:   "/run/electric-containerd/state"
+				rootDir:    "/var/lib/electric-containerd/root"
+			}
+			postgres: {
+				runtimeRoot: "/var/lib/postgresql/runtime"
+				host:        "/var/run/postgresql"
+				port:        5432
+			}
+			openBao: {
+				address: "https://127.0.0.1:8200"
+				caCert:  "/etc/verself/openbao/ca.pem"
+			}
+			instances: [
+				{
+					name:                "electric"
+					serviceName:         "electric"
+					storageDir:          "/var/lib/electric"
+					database:            "sandbox_rental"
+					databaseUser:        "electric"
+					connectionLimit:     25
+					replicationStreamID: "default"
+					dbPoolSize:          15
+					pgPasswordRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "electric.pg.password"
+					}
+					apiSecretRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "electric.api_secret"
+					}
+				},
+				{
+					name:                "electric-notifications"
+					serviceName:         "electric-notifications"
+					storageDir:          "/var/lib/electric-notifications"
+					database:            "notifications_service"
+					databaseUser:        "electric_notifications"
+					connectionLimit:     15
+					replicationStreamID: "notifications"
+					dbPoolSize:          8
+					pgPasswordRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "electric-notifications.pg.password"
+					}
+					apiSecretRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "electric-notifications.api_secret"
+					}
+				},
+				{
+					name:                "electric-iam"
+					serviceName:         "electric-iam"
+					storageDir:          "/var/lib/electric-iam"
+					database:            "iam_service"
+					databaseUser:        "electric_iam"
+					connectionLimit:     15
+					replicationStreamID: "iam"
+					dbPoolSize:          8
+					pgPasswordRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "electric-iam.pg.password"
+					}
+					apiSecretRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "electric-iam.api_secret"
+					}
+				},
+			]
+		}
+	},
+	{
 		apiVersion: "temporal.guardianintelligence.org/v1alpha1"
 		kind:       "TemporalPlatform"
 		metadata: name: "temporal"
@@ -1585,6 +1711,90 @@ resources: [
 		metadata: name: "stalwart.admin_password"
 		spec: {
 			path:   "kv-runtime/data/secret/org/stalwart.admin_password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "electric.pg.password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/electric.pg.password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "electric.api_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/electric.api_secret"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "electric-notifications.pg.password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/electric-notifications.pg.password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "electric-notifications.api_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/electric-notifications.api_secret"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "electric-iam.pg.password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/electric-iam.pg.password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "electric-iam.api_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/electric-iam.api_secret"
 			key:    "value"
 			source: "generated"
 			generate: {
