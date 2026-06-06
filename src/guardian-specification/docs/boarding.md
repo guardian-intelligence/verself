@@ -33,7 +33,7 @@ resources:
         argv: [ssh, -T, ubuntu@206.223.228.87, true]
       upload:
         run:
-          argv: [rsync, -a, --delete, ./, ubuntu@206.223.228.87:/tmp/repo-next/workspace/]
+          argv: [bazel-bin/src/guardian-specification/tools/rsync, -a, --delete, ./, ubuntu@206.223.228.87:/tmp/repo-next/workspace/]
         extract:
           argv: [ssh, -T, ubuntu@206.223.228.87, mv -Tf /tmp/repo-next /tmp/repo]
         verify:
@@ -65,10 +65,14 @@ logic.
 
 Lifecycle hooks run from the workspace root. Guardian does not inject upload
 information through environment variables and does not package the repo. The
-site graph chooses the upload primitive. For gamma, the primitive is rsync:
-copy the workspace, copy `bazel-bin` with symlinks dereferenced, atomically
-promote the uploaded tree, then use `rsync --dry-run --checksum` to prove the
-remote tree still matches the local tree.
+site graph chooses the upload primitive. For gamma, the primitive is rsync: use
+the Bazel-pinned controller rsync at
+`bazel-bin/src/guardian-specification/tools/rsync`, copy the workspace, copy the
+explicit built artifacts needed by the current graph with symlinks dereferenced,
+atomically promote the uploaded tree, then use `rsync --dry-run --checksum` to
+prove the remote tree still matches the local tree. This first cut still
+requires remote rsync to be available on the substrate; absence is a boarding
+failure, not an implicit install step.
 
 `board.upload.verify` must verify the boarded tree and print a sha256 digest.
 JSON output with a `digest`, `observed_digest`, `upload_digest`, or `sha256`

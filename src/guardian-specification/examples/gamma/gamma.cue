@@ -77,6 +77,9 @@ resources: [
 					"-c",
 					"""
 						set -eu
+						rsync_bin=./bazel-bin/src/guardian-specification/tools/rsync
+						test -x "$rsync_bin"
+						"$rsync_bin" --version >/dev/null
 						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
 						remote=ubuntu@206.223.228.87
 						remote_root=/home/ubuntu/.local/state/guardian/repo
@@ -86,10 +89,11 @@ resources: [
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 						'
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
-						rsync -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
-						rsync -a --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/next/workspace/"
-						printf '%s\n' $artifact_paths | rsync -aL --mkpath --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/next/"
+						"$rsync_bin" -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
+						"$rsync_bin" -a --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/next/workspace/"
+						printf '%s\n' $artifact_paths | "$rsync_bin" -aL --mkpath --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/next/"
 						""",
 				]
 				extract: argv: [
@@ -115,6 +119,9 @@ resources: [
 					"-c",
 					"""
 						set -eu
+						rsync_bin=./bazel-bin/src/guardian-specification/tools/rsync
+						test -x "$rsync_bin"
+						"$rsync_bin" --version >/dev/null
 						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
 						remote=ubuntu@206.223.228.87
 						remote_root=/home/ubuntu/.local/state/guardian/repo
@@ -124,9 +131,10 @@ resources: [
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 						'
-						workspace_delta="$(rsync -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
-						fly_delta="$(rsync -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
-						artifact_delta="$(printf '%s\n' $artifact_paths | rsync -aL --mkpath --dry-run --checksum --itemize-changes --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/current/")"
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
+						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
+						fly_delta="$("$rsync_bin" -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
+						artifact_delta="$(printf '%s\n' $artifact_paths | "$rsync_bin" -aL --mkpath --dry-run --checksum --itemize-changes --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/current/")"
 						test -z "$workspace_delta"
 						test -z "$fly_delta"
 						test -z "$artifact_delta"

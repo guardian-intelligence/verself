@@ -1,0 +1,14 @@
+package(default_visibility = ["//visibility:public"])
+
+genrule(
+    name = "rsync_bin",
+    srcs = ["@guardian_specification_rsync_deb//file"],
+    outs = ["rsync"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @guardian_specification_rsync_deb//file)" "$$tmp"
+install -m 0755 "$$tmp/usr/bin/rsync" "$@"
+""",
+)

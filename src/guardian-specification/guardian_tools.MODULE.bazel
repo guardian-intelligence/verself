@@ -1,5 +1,7 @@
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
 http_archive(
     name = "guardian_specification_hyperfine_source",
     build_file_content = """exports_files([
@@ -12,4 +14,11 @@ http_archive(
     sha256 = "ab62661c633a4461311381c532af8a35d55040a77487fd44fffb095965f2f265",
     strip_prefix = "hyperfine-975fe108c4ee7bd2600d10758207b44ca3dae738",
     urls = ["https://github.com/sharkdp/hyperfine/archive/975fe108c4ee7bd2600d10758207b44ca3dae738.tar.gz"],
+)
+
+http_file(
+    name = "guardian_specification_rsync_deb",
+    downloaded_file_path = "rsync_3.2.7-1ubuntu1.4_amd64.deb",
+    sha256 = "a2c92fc69ef4f646f2b267dacb456dbfec022bd32d5394e819c147548059627f",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/r/rsync/rsync_3.2.7-1ubuntu1.4_amd64.deb",
 )
