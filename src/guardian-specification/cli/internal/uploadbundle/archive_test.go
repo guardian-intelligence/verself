@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestWriteTarZstdDeterministic(t *testing.T) {
+func TestWriteTarGzipDeterministic(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.txt")
 	b := filepath.Join(dir, "b.txt")
@@ -24,12 +24,12 @@ func TestWriteTarZstdDeterministic(t *testing.T) {
 		{Source: a, Target: "workspace/a.txt", Mode: "0644"},
 	}
 	var one bytes.Buffer
-	first, err := WriteTarZstd(&one, files)
+	first, err := WriteTarGzip(&one, files)
 	if err != nil {
 		t.Fatalf("first write: %v", err)
 	}
 	var two bytes.Buffer
-	second, err := WriteTarZstd(&two, files)
+	second, err := WriteTarGzip(&two, files)
 	if err != nil {
 		t.Fatalf("second write: %v", err)
 	}
@@ -44,16 +44,16 @@ func TestWriteTarZstdDeterministic(t *testing.T) {
 	}
 }
 
-func TestWriteTarZstdRejectsTraversal(t *testing.T) {
+func TestWriteTarGzipRejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "a.txt")
 	if err := os.WriteFile(source, []byte("alpha"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	_, err := WriteTarZstd(&out, []File{{Source: source, Target: "../a.txt", Mode: "0644"}})
+	_, err := WriteTarGzip(&out, []File{{Source: source, Target: "../a.txt", Mode: "0644"}})
 	if err == nil {
-		t.Fatalf("WriteTarZstd accepted path traversal")
+		t.Fatalf("WriteTarGzip accepted path traversal")
 	}
 }
 
@@ -93,6 +93,39 @@ func TestWorkspaceFilesIncludesUntrackedGitFiles(t *testing.T) {
 	}
 	if !slices.Contains(targets, "workspace/untracked.txt") {
 		t.Fatalf("workspace bundle omitted untracked file: %#v", targets)
+	}
+}
+
+func TestWorkspaceFilesIncludesGeneratedFlyDocument(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	if err := os.MkdirAll(filepath.Join(dir, ".guardian", "fly"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".guardian", "board"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".guardian", "fly", "document.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".guardian", "board", "upload.tar.gz"), []byte("recursive bundle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRequiredTestArtifacts(t, dir)
+
+	files, err := WorkspaceFiles(dir)
+	if err != nil {
+		t.Fatalf("WorkspaceFiles: %v", err)
+	}
+	targets := make([]string, 0, len(files))
+	for _, file := range files {
+		targets = append(targets, file.Target)
+	}
+	if !slices.Contains(targets, "workspace/.guardian/fly/document.json") {
+		t.Fatalf("workspace bundle omitted generated fly document: %#v", targets)
+	}
+	if slices.Contains(targets, "workspace/.guardian/board/upload.tar.gz") {
+		t.Fatalf("workspace bundle included generated board archive: %#v", targets)
 	}
 }
 

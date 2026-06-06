@@ -256,7 +256,7 @@ cloudflare_dns_records:
 	}
 }
 
-func TestApplyRecoveryConfigMapsMinimalCloudflareRecovery(t *testing.T) {
+func TestApplyRecoveryConfigMapsMinimalCloudflareControlPlane(t *testing.T) {
 	t.Setenv("NOMAD_SECRETS_DIR", "/alloc/secrets")
 	path := filepath.Join(t.TempDir(), "cloudflare-recovery.yml")
 	writeTestFile(t, path, minimalRecoveryConfigYAML())
@@ -282,8 +282,8 @@ func TestApplyRecoveryConfigMapsMinimalCloudflareRecovery(t *testing.T) {
 }
 
 func TestDNSDesiredStateFromRecoveryUsesHostedZones(t *testing.T) {
-	doc := CloudflareRecovery{
-		Spec: CloudflareRecoverySpec{
+	doc := CloudflareControlPlane{
+		Spec: CloudflareControlPlaneSpec{
 			TargetIPv4: "203.0.113.10",
 			DNS: CloudflareDNS{
 				Zones: []CloudflareDNSZone{
@@ -376,8 +376,8 @@ func writeCloudflareAccountConfig(t *testing.T, root string) {
 }
 
 func minimalRecoveryConfigYAML() string {
-	return `apiVersion: recovery.verself.sh/v1alpha1
-kind: CloudflareRecovery
+	return `apiVersion: cloudflare.guardianintelligence.org/v1alpha1
+kind: CloudflareControlPlane
 metadata:
   name: gamma-cloudflare
 spec:

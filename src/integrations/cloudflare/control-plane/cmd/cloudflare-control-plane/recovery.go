@@ -16,7 +16,7 @@ func (cfg *config) applyRecoveryConfig() error {
 	if strings.TrimSpace(cfg.recoveryConfig) == "" {
 		return fmt.Errorf("--recovery-config is required for recovery")
 	}
-	doc, err := loadCloudflareRecovery(cfg.recoveryConfig)
+	doc, err := loadCloudflareControlPlane(cfg.recoveryConfig)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 	return writeReport(out)
 }
 
-func dnsDesiredStateFromRecovery(doc CloudflareRecovery) (dnsDesiredState, error) {
+func dnsDesiredStateFromRecovery(doc CloudflareControlPlane) (dnsDesiredState, error) {
 	zones := map[string]CloudflareDNSZone{}
 	for _, zone := range doc.Spec.DNS.Zones {
 		zones[strings.TrimSpace(zone.Name)] = zone
@@ -151,7 +151,7 @@ func dnsDesiredStateFromRecovery(doc CloudflareRecovery) (dnsDesiredState, error
 	return out, nil
 }
 
-func tlsCertificatesFromRecovery(doc CloudflareRecovery) ([]siteTLSCertificate, []string, error) {
+func tlsCertificatesFromRecovery(doc CloudflareControlPlane) ([]siteTLSCertificate, []string, error) {
 	certificates := make([]siteTLSCertificate, 0, len(doc.Spec.TLS.Certificates))
 	for _, certificate := range doc.Spec.TLS.Certificates {
 		certificates = append(certificates, siteTLSCertificate{

@@ -2,59 +2,409 @@ package gamma
 
 import guardian "guardianintelligence.org/guardian-specification/cue/guardian/v1alpha1"
 
-guardian.#FlyProcedure
+guardian.#Document
 
-kind: "FlyProcedure"
+let uploadBundlePath = ".guardian/board/upload.tar.gz"
+let uploadDigestPath = ".guardian/board/upload.sha256"
 
-staticConfig: {
-	baseURL:        "https://gamma.guardianintelligence.org"
-	credentialsRef: "gamma-credentials"
+entrypoint: {
+	apiVersion: "guardian.guardianintelligence.org/v1alpha1"
+	kind:       "FlyProcedure"
+	name:       "gamma"
 }
 
-board: {
-	access: argv: [
-		"ssh",
-		"-T",
-		"-o", "BatchMode=yes",
-		"-o", "StrictHostKeyChecking=yes",
-		"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
-		"ubuntu@206.223.228.87",
-		"true",
-	]
-	upload: {
-		run: argv: [
-			"sh",
-			"-c",
-			"""
-				set -eu
-				remote_dir=/home/ubuntu/.local/state/guardian/uploads/current
-				ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 "mkdir -p $remote_dir"
-				rsync -a -- "$GUARDIAN_UPLOAD_BUNDLE" "ubuntu@206.223.228.87:$remote_dir/upload.tar.zst"
-				""",
-		]
-		verify: argv: [
-			"ssh",
-			"-T",
-			"-o", "BatchMode=yes",
-			"-o", "StrictHostKeyChecking=yes",
-			"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
-			"ubuntu@206.223.228.87",
-			"sha256sum /home/ubuntu/.local/state/guardian/uploads/current/upload.tar.zst",
-		]
-	}
-}
-
-nomad: {
-	address:   "http://127.0.0.1:4646"
-	namespace: "default"
-	jobs: [
-		{
-			path: "src/infrastructure-components/openbao/nomad.hcl"
-			requiredFor: ["recovery"]
-		},
-		{
-			path: "src/services/deployment-service/nomad.hcl"
-			requiredFor: ["deploy"]
-		},
-	]
-}
+resources: [
+	{
+		apiVersion: "guardian.guardianintelligence.org/v1alpha1"
+		kind:       "FlyProcedure"
+		metadata: name: "gamma"
+		spec: {
+			substrateRef: {
+				apiVersion: "substrate.guardianintelligence.org/v1alpha1"
+				kind:       "Substrate"
+				name:       "gamma-primary"
+			}
+		}
+	},
+	{
+		apiVersion: "substrate.guardianintelligence.org/v1alpha1"
+		kind:       "Substrate"
+		metadata: name: "gamma-primary"
+		spec: {
+			access: argv: [
+				"ssh",
+				"-T",
+				"-o", "BatchMode=yes",
+				"-o", "StrictHostKeyChecking=yes",
+				"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+				"ubuntu@206.223.228.87",
+				"true",
+			]
+			upload: {
+				bundlePath: uploadBundlePath
+				manifestPath: ".guardian/board/upload-manifest.json"
+				digestPath: uploadDigestPath
+				run: argv: [
+					"sh",
+					"-c",
+					"""
+						set -eu
+						remote_dir=/home/ubuntu/.local/state/guardian/uploads/current
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 "mkdir -p $remote_dir"
+						rsync -a -- "\(uploadBundlePath)" "ubuntu@206.223.228.87:$remote_dir/upload.tar.gz"
+						""",
+				]
+				extract: argv: [
+					"sh",
+					"-c",
+					"""
+						set -eu
+						digest_dir=$(tr ':' '-' < "\(uploadDigestPath)")
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 "sh -s -- '$digest_dir'" <<'REMOTE'
+						set -eu
+						digest_dir=$1
+						repo_root=/home/ubuntu/.local/state/guardian/repo
+						release="$repo_root/releases/$digest_dir"
+						tmp="$repo_root/tmp/$digest_dir.$$"
+						archive=/home/ubuntu/.local/state/guardian/uploads/current/upload.tar.gz
+						mkdir -p "$repo_root/releases" "$repo_root/tmp"
+						trap 'rm -rf "$tmp"' EXIT
+						if [ -d "$release" ] && (cd "$release" && sha256sum -c guardian-upload-sha256sums.txt >/dev/null); then
+							:
+						else
+							rm -rf "$tmp"
+							mkdir -p "$tmp"
+							tar -xzf "$archive" -C "$tmp"
+							(cd "$tmp" && sha256sum -c guardian-upload-sha256sums.txt >/dev/null)
+							rm -rf "$release"
+							mv "$tmp" "$release"
+						fi
+						ln -sfn "$release" "$repo_root/current.next"
+						if [ -d "$repo_root/current" ] && [ ! -L "$repo_root/current" ]; then
+							rm -rf "$repo_root/current"
+						fi
+						mv -Tf "$repo_root/current.next" "$repo_root/current"
+						REMOTE
+						""",
+				]
+				verify: argv: [
+					"sh",
+					"-c",
+					"""
+						set -eu
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 'cd /home/ubuntu/.local/state/guardian/repo/current && sha256sum -c guardian-upload-sha256sums.txt >/dev/null && sha256sum /home/ubuntu/.local/state/guardian/uploads/current/upload.tar.gz'
+						""",
+				]
+			}
+		}
+	},
+	{
+		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+		kind:       "AccountAuthority"
+		metadata: name: "cloudflare-account-admin"
+		spec: {}
+	},
+	{
+		apiVersion: "networking.guardianintelligence.org/v1alpha1"
+		kind:       "PublicOrigin"
+		metadata: name: "product"
+		spec: url: "https://gamma.verself.sh"
+	},
+	{
+		apiVersion: "networking.guardianintelligence.org/v1alpha1"
+		kind:       "PublicOrigin"
+		metadata: name: "company"
+		spec: url: "https://gamma.guardianintelligence.org"
+	},
+	{
+		apiVersion: "nomad.guardianintelligence.org/v1alpha1"
+		kind:       "NomadCluster"
+		metadata: name: "nomad"
+		spec: {
+			address:         "http://127.0.0.1:4646"
+			datacenter:      "iad1"
+			namespace:       "default"
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
+			installRoot:     "/opt/verself/profile"
+			configPath:      "/etc/nomad/nomad.hcl"
+			servicePath:     "/etc/systemd/system/nomad.service"
+			dataDir:         "/var/lib/nomad"
+			nodePool:        "default"
+			dynamicPorts: {
+				min: 20000
+				max: 32000
+			}
+			openbao: {
+				address:            "https://127.0.0.1:8200"
+				caFile:             "/etc/openbao/tls/cert.pem"
+				jwtAuthBackendPath: "jwt-nomad"
+				defaultIdentity: {
+					audience: ["vault.io"]
+					ttl:      "1h"
+				}
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "OpenBaoCluster"
+		metadata: name: "openbao"
+		spec: {
+			address:      "https://127.0.0.1:8200"
+			caCert:       "/etc/openbao/tls/cert.pem"
+			runtimeRoot:  "/var/lib/openbao/runtime"
+			dataDir:      "/var/lib/openbao/raft"
+			configPath:   "/etc/openbao/openbao.hcl"
+			reportPath:   "/run/verself/recovery/openbao/report.json"
+			initMaterialPath: "/run/verself/recovery/openbao/init-material.json"
+			loopInterval: "15s"
+			seal: shamir: {
+				keyShares:        3
+				keyThreshold:     2
+				pgpRecipientRefs: []
+			}
+			snapshots: {
+				restore: sourceRef: {
+					apiVersion: "objectstorage.guardianintelligence.org/v1alpha1"
+					kind:       "ObjectStorageService"
+					name:       "object-storage"
+				}
+				save: {
+					snapshotPath: "/run/verself/recovery/openbao/openbao.snap"
+					manifestPath: "/run/verself/recovery/openbao/openbao.manifest.json"
+					destinationRef: {
+						apiVersion: "objectstorage.guardianintelligence.org/v1alpha1"
+						kind:       "ObjectStorageService"
+						name:       "object-storage"
+					}
+				}
+			}
+			baseline: {
+				reconcile:             false
+				operatorTokenRequired: false
+			}
+		}
+	},
+	{
+		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+		kind:       "CloudflareControlPlane"
+		metadata: name: "gamma-cloudflare"
+		spec: {
+			site:                  "gamma"
+			accountID:             "c3eaeffaadf7d4847684d4775c16d598"
+			accountAdminTokenFile: "/run/verself/recovery/credentials/cloudflare-account-admin-api-token"
+			targetIPv4:            "206.223.228.87"
+			openBao: {
+				address:    "https://127.0.0.1:8200"
+				tokenFile:  "${NOMAD_SECRETS_DIR}/vault_token"
+				caCertFile: "/etc/verself/openbao/ca.pem"
+			}
+			dns: {
+				zones: [
+					{
+						name:   "product"
+						zone:   "verself.sh"
+						domain: "gamma.verself.sh"
+					},
+					{
+						name:   "company"
+						zone:   "guardianintelligence.org"
+						domain: "gamma.guardianintelligence.org"
+					},
+				]
+				records: [
+					{zone: "product", record: "@", ttl: 1, proxied: false},
+					{zone: "product", record: "billing.api", ttl: 1, proxied: false},
+					{zone: "product", record: "deployments.api", ttl: 1, proxied: false},
+					{zone: "product", record: "distribution.api", ttl: 1, proxied: false},
+					{zone: "product", record: "oci", ttl: 1, proxied: false},
+					{zone: "product", record: "sandbox.api", ttl: 1, proxied: false},
+					{zone: "product", record: "iam.api", ttl: 1, proxied: false},
+					{zone: "product", record: "profile.api", ttl: 1, proxied: false},
+					{zone: "product", record: "notifications.api", ttl: 1, proxied: false},
+					{zone: "product", record: "projects.api", ttl: 1, proxied: false},
+					{zone: "product", record: "source.api", ttl: 1, proxied: false},
+					{zone: "product", record: "governance.api", ttl: 1, proxied: false},
+					{zone: "product", record: "github.api", ttl: 1, proxied: false},
+					{zone: "product", record: "secrets.api", ttl: 1, proxied: false},
+					{zone: "product", record: "email.api", ttl: 1, proxied: false},
+					{zone: "product", record: "dashboard", ttl: 1, proxied: false},
+					{zone: "product", record: "access", ttl: 1, proxied: false},
+					{zone: "product", record: "git", ttl: 1, proxied: false},
+					{zone: "product", record: "mail", ttl: 1, proxied: false},
+					{zone: "product", record: "npm", ttl: 1, proxied: false},
+					{zone: "company", record: "@", ttl: 1, proxied: false},
+				]
+			}
+			tls: {
+				outputDir: "/etc/haproxy/certs"
+				acme: {
+					directoryURL:       "https://acme-v02.api.letsencrypt.org/directory"
+					contactEmail:       "agents@guardianintelligence.org"
+					dnsPropagationWait: "2m"
+					renewBefore:        "720h"
+				}
+				certificates: [
+					{
+						name: "gamma.verself.sh"
+						domains: [
+							"gamma.verself.sh",
+							"*.gamma.verself.sh",
+							"*.api.gamma.verself.sh",
+						]
+					},
+					{
+						name:    "gamma.guardianintelligence.org"
+						domains: ["gamma.guardianintelligence.org"]
+					},
+				]
+			}
+			objectStorage: {
+				bucket:        "verself-deployment-artifacts"
+				childTokenTTL: "168h"
+				runtimeSecrets: {
+					adminAccessKeyID:     "object-storage-service.r2.admin_access_key_id"
+					adminSecretAccessKey: "object-storage-service.r2.admin_secret_access_key"
+					proxyAccessKeyID:     "object-storage-service.r2.proxy_access_key_id"
+					proxySecretAccessKey: "object-storage-service.r2.proxy_secret_access_key"
+				}
+			}
+		}
+	},
+	{
+		apiVersion: "haproxy.guardianintelligence.org/v1alpha1"
+		kind:       "HAProxyGateway"
+		metadata: name: "public-edge"
+		spec: {
+			runtimeRoot:   "/var/lib/haproxy/runtime/current"
+			configPath:    "/etc/haproxy/haproxy.cfg"
+			upstreamsPath: "/etc/haproxy/nomad-upstreams.cfg"
+			origins: [
+				{
+					apiVersion: "networking.guardianintelligence.org/v1alpha1"
+					kind:       "PublicOrigin"
+					name:       "product"
+				},
+				{
+					apiVersion: "networking.guardianintelligence.org/v1alpha1"
+					kind:       "PublicOrigin"
+					name:       "company"
+				},
+			]
+			certificates: [
+				{
+					name: "gamma-product"
+					dnsNames: [
+						"gamma.verself.sh",
+						"api.gamma.verself.sh",
+						"deployments.api.gamma.verself.sh",
+					]
+					pemPath: "/etc/haproxy/certs/gamma.verself.sh.pem"
+				},
+				{
+					name:     "gamma-company"
+					dnsNames: ["gamma.guardianintelligence.org"]
+					pemPath:  "/etc/haproxy/certs/gamma.guardianintelligence.org.pem"
+				},
+			]
+			routes: [
+				{
+					name: "product-apex"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "gamma.verself.sh"
+					backend:  "be_route_product_apex_verself_web_frontend"
+				},
+				{
+					name: "company-apex"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "company"
+					}
+					hostname: "gamma.guardianintelligence.org"
+					backend:  "be_route_company_apex_company_frontend"
+				},
+				{
+					name: "deployment-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "deployments.api.gamma.verself.sh"
+					backend:  "be_route_product_deployments_api_deployment_service_public_api"
+				},
+			]
+			readiness: paths: ["/.well-known/guardian/ready"]
+		}
+	},
+	{
+		apiVersion: "objectstorage.guardianintelligence.org/v1alpha1"
+		kind:       "ObjectStorageService"
+		metadata: name: "object-storage"
+		spec: {
+			provider: cloudflareR2: {
+				endpoint: "https://c3eaeffaadf7d4847684d4775c16d598.r2.cloudflarestorage.com"
+				region:   "auto"
+				authorityRef: {
+					apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+					kind:       "AccountAuthority"
+					name:       "cloudflare-account-admin"
+				}
+				credentials: {
+					adminAccessKeyIDRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.admin_access_key_id"
+					}
+					adminSecretAccessKeyRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.admin_secret_access_key"
+					}
+					proxyAccessKeyIDRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.proxy_access_key_id"
+					}
+					proxySecretAccessKeyRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.proxy_secret_access_key"
+					}
+				}
+			}
+			buckets: [
+				{
+					name:         "deployment-artifacts"
+					providerName: "verself-deployment-artifacts"
+					purpose:      "deploymentArtifacts"
+				},
+				{
+					name:         "recovery"
+					providerName: "verself-recovery"
+					purpose:      "recovery"
+				},
+			]
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "object-storage-service.auth.audience"
+				}
+			}
+			postgres: dsn: "postgres://object_storage_service@/object_storage_service?host=/var/run/postgresql&sslmode=disable"
+			clickhouse: {
+				address:    "127.0.0.1:9440"
+				user:       "object_storage_service"
+				caCertPath: "/etc/verself/clickhouse/server-ca.pem"
+			}
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+]

@@ -1,50 +1,70 @@
 # Resource Model
 
-Guardian alpha uses a single config document as the runtime input:
+Guardian alpha uses one file as the runtime input. The file is an offline
+resource graph: an `entrypoint` object reference plus Kubernetes-style
+resources with `apiVersion`, `kind`, `metadata`, and `spec`.
 
 ```yaml
-kind: FlyProcedure
+entrypoint:
+  apiVersion: guardian.guardianintelligence.org/v1alpha1
+  kind: FlyProcedure
+  name: gamma
 
-staticConfig:
-  baseURL: https://gamma.guardianintelligence.org
-  credentialsRef: gamma-credentials
+resources:
+  - apiVersion: guardian.guardianintelligence.org/v1alpha1
+    kind: FlyProcedure
+    metadata:
+      name: gamma
+    spec:
+      substrateRef:
+        apiVersion: substrate.guardianintelligence.org/v1alpha1
+        kind: Substrate
+        name: gamma-primary
 
-board:
-  access:
-    argv: [ssh, -T, ubuntu@206.223.228.87, true]
-  upload:
-    run:
-      argv: [ansible-playbook, src/sites/gamma/board.yml]
-    verify:
-      argv: [ssh, -T, ubuntu@206.223.228.87, sha256sum /path/to/upload.tar.zst]
-
-nomad:
-  address: http://127.0.0.1:4646
-  namespace: default
-  jobs:
-    - path: src/infrastructure-components/openbao/nomad.hcl
-      requiredFor: [recovery]
+  - apiVersion: networking.guardianintelligence.org/v1alpha1
+    kind: PublicOrigin
+    metadata:
+      name: product
+    spec:
+      url: https://gamma.verself.sh
 ```
 
-`name` is optional metadata. Implementations do not use `name` for dispatch.
+`board` and `fly` read the same graph. `board` stops after verified upload.
+`fly` performs the same boarding work and materializes the graph in the boarded
+workspace for component-owned Nomad jobs.
 
 ## Desired Inputs
 
-`staticConfig.baseURL` is the configured external base URL.
-`staticConfig.credentialsRef` points at the credential bundle to resolve.
+`FlyProcedure` is the entrypoint. It references the substrate. The base
+procedure stays a small entrypoint into the graph.
 
-`board.access`, `board.upload.run`, and `board.upload.verify` are lifecycle
-hooks. Guardian executes them as argv commands after preparing the local upload
-bundle. The hooks own access, transfer, permissions, and remote tooling.
+`Substrate` contains the access hook and upload hooks. Guardian executes them
+as argv commands after preparing the local upload bundle. The hooks own access,
+transfer, extraction, permissions, and remote tooling.
 
-`nomad` declares the jobs to plan or submit. Guardian does not model Nomad HCL
-internals.
+`PublicOrigin` is the shared URL abstraction. Components that need an external
+origin reference it instead of reading a broad site object.
+
+Every service and infrastructure component owns its own CRD schema. That CRD
+defines the component's static configuration surface: public config, provider
+references, backup policy, and component-local invariants. The Guardian base
+schema validates the envelope and shared resources, then leaves
+component-specific fields to the component-owned schema.
+
+Site differences are expressed by selecting a different root resource graph:
+different component CRDs, different origins, different provider authorities,
+and different substrate hooks.
 
 ## Command Results
 
 Command results contain observed outcomes: readiness, upload digest, observed
-digest, hook status, Nomad job path status, condition types, and reason codes.
-Command results are ephemeral CLI responses and are not config resources.
+digest, hook status, condition types, and reason codes. Command results are
+ephemeral CLI responses and are not config resources.
+
+`RootTrustMaterialAvailable` is the standard condition for recovery blocked on
+external root authority. Component implementations choose precise reasons such
+as `UnsealQuorumIncomplete`, `ExternalSealUnavailable`, or
+`ProviderRootCredentialRequired`.
 
 ## Versioning
 

@@ -46,8 +46,11 @@ func Decode(data []byte, format string, out any) error {
 		if err != nil {
 			return err
 		}
-		if undecoded := md.Undecoded(); len(undecoded) > 0 {
-			return fmt.Errorf("unknown TOML field %q", undecoded[0].String())
+		for _, undecoded := range md.Undecoded() {
+			if isOpenResourceSpecTOMLField(undecoded) {
+				continue
+			}
+			return fmt.Errorf("unknown TOML field %q", undecoded.String())
 		}
 		return nil
 	case ".toon":
@@ -69,6 +72,12 @@ func Decode(data []byte, format string, out any) error {
 	default:
 		return fmt.Errorf("unsupported encoding %q", format)
 	}
+}
+
+func isOpenResourceSpecTOMLField(key toml.Key) bool {
+	// Component-owned CRD specs are intentionally open to the base parser.
+	parts := strings.Split(key.String(), ".")
+	return len(parts) >= 3 && parts[0] == "resources" && parts[1] == "spec"
 }
 
 func Write(w io.Writer, format string, value any) error {

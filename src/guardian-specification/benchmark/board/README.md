@@ -8,7 +8,7 @@ build_output="$(bazelisk cquery --output=files //src/guardian-specification/benc
 "$build_output" \
   --warmup 1 \
   --runs 5 \
-  'guardian board src/guardian-specification/examples/gamma/gamma.cue --repo-root "$PWD" -o json'
+  'guardian board src/guardian-specification/examples/gamma/gamma.cue -o json'
 ```
 
 Run this from the repo root with `guardian` on `PATH`. The benchmarked command

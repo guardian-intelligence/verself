@@ -78,7 +78,7 @@ type config struct {
 	timeout                  time.Duration
 	verifyTempCredentials    bool
 	recoveryConfig           string
-	recovery                 *CloudflareRecovery
+	recovery                 *CloudflareControlPlane
 }
 
 type report struct {
@@ -193,7 +193,7 @@ func run(args []string) error {
 	fs.DurationVar(&cfg.childTokenTTL, "child-token-ttl", 7*24*time.Hour, "TTL for generated Cloudflare child API tokens.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
-	fs.StringVar(&cfg.recoveryConfig, "recovery-config", "", "Path to a recovery.verself.sh/v1alpha1 CloudflareRecovery document for --action=recover.")
+	fs.StringVar(&cfg.recoveryConfig, "recovery-config", "", "Path to a cloudflare.guardianintelligence.org/v1alpha1 CloudflareControlPlane document for --action=recover.")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

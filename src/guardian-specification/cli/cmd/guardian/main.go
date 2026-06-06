@@ -25,9 +25,19 @@ import (
 	"github.com/verself/guardian-specification/internal/specdoc"
 )
 
-type guardianDocument = specdoc.Document
+const (
+	defaultUploadBundlePath   = ".guardian/board/upload.tar.gz"
+	defaultUploadManifestPath = ".guardian/board/upload-manifest.json"
+	defaultUploadDigestPath   = ".guardian/board/upload.sha256"
+	defaultFlyDocumentPath    = ".guardian/fly/document.json"
+)
+
+type guardianDocument struct {
+	Source   specdoc.Document
+	Compiled specdoc.CompiledDocument
+}
+
 type lifecycleHookSpec = specdoc.LifecycleHook
-type nomadJobSpec = specdoc.NomadJob
 
 type condition struct {
 	Type     string `json:"type" yaml:"type" toml:"type" toon:"type"`
@@ -38,21 +48,20 @@ type condition struct {
 }
 
 type boardResult struct {
-	Name               string           `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
-	ReadyToFly         string           `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
-	ExecutionMode      string           `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
-	StaticConfigDigest string           `json:"static_config_digest,omitempty" yaml:"static_config_digest,omitempty" toml:"static_config_digest,omitempty" toon:"static_config_digest,omitempty"`
-	StaticConfig       configResult     `json:"static_config" yaml:"static_config" toml:"static_config" toon:"static_config"`
-	Access             hookResult       `json:"access" yaml:"access" toml:"access" toon:"access"`
-	Upload             uploadResult     `json:"upload" yaml:"upload" toml:"upload" toon:"upload"`
-	Nomad              nomadPlanResult  `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
-	Jobs               []nomadJobResult `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
-	Conditions         []condition      `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
+	Name           string            `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	ReadyToFly     string            `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
+	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
+	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
+	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
+	Access         hookResult        `json:"access" yaml:"access" toml:"access" toon:"access"`
+	Upload         uploadResult      `json:"upload" yaml:"upload" toml:"upload" toon:"upload"`
+	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
 }
 
-type configResult struct {
-	BaseURL        string `json:"base_url" yaml:"base_url" toml:"base_url" toon:"base_url"`
-	CredentialsRef string `json:"credentials_ref" yaml:"credentials_ref" toml:"credentials_ref" toon:"credentials_ref"`
+type resourceRefResult struct {
+	APIVersion string `json:"apiVersion" yaml:"apiVersion" toml:"apiVersion" toon:"apiVersion"`
+	Kind       string `json:"kind" yaml:"kind" toml:"kind" toon:"kind"`
+	Name       string `json:"name" yaml:"name" toml:"name" toon:"name"`
 }
 
 type uploadResult struct {
@@ -63,6 +72,7 @@ type uploadResult struct {
 	CompressedBytes   int64      `json:"compressed_bytes,omitempty" yaml:"compressed_bytes,omitempty" toml:"compressed_bytes,omitempty" toon:"compressed_bytes,omitempty"`
 	UncompressedBytes int64      `json:"uncompressed_bytes,omitempty" yaml:"uncompressed_bytes,omitempty" toml:"uncompressed_bytes,omitempty" toon:"uncompressed_bytes,omitempty"`
 	Run               hookResult `json:"run" yaml:"run" toml:"run" toon:"run"`
+	Extract           hookResult `json:"extract" yaml:"extract" toml:"extract" toon:"extract"`
 	Verify            hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
 	Status            string     `json:"status" yaml:"status" toml:"status" toon:"status"`
 	Reason            string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
@@ -75,34 +85,21 @@ type hookResult struct {
 }
 
 type flyResult struct {
-	Name               string           `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
-	ReadyToFly         string           `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
-	ExecutionMode      string           `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
-	StaticConfigDigest string           `json:"static_config_digest,omitempty" yaml:"static_config_digest,omitempty" toml:"static_config_digest,omitempty" toon:"static_config_digest,omitempty"`
-	UploadDigest       string           `json:"upload_digest,omitempty" yaml:"upload_digest,omitempty" toml:"upload_digest,omitempty" toon:"upload_digest,omitempty"`
-	Nomad              nomadPlanResult  `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
-	Jobs               []nomadJobResult `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
-	Conditions         []condition      `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
-}
-
-type nomadPlanResult struct {
-	Address   string `json:"address" yaml:"address" toml:"address" toon:"address"`
-	Namespace string `json:"namespace" yaml:"namespace" toml:"namespace" toon:"namespace"`
-}
-
-type nomadJobResult struct {
-	Path        string   `json:"path" yaml:"path" toml:"path" toon:"path"`
-	RequiredFor []string `json:"required_for,omitempty" yaml:"required_for,omitempty" toml:"required_for,omitempty" toon:"required_for,omitempty"`
-	Status      string   `json:"status" yaml:"status" toml:"status" toon:"status"`
-	Reason      string   `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Name           string            `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	ReadyToFly     string            `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
+	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
+	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
+	UploadDigest   string            `json:"upload_digest,omitempty" yaml:"upload_digest,omitempty" toml:"upload_digest,omitempty" toon:"upload_digest,omitempty"`
+	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
+	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
 }
 
 type commandOptions struct {
-	File     string
-	Output   string
-	RepoRoot string
-	Stream   bool
-	DryRun   bool
+	File          string
+	Output        string
+	WorkspaceRoot string
+	Stream        bool
+	DryRun        bool
 }
 
 type eventWriter struct {
@@ -216,7 +213,6 @@ func bindCommonFlags(fs *flag.FlagSet, opts *commandOptions) {
 	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.Output, "format", "yaml", "alias for --output")
-	fs.StringVar(&opts.RepoRoot, "repo-root", "", "checkout root used for upload bundle and Nomad job paths")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "plan without mutating remote state")
 	fs.BoolVar(&opts.DryRun, "plan", false, "alias for --dry-run")
 	fs.BoolVar(&opts.Stream, "stream", false, "write newline-delimited JSON progress events to stderr")
@@ -253,7 +249,7 @@ func flagRequiresValue(arg string) bool {
 		name = before
 	}
 	switch name {
-	case "f", "file", "format", "o", "output", "repo-root":
+	case "f", "file", "format", "o", "output":
 		return true
 	default:
 		return false
@@ -278,29 +274,55 @@ func normalizeCommonOptions(opts *commandOptions) error {
 	if strings.TrimSpace(opts.File) == "" {
 		return errors.New("file is required")
 	}
-	if opts.RepoRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("cwd: %w", err)
-		}
-		opts.RepoRoot = cwd
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("cwd: %w", err)
 	}
+	workspaceRoot, err := discoverWorkspaceRoot(cwd)
+	if err != nil {
+		return err
+	}
+	opts.WorkspaceRoot = workspaceRoot
 	opts.Output = strings.TrimSpace(opts.Output)
 	return nil
+}
+
+func discoverWorkspaceRoot(start string) (string, error) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", fmt.Errorf("resolve cwd: %w", err)
+	}
+	for {
+		if stat, err := os.Stat(filepath.Join(dir, "MODULE.bazel")); err == nil && stat.Mode().IsRegular() {
+			return dir, nil
+		}
+		if stat, err := os.Stat(filepath.Join(dir, "WORKSPACE")); err == nil && stat.Mode().IsRegular() {
+			return dir, nil
+		}
+		if stat, err := os.Stat(filepath.Join(dir, "WORKSPACE.bazel")); err == nil && stat.Mode().IsRegular() {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", errors.New("guardian must be run from inside a Bazel workspace")
+		}
+		dir = parent
+	}
 }
 
 func loadDocument(path string) (guardianDocument, error) {
 	if strings.EqualFold(filepath.Ext(path), ".cue") {
 		return loadCUEDocument(path)
 	}
-	var doc guardianDocument
+	var doc specdoc.Document
 	if err := formatio.DecodeFile(path, &doc); err != nil {
 		return guardianDocument{}, fmt.Errorf("load document: %w", err)
 	}
-	if err := validateDocument(doc); err != nil {
+	compiled, err := specdoc.Compile(doc)
+	if err != nil {
 		return guardianDocument{}, err
 	}
-	return doc, nil
+	return guardianDocument{Source: doc, Compiled: compiled}, nil
 }
 
 func loadCUEDocument(path string) (guardianDocument, error) {
@@ -338,20 +360,17 @@ func loadCUEDocument(path string) (guardianDocument, error) {
 	if err != nil {
 		return guardianDocument{}, fmt.Errorf("marshal CUE document: %w", err)
 	}
-	var doc guardianDocument
+	var doc specdoc.Document
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&doc); err != nil {
 		return guardianDocument{}, fmt.Errorf("decode CUE document: %w", err)
 	}
-	if err := validateDocument(doc); err != nil {
+	compiled, err := specdoc.Compile(doc)
+	if err != nil {
 		return guardianDocument{}, err
 	}
-	return doc, nil
-}
-
-func validateDocument(doc guardianDocument) error {
-	return specdoc.Validate(doc)
+	return guardianDocument{Source: doc, Compiled: compiled}, nil
 }
 
 func findCUEModuleRoot(start string) (string, error) {
@@ -374,38 +393,39 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 	if opts.DryRun {
 		mode = "dry_run"
 	}
+	substrateSpec := doc.Compiled.SubstrateSpec
 	result := boardResult{
-		Name:               doc.Name,
-		ReadyToFly:         "no",
-		ExecutionMode:      mode,
-		StaticConfigDigest: digestValue(doc.StaticConfig),
-		StaticConfig: configResult{
-			BaseURL:        doc.StaticConfig.BaseURL,
-			CredentialsRef: doc.StaticConfig.CredentialsRef,
-		},
-		Access: hookPending(doc.Board.Access),
+		Name:           doc.Compiled.Fly.Metadata.Name,
+		ReadyToFly:     "no",
+		ExecutionMode:  mode,
+		ResourceDigest: digestValue(doc.Source.Resources),
+		Entrypoint:     refResult(doc.Source.Entrypoint),
+		Access:         hookPending(substrateSpec.Access),
 		Upload: uploadResult{
-			Run:    hookPending(doc.Board.Upload.Run),
-			Verify: hookPending(doc.Board.Upload.Verify),
-			Status: "pending",
-			Reason: "NotStarted",
+			Run:     hookPending(substrateSpec.Upload.Run),
+			Extract: hookPending(substrateSpec.Upload.Extract),
+			Verify:  hookPending(substrateSpec.Upload.Verify),
+			Status:  "pending",
+			Reason:  "NotStarted",
 		},
-		Nomad: nomadPlanResult{
-			Address:   doc.Nomad.Address,
-			Namespace: doc.Nomad.Namespace,
-		},
-		Jobs: declaredNomadJobs(doc.Nomad.Jobs),
 	}
+	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphResolved", "RefsResolved", "Guardian resource refs resolved", "resources"))
 	result.Conditions = append(result.Conditions, conditionTrue("AccessHookConfigured", "HookConfigured", "access lifecycle hook is configured", "board.access"))
 	result.Conditions = append(result.Conditions, conditionTrue("UploadHooksConfigured", "HooksConfigured", "upload lifecycle hooks are configured", "board.upload"))
-	prepared, err := prepareUpload(opts.RepoRoot)
+	if err := writeFlyDocument(opts.WorkspaceRoot, doc.Source); err != nil {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "ResourceGraphWriteFailed"
+		result.Conditions = append(result.Conditions, conditionFalse("ResourceGraphMaterialized", "WriteFailed", err.Error(), "board.resources"))
+		return result
+	}
+	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphMaterialized", "DocumentWritten", "Guardian resource graph was written for component-owned Nomad tasks", "board.resources"))
+	prepared, err := prepareUpload(opts.WorkspaceRoot, substrateSpec.Upload)
 	if err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "BuildArtifactsMissing"
 		result.Conditions = append(result.Conditions, conditionFalse("UploadPrepared", "BuildArtifactsMissing", err.Error(), "board.upload"))
 		return result
 	}
-	defer prepared.Cleanup()
 	result.Upload.Digest = prepared.Manifest.ArchiveSHA256
 	result.Upload.Format = prepared.Manifest.Format
 	result.Upload.FileCount = len(prepared.Manifest.Files)
@@ -419,10 +439,11 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 	}
 	if opts.DryRun {
 		result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "DryRun", "dry run did not execute the access hook", "board.access"))
-		result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DryRun", "dry run prepared the upload bundle without mutating the target", "board.upload"))
+		result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "DryRun", "dry run did not extract the upload bundle", "board.upload.extract"))
+		result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DryRun", "dry run prepared the upload bundle without mutating the target", "board.upload.verify"))
 		return result
 	}
-	accessResult, _ := runLifecycleHook("board.access", doc.Board.Access, opts.RepoRoot, prepared, emitter)
+	accessResult, _ := runLifecycleHook("board.access", substrateSpec.Access, opts.WorkspaceRoot, emitter)
 	result.Access = accessResult
 	if accessResult.Status != "ready" {
 		result.Upload.Status = "blocked"
@@ -431,7 +452,7 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("BoardAccess", "HookSucceeded", "access hook completed", "board.access"))
-	runResult, _ := runLifecycleHook("board.upload.run", doc.Board.Upload.Run, opts.RepoRoot, prepared, emitter)
+	runResult, _ := runLifecycleHook("board.upload.run", substrateSpec.Upload.Run, opts.WorkspaceRoot, emitter)
 	result.Upload.Run = runResult
 	if runResult.Status != "ready" {
 		result.Upload.Status = "blocked"
@@ -440,7 +461,16 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		return result
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("UploadRun", "HookSucceeded", "upload run hook completed", "board.upload.run"))
-	verifyResult, verifyStdout := runLifecycleHook("board.upload.verify", doc.Board.Upload.Verify, opts.RepoRoot, prepared, emitter)
+	extractResult, _ := runLifecycleHook("board.upload.extract", substrateSpec.Upload.Extract, opts.WorkspaceRoot, emitter)
+	result.Upload.Extract = extractResult
+	if extractResult.Status != "ready" {
+		result.Upload.Status = "blocked"
+		result.Upload.Reason = "ExtractHookFailed"
+		result.Conditions = append(result.Conditions, conditionFalse("UploadExtract", extractResult.Reason, "upload extract hook failed", "board.upload.extract"))
+		return result
+	}
+	result.Conditions = append(result.Conditions, conditionTrue("UploadExtract", "HookSucceeded", "upload extract hook completed", "board.upload.extract"))
+	verifyResult, verifyStdout := runLifecycleHook("board.upload.verify", substrateSpec.Upload.Verify, opts.WorkspaceRoot, emitter)
 	result.Upload.Verify = verifyResult
 	if verifyResult.Status != "ready" {
 		result.Upload.Status = "blocked"
@@ -463,9 +493,9 @@ func evaluateBoard(doc guardianDocument, opts commandOptions, emitter eventWrite
 		return result
 	}
 	result.Upload.Status = "ready"
-	result.Upload.Reason = "DigestVerified"
-	result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "DigestVerified", "verify hook observed the expected upload digest", "board.upload.verify"))
-	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "UploadVerified", "workspace upload digest is verified", "board.upload"))
+	result.Upload.Reason = "TreeVerified"
+	result.Conditions = append(result.Conditions, conditionTrue("UploadVerify", "TreeVerified", "verify hook observed the expected upload digest after checking the extracted tree", "board.upload.verify"))
+	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "UploadVerified", "workspace upload is extracted and verified", "board.upload"))
 	result.ReadyToFly = "yes"
 	return result
 }
@@ -475,23 +505,26 @@ func hookPending(hook lifecycleHookSpec) hookResult {
 }
 
 type preparedUpload struct {
-	Path     string
-	Manifest uploadbundle.Manifest
+	BundlePath   string
+	ManifestPath string
+	DigestPath   string
+	Manifest     uploadbundle.Manifest
 }
 
-func (p preparedUpload) Cleanup() {
-	if p.Path != "" {
-		_ = os.Remove(p.Path)
-	}
-}
-
-func prepareUpload(repoRoot string) (preparedUpload, error) {
-	tmp, err := os.CreateTemp("", "guardian-upload-*.tar.zst")
+func prepareUpload(workspaceRoot string, upload specdoc.Upload) (preparedUpload, error) {
+	paths, err := resolveUploadPaths(workspaceRoot, upload)
 	if err != nil {
-		return preparedUpload{}, fmt.Errorf("create upload bundle temp file: %w", err)
+		return preparedUpload{}, err
 	}
-	tmpPath := tmp.Name()
-	manifest, buildErr := uploadbundle.BuildWorkspaceTarZstd(repoRoot, tmp)
+	if err := os.MkdirAll(filepath.Dir(paths.BundlePath), 0o755); err != nil {
+		return preparedUpload{}, fmt.Errorf("create upload bundle directory: %w", err)
+	}
+	tmpPath := paths.BundlePath + ".tmp." + fmt.Sprint(os.Getpid())
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return preparedUpload{}, fmt.Errorf("create upload bundle: %w", err)
+	}
+	manifest, buildErr := uploadbundle.BuildWorkspaceTarGzip(workspaceRoot, tmp)
 	closeErr := tmp.Close()
 	if buildErr != nil {
 		_ = os.Remove(tmpPath)
@@ -501,18 +534,104 @@ func prepareUpload(repoRoot string) (preparedUpload, error) {
 		_ = os.Remove(tmpPath)
 		return preparedUpload{}, fmt.Errorf("close upload bundle: %w", closeErr)
 	}
+	if err := os.Rename(tmpPath, paths.BundlePath); err != nil {
+		_ = os.Remove(tmpPath)
+		return preparedUpload{}, fmt.Errorf("promote upload bundle: %w", err)
+	}
+	manifestBody, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return preparedUpload{}, fmt.Errorf("encode upload manifest: %w", err)
+	}
+	manifestBody = append(manifestBody, '\n')
+	if err := writeWorkspaceFile(paths.ManifestPath, manifestBody, 0o644); err != nil {
+		return preparedUpload{}, err
+	}
+	if err := writeWorkspaceFile(paths.DigestPath, []byte(manifest.ArchiveSHA256+"\n"), 0o644); err != nil {
+		return preparedUpload{}, err
+	}
 	return preparedUpload{
-		Path:     tmpPath,
-		Manifest: manifest,
+		BundlePath:   paths.BundlePath,
+		ManifestPath: paths.ManifestPath,
+		DigestPath:   paths.DigestPath,
+		Manifest:     manifest,
 	}, nil
 }
 
-func runLifecycleHook(name string, hook lifecycleHookSpec, repoRoot string, prepared preparedUpload, emitter eventWriter) (hookResult, []byte) {
+type uploadPaths struct {
+	BundlePath   string
+	ManifestPath string
+	DigestPath   string
+}
+
+func resolveUploadPaths(workspaceRoot string, upload specdoc.Upload) (uploadPaths, error) {
+	bundlePath := defaultIfEmpty(upload.BundlePath, defaultUploadBundlePath)
+	manifestPath := defaultIfEmpty(upload.ManifestPath, defaultUploadManifestPath)
+	digestPath := defaultIfEmpty(upload.DigestPath, defaultUploadDigestPath)
+	resolved := uploadPaths{
+		BundlePath:   filepath.Join(workspaceRoot, filepath.FromSlash(bundlePath)),
+		ManifestPath: filepath.Join(workspaceRoot, filepath.FromSlash(manifestPath)),
+		DigestPath:   filepath.Join(workspaceRoot, filepath.FromSlash(digestPath)),
+	}
+	for label, path := range map[string]string{
+		"bundlePath":   resolved.BundlePath,
+		"manifestPath": resolved.ManifestPath,
+		"digestPath":   resolved.DigestPath,
+	} {
+		inside, err := pathIsInside(workspaceRoot, path)
+		if err != nil {
+			return uploadPaths{}, fmt.Errorf("resolve upload %s: %w", label, err)
+		}
+		if !inside {
+			return uploadPaths{}, fmt.Errorf("upload %s must stay inside the workspace root", label)
+		}
+	}
+	return resolved, nil
+}
+
+func defaultIfEmpty(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func writeWorkspaceFile(path string, body []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create parent directory for %s: %w", path, err)
+	}
+	tmp := path + ".tmp." + fmt.Sprint(os.Getpid())
+	if err := os.WriteFile(tmp, body, mode); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("promote %s: %w", path, err)
+	}
+	return nil
+}
+
+func pathIsInside(root string, candidate string) (bool, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return false, err
+	}
+	absCandidate, err := filepath.Abs(candidate)
+	if err != nil {
+		return false, err
+	}
+	rel, err := filepath.Rel(absRoot, absCandidate)
+	if err != nil {
+		return false, err
+	}
+	return rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."), nil
+}
+
+func runLifecycleHook(name string, hook lifecycleHookSpec, workspaceRoot string, emitter eventWriter) (hookResult, []byte) {
 	result := hookResult{Argv: hook.Argv, Status: "blocked", Reason: "HookFailed"}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 	emitter.emit(name, "start", "", "running lifecycle hook")
-	stdout, _, err := execHook(ctx, hook, repoRoot, prepared)
+	stdout, _, err := execHook(ctx, hook, workspaceRoot)
 	if err != nil {
 		result.Reason = "HookFailed"
 		emitter.emit(name, "blocked", "", strings.TrimSpace(err.Error()))
@@ -524,31 +643,19 @@ func runLifecycleHook(name string, hook lifecycleHookSpec, repoRoot string, prep
 	return result, stdout
 }
 
-func execHook(ctx context.Context, hook lifecycleHookSpec, repoRoot string, prepared preparedUpload) ([]byte, []byte, error) {
+func execHook(ctx context.Context, hook lifecycleHookSpec, workspaceRoot string) ([]byte, []byte, error) {
 	if len(hook.Argv) == 0 {
 		return nil, nil, errors.New("hook argv is empty")
 	}
 	cmd := exec.CommandContext(ctx, hook.Argv[0], hook.Argv[1:]...)
-	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), uploadHookEnv(repoRoot, prepared)...)
+	cmd.Dir = workspaceRoot
+	cmd.Env = os.Environ()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return stdout.Bytes(), stderr.Bytes(), err
-}
-
-func uploadHookEnv(repoRoot string, prepared preparedUpload) []string {
-	return []string{
-		"GUARDIAN_REPO_ROOT=" + repoRoot,
-		"GUARDIAN_UPLOAD_BUNDLE=" + prepared.Path,
-		"GUARDIAN_UPLOAD_FORMAT=" + prepared.Manifest.Format,
-		"GUARDIAN_EXPECTED_DIGEST=" + prepared.Manifest.ArchiveSHA256,
-		"GUARDIAN_UPLOAD_DIGEST=" + prepared.Manifest.ArchiveSHA256,
-		"GUARDIAN_UPLOAD_COMPRESSED_BYTES=" + fmt.Sprint(prepared.Manifest.CompressedBytes),
-		"GUARDIAN_UPLOAD_UNCOMPRESSED_BYTES=" + fmt.Sprint(prepared.Manifest.UncompressedBytes),
-	}
 }
 
 func extractObservedDigest(output string) (string, error) {
@@ -585,17 +692,8 @@ func normalizeDigest(value string) (string, error) {
 	return digest, nil
 }
 
-func declaredNomadJobs(jobs []nomadJobSpec) []nomadJobResult {
-	results := make([]nomadJobResult, 0, len(jobs))
-	for _, job := range jobs {
-		results = append(results, nomadJobResult{
-			Path:        job.Path,
-			RequiredFor: job.RequiredFor,
-			Status:      "declared",
-			Reason:      "Configured",
-		})
-	}
-	return results
+func refResult(ref specdoc.ObjectRef) resourceRefResult {
+	return resourceRefResult{APIVersion: ref.APIVersion, Kind: ref.Kind, Name: ref.Name}
 }
 
 func digestValue(value any) string {
@@ -618,70 +716,44 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		mode = "dry_run"
 	}
 	result := flyResult{
-		Name:               doc.Name,
-		ReadyToFly:         "no",
-		ExecutionMode:      mode,
-		StaticConfigDigest: boardResult.StaticConfigDigest,
-		UploadDigest:       boardResult.Upload.Digest,
-		Nomad: nomadPlanResult{
-			Address:   doc.Nomad.Address,
-			Namespace: doc.Nomad.Namespace,
-		},
+		Name:           doc.Compiled.Fly.Metadata.Name,
+		ReadyToFly:     "no",
+		ExecutionMode:  mode,
+		ResourceDigest: boardResult.ResourceDigest,
+		UploadDigest:   boardResult.Upload.Digest,
+		Entrypoint:     boardResult.Entrypoint,
 	}
 	result.Conditions = append(result.Conditions, conditionFromBoard(boardResult, opts.DryRun))
-	jobsReady := evaluateNomadJobs(doc.Nomad.Jobs, opts.RepoRoot, &result)
-	if opts.DryRun {
-		result.Conditions = append(result.Conditions, conditionTrue("NomadSubmission", "DryRun", "dry run completed without submitting to Nomad", "nomad"))
-	} else {
-		result.Conditions = append(result.Conditions, conditionFalse("NomadSubmission", "ExecutorUnavailable", "live Nomad submission is not implemented; rerun with --dry-run", "nomad"))
-	}
 	boardReadyForFly := boardResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(boardResult.Conditions))
-	if boardReadyForFly && jobsReady && opts.DryRun {
+	if boardReadyForFly {
 		result.ReadyToFly = "yes"
+		result.Conditions = append(result.Conditions, conditionTrue("ComponentRecovery", "NomadConvention", "component recovery is owner-defined in Nomad job files", "nomad"))
+	} else {
+		result.Conditions = append(result.Conditions, conditionFalse("ComponentRecovery", "Blocked", "boarding must pass before component recovery can run", "components"))
 	}
 	return result
 }
 
-func evaluateNomadJobs(jobs []nomadJobSpec, repoRoot string, result *flyResult) bool {
-	allReady := true
-	for _, job := range jobs {
-		resolved := job.Path
-		if !filepath.IsAbs(resolved) {
-			resolved = filepath.Join(repoRoot, resolved)
-		}
-		jobResult := nomadJobResult{
-			Path:        job.Path,
-			RequiredFor: job.RequiredFor,
-			Status:      "ready",
-			Reason:      "PathResolved",
-		}
-		stat, err := os.Lstat(resolved)
-		if err != nil {
-			allReady = false
-			jobResult.Status = "blocked"
-			jobResult.Reason = "PathMissing"
-		} else if stat.Mode()&os.ModeSymlink != 0 {
-			allReady = false
-			jobResult.Status = "blocked"
-			jobResult.Reason = "PathIsSymlink"
-		} else if !stat.Mode().IsRegular() {
-			allReady = false
-			jobResult.Status = "blocked"
-			jobResult.Reason = "PathNotRegularFile"
-		}
-		result.Jobs = append(result.Jobs, jobResult)
+func writeFlyDocument(workspaceRoot string, doc specdoc.Document) error {
+	body, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode fly document: %w", err)
 	}
-	if allReady {
-		result.Conditions = append(result.Conditions, conditionTrue("NomadJobsResolved", "PathsResolved", "declared Nomad job files are present", "nomad.jobs"))
-	} else {
-		result.Conditions = append(result.Conditions, conditionFalse("NomadJobsResolved", "Blocked", "one or more Nomad job files are missing or invalid", "nomad.jobs"))
+	body = append(body, '\n')
+	path := filepath.Join(workspaceRoot, filepath.FromSlash(defaultFlyDocumentPath))
+	inside, err := pathIsInside(workspaceRoot, path)
+	if err != nil {
+		return err
 	}
-	return allReady
+	if !inside {
+		return errors.New("fly document path escaped workspace root")
+	}
+	return writeWorkspaceFile(path, body, 0o644)
 }
 
 func conditionFromBoard(result boardResult, dryRun bool) condition {
 	if result.ReadyToFly == "yes" {
-		return conditionTrue("BoardingReady", "ReadyToFly", "workspace upload is present on the target", "board")
+		return conditionTrue("BoardingReady", "ReadyToFly", "workspace upload is extracted and verified on the target", "board")
 	}
 	if dryRun && !hasFalseCondition(result.Conditions) {
 		return conditionTrue("BoardingReady", "DryRun", "dry run prepared the upload bundle without proving remote boarding", "board")
@@ -729,13 +801,13 @@ func usage(w io.Writer) {
 
 usage:
   guardian board <config.cue|yaml|json|toml|toon> [-o yaml|json|toml|toon] [--dry-run] [--stream]
-  guardian fly <config.cue|yaml|json|toml|toon> --dry-run [-o yaml|json|toml|toon] [--stream]
+  guardian fly <config.cue|yaml|json|toml|toon> [--dry-run] [-o yaml|json|toml|toon] [--stream]
 
 board loads a FlyProcedure config document, builds the workspace upload bundle,
-runs the access and upload lifecycle hooks, and reports whether the verify hook
-observed the same upload digest.
+runs the Substrate access and upload lifecycle hooks, and reports whether the
+target repo tree was extracted and verified.
 
-fly loads the same document and wraps the declared Nomad jobs. Live
-Nomad submission is not implemented yet; use --dry-run for the current slice.
-`)
+fly runs the same boarding phase and leaves component recovery to the Nomad
+job files included in the boarded workspace.
+	`)
 }

@@ -76,6 +76,7 @@ node_modules
 
 # Materialized local build/deploy outputs
 artifacts/
+.guardian/
 .verself/
 
 # Generated/rendered directories are materialized outputs.

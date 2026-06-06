@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	cloudflareRecoveryAPIVersion = "recovery.verself.sh/v1alpha1"
-	kindCloudflareRecovery       = "CloudflareRecovery"
+	cloudflareControlPlaneAPIVersion = "cloudflare.guardianintelligence.org/v1alpha1"
+	kindCloudflareControlPlane       = "CloudflareControlPlane"
 )
 
 var (
@@ -32,14 +32,14 @@ type resourceMetadata struct {
 	Name string `yaml:"name" json:"name"`
 }
 
-type CloudflareRecovery struct {
-	APIVersion string                 `yaml:"apiVersion" json:"apiVersion"`
-	Kind       string                 `yaml:"kind" json:"kind"`
-	Metadata   resourceMetadata       `yaml:"metadata" json:"metadata"`
-	Spec       CloudflareRecoverySpec `yaml:"spec" json:"spec"`
+type CloudflareControlPlane struct {
+	APIVersion string                     `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string                     `yaml:"kind" json:"kind"`
+	Metadata   resourceMetadata           `yaml:"metadata" json:"metadata"`
+	Spec       CloudflareControlPlaneSpec `yaml:"spec" json:"spec"`
 }
 
-type CloudflareRecoverySpec struct {
+type CloudflareControlPlaneSpec struct {
 	Site                  string          `yaml:"site" json:"site"`
 	AccountID             string          `yaml:"accountID" json:"accountID"`
 	AccountAdminTokenFile string          `yaml:"accountAdminTokenFile" json:"accountAdminTokenFile"`
@@ -105,29 +105,29 @@ type ObjectStorageRuntimeKeys struct {
 	ProxySecretAccessKey string `yaml:"proxySecretAccessKey" json:"proxySecretAccessKey"`
 }
 
-func loadCloudflareRecovery(path string) (CloudflareRecovery, error) {
+func loadCloudflareControlPlane(path string) (CloudflareControlPlane, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return CloudflareRecovery{}, fmt.Errorf("read CloudflareRecovery %s: %w", path, err)
+		return CloudflareControlPlane{}, fmt.Errorf("read CloudflareControlPlane %s: %w", path, err)
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(body))
 	decoder.KnownFields(true)
-	var doc CloudflareRecovery
+	var doc CloudflareControlPlane
 	if err := decoder.Decode(&doc); err != nil {
-		return CloudflareRecovery{}, fmt.Errorf("decode CloudflareRecovery %s: %w", path, err)
+		return CloudflareControlPlane{}, fmt.Errorf("decode CloudflareControlPlane %s: %w", path, err)
 	}
 	if err := doc.validate(); err != nil {
-		return CloudflareRecovery{}, fmt.Errorf("%s: %w", path, err)
+		return CloudflareControlPlane{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return doc, nil
 }
 
-func (d CloudflareRecovery) validate() error {
-	if strings.TrimSpace(d.APIVersion) != cloudflareRecoveryAPIVersion {
-		return fmt.Errorf("apiVersion must be %s", cloudflareRecoveryAPIVersion)
+func (d CloudflareControlPlane) validate() error {
+	if strings.TrimSpace(d.APIVersion) != cloudflareControlPlaneAPIVersion {
+		return fmt.Errorf("apiVersion must be %s", cloudflareControlPlaneAPIVersion)
 	}
-	if strings.TrimSpace(d.Kind) != kindCloudflareRecovery {
-		return fmt.Errorf("kind must be %s", kindCloudflareRecovery)
+	if strings.TrimSpace(d.Kind) != kindCloudflareControlPlane {
+		return fmt.Errorf("kind must be %s", kindCloudflareControlPlane)
 	}
 	if !objectNameRE.MatchString(strings.TrimSpace(d.Metadata.Name)) {
 		return fmt.Errorf("metadata.name must be a DNS label")
@@ -307,15 +307,15 @@ func validDNSName(raw string) bool {
 	return true
 }
 
-func (d CloudflareRecovery) childTokenTTL() (time.Duration, error) {
+func (d CloudflareControlPlane) childTokenTTL() (time.Duration, error) {
 	return parsePositiveDuration("spec.objectStorage.childTokenTTL", d.Spec.ObjectStorage.ChildTokenTTL)
 }
 
-func (d CloudflareRecovery) acmeDNSPropagationWait() (time.Duration, error) {
+func (d CloudflareControlPlane) acmeDNSPropagationWait() (time.Duration, error) {
 	return parsePositiveDuration("spec.tls.acme.dnsPropagationWait", d.Spec.TLS.ACME.DNSPropagationWait)
 }
 
-func (d CloudflareRecovery) acmeRenewBefore() (time.Duration, error) {
+func (d CloudflareControlPlane) acmeRenewBefore() (time.Duration, error) {
 	return parsePositiveDuration("spec.tls.acme.renewBefore", d.Spec.TLS.ACME.RenewBefore)
 }
 

@@ -61,10 +61,11 @@ cd /home/ubuntu/Projects/verself-sh
 git pull --ff-only
 ```
 
-Recovery configuration is a single-use local handoff. Secret-bearing files must
-be regular non-symlinks with mode `0600` or stricter. Component-owned recovery
-jobs consume the smallest configuration they need and fail loudly when a
-credential is missing, unverifiable, or too broadly staged.
+Recovery configuration is a single-use local handoff. Root trust material is
+operator-held and consumed through ephemeral operator entry paths, not durable
+host files. Component-owned recovery jobs consume the smallest configuration
+they need and fail loudly when a credential is missing, unverifiable, or too
+broadly staged.
 
 Resend is a prod/global provider authority. The
 `email-service.resend.full_access_api_key` value is imported into site OpenBao
@@ -72,15 +73,16 @@ so the `email-service-resend-keys` Nomad batch job can create a site-local
 `sending_access` key, write `email-service.resend.api_key`, and write
 `zitadel.smtp.password`. Runtime services do not receive the full-access key.
 
-The site root token is the operator-held recovery input for OpenBao
-initialization and unseal. It is separate from the fresh-host SSH root password,
-and the staged host copy is deleted after OpenBao is seeded. Runtime DEKs and
-generated site-local credentials are derived or created after site OpenBao is
-available. Cloudflare account tokens, R2 child token creation, DNS authority,
-Stripe, Resend full-access authority, and GitHub App private material are
-external provider authorities; after import, OpenBao protects the site-local
-copies. Provider-side authority originates from the provider control plane and
-enters OpenBao through an approved import or rotation path.
+OpenBao recovery uses operator-held root trust material: Shamir unseal shares
+or recovery shares for an existing store, PGP recipient identities for fresh
+initialization, and operator root credentials only for explicit baseline or
+breakglass operations. Runtime DEKs and generated site-local credentials are
+derived or created after site OpenBao is available. Cloudflare account tokens,
+R2 child token creation, DNS authority, Stripe, Resend full-access authority,
+and GitHub App private material are external provider authorities; after import,
+OpenBao protects the site-local copies. Provider-side authority originates from
+the provider control plane and enters OpenBao through an approved import or
+rotation path.
 
 The Cloudflare account is a single global provider account anchored to prod
 authority. `site=gamma` selects target records, R2 prefixes, runtime capability
@@ -182,9 +184,9 @@ the last known valid token generation in OpenBao, write a structured failure
 event, and notify the operator instead of retrying silently or deleting old
 credentials.
 
-The OpenBao site root token is a single operator-provided file path consumed by
-the OpenBao recovery job. Do not place it under `.verself`, git, generated
-artifacts, or site inventory.
+OpenBao root trust material is entered through explicit operator paths and is
+not placed under `.verself`, git, generated artifacts, site inventory, argv, or
+environment variables.
 
 GitHub Sign-in is a manual provider credential. In GitHub, create or open the
 OAuth App used for browser login, set the homepage URL to the site product
@@ -238,8 +240,7 @@ aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
 operator reaches the node over SSH
   -> built repo artifacts are copied to the target
   -> Nomad executes component-owned recovery definitions
-  -> OpenBao initializes and unseals; unseal material is wrapped by the site root token
-  -> the staged host copy of the site root token is deleted
+  -> OpenBao initializes, restores, or unseals using operator-held root trust material
   -> owning recovery jobs import external provider runtime secrets into OpenBao
   -> service-owned jobs or rotation commands create derived runtime secrets
   -> deployment-service and site-local services are deployed through Nomad
@@ -258,12 +259,9 @@ recovery.
 
 Only durable local host state classes remain after handoff:
 
-- `/var/lib/verself/recovery/openbao`: OpenBao recovery material wrapped by
-  the operator-provided site root token. The token itself is not durable host
-  state; the staged `/run/verself/recovery/openbao-site-root.token` copy is deleted
-  after OpenBao is seeded. The `bao operator init` root token exists only in
-  memory during this state transition and is revoked before the recovery task
-  exits.
+- `/run/verself/recovery/openbao/report.json`: nonsecret OpenBao recovery
+  conditions and evidence. The `bao operator init` root token exists only in
+  memory during this state transition and is revoked before recovery completes.
 - `/var/lib/verself/access/pomerium`: operator-access key material needed by
   Pomerium and sshd before an authenticated operator can reach the host through
   Pomerium.

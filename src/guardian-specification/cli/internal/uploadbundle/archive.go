@@ -2,6 +2,7 @@ package uploadbundle
 
 import (
 	"archive/tar"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,17 +13,15 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 const (
-	Format       = "tar.zst"
+	Format       = "tar.gz"
 	ManifestPath = "guardian-upload-manifest.json"
+	ChecksumPath = "guardian-upload-sha256sums.txt"
 )
 
 var RequiredBuildArtifacts = []RequiredArtifact{
@@ -34,6 +33,31 @@ var RequiredBuildArtifacts = []RequiredArtifact{
 	{
 		Source: "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar",
 		Target: "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover",
+		Target: "bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover",
+		Mode:   "0755",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover",
+		Target: "bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover",
+		Mode:   "0755",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar",
+		Target: "bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar",
 		Mode:   "0644",
 	},
 }
@@ -68,12 +92,12 @@ type ManifestFile struct {
 	Size   int64  `json:"size"`
 }
 
-func BuildWorkspaceTarZstd(repoRoot string, w io.Writer) (Manifest, error) {
+func BuildWorkspaceTarGzip(repoRoot string, w io.Writer) (Manifest, error) {
 	files, err := WorkspaceFiles(repoRoot)
 	if err != nil {
 		return Manifest{}, err
 	}
-	return WriteTarZstd(w, files)
+	return WriteTarGzip(w, files)
 }
 
 func WorkspaceFiles(repoRoot string) ([]File, error) {
@@ -85,8 +109,13 @@ func WorkspaceFiles(repoRoot string) ([]File, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := make([]File, 0, len(workspaceFiles)+len(RequiredBuildArtifacts))
+	generatedFiles, err := generatedWorkspaceFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]File, 0, len(workspaceFiles)+len(generatedFiles)+len(RequiredBuildArtifacts))
 	files = append(files, workspaceFiles...)
+	files = append(files, generatedFiles...)
 	var missing []string
 	for _, artifact := range RequiredBuildArtifacts {
 		source := filepath.Join(root, filepath.FromSlash(artifact.Source))
@@ -101,12 +130,12 @@ func WorkspaceFiles(repoRoot string) ([]File, error) {
 		})
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("required build artifacts are missing; run bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian //src/infrastructure-components/nomad:runtime_artifact: %s", strings.Join(missing, "; "))
+		return nil, fmt.Errorf("required build artifacts are missing; run bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian //src/infrastructure-components/nomad:runtime_artifact //src/infrastructure-components/nomad/cmd/nomad-recover:nomad-recover //src/infrastructure-components/openbao:runtime_artifact //src/infrastructure-components/openbao/cmd/openbao-recover:openbao-recover //src/infrastructure-components/haproxy:runtime_artifact //src/integrations/cloudflare/control-plane:runtime_artifact: %s", strings.Join(missing, "; "))
 	}
 	return files, nil
 }
 
-func WriteTarZstd(w io.Writer, files []File) (Manifest, error) {
+func WriteTarGzip(w io.Writer, files []File) (Manifest, error) {
 	if len(files) == 0 {
 		return Manifest{}, errors.New("upload bundle requires at least one file")
 	}
@@ -122,16 +151,15 @@ func WriteTarZstd(w io.Writer, files []File) (Manifest, error) {
 	})
 	archiveHash := sha256.New()
 	counter := &countingWriter{w: io.MultiWriter(w, archiveHash)}
-	encoder, err := zstd.NewWriter(counter, zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(runtime.GOMAXPROCS(0)))
-	if err != nil {
-		return Manifest{}, fmt.Errorf("create zstd encoder: %w", err)
-	}
+	encoder := gzip.NewWriter(counter)
+	encoder.ModTime = time.Unix(0, 0).UTC()
+	encoder.OS = 3
 	tw := tar.NewWriter(encoder)
 	manifest := Manifest{
 		Format:              Format,
 		Files:               make([]ManifestFile, 0, len(ordered)+1),
-		Compression:         "zstd",
-		CompressionSettings: "speed_fastest",
+		Compression:         "gzip",
+		CompressionSettings: "default",
 	}
 	for _, file := range ordered {
 		record, err := writeFile(tw, file)
@@ -149,18 +177,27 @@ func WriteTarZstd(w io.Writer, files []File) (Manifest, error) {
 		_ = encoder.Close()
 		return Manifest{}, fmt.Errorf("encode upload manifest: %w", err)
 	}
-	if err := writeBytes(tw, ManifestPath, "0644", manifestBytes); err != nil {
+	manifestRecord, err := writeBytes(tw, ManifestPath, "0644", manifestBytes)
+	if err != nil {
 		_ = tw.Close()
 		_ = encoder.Close()
 		return Manifest{}, err
 	}
-	manifest.UncompressedBytes += int64(len(manifestBytes))
+	manifest.UncompressedBytes += manifestRecord.Size
+	checksumBytes := checksumFile(append(slices.Clone(manifest.Files), manifestRecord))
+	checksumRecord, err := writeBytes(tw, ChecksumPath, "0644", checksumBytes)
+	if err != nil {
+		_ = tw.Close()
+		_ = encoder.Close()
+		return Manifest{}, err
+	}
+	manifest.UncompressedBytes += checksumRecord.Size
 	if err := tw.Close(); err != nil {
 		_ = encoder.Close()
 		return Manifest{}, fmt.Errorf("close tar stream: %w", err)
 	}
 	if err := encoder.Close(); err != nil {
-		return Manifest{}, fmt.Errorf("close zstd stream: %w", err)
+		return Manifest{}, fmt.Errorf("close gzip stream: %w", err)
 	}
 	manifest.CompressedBytes = counter.n
 	manifest.ArchiveSHA256 = "sha256:" + hex.EncodeToString(archiveHash.Sum(nil))
@@ -215,14 +252,14 @@ func writeFile(tw *tar.Writer, file File) (ManifestFile, error) {
 	}, nil
 }
 
-func writeBytes(tw *tar.Writer, name string, mode string, data []byte) error {
+func writeBytes(tw *tar.Writer, name string, mode string, data []byte) (ManifestFile, error) {
 	target, err := cleanTarget(name)
 	if err != nil {
-		return err
+		return ManifestFile{}, err
 	}
 	parsedMode, err := parseMode(mode)
 	if err != nil {
-		return err
+		return ManifestFile{}, err
 	}
 	header := &tar.Header{
 		Typeflag:   tar.TypeReg,
@@ -239,12 +276,27 @@ func writeBytes(tw *tar.Writer, name string, mode string, data []byte) error {
 		Format:     tar.FormatPAX,
 	}
 	if err := tw.WriteHeader(header); err != nil {
-		return fmt.Errorf("%s: write tar header: %w", name, err)
+		return ManifestFile{}, fmt.Errorf("%s: write tar header: %w", name, err)
 	}
 	if _, err := tw.Write(data); err != nil {
-		return fmt.Errorf("%s: write tar file: %w", name, err)
+		return ManifestFile{}, fmt.Errorf("%s: write tar file: %w", name, err)
 	}
-	return nil
+	sum := sha256.Sum256(data)
+	return ManifestFile{
+		Source: target,
+		Target: target,
+		Mode:   mode,
+		SHA256: "sha256:" + hex.EncodeToString(sum[:]),
+		Size:   int64(len(data)),
+	}, nil
+}
+
+func checksumFile(files []ManifestFile) []byte {
+	var b strings.Builder
+	for _, file := range files {
+		_, _ = fmt.Fprintf(&b, "%s  %s\n", strings.TrimPrefix(file.SHA256, "sha256:"), file.Target)
+	}
+	return []byte(b.String())
 }
 
 func listedWorkspaceFiles(repoRoot string) ([]File, error) {
@@ -267,6 +319,10 @@ func gitWorkspaceFiles(repoRoot string) ([]File, error) {
 		if rel == "" {
 			continue
 		}
+		rel = filepath.ToSlash(rel)
+		if skipWorkspaceFile(rel) {
+			continue
+		}
 		source := filepath.Join(repoRoot, filepath.FromSlash(rel))
 		info, _, err := resolvedRegularFile(source, repoRoot, false)
 		if err != nil {
@@ -274,11 +330,28 @@ func gitWorkspaceFiles(repoRoot string) ([]File, error) {
 		}
 		files = append(files, File{
 			Source: source,
-			Target: "workspace/" + filepath.ToSlash(rel),
+			Target: "workspace/" + rel,
 			Mode:   modeString(info.Mode()),
 		})
 	}
 	return files, nil
+}
+
+func generatedWorkspaceFiles(repoRoot string) ([]File, error) {
+	const flyDocumentPath = ".guardian/fly/document.json"
+	source := filepath.Join(repoRoot, filepath.FromSlash(flyDocumentPath))
+	info, _, err := resolvedRegularFile(source, repoRoot, false)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s: %w", flyDocumentPath, err)
+	}
+	return []File{{
+		Source: source,
+		Target: "workspace/" + flyDocumentPath,
+		Mode:   modeString(info.Mode()),
+	}}, nil
 }
 
 func walkedWorkspaceFiles(repoRoot string) ([]File, error) {
@@ -318,17 +391,34 @@ func walkedWorkspaceFiles(repoRoot string) ([]File, error) {
 }
 
 func skipWorkspaceDir(rel string) bool {
+	return skipWorkspaceGeneratedPath(rel) || strings.HasSuffix(rel, "/reports")
+}
+
+func skipWorkspaceFile(rel string) bool {
+	return skipWorkspaceGeneratedPath(rel) || strings.HasSuffix(rel, "/reports")
+}
+
+func skipWorkspaceGeneratedPath(rel string) bool {
 	switch {
 	case rel == ".git",
+		rel == ".guardian",
+		strings.HasPrefix(rel, ".guardian/"),
 		rel == "node_modules",
+		strings.HasPrefix(rel, "node_modules/"),
 		rel == ".cache",
+		strings.HasPrefix(rel, ".cache/"),
 		rel == ".mypy_cache",
+		strings.HasPrefix(rel, ".mypy_cache/"),
 		rel == ".ruff_cache",
+		strings.HasPrefix(rel, ".ruff_cache/"),
 		rel == "bazel-bin",
+		strings.HasPrefix(rel, "bazel-bin/"),
 		rel == "bazel-out",
+		strings.HasPrefix(rel, "bazel-out/"),
 		rel == "bazel-testlogs",
+		strings.HasPrefix(rel, "bazel-testlogs/"),
 		rel == "bazel-verself-sh",
-		strings.HasSuffix(rel, "/reports"):
+		strings.HasPrefix(rel, "bazel-verself-sh/"):
 		return true
 	default:
 		return false

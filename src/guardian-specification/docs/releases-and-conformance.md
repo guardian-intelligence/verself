@@ -15,21 +15,23 @@ Guardian release that publishes them.
 
 Conformance is a development-only API. Conformance fixtures verify
 implementations during development and release qualification. Production
-`board` and `fly` inputs use the production config document schema.
+`board` and `fly` inputs use the production resource graph schema.
 
 Conformance suites test:
 
-- config document validation;
-- static config digesting;
+- resource graph validation;
+- resource graph digesting;
 - local build artifact validation;
 - upload digest stability;
 - command result conditions;
-- lifecycle hook behavior through fake commands.
+- lifecycle hook behavior through fake commands;
+- dry-run `fly` path resolution;
+- repeatable live `fly` convergence in implementation-owned fixtures.
 
 Dogfooding a config such as `gamma` is operational evidence. It uses real
-infrastructure and real component recovery jobs. That evidence informs
-implementation quality and release readiness; portable conformance fixtures
-define protocol compatibility.
+infrastructure and real component recovery jobs. The strongest dogfood signal is
+two consecutive successful `fly` runs with no unexpected allocation churn.
+Portable conformance fixtures define protocol compatibility.
 
 ## Release Discipline
 

@@ -8,19 +8,22 @@ go_module_checks()
 
 exports_files([
     "nomad.hcl",
-    "recovery/gamma.cloudflare-recovery.yml",
 ])
+
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
 
 pkg_tar(
     name = "runtime_artifact",
     out = "cloudflare-control-plane-runtime.tar",
     files = {
-        "recovery/gamma.cloudflare-recovery.yml": "recovery/gamma.cloudflare-recovery.yml",
         "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane": "bin/cloudflare-control-plane",
     },
     modes = {
         "bin/cloudflare-control-plane": "0755",
-        "recovery/gamma.cloudflare-recovery.yml": "0644",
     },
     visibility = ["//visibility:public"],
 )

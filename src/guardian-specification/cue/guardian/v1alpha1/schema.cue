@@ -1,40 +1,84 @@
 package v1alpha1
 
 #NonEmptyString: string & !=""
-#HTTPSURL:       =~"^https://[^\\s/$.?#].[^\\s]*$"
+#HTTPSOrigin:    =~"^https://[^\\s/$.?#][^\\s/?#]*$"
+#RepoPath:       string & !~"^/" & !~"(^|/)\\.\\.(/|$)" & !=""
 
-#Document: #FlyProcedure
+#Document: {
+	entrypoint: #ObjectRef & {
+		apiVersion: "guardian.guardianintelligence.org/v1alpha1"
+		kind:       "FlyProcedure"
+	}
+	resources: [#Resource, ...#Resource]
+}
+
+#ObjectRef: {
+	apiVersion: #NonEmptyString
+	kind:       #NonEmptyString
+	name:       #NonEmptyString
+}
+
+#Metadata: {
+	name: #NonEmptyString
+}
+
+#Resource: #FlyProcedure | #Substrate | #PublicOrigin | #ExtensionResource
+
+#ExtensionResource: {
+	apiVersion: #NonEmptyString
+	kind:       #NonEmptyString
+	metadata:   #Metadata
+	spec?:      {...}
+
+	if apiVersion == "guardian.guardianintelligence.org/v1alpha1" {
+		kind: !="FlyProcedure"
+	}
+	if apiVersion == "substrate.guardianintelligence.org/v1alpha1" {
+		kind: !="Substrate"
+	}
+	if apiVersion == "networking.guardianintelligence.org/v1alpha1" {
+		kind: !="PublicOrigin"
+	}
+}
 
 #FlyProcedure: {
-	kind:  "FlyProcedure"
-	name?: #NonEmptyString
-	staticConfig: {
-		baseURL:        #HTTPSURL
-		credentialsRef: #NonEmptyString
-	}
-	board: #Board
-	nomad: {
-		address:   #NonEmptyString
-		namespace: #NonEmptyString
-		jobs: [#NomadJobFile, ...#NomadJobFile]
+	apiVersion: "guardian.guardianintelligence.org/v1alpha1"
+	kind:       "FlyProcedure"
+	metadata:   #Metadata
+	spec: {
+		substrateRef: #ObjectRef & {
+			apiVersion: "substrate.guardianintelligence.org/v1alpha1"
+			kind:       "Substrate"
+		}
 	}
 }
 
-#Board: {
-	access: #LifecycleHook
-	upload: #Upload
+#Substrate: {
+	apiVersion: "substrate.guardianintelligence.org/v1alpha1"
+	kind:       "Substrate"
+	metadata:   #Metadata
+	spec: {
+		access: #LifecycleHook
+		upload: {
+			bundlePath?:   #RepoPath
+			manifestPath?: #RepoPath
+			digestPath?:   #RepoPath
+			run:           #LifecycleHook
+			extract:       #LifecycleHook
+			verify:        #LifecycleHook
+		}
+	}
 }
 
-#Upload: {
-	run:    #LifecycleHook
-	verify: #LifecycleHook
+#PublicOrigin: {
+	apiVersion: "networking.guardianintelligence.org/v1alpha1"
+	kind:       "PublicOrigin"
+	metadata:   #Metadata
+	spec: {
+		url: #HTTPSOrigin
+	}
 }
 
 #LifecycleHook: {
 	argv: [#NonEmptyString, ...#NonEmptyString]
-}
-
-#NomadJobFile: {
-	path: #NonEmptyString
-	requiredFor?: [...("recovery" | "deploy" | "observe")]
 }

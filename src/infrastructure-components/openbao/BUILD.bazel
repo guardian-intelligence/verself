@@ -14,16 +14,22 @@ install -m 0755 "$$tmp/usr/bin/bao" "$@"
 """,
 )
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 pkg_tar(
     name = "runtime_artifact",
     out = "openbao-runtime.tar",
     files = {
         ":bao_bin": "bin/bao",
-        "//src/infrastructure-components/openbao/cmd/openbao-bootstrap:openbao-bootstrap": "bin/openbao-bootstrap",
+        "//src/infrastructure-components/openbao/cmd/openbao-recover:openbao-recover": "bin/openbao-recover",
     },
     modes = {
         "bin/bao": "0755",
-        "bin/openbao-bootstrap": "0755",
+        "bin/openbao-recover": "0755",
     },
     visibility = ["//visibility:public"],
 )

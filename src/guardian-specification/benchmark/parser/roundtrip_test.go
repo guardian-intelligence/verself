@@ -3,7 +3,6 @@ package parser
 import (
 	"bytes"
 	"fmt"
-	"slices"
 	"testing"
 	"time"
 
@@ -154,24 +153,55 @@ func roundTripBytes(doc specdoc.Document) (int64, error) {
 
 func guardianDocument() *rapid.Generator[specdoc.Document] {
 	return rapid.Custom(func(t *rapid.T) specdoc.Document {
+		name := token(t, "name")
+		substrateName := token(t, "substrate")
+		originName := dnsLabel(t, "origin")
 		doc := specdoc.Document{
-			Kind: "FlyProcedure",
-			Name: optionalToken(t, "name"),
-			StaticConfig: specdoc.StaticConfig{
-				BaseURL:        "https://" + token(t, "site") + ".guardianintelligence.test",
-				CredentialsRef: token(t, "credentials"),
+			Entrypoint: specdoc.ObjectRef{
+				APIVersion: specdoc.APIGuardian,
+				Kind:       specdoc.KindFlyProcedure,
+				Name:       name,
 			},
-			Board: specdoc.Board{
-				Access: lifecycleHook(t, "access"),
-				Upload: specdoc.Upload{
-					Run:    lifecycleHook(t, "upload_run"),
-					Verify: lifecycleHook(t, "upload_verify"),
+			Resources: []specdoc.Resource{
+				{
+					APIVersion: specdoc.APIGuardian,
+					Kind:       specdoc.KindFlyProcedure,
+					Metadata:   specdoc.ObjectMeta{Name: name},
+					Spec: specdoc.MustResourceSpec(specdoc.FlyProcedureSpec{
+						SubstrateRef: specdoc.ObjectRef{
+							APIVersion: specdoc.APISubstrate,
+							Kind:       specdoc.KindSubstrate,
+							Name:       substrateName,
+						},
+					}),
 				},
-			},
-			Nomad: specdoc.Nomad{
-				Address:   fmt.Sprintf("http://127.0.0.1:%d", rapid.IntRange(30000, 50000).Draw(t, "nomad_port")),
-				Namespace: token(t, "namespace"),
-				Jobs:      nomadJobs(t),
+				{
+					APIVersion: specdoc.APISubstrate,
+					Kind:       specdoc.KindSubstrate,
+					Metadata:   specdoc.ObjectMeta{Name: substrateName},
+					Spec: specdoc.MustResourceSpec(specdoc.SubstrateSpec{
+						Access: lifecycleHook(t, "access"),
+						Upload: specdoc.Upload{
+							Run:     lifecycleHook(t, "upload_run"),
+							Extract: lifecycleHook(t, "upload_extract"),
+							Verify:  lifecycleHook(t, "upload_verify"),
+						},
+					}),
+				},
+				{
+					APIVersion: specdoc.APINetworking,
+					Kind:       specdoc.KindPublicOrigin,
+					Metadata:   specdoc.ObjectMeta{Name: originName},
+					Spec: specdoc.MustResourceSpec(specdoc.PublicOriginSpec{
+						URL: "https://" + originName + ".guardianintelligence.org",
+					}),
+				},
+				{
+					APIVersion: "cloudflare.guardianintelligence.org/v1alpha1",
+					Kind:       "AccountAuthority",
+					Metadata:   specdoc.ObjectMeta{Name: token(t, "cloudflare_authority")},
+					Spec:       specdoc.ResourceSpec{},
+				},
 			},
 		}
 		return doc
@@ -188,32 +218,10 @@ func lifecycleHook(t *rapid.T, label string) specdoc.LifecycleHook {
 	}
 }
 
-func nomadJobs(t *rapid.T) []specdoc.NomadJob {
-	count := rapid.IntRange(1, 5).Draw(t, "nomad_job_count")
-	jobs := make([]specdoc.NomadJob, 0, count)
-	for i := 0; i < count; i++ {
-		name := token(t, fmt.Sprintf("job%d", i))
-		jobs = append(jobs, specdoc.NomadJob{
-			Path:        "jobs/" + name + ".nomad.hcl",
-			RequiredFor: requiredFor(t),
-		})
-	}
-	return jobs
-}
-
-func requiredFor(t *rapid.T) []string {
-	values := rapid.Permutation([]string{"recovery", "deploy", "observe"}).Draw(t, "required_for_permutation")
-	count := rapid.IntRange(1, len(values)).Draw(t, "required_for_count")
-	return slices.Clone(values[:count])
-}
-
-func optionalToken(t *rapid.T, label string) string {
-	if rapid.Bool().Draw(t, label+"_present") {
-		return token(t, label)
-	}
-	return ""
-}
-
 func token(t *rapid.T, label string) string {
 	return rapid.StringMatching(`[a-z][a-z0-9-]{0,20}`).Draw(t, label)
+}
+
+func dnsLabel(t *rapid.T, label string) string {
+	return rapid.StringMatching(`[a-z][a-z0-9]{0,20}`).Draw(t, label)
 }

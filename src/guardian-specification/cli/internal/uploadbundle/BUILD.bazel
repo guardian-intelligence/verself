@@ -5,7 +5,6 @@ go_library(
     srcs = ["archive.go"],
     importpath = "github.com/verself/guardian-specification/cli/internal/uploadbundle",
     visibility = ["//src/guardian-specification/cli:__subpackages__"],
-    deps = ["@com_github_klauspost_compress//zstd"],
 )
 
 go_test(

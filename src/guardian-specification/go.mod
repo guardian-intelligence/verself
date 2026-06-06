@@ -5,7 +5,6 @@ go 1.25.8
 require (
 	cuelang.org/go v0.16.1
 	github.com/BurntSushi/toml v1.6.0
-	github.com/klauspost/compress v1.18.5
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c
 	gopkg.in/yaml.v3 v3.0.1
 	pgregory.net/rapid v1.3.0

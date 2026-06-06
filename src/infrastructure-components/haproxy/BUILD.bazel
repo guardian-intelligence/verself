@@ -16,6 +16,12 @@ HAPROXY_RUNTIME_DEBS = [
     "@haproxy_tool_libstdcpp6_deb//file",
 ]
 
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
+
 genrule(
     name = "haproxy_bin",
     srcs = ["@haproxy_tool_haproxy_deb//file"],

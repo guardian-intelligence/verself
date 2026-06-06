@@ -1,6 +1,7 @@
 # CLI
 
-`guardian` reads one config document and executes one command.
+`guardian` reads one resource graph document and runs the Guardian convergence
+state machine to the requested stop point.
 
 ```sh
 guardian board src/guardian-specification/examples/gamma/gamma.cue -o json
@@ -24,27 +25,35 @@ TOML uses `github.com/BurntSushi/toml`. TOON uses
 ## Input Formats
 
 CUE is the preferred authoring format. YAML, JSON, TOML, and TOON are accepted
-as runtime input formats when they encode the same config document fields.
+as runtime input formats when they encode the same entrypoint and resource
+graph.
 
 The CLI exposes only `board` and `fly`. Format conversion belongs in
 development tooling, not in the runtime command surface.
 
 ## Boarding
 
-`board` checks the `board` section of the config document, computes the upload
-bundle digest, runs the access and upload lifecycle hooks, and reports upload
-status.
+`board` runs through substrate readiness and stops. It resolves the entrypoint
+and referenced `Substrate`, computes the upload bundle digest, runs the access
+and upload lifecycle hooks, materializes the repo tree on the target, and
+reports upload status. Boarding writes `.guardian/fly/document.json` before
+packaging so component-owned Nomad jobs can read the graph from the boarded
+workspace.
 
-`ready_to_fly: yes` means the access hook completed and the verify hook
-observed the same digest Guardian computed locally. Missing build artifacts,
-failed hooks, or digest mismatches produce `ready_to_fly: no` with stable
-condition reasons.
+`ready_to_fly: yes` means the access hook completed, the upload was extracted,
+and the verify hook observed the same digest Guardian computed locally after
+checking the extracted tree. Missing build artifacts, failed hooks, or digest
+mismatches produce `ready_to_fly: no` with stable condition reasons.
 
 ## Fly
 
-`fly --dry-run` evaluates the same boarding inputs, resolves the declared Nomad
-job files, and reports the job set without submitting to Nomad.
+`fly` starts with the same boarding phase. `fly --dry-run` validates the graph
+and prepares the upload bundle without mutating the target.
 
-Live `fly` submission is outside the first CLI tracer bullet. A live run must
-perform the same checks before submitting jobs to Nomad and recording Nomad
-evaluation IDs in the command result.
+Live `fly` boards the target and makes the graph available to component-owned
+Nomad jobs. Components own executor startup, service recovery, provider
+reconciliation, backup restore, and health waiting through their job files and
+recovery tasks.
+
+The standard condition for secret-zero and external authority blockers is
+`RootTrustMaterialAvailable`.

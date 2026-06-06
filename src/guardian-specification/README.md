@@ -1,8 +1,9 @@
 # Guardian Specification
 
-Guardian Specification defines a configuration protocol for taking a built
-repo, running access and upload lifecycle hooks, verifying upload bytes, and
-handing Nomad the recovery/deployment jobs.
+Guardian Specification defines a configuration protocol for converging a built
+repo on a substrate. The reference CLI reads one resource graph, boards the
+target by moving verified repo artifacts into place, and writes the resolved
+resource graph into the boarded workspace for component-owned Nomad jobs.
 
 The command surface:
 
@@ -12,12 +13,16 @@ guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run -o ya
 guardian fly src/guardian-specification/examples/gamma/gamma.cue
 ```
 
-`board` loads a config document, computes a content-addressed upload bundle
-from local source and build artifacts, runs the declared boarding lifecycle
-hooks, and emits a structured command result.
+`board` is the first cut point in the convergence state machine. It loads the
+resource graph, computes a content-addressed upload bundle from local source
+and build artifacts, runs the referenced `Substrate` lifecycle hooks, verifies
+the extracted repo tree, and stops.
 
-`fly` loads the same config document, verifies boarding readiness, wraps the
-declared Nomad jobs, and plans or submits them.
+`fly` starts with the same boarding phase. Component recovery is a Nomad
+convention: owner job files include prestart recovery tasks and consume the
+boarded resource graph. The base protocol does not encode component internals.
+Infrastructure components own their recovery binaries, backup retrieval,
+credential import, health checks, and stabilization logic.
 
 ## Documents
 
@@ -27,6 +32,9 @@ declared Nomad jobs, and plans or submits them.
 - [Fly](docs/fly.md)
 - [CLI](docs/cli.md)
 - [Configuration and Credentials](docs/configuration-and-credentials.md)
+- [Convergence Inventory](docs/convergence-inventory.md)
+- [Root Trust Material](docs/root-trust-material.md)
+- [OpenBao Recovery](docs/openbao-recovery.md)
 - [Releases and Conformance](docs/releases-and-conformance.md)
 
 ## Normative Language
