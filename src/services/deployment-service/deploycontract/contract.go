@@ -429,14 +429,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.oauth_client_secret")
 		}
 	}
-	zitadelSecretsPath := filepath.Join(v.root, "src", "infrastructure-components", "zitadel", "deploy", "runtime-secrets.yml")
-	if _, err := os.Stat(zitadelSecretsPath); err == nil {
-		rel := v.rel(zitadelSecretsPath)
-		var doc RuntimeSecretsFile
-		if v.decode(rel, zitadelSecretsPath, &doc) {
-			v.requireExternalOpenBaoSecret(rel, doc, "auth-control-plane.github_login.oauth_client_secret")
-		}
-	}
 }
 
 func (v *Validator) validateNoToolLayerDeployEngine() {
