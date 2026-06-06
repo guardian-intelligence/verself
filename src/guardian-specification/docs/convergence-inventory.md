@@ -32,7 +32,7 @@ Observed results:
 - latest resource graph digest:
   `sha256:77b29d7e2cfccbf92577f6e060ae22b7bbbda11ae3053edb11db22deddb004e9`;
 - latest verified upload digest:
-  `sha256:df15263c66a1a8d7235ad2e2f57e964988c1d4073a1ee7cb22b6da2876c3aa53`;
+  `sha256:698939a52fe40d963ec7f86a18e830bd20f63b6c4fe31bafdc67e3579f3ed3b3`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, Cloudflare, HAProxy, object-storage, substrate, and
   public-origin resources;
@@ -85,7 +85,10 @@ Observed results:
   `sha256:35cc339b28bdc76533edc965ddbe65fa4a6e66f61bcabbbe38b59f6c018b0e6d`;
 - a live operator query reports 32 tables in the `verself` database;
 - object-storage-service setup now exits successfully and reaches past
-  migrations;
+  migrations through the component-owned `object-storage-service recover`
+  command;
+- object-storage-service runtime release on gamma:
+  `/var/lib/object-storage-service/runtime/releases/sha256-bd16f981b716df64c7da7ee8b80854dee5a80e8d54b3049e9317db00f3e313a0`;
 - object-storage-service runtime and admin tasks still fail before process start
   because Nomad cannot derive an OpenBao token: role
   `object-storage-service-runtime` does not exist;

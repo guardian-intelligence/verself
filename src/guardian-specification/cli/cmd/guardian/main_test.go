@@ -338,17 +338,18 @@ func withWorkingDir(t *testing.T, dir string, fn func()) {
 func writeRequiredArtifacts(t *testing.T, dir string) {
 	t.Helper()
 	artifacts := map[string][]byte{
-		"bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian":                                         []byte("guardian binary\n"),
-		"bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar":                                                  []byte("nomad runtime\n"),
-		"bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover":                     []byte("nomad recover\n"),
-		"bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar":                                              []byte("openbao runtime\n"),
-		"bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover":             []byte("openbao recover\n"),
-		"bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar":                                              []byte("haproxy runtime\n"),
-		"bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar":                                        []byte("postgresql runtime\n"),
-		"bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar":                                        []byte("clickhouse runtime\n"),
-		"bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover": []byte("clickhouse recover\n"),
-		"bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar":                         []byte("cloudflare runtime\n"),
-		"bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar":              []byte("object storage runtime\n"),
+		"bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian":                                                []byte("guardian binary\n"),
+		"bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar":                                                         []byte("nomad runtime\n"),
+		"bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover":                            []byte("nomad recover\n"),
+		"bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar":                                                     []byte("openbao runtime\n"),
+		"bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover":                    []byte("openbao recover\n"),
+		"bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar":                                                     []byte("haproxy runtime\n"),
+		"bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar":                                               []byte("postgresql runtime\n"),
+		"bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar":                                               []byte("clickhouse runtime\n"),
+		"bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover":        []byte("clickhouse recover\n"),
+		"bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar":                                []byte("cloudflare runtime\n"),
+		"bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar":                     []byte("object storage runtime\n"),
+		"bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service": []byte("object storage binary\n"),
 	}
 	for rel, data := range artifacts {
 		path := filepath.Join(dir, filepath.FromSlash(rel))

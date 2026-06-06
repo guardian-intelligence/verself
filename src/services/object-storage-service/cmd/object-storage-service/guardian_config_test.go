@@ -42,6 +42,27 @@ func TestLoadObjectStorageRuntimeConfigRequiresDeploymentArtifactsBucket(t *test
 	}
 }
 
+func TestParseRecoverOptionsDefaultsResourceGraphFromRepoRoot(t *testing.T) {
+	opts, err := parseRecoverOptions([]string{"--repo-root=/tmp/repo"})
+	if err != nil {
+		t.Fatalf("parseRecoverOptions: %v", err)
+	}
+	want := "/tmp/repo/workspace/.guardian/fly/document.json"
+	if opts.ResourceGraph != want {
+		t.Fatalf("ResourceGraph = %q, want %q", opts.ResourceGraph, want)
+	}
+	if !opts.Migrate {
+		t.Fatalf("Migrate = false, want true")
+	}
+}
+
+func TestParseRecoverOptionsRejectsAbsoluteRuntimeTar(t *testing.T) {
+	_, err := parseRecoverOptions([]string{"--runtime-tar=/tmp/object-storage-service.tar"})
+	if err == nil {
+		t.Fatalf("parseRecoverOptions accepted absolute runtime tar")
+	}
+}
+
 func writeGuardianDocument(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "document.json")
