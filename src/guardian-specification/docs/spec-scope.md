@@ -34,6 +34,31 @@ The base spec may add a field only when the field has portable,
 cross-component semantics. Component-specific behavior remains in the owner
 schema and runtime implementation.
 
+## Authoring Convention
+
+The base Guardian schema is the shared envelope plus boarding substrate facts.
+After boarding, the resource graph is static input for component-owned runtime
+code.
+
+Use this convention when authoring a graph:
+
+- put the `FlyProcedure`, `Substrate`, and shared `PublicOrigin` resources in
+  the root graph;
+- put every component's static configuration in that component's CRD schema
+  under `guardian/v1alpha1/schema.cue` beside the owner;
+- let component Nomad jobs read `.guardian/fly/document.json` from the boarded
+  workspace and select the resources they own;
+- express restore, initialize, unseal, migrate, wait, import, publish, and
+  health-check actions in component lifecycle tasks or recovery binaries;
+- report blockers as command conditions, component reports, Nomad state,
+  health endpoints, or telemetry.
+
+The base schema has no component operation fields. Avoid adding base fields for
+`recovery`, job ordering, Nomad submission details, component environment
+projection, host-local secret paths, or provider-token files. Those details
+belong to the component schema when they are static config and to the component
+runtime when they are actions.
+
 ## Schema Locations
 
 The base schema lives under:
@@ -95,6 +120,12 @@ and references to shared resources. A component should not require a reader to
 combine a base Guardian field with undocumented component defaults to understand
 what it will reconcile.
 
+Static configuration means declarative inputs that can be validated without
+performing the operation: names, URLs, artifact paths, socket paths, policy
+names, nonsecret provider identifiers, backup object names, and references to
+other graph resources. A static field may describe where a component should find
+authority; it does not contain the secret authority value.
+
 Secret values stay out of component CRDs. A component that needs root or
 provider authority declares the nonsecret authority location or recipient
 identity and reports a condition when the authority is absent. For example,
@@ -135,9 +166,12 @@ job file may include lifecycle tasks that:
 - block loudly with stable conditions when root trust material or provider
   authority is missing.
 
-Guardian does not submit component jobs, order component dependencies, project
-component-specific environment variables, or render component-specific Nomad
-variables. The component job is the runtime boundary.
+The component job is the runtime boundary. Guardian keeps the graph available;
+Nomad and component code decide how to start, retry, block, and converge.
+
+Nomad itself may have a component-local CRD because it is an infrastructure
+component with static configuration. That CRD remains outside the base Guardian
+schema.
 
 ## Evidence
 

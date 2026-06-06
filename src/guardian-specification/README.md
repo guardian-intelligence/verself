@@ -32,6 +32,13 @@ conditions. Component configuration lives in component CRDs beside the owning
 service or infrastructure component. Component recovery behavior lives in the
 component Nomad job and recovery binary.
 
+Static component configuration goes in the owning component schema under
+`guardian/v1alpha1/schema.cue`. Actions such as restore, initialize, unseal,
+migrate, import, publish, and health waiting are Nomad lifecycle conventions
+implemented by the component. The base Guardian schema should not grow fields
+for component recovery programs, Nomad submission order, component-specific
+environment projection, or provider secret file paths.
+
 Site files such as `examples/gamma/gamma.cue` select a set of resources and
 nonsecret configuration for one target. Site names are operator labels outside
 the base Guardian resource kind set.

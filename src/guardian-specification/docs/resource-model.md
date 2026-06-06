@@ -57,6 +57,29 @@ Site differences are expressed by selecting a different root resource graph:
 different component CRDs, different origins, different provider authorities,
 and different substrate hooks.
 
+## Component Schemas
+
+Every deployable service and infrastructure component owns a small schema for
+the static inputs it needs. The schema lives with the component, for example:
+
+```text
+src/infrastructure-components/openbao/guardian/v1alpha1/schema.cue
+src/infrastructure-components/haproxy/guardian/v1alpha1/schema.cue
+src/services/object-storage-service/guardian/v1alpha1/schema.cue
+```
+
+The component schema is the only place to define component-specific static
+configuration. The root graph selects component resources from those schemas.
+The base Guardian schema stays limited to the common resource envelope,
+boarding entrypoint, substrate lifecycle hooks, shared origins, and stable
+condition vocabulary.
+
+Component schemas should model facts that can be checked before running the
+operation: artifact paths, public names, socket paths, backup object names,
+provider account identifiers, OpenBao paths, policy names, workload role names,
+and references to shared resources. Component runtime behavior is represented by
+the component's Nomad job and recovery binary.
+
 ## Site Files
 
 A site file is a selected resource graph for one deployment target. Names such
@@ -75,6 +98,7 @@ Site files should contain:
 Site files should avoid:
 
 - component recovery steps;
+- `recovery` fields in the base Guardian schema;
 - Nomad submission order;
 - component-specific environment projection;
 - host file paths for secret values;
