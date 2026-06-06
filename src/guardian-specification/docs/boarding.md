@@ -47,9 +47,9 @@ resources:
 
 Lifecycle hooks are self-contained commands. `Substrate.spec.access` proves the
 target can be reached. Upload hooks can use SSH, WireGuard, Ansible, rsync, AWS
-SSM, or another operator-provided mechanism. The upload phase only has to leave
-the boarded substrate with a materialized repo tree where the next phase can run
-repo-bundled recovery artifacts.
+SSM, or another operator-provided mechanism. The upload phase leaves the
+boarded substrate with a materialized repo tree where component Nomad jobs can
+run repo-bundled artifacts.
 
 ## Upload Paths
 

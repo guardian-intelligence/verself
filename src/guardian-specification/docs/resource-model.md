@@ -72,7 +72,7 @@ src/infrastructure-components/haproxy/guardian/v1alpha1/schema.cue
 src/services/object-storage-service/guardian/v1alpha1/schema.cue
 ```
 
-The component schema is the only place to define component-specific static
+The component schema is the place to define component-specific static
 configuration. The root graph selects component resources from those schemas.
 The base Guardian schema stays limited to the common resource envelope,
 boarding entrypoint, substrate lifecycle hooks, shared origins, and stable
@@ -105,15 +105,10 @@ Site files should contain:
 - nonsecret provider identifiers, object names, account IDs, policy names, and
   OpenBao paths needed by those component CRDs.
 
-Site files should avoid:
-
-- component recovery steps;
-- `recovery` fields in the base Guardian schema;
-- `status` fields;
-- Nomad submission order;
-- component-specific environment projection;
-- host file paths for secret values;
-- report resources or other runtime evidence.
+Site files contain static desired inputs. Runtime component actions, Nomad
+submission order, component-specific environment projection, host-local secret
+paths, status fields, report resources, and other runtime evidence are handled
+outside the base Guardian graph.
 
 Runtime component behavior belongs in the component's Nomad job and recovery
 binary. Runtime observations belong in command responses, Nomad state,

@@ -1,5 +1,5 @@
-CREATE USER IF NOT EXISTS distribution_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/distribution-service' HOST LOCAL;
-ALTER USER distribution_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/distribution-service' HOST LOCAL;
+CREATE USER IF NOT EXISTS distribution_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/distribution-service' HOST LOCAL;
+ALTER USER distribution_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/distribution-service' HOST LOCAL;
 
 CREATE TABLE IF NOT EXISTS verself.distribution_events
 (

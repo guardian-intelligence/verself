@@ -16,15 +16,15 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
-This repo is centered around a software specification for converting compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code. The specificaion is loosely threaded nested Custom Resource Definitions (CRDs)
+This repo is centered around a software specification for converting compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code. The specification is a loosely threaded graph of Custom Resource Definitions (CRDs).
 
 ```sh
-guardian board --file gamma-boarding-crd.(yml|json|toml) # Establishes a connection with a remote
-guardian fly --file gamma.yml --dry-run # Attempts nomad-orchestrated disaster-recovery/stabilization until operational.
+guardian board src/guardian-specification/examples/gamma/gamma.cue
+guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run
 ```
 
-`board` answers: “How do I reach and prepare this target enough to run control loops?” It loads static configuration and credentials and establishes a connection with the remote.
-`fly` runs the control loop against the flight plan. Promoting a specific ref of the source code to deployed site (deploying to gamma/prod/beta/make-up-whatever/dev) is just updating the declared desired state.
+`board` answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, executes the declared substrate access/upload hooks, and verifies the boarded repo tree.
+`fly` starts with the same boarding phase and then relies on repo-owned Nomad job conventions. Promoting a specific ref of the source code to gamma/prod/beta/dev is updating the declared desired state and running the component-owned control loops.
 
 # Disaster Recovery / `fly`
 
@@ -42,7 +42,7 @@ The only ingredients necessary to recover the system, therefore, are:
 2. Network ingress to download pinned dependencies (including build tools + OCI images)
 3. Network egress to a node
 
-Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following : clone repo -> configure secrets -> build repo -> point to any bare metal node -> upload built repo -> run `nomad run recovery` -> run `nomad run deploy`.
+Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external root trust -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
 
 Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by ensuring we build openbao locally and then, inside the OpenBao recovery prestart, either using the system-present OpenBao or the one from the repo artifacts. A "check + bootstrap-if-needed" prestart is all we need. 
 
@@ -56,7 +56,7 @@ OpenBao not present/absent — the situation could be any of the following
 
 Recovery frequently means "restore data from offsite backups on S3-compatible object storage" but even if no backups are provided, a clean version of the system can be bootstrapped.
 
-Every deployable unit, big or small, can declare a `recovery` Nomad task in its `nomad.hcl` file:
+Every deployable unit, big or small, can declare a component-owned recovery lifecycle task in its `nomad.hcl` file:
 
 ```
 task "recover" {
@@ -75,6 +75,8 @@ task "recover" {
     # normal service
   }
 ```
+
+The Guardian base specification stays narrow: the graph envelope, `FlyProcedure`, `Substrate`, shared `PublicOrigin` facts, command responses, and common cross-component conditions. Static configuration for an infrastructure component or service belongs in that component's `guardian/v1alpha1/schema.cue`. Runtime actions such as restore, initialize, unseal, migrate, import, publish, and health waiting belong in Nomad lifecycle tasks and component binaries.
 
 ## Unhealthy Node
 

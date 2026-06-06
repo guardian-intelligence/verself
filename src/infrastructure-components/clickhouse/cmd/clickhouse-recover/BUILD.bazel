@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "clickhouse-recover_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/clickhouse/cmd/clickhouse-recover",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "clickhouse-recover",
+    embed = [":clickhouse-recover_lib"],
+    visibility = ["//visibility:public"],
+)

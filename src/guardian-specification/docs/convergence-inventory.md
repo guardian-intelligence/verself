@@ -15,7 +15,8 @@ consecutive submissions do not create unexpected allocation churn.
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` through the component import action |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Setup/migrations pass, runtime blocked before start | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation, OpenBao-backed R2 credentials, ClickHouse, SPIFFE |
+| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Setup/migrations pass, runtime blocked before start | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation and OpenBao-backed R2 credentials |
 
 ## Latest Gamma Evidence
 
@@ -29,11 +30,12 @@ Observed results:
 
 - boarding verified the extracted repo tree on gamma;
 - latest verified upload digest:
-  `sha256:c3beff6749c09070e726b02848f25c2c5106d6cfe97d29b729f14d52992220e4`;
-- the boarded repo contains `.guardian/fly/document.json` with OpenBao,
-  Cloudflare, HAProxy, and object-storage component CRDs;
-- remote Nomad validation succeeds for OpenBao, HAProxy, and Cloudflare job
-  files;
+  `sha256:814740680b1f097a391f69e164ac1c608fbd094477d48d256bd6c349a79fe771`;
+- the boarded repo contains `.guardian/fly/document.json` with Nomad, OpenBao,
+  PostgreSQL, ClickHouse, Cloudflare, HAProxy, and object-storage component
+  CRDs;
+- remote Nomad validation succeeds for OpenBao, PostgreSQL, ClickHouse,
+  HAProxy, Cloudflare, and object-storage job files;
 - Nomad is running and reachable on gamma;
 - OpenBao initialized a Shamir store with PGP-encrypted init material and is
   unsealed, but baseline reconciliation is blocked until operator root
@@ -69,6 +71,17 @@ Observed results:
   `/var/run/postgresql/.s.PGSQL.5432`;
 - PostgreSQL reconciled the `object_storage_service` role, database, and peer
   mappings for `object_storage_service` and `object_storage_admin`;
+- ClickHouse now has a component CRD and a component-owned Nomad job;
+- ClickHouse installs the boarded runtime artifact, writes TLS/SPIFFE/systemd
+  config, starts ClickHouse through systemd, applies repo migrations, and
+  keeps a Nomad monitor task tied to live operator queries;
+- ClickHouse reports `ClickHouseRecoveryComplete=True` in
+  `/run/verself/recovery/clickhouse/report.json`;
+- ClickHouse runtime digest:
+  `sha256:ea1e9ed8e240f65ba8b7ce43686d5229e103a695beb0e2d0b52bd4733f2d8bfd`;
+- ClickHouse bootstrap schema fingerprint:
+  `sha256:35cc339b28bdc76533edc965ddbe65fa4a6e66f61bcabbbe38b59f6c018b0e6d`;
+- a live operator query reports 32 tables in the `verself` database;
 - object-storage-service setup now exits successfully and reaches past
   migrations;
 - object-storage-service runtime and admin tasks still fail before process start
@@ -102,6 +115,7 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default haproxy-upstreams'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/haproxy/nomad.hcl'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/clickhouse/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/services/object-storage-service/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default object-storage-service'
@@ -113,6 +127,9 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_service env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d object_storage_service -A -t -c "select current_user;"'
 ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_admin env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -U object_storage_service -d object_storage_service -A -t -c "select current_user;"'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default clickhouse'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/clickhouse/report.json'
+ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count() FROM system.tables WHERE database = '\''verself'\''"'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 
@@ -141,11 +158,11 @@ cloudflare-control-plane \
 
 ## Next Component
 
-The next recovery target is OpenBao baseline reconciliation. PostgreSQL now
-converges and object-storage-service reaches its OpenBao-backed secret delivery
-boundary. OpenBao must accept operator root authority through a component-owned
-operator path, reconcile mounts, policies, and Nomad JWT roles from the boarded
-graph, then object-storage-service can retry and discover the next dependency.
-The authority must be able to read/write system mounts, policies, JWT auth
-config, and JWT auth roles; the local gamma bootstrap token tested in this run
-did not have that authority.
+The next recovery target is OpenBao baseline reconciliation. PostgreSQL and
+ClickHouse now converge, and object-storage-service reaches its OpenBao-backed
+secret delivery boundary. OpenBao must accept operator root authority through a
+component-owned operator path, reconcile mounts, policies, and Nomad JWT roles
+from the boarded graph, then object-storage-service can retry and discover the
+next dependency. The authority must be able to read/write system mounts,
+policies, JWT auth config, and JWT auth roles; the local gamma bootstrap token
+tested in this run did not have that authority.

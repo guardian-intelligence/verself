@@ -61,6 +61,16 @@ var RequiredBuildArtifacts = []RequiredArtifact{
 		Mode:   "0644",
 	},
 	{
+		Source: "bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover",
+		Target: "bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover",
+		Mode:   "0755",
+	},
+	{
 		Source: "bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar",
 		Target: "bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar",
 		Mode:   "0644",
@@ -140,7 +150,7 @@ func WorkspaceFiles(repoRoot string) ([]File, error) {
 		})
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("required build artifacts are missing; run bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian //src/infrastructure-components/nomad:runtime_artifact //src/infrastructure-components/nomad/cmd/nomad-recover:nomad-recover //src/infrastructure-components/openbao:runtime_artifact //src/infrastructure-components/openbao/cmd/openbao-recover:openbao-recover //src/infrastructure-components/haproxy:runtime_artifact //src/infrastructure-components/postgresql:runtime_artifact //src/integrations/cloudflare/control-plane:runtime_artifact //src/services/object-storage-service/cmd/object-storage-service:object-storage-service_nomad_artifact: %s", strings.Join(missing, "; "))
+		return nil, fmt.Errorf("required build artifacts are missing; run bazelisk build //src/guardian-specification/cli/cmd/guardian:guardian //src/infrastructure-components/nomad:runtime_artifact //src/infrastructure-components/nomad/cmd/nomad-recover:nomad-recover //src/infrastructure-components/openbao:runtime_artifact //src/infrastructure-components/openbao/cmd/openbao-recover:openbao-recover //src/infrastructure-components/haproxy:runtime_artifact //src/infrastructure-components/postgresql:runtime_artifact //src/infrastructure-components/clickhouse:runtime_artifact //src/infrastructure-components/clickhouse/cmd/clickhouse-recover:clickhouse-recover //src/integrations/cloudflare/control-plane:runtime_artifact //src/services/object-storage-service/cmd/object-storage-service:object-storage-service_nomad_artifact: %s", strings.Join(missing, "; "))
 	}
 	return files, nil
 }

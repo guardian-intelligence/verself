@@ -45,10 +45,10 @@ component-owned Nomad job files. OpenBao defines how to install, restore,
 unseal, and reconcile the root-of-trust store. Edge components define how
 public origins become listener, certificate, and backend state.
 
-The graph should contain component CRDs, not component action programs. If a
-field describes an action such as `restore`, `init`, `migrate`, `wait`,
-`submit`, `unseal`, or `import`, the owning Nomad lifecycle task or recovery
-binary should implement that action and read any static inputs from its CRD.
+The graph contains component CRDs. If a field describes an action such as
+`restore`, `init`, `migrate`, `wait`, `submit`, `unseal`, or `import`, the
+owning Nomad lifecycle task or recovery binary implements that action and reads
+static inputs from its CRD.
 
 ## Dry Run
 
@@ -93,8 +93,8 @@ task "recover" {
 The recovery task reads the boarded graph, selects its component CRD, installs
 repo-built artifacts, reconciles static configuration, restores durable state
 when configured, and reports conditions when external authority is missing.
-Nomad handles retries and health-driven scheduling. A healthy component should
-treat the recovery task as a no-op.
+Nomad handles retries and health-driven scheduling. A healthy component treats
+the recovery task as a no-op.
 
 ## Repeatability
 

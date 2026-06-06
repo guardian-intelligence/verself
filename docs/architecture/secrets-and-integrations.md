@@ -89,8 +89,8 @@ S0 repo_metadata_only
 | --- | --- | --- | --- |
 | `S0 repo_metadata_only` | Catalog, site vars, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
 | `S1 stripe_authenticated` | The operator or agent has authenticated Stripe CLI/Projects locally. | Stripe config on the principal's machine only. | Initialize or select the site provider project. |
-| `S2 provider_bootstrap_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Bootstrap session memory until imported. | Import catalog-approved bootstrap keys. |
-| `S3 controller_openbao_imported` | Bootstrap keys and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
+| `S2 provider_root_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Operator session memory until imported. | Import catalog-approved root credentials. |
+| `S3 controller_openbao_imported` | Root credentials and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
 | `S4 bare_metal_allocated` | Latitude host exists and inventory can be written. | Provider credentials remain in controller OpenBao. | Host bootstrap connects over SSH. |
 | `S5 host_openbao_installed` | Host convergence copies the OpenBao binary, configuration, TLS files, and service definition to the host. | No runtime secret values copied yet. | Start OpenBao and initialize the site store. |
 | `S6 site_openbao_initialized` | The host OpenBao Raft store, wrapped recovery material, auth mounts, audit sinks, KV mounts, transit mount, and base policies exist for this site. The initial root token is used only inside the bootstrap transaction. | Site OpenBao and operator-held recovery material. | Reconcile runtime secret declarations and workload auth. |
@@ -104,11 +104,11 @@ host and then initialize that site's OpenBao store. It does not mean copying
 prod's OpenBao data, root token, unseal keys, Raft store, or runtime secret
 values into gamma.
 
-The first-site bootstrap is the only special case. If there is no controller
-OpenBao yet, the bootstrap session may hold the small set of secret-zero values
-in process memory long enough to bring up the first OpenBao. Once any controller
-OpenBao exists, new sites use `S3 controller_openbao_imported` instead of
-plaintext files.
+The first controller is the only special case. If there is no controller OpenBao
+yet, the authenticated operator session may hold the small set of secret-zero
+values in process memory long enough to bring up the first OpenBao. Once any
+controller OpenBao exists, new sites use `S3 controller_openbao_imported`
+instead of plaintext files.
 
 ### Transition Rules
 
@@ -242,7 +242,7 @@ requested
 | Class | Stored in | Consumed by | Rule |
 | --- | --- | --- | --- |
 | `provider_project` | Stripe Projects vault or provider-native vault | Import tooling | Local handoff only. Never consumed by Nomad jobs. |
-| `controller_openbao` | Controller OpenBao bootstrap namespace | Provisioning tools | Pre-host source of truth for site bootstrap inputs. |
+| `controller_openbao` | Controller OpenBao root-trust namespace | Provisioning tools | Pre-host source of truth for provider handoff and first-host recovery inputs. |
 | `site_openbao` | Per-site OpenBao KV v2 and transit | Host convergence, secrets-service, workloads | Durable source of truth after site OpenBao exists. |
 | `host_runtime_file` | Nomad allocation `secrets/` directory or component-owned runtime config | Host daemons and local jobs | Derived projection only. Files are never secret sources and deploy tooling does not read them. |
 | `runtime_secret` | OpenBao KV v2 | Workloads through secrets-service or direct runtime injection | Runtime application secret material. |
@@ -365,10 +365,10 @@ variable exported by `stripe projects env --pull`:
 
 2. Choose the storage class.
 
-   Use `controller_openbao` for pre-host site bootstrap inputs, `site_openbao`
-   for durable site material, `runtime_secret` for OpenBao runtime values, and
+   Use `controller_openbao` for pre-host root-trust inputs, `site_openbao` for
+   durable site material, `runtime_secret` for OpenBao runtime values, and
    `product_kv` for customer or org-managed values after deploy. Secret-zero
-   values for the first controller exist only in the authenticated bootstrap
+   values for the first controller exist only in the authenticated operator
    process and are not catalog storage targets.
 
 3. Add or update the catalog entry.

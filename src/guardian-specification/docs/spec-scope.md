@@ -30,8 +30,9 @@ Component schemas answer what a component should know before it starts.
 Component Nomad jobs and recovery binaries answer what the component should do
 at runtime. Runtime evidence answers what happened.
 
-The root graph is static input. It is not a script, playbook, job-ordering
-document, evidence store, or secret store.
+The root graph is static input. A component derives operations from its CRD and
+the observed state of the host, then reports conditions and evidence through
+runtime channels.
 
 ## Placement Convention
 
@@ -61,6 +62,9 @@ Use this convention when authoring a graph:
   the root graph;
 - put every component's static configuration in that component's CRD schema
   under `guardian/v1alpha1/schema.cue` beside the owner;
+- make the component schema complete for static inputs: public names, provider
+  account identifiers, OpenBao paths, artifact paths, socket paths, backup
+  object names, policy names, and refs to shared resources;
 - let component Nomad jobs read `.guardian/fly/document.json` from the boarded
   workspace and select the resources they own;
 - express restore, initialize, unseal, migrate, wait, import, publish, and
@@ -68,11 +72,10 @@ Use this convention when authoring a graph:
 - report blockers as command conditions, component reports, Nomad state,
   health endpoints, or telemetry.
 
-The base schema has no component operation fields. Do not add base fields for
-`recovery`, job ordering, Nomad submission details, component environment
-projection, host-local secret paths, provider-token files, or report resources.
-Those details belong to the component schema when they are static config and to
-the component runtime when they are actions.
+The base schema has no component operation fields. Component sequencing,
+Nomad submission details, component environment projection, host-local secret
+paths, provider-token files, and report resources live in the owning component
+schema or runtime, according to the field placement table below.
 
 ## Schema Locations
 
@@ -95,7 +98,7 @@ src/services/object-storage-service/guardian/v1alpha1/schema.cue
 Config examples may import the base schema and any component schemas needed by
 the selected graph. A site-specific file such as `examples/gamma/gamma.cue` is
 a bundle of selected resources, provider identifiers, origins, and substrate
-hooks. The site name is an operator label, not a protocol concept.
+hooks. The site name is an operator label.
 
 ## Base Spec
 
@@ -125,8 +128,8 @@ defines static configuration and invariants for that component:
 - runtime artifact paths owned by the component;
 - references to other resources in the graph.
 
-Component CRDs do not define Guardian execution steps. They describe desired
-inputs that component-owned code can read from the boarded graph.
+Component CRDs describe desired inputs that component-owned code can read from
+the boarded graph.
 
 The component CUE schema is the semantic source for static configuration. Go
 structs, Nomad templates, generated validators, and docs may mirror that schema
@@ -135,9 +138,8 @@ for runtime use, but they do not define additional configuration fields.
 Component schemas should contain the full static configuration needed by that
 component: provider account IDs, public resource names, OpenBao paths, Nomad
 workload roles, backup object locations, runtime artifact paths, policy names,
-and references to shared resources. A component should not require a reader to
-combine a base Guardian field with undocumented component defaults to understand
-what it will reconcile.
+and references to shared resources. A reader should be able to understand a
+component's intended static state from its CRD and referenced shared resources.
 
 Static configuration means declarative inputs that can be validated without
 performing the operation: names, URLs, artifact paths, socket paths, policy
@@ -147,9 +149,9 @@ authority; it does not contain the secret authority value.
 
 Component schemas may include desired baseline state such as OpenBao mounts,
 Nomad workload roles, PostgreSQL roles, HAProxy routes, object storage buckets,
-backup object names, or provider account identifiers. They should not include a
-sequence of operations such as "restore then unseal then migrate"; the owning
-Nomad task derives those operations from observed component state.
+backup object names, or provider account identifiers. The owning Nomad task
+derives operations such as restore, unseal, migrate, and no-op from observed
+component state.
 
 Secret values stay out of component CRDs. A component that needs root or
 provider authority declares the nonsecret authority location or recipient

@@ -1,66 +1,80 @@
-job "clickhouse-migrations" {
-  name = "clickhouse-migrations"
-  datacenters = ["*"]
-  type = "batch"
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current"
+}
 
-  group "clickhouse-migrations" {
+variable "clickhouse_resource_name" {
+  type    = string
+  default = "clickhouse"
+}
+
+job "clickhouse" {
+  name        = "clickhouse"
+  datacenters = ["*"]
+  type        = "service"
+
+  group "clickhouse" {
     count = 1
 
-    restart {
-      attempts = 0
-      mode = "fail"
+    network {
+      mode = "host"
+
+      port "native_tls" {
+        host_network = "loopback"
+        static       = 9440
+        to           = 9440
+      }
     }
 
-    task "apply" {
+    task "recover" {
       driver = "raw_exec"
-      user = "clickhouse_operator"
+      user   = "root"
 
-      artifact {
-        source = "verself-artifact://clickhouse-migrations"
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
       }
 
       config {
-        command = "/bin/sh"
-        args = ["-euc", <<-EOT
-client=/opt/verself/profile/bin/clickhouse
-test -x "$client"
-rendered_dir="$NOMAD_TASK_DIR/rendered-clickhouse-migrations"
-rm -rf "$rendered_dir"
-mkdir -p "$rendered_dir"
-token_prefix="__VERS"
-token="$token_prefix""ELF_SPIFFE""_SERVICE_PREFIX__"
-applied=0
-for migration in local/migrations/[0-9][0-9][0-9]_*.up.sql; do
-  if [ ! -f "$migration" ]; then
-    continue
-  fi
-  rendered="$rendered_dir/$(basename "$migration")"
-  sed "s#$token#$VERSELF_SPIFFE_SERVICE_PREFIX#g" "$migration" > "$rendered"
-  applied=$((applied + 1))
-  echo "clickhouse-migrations: applying $migration" >&2
-  "$client" client \
-    --config-file /etc/clickhouse-client/operator.xml \
-    --user clickhouse_operator \
-    --database verself \
-    --multiquery \
-    --queries-file "$rendered"
-done
-echo "clickhouse-migrations: applied $applied delta migration files" >&2
-EOT
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.clickhouse_resource_name}",
         ]
       }
 
-      env {
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "clickhouse-migrations"
-        VERSELF_SUPERVISOR = "nomad"
-        VERSELF_SPIFFE_SERVICE_PREFIX = "__VERSELF_SPIFFE_SERVICE_PREFIX__"
+      resources {
+        cpu    = 100
+        memory = 256
+      }
+    }
+
+    task "monitor" {
+      driver = "raw_exec"
+      user   = "root"
+
+      config {
+        command = "/var/lib/clickhouse/runtime/current/bin/clickhouse-recover"
+        args = [
+          "monitor",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.clickhouse_resource_name}",
+        ]
       }
 
       resources {
-        cpu = 100
+        cpu    = 50
         memory = 128
+      }
+
+      service {
+        name         = "clickhouse-native-tls"
+        port         = "native_tls"
+        provider     = "nomad"
+        address_mode = "auto"
       }
     }
   }

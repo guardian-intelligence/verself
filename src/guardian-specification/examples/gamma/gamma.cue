@@ -374,6 +374,74 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "clickhouse.guardianintelligence.org/v1alpha1"
+		kind:       "ClickHouseCluster"
+		metadata: name: "clickhouse"
+		spec: {
+			runtimeArtifact: "bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar"
+			runtimeRoot:     "/var/lib/clickhouse/runtime"
+			dataDir:         "/var/lib/clickhouse"
+			backupDir:       "/var/lib/clickhouse/backups"
+			backupDiskName:  "verself_recovery_backups"
+			logDir:          "/var/log/clickhouse-server"
+			host:            "127.0.0.1"
+			port:            9440
+
+			configPath: "/etc/clickhouse-server/config.d/verself.xml"
+			tlsDir:     "/etc/clickhouse-server/tls"
+			pidPath:    "/run/clickhouse-server/clickhouse-server.pid"
+
+			serverUser:  "clickhouse"
+			serverGroup: "clickhouse"
+
+			operatorUser:             "clickhouse_operator"
+			operatorGroup:            "clickhouse_operator"
+			operatorDatabaseUser:     "clickhouse_operator"
+			operatorClientConfigPath: "/etc/clickhouse-client/operator.xml"
+			operatorCAPath:           "/etc/clickhouse-client/server-ca.pem"
+
+			spiffe: {
+				trustDomain:          "gamma.verself.sh"
+				servicePrefix:        "spiffe://gamma.verself.sh/svc"
+				agentSocket:          "/run/spire-agent/sockets/agent.sock"
+				helperPath:           "/var/lib/clickhouse/runtime/current/bin/spiffe-helper"
+				serverID:             "spiffe://gamma.verself.sh/svc/clickhouse-server"
+				operatorID:           "spiffe://gamma.verself.sh/svc/clickhouse-operator"
+				serverDir:            "/var/lib/clickhouse/spiffe"
+				operatorDir:          "/var/lib/clickhouse-operator/spiffe"
+				spireWorkloadGroup:   "spire_workload"
+				serverHelperConfig:   "/etc/clickhouse-server/server-spiffe-helper.conf"
+				operatorHelperConfig: "/etc/clickhouse-client/operator-spiffe-helper.conf"
+				bundleReloadState:    "/var/lib/clickhouse/spiffe/.bundle-reload.sha256"
+			}
+
+			systemd: {
+				serverServicePath:         "/etc/systemd/system/clickhouse-server.service"
+				serverHelperServicePath:   "/etc/systemd/system/clickhouse-server-spiffe-helper.service"
+				operatorHelperServicePath: "/etc/systemd/system/clickhouse-operator-spiffe-helper.service"
+				bundleReloadServicePath:   "/etc/systemd/system/clickhouse-server-spiffe-bundle-reload.service"
+				bundleReloadPathUnitPath:  "/etc/systemd/system/clickhouse-server-spiffe-bundle-reload.path"
+			}
+
+			migrations: {
+				bootstrapSchemaPath: "src/infrastructure-components/clickhouse/migrations/001_initial_schema.up.sql"
+				deltaDir:            "src/infrastructure-components/clickhouse/migrations"
+				stateDir:            "/opt/verself/migrations"
+			}
+
+			clientCAProjections: [
+				{
+					path:          "/etc/verself/clickhouse/server-ca.pem"
+					group:         "root"
+					mode:          "0644"
+					directoryMode: "0755"
+				},
+			]
+
+			reportPath: "/run/verself/recovery/clickhouse/report.json"
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"
