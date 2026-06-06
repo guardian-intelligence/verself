@@ -11,7 +11,7 @@ consecutive submissions do not create unexpected allocation churn.
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad | `nomad.guardianintelligence.org/v1alpha1/NomadCluster/nomad` | Converged | None | Boarded repo, Nomad runtime artifact, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator root token for baseline reconciliation |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator token with baseline reconciliation authority |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` through the component import action |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
@@ -76,8 +76,14 @@ Observed results:
   `RootTrustMaterialAvailable=False`,
   `OpenBaoBaselineReconciled=False`, and
   `OpenBaoRecoveryComplete=False` with reason `BaselineBlocked`;
-- the missing OpenBao role is caused by baseline reconciliation requiring an
-  operator root token.
+- OpenBao baseline reconciliation through `--operator-token-stdin` is
+  scriptable and consumes the token through stdin;
+- the available gamma bootstrap token is not sufficient for baseline
+  reconciliation: OpenBao returned 403 on `sys/mounts` and 403 on
+  `auth/token/revoke-self`;
+- the missing OpenBao role is caused by baseline reconciliation requiring a
+  valid operator token with authority to reconcile mounts, policies, auth, and
+  Nomad JWT roles.
 
 Evidence commands:
 
@@ -93,6 +99,7 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task setup <object-storage-service-allocation-id>'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task recover <cloudflare-allocation-id>'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/openbao/report.json'
+ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --operator-token-stdin' < <operator-token-file>
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_service env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d object_storage_service -A -t -c "select current_user;"'
@@ -130,3 +137,6 @@ converges and object-storage-service reaches its OpenBao-backed secret delivery
 boundary. OpenBao must accept an operator root token through a component-owned
 operator path, reconcile mounts, policies, and Nomad JWT roles from the boarded
 graph, then object-storage-service can retry and discover the next dependency.
+The token must be able to read/write system mounts, policies, JWT auth config,
+and JWT auth roles; the local gamma bootstrap token tested in this run did not
+have that authority.

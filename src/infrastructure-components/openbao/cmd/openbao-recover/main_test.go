@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,8 @@ type fakeOpenBaoClient struct {
 	baselines      []openBaoBaselineSpec
 	revokedTokens  []string
 	restored       bool
+	reconcileErr   error
+	revokeErr      error
 }
 
 func (f *fakeOpenBaoClient) Status(context.Context) (baoStatus, error) {
@@ -84,12 +87,12 @@ func (f *fakeOpenBaoClient) SaveSnapshot(context.Context, string) ([]byte, error
 func (f *fakeOpenBaoClient) ReconcileBaseline(_ context.Context, token string, baseline openBaoBaselineSpec) error {
 	f.baselineTokens = append(f.baselineTokens, token)
 	f.baselines = append(f.baselines, baseline)
-	return nil
+	return f.reconcileErr
 }
 
 func (f *fakeOpenBaoClient) RevokeSelf(_ context.Context, token string) error {
 	f.revokedTokens = append(f.revokedTokens, token)
-	return nil
+	return f.revokeErr
 }
 
 func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
@@ -232,6 +235,85 @@ func TestUnsealedOpenBaoUsesOperatorTokenFromStdin(t *testing.T) {
 	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
 		t.Fatalf("baseline did not use presented token")
 	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("operator token was not revoked after baseline reconciliation")
+	}
+	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestUnsealedOpenBaoRevokesOperatorTokenAfterBaselineFailure(t *testing.T) {
+	token := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: true, Sealed: false},
+		reconcileErr: errors.New("policy write failed"),
+	}
+	cfg := testConfig(t)
+	cfg.tokenStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "ReconcileFailed")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineFailed")
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("operator token was not revoked after baseline failure")
+	}
+	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestUnsealedOpenBaoReportsInsufficientOperatorTokenAuthority(t *testing.T) {
+	token := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: true, Sealed: false},
+		reconcileErr: errors.New(`openbao GET sys/mounts status 403: {"errors":["permission denied"]}`),
+	}
+	cfg := testConfig(t)
+	cfg.tokenStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
+
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestUnsealedOpenBaoReportsOperatorTokenRevocationFailure(t *testing.T) {
+	token := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:    baoStatus{Initialized: true, Sealed: false},
+		revokeErr: errors.New("revoke denied"),
+	}
+	cfg := testConfig(t)
+	cfg.tokenStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "False", "RevokeSelfFailed")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "OperatorTokenRevocationFailed")
+	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestUnsealedOpenBaoClassifiesOperatorTokenRevocationPermissionDenied(t *testing.T) {
+	token := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:    baoStatus{Initialized: true, Sealed: false},
+		revokeErr: errors.New(`openbao POST auth/token/revoke-self status 403: {"errors":["permission denied"]}`),
+	}
+	cfg := testConfig(t)
+	cfg.tokenStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "False", "RevokeSelfPermissionDenied")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "OperatorTokenRevocationFailed")
 	assertReportDoesNotContain(t, rep, token)
 }
 
@@ -280,6 +362,9 @@ func TestUnsealedOpenBaoUsesBaselineFromResourceGraph(t *testing.T) {
 	}
 	if got := client.baselines[0].NomadJWT.Roles[0].Name; got != "cloudflare-integration-recovery-runtime" {
 		t.Fatalf("jwt role = %q", got)
+	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("operator token was not revoked after baseline reconciliation")
 	}
 }
 

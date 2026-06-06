@@ -701,16 +701,24 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 			return rep
 		}
 		if err := client.ReconcileBaseline(ctx, token, cfg.baseline); err != nil {
+			rep.Conditions = append(rep.Conditions, baselineReconcileFailureConditions(err)...)
+			rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, token))
+			return rep
+		}
+		revokeCondition := revokePresentedToken(ctx, client, token)
+		if revokeCondition.Status != "True" {
 			rep.Conditions = append(rep.Conditions,
 				conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
-				conditionFalse("OpenBaoBaselineReconciled", "ReconcileFailed", "openbao", err.Error()),
-				conditionFalse("OpenBaoRecoveryComplete", "BaselineFailed", "openbao", "baseline reconciliation failed"),
+				conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+				revokeCondition,
+				conditionFalse("OpenBaoRecoveryComplete", "OperatorTokenRevocationFailed", "openbao", "baseline was reconciled but the presented operator token could not be revoked"),
 			)
 			return rep
 		}
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
 			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
+			revokeCondition,
 			conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
 		)
 		return rep
@@ -760,6 +768,40 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		rep.Conditions = append(rep.Conditions, conditionFalse("OpenBaoRecoveryComplete", "UnknownState", "openbao", "OpenBao status did not map to a recovery state"))
 		return rep
 	}
+}
+
+func baselineReconcileFailureConditions(err error) []condition {
+	if isOpenBaoPermissionDenied(err) {
+		return []condition{
+			conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "presented operator token does not have baseline reconciliation authority"),
+			conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", err.Error()),
+			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+		}
+	}
+	return []condition{
+		conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin"),
+		conditionFalse("OpenBaoBaselineReconciled", "ReconcileFailed", "openbao", err.Error()),
+		conditionFalse("OpenBaoRecoveryComplete", "BaselineFailed", "openbao", "baseline reconciliation failed"),
+	}
+}
+
+func revokePresentedToken(ctx context.Context, client openBaoClient, token string) condition {
+	if err := client.RevokeSelf(ctx, token); err != nil {
+		reason := "RevokeSelfFailed"
+		if isOpenBaoPermissionDenied(err) {
+			reason = "RevokeSelfPermissionDenied"
+		}
+		return conditionFalse("OpenBaoOperatorTokenRevoked", reason, "openbao", err.Error())
+	}
+	return conditionTrue("OpenBaoOperatorTokenRevoked", "Revoked", "openbao", "presented operator token was revoked")
+}
+
+func isOpenBaoPermissionDenied(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "status 403") || strings.Contains(message, "permission denied")
 }
 
 func restoreSnapshot(ctx context.Context, cfg config, client openBaoClient, rep report) report {

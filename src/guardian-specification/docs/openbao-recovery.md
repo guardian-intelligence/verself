@@ -60,7 +60,7 @@ initialized + unsealed
 baseline reconciliation requested by OpenBao component CRD
   -> require a transient operator token or freshly-created root token
   -> reconcile mounts/policies/auth/secret paths
-  -> revoke transient root token when created during fresh init
+  -> revoke transient root token or presented operator token
 ```
 
 ## Mechanical Recovery
@@ -153,6 +153,22 @@ After OpenBao is unsealed, recovery may reconcile component baseline state:
 - token roles and TTLs;
 - component secret paths;
 - provider credential metadata.
+
+The operator path is stdin-based:
+
+```sh
+openbao-recover recover \
+  --repo-root=/home/ubuntu/.local/state/guardian/repo/current \
+  --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json \
+  --resource-name=openbao \
+  --operator-token-stdin < <operator-token-file>
+```
+
+The token is not accepted through argv or environment variables. A successful
+baseline run attempts `auth/token/revoke-self` before reporting recovery
+complete. If the presented token lacks system authority, recovery reports
+`RootTrustMaterialAvailable=False/OperatorRootCredentialsRequired` and leaves
+baseline reconciliation blocked.
 
 Provider root credentials are imported or rotated through component-owned
 operator paths. OpenBao recovery reports
