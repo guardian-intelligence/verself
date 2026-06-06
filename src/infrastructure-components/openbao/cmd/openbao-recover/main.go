@@ -750,7 +750,7 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		rootTrust := conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "operator token was presented through stdin")
 		return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, rootTrust, nil)
 	case "InitializedSealed":
-		shares, err := readUnsealShares(stdin, cfg.unsealStdin)
+		shares, err := readUnsealShares(stdin, cfg.unsealStdin || cfg.generateRootStdin)
 		if err != nil {
 			rep.Conditions = append(rep.Conditions,
 				conditionFalse("RootTrustMaterialAvailable", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required"),
@@ -780,6 +780,30 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		}
 		rep.State = "InitializedUnsealed"
 		rep.Evidence = statusEvidence(status)
+		if cfg.baseline.Reconcile {
+			rep.Conditions = append(rep.Conditions, conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"))
+			if !cfg.generateRootStdin {
+				rep.Conditions = append(rep.Conditions,
+					conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires root authority"),
+					conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires root authority"),
+					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+				)
+				return rep
+			}
+			token, err := generateRootTokenFromShares(ctx, client, shares)
+			if err != nil {
+				rep.Conditions = append(rep.Conditions,
+					conditionFalse("RootTrustMaterialAvailable", "GenerateRootFailed", "openbao", "threshold unseal material did not produce a transient root token"),
+					conditionFalse("OpenBaoGeneratedRootToken", "GenerateRootFailed", "openbao", err.Error()),
+					conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires root authority"),
+					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+				)
+				return rep
+			}
+			rootTrust := conditionTrue("RootTrustMaterialAvailable", "GeneratedRootToken", "openbao", "threshold unseal material generated a transient root token")
+			extra := []condition{conditionTrue("OpenBaoGeneratedRootToken", "Generated", "openbao", "transient root token was generated from threshold unseal material")}
+			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, rootTrust, extra)
+		}
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("RootTrustMaterialAvailable", "Presented", "openbao", "threshold unseal material was presented through stdin"),
 			conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"),

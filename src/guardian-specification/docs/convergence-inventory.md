@@ -16,7 +16,7 @@ consecutive submissions do not create unexpected allocation churn.
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Boarded ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Setup/migrations pass, runtime blocked before start | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation and OpenBao-backed R2 credentials |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; job currently purged after runtime token failure | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation and OpenBao-backed R2 credentials |
 
 ## Latest Gamma Evidence
 
@@ -32,7 +32,7 @@ Observed results:
 - latest resource graph digest:
   `sha256:77b29d7e2cfccbf92577f6e060ae22b7bbbda11ae3053edb11db22deddb004e9`;
 - latest verified upload digest:
-  `sha256:698939a52fe40d963ec7f86a18e830bd20f63b6c4fe31bafdc67e3579f3ed3b3`;
+  `sha256:d99aac0a65a886a951fea7e9935b580c8063be1eb8ccb6916a9306a65ff28b22`;
 - the boarded repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, Cloudflare, HAProxy, object-storage, substrate, and
   public-origin resources;
@@ -102,9 +102,14 @@ Observed results:
   implemented as a component-owned operator path that starts OpenBao
   generate-root, decodes the transient token, reconciles baseline state, and
   revokes the generated token;
+- OpenBao sealed-state recovery now treats `--generate-root-token-stdin` as
+  threshold unseal material first, then reuses the same material to generate a
+  transient root token for baseline reconciliation;
 - the live `--generate-root-token-stdin </dev/null` path reports
   `RootTrustMaterialAvailable=False/UnsealQuorumIncomplete` and does not
   attempt baseline reconciliation without threshold material;
+- the patched OpenBao recovery binary was boarded to gamma in upload
+  `sha256:d99aac0a65a886a951fea7e9935b580c8063be1eb8ccb6916a9306a65ff28b22`;
 - the available gamma bootstrap token is not sufficient for baseline
   reconciliation: OpenBao returned 403 on `sys/mounts` and 403 on
   `auth/token/revoke-self`;
@@ -128,6 +133,7 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task recover <cloudflare-allocation-id>'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/openbao/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --operator-token-stdin' < <operator-token-file>
+ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --generate-root-token-stdin' < <unseal-shares-file>
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_service env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d object_storage_service -A -t -c "select current_user;"'

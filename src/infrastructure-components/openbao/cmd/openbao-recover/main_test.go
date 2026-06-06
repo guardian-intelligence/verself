@@ -267,6 +267,63 @@ func TestSealedOpenBaoAcceptsUnsealMaterialFromStdin(t *testing.T) {
 	assertReportDoesNotContain(t, rep, share)
 }
 
+func TestSealedOpenBaoReportsBaselineBlockedAfterUnsealWithoutRootAuthority(t *testing.T) {
+	share := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: true, Sealed: true, Threshold: 1},
+		unsealShares: []string{share},
+	}
+	cfg := testConfig(t)
+	cfg.unsealStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
+
+	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
+	if len(client.baselineTokens) != 0 {
+		t.Fatalf("baseline reconciled without root authority")
+	}
+	assertReportDoesNotContain(t, rep, share)
+}
+
+func TestSealedOpenBaoGeneratesRootTokenAfterUnsealForBaseline(t *testing.T) {
+	token := randomSecret(t)
+	shareA := randomSecret(t)
+	shareB := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:             baoStatus{Initialized: true, Sealed: true, Threshold: 2},
+		unsealShares:       []string{shareA, shareB},
+		generatedRootToken: token,
+	}
+	cfg := testConfig(t)
+	cfg.generateRootStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(shareA+"\n"+shareB+"\n"))
+
+	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "GeneratedRootToken")
+	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "True", "Generated")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
+		t.Fatalf("baseline did not use generated root token")
+	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("generated root token was not revoked after baseline reconciliation")
+	}
+	if client.generateRootCanceled {
+		t.Fatalf("completed generate-root attempt was canceled")
+	}
+	assertReportDoesNotContain(t, rep, token)
+	assertReportDoesNotContain(t, rep, shareA)
+	assertReportDoesNotContain(t, rep, shareB)
+}
+
 func TestUnsealedOpenBaoRequiresNoOperatorIntervention(t *testing.T) {
 	token := randomSecret(t)
 	client := &fakeOpenBaoClient{

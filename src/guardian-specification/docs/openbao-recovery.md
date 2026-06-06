@@ -51,10 +51,14 @@ uninitialized + no snapshot
 initialized + sealed
   -> obtain threshold unseal material from external trust source
   -> unseal
-  -> report available
+  -> if baseline reconciliation is requested and threshold material was
+     presented for generate-root, generate a transient root token
+  -> reconcile baseline or report root authority required
+  -> report available only after required baseline state is reconciled
 
 initialized + unsealed
-  -> report available
+  -> reconcile baseline or report root authority required
+  -> report available only after required baseline state is reconciled
 
 baseline reconciliation requested by OpenBao component CRD
   -> require a transient operator token or threshold unseal material
@@ -166,7 +170,9 @@ openbao-recover recover \
 
 When the operator has threshold unseal material instead of an existing root
 token, recovery can generate a transient root token through OpenBao's
-generate-root flow:
+generate-root flow. The same command works for an initialized and sealed node:
+the recovery binary first unseals OpenBao with the presented shares, then uses
+those shares to authorize generate-root before reconciling baseline state.
 
 ```sh
 openbao-recover recover \
