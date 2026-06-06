@@ -662,6 +662,18 @@ func installRuntime(repoRoot string, cfg config) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := os.MkdirAll(cfg.runtimeRoot, 0o755); err != nil {
+		return "", fmt.Errorf("create Nomad Observer runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(cfg.runtimeRoot, ".install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("open Nomad Observer runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return "", fmt.Errorf("lock Nomad Observer runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	release := filepath.Join(cfg.runtimeRoot, "releases", strings.ReplaceAll(digest, ":", "-"))
 	if !runtimeInstalled(release) {
 		if err := extractRuntimeTar(artifact, release); err != nil {
