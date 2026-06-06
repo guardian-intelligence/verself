@@ -523,9 +523,17 @@ func apply(ctx context.Context, cfg config, stdout, stderr io.Writer) error {
 		return nil
 	}
 	if err := runZitadelBootstrap(ctx, cfg, masterkey, uid, gid, stdout, stderr); err != nil {
+		if removeErr := removeFileIfExists(transientMachineKeyPath(cfg)); removeErr != nil {
+			err = errors.Join(err, fmt.Errorf("remove transient Zitadel machine key: %w", removeErr))
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+	if err := removeFileIfExists(transientMachineKeyPath(cfg)); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("remove transient Zitadel machine key: %w", err)
 	}
 	if err := publishAdminPAT(ctx, cfg, stdout); err != nil {
 		span.RecordError(err)
@@ -548,6 +556,18 @@ func installRuntimeArtifact(cfg config) error {
 	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(cfg.runtimeRoot, 0o755); err != nil {
+		return fmt.Errorf("create runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(cfg.runtimeRoot, "install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
 	release := filepath.Join(cfg.runtimeRoot, "releases", strings.ReplaceAll(digest, ":", "-"))
 	if !regularFile(filepath.Join(release, "bin/zitadel")) {
 		if err := extractRuntimeArtifact(artifact, release); err != nil {
@@ -838,6 +858,7 @@ func buildZitadelEnv(ctx context.Context, cfg config, masterkey string) ([]strin
 	}
 	env = append(env,
 		"ZITADEL_FIRSTINSTANCE_INSTANCENAME="+strings.TrimSpace(cfg.instanceName),
+		"ZITADEL_FIRSTINSTANCE_MACHINEKEYPATH="+transientMachineKeyPath(cfg),
 		"ZITADEL_FIRSTINSTANCE_PATPATH="+strings.TrimSpace(cfg.adminPATPath),
 		"ZITADEL_FIRSTINSTANCE_ORG_NAME="+strings.TrimSpace(cfg.instanceOrgName),
 		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME="+strings.TrimSpace(cfg.humanUserName),
@@ -849,9 +870,15 @@ func buildZitadelEnv(ctx context.Context, cfg config, masterkey string) ([]strin
 		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED=false",
 		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME="+strings.TrimSpace(cfg.machineUserName),
 		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME="+strings.TrimSpace(cfg.machineName),
+		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_EXPIRATIONDATE=2099-01-01T00:00:00Z",
+		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE=1",
 		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE=2099-01-01T00:00:00Z",
 	)
 	return env, nil
+}
+
+func transientMachineKeyPath(cfg config) string {
+	return filepath.Join(filepath.Dir(strings.TrimSpace(cfg.adminPATPath)), "machine-key.json")
 }
 
 func publishAdminPAT(ctx context.Context, cfg config, stdout io.Writer) error {

@@ -17,6 +17,5 @@ filegroup(
         allow_empty = True,
     ) + [
         "//src/infrastructure-components/pomerium:role_sources",
-        "//src/infrastructure-components/zitadel:role_sources",
     ],
 )

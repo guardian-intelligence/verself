@@ -126,7 +126,7 @@ resources: [
 		metadata: name: "openbao"
 		spec: {
 			address:          "https://127.0.0.1:8200"
-			caCert:           "/etc/openbao/tls/cert.pem"
+			caCert:           "/etc/verself/openbao/ca.pem"
 			runtimeRoot:      "/var/lib/openbao/runtime"
 			dataDir:          "/var/lib/openbao/raft"
 			configPath:       "/etc/openbao/openbao.hcl"
@@ -628,12 +628,6 @@ resources: [
 				namespace: "default"
 			}
 			otel: exporterEndpoint: "http://127.0.0.1:4317"
-			capture: {
-				workers:         4
-				queueSize:       128
-				stderrTailBytes: 65536
-				stdoutTailBytes: 32768
-			}
 			fleet: snapshotIntervalSeconds: 30
 			clickhouse: {
 				address:    "127.0.0.1:9440"

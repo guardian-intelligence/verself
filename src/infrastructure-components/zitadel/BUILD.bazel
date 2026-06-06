@@ -21,37 +21,16 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "config/**",
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "roles/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "zitadel-runtime",
-        "//src/infrastructure-components/zitadel/cmd/zitadel-setup-apply:zitadel-setup-apply_nomad_artifact": "zitadel-setup-apply",
-    },
     component = "zitadel",
     deploy_phase = "platform",
     job_id = "zitadel",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "zitadel-runtime",
+        "//src/infrastructure-components/zitadel/cmd/zitadel-setup-apply:zitadel-setup-apply_nomad_artifact": "zitadel-setup-apply",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 

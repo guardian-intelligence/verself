@@ -732,7 +732,7 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 				},
 				"spec": map[string]any{
 					"address":          "https://127.0.0.1:8200",
-					"caCert":           "/etc/openbao/tls/cert.pem",
+					"caCert":           "/etc/verself/openbao/ca.pem",
 					"runtimeRoot":      "/var/lib/openbao/runtime-from-graph",
 					"dataDir":          "/var/lib/openbao/raft-from-graph",
 					"configPath":       "/etc/openbao/openbao-from-graph.hcl",

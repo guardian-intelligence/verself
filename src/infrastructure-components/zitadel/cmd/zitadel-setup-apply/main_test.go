@@ -338,6 +338,8 @@ func TestBuildZitadelEnvUsesStaticStoreValues(t *testing.T) {
 		"ZITADEL_EXTERNALDOMAIN":                                  "gamma.verself.sh",
 		"ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD": "smtp-secret",
 		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD":                "admin-secret",
+		"ZITADEL_FIRSTINSTANCE_MACHINEKEYPATH":                    "/run/verself/recovery/zitadel/zitadel-admin/machine-key.json",
+		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINEKEY_TYPE":       "1",
 		"ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE":    "2099-01-01T00:00:00Z",
 		"ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED":  "false",
 		"ZITADEL_FIRSTINSTANCE_PATPATH":                           "/run/verself/recovery/zitadel/zitadel-admin/admin.pat",

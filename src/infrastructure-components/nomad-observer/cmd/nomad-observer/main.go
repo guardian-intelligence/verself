@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,12 +11,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,7 +24,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/hashicorp/nomad/api"
@@ -47,17 +45,10 @@ const (
 	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
 	defaultResource = "nomad-observer"
 
-	maxTailBytes      = 1024 * 1024
-	dedupeMaxAge      = 24 * time.Hour
 	heartbeatInterval = 60 * time.Second
-	logCaptureTimeout = 5 * time.Second
 )
 
 var (
-	bearerPattern      = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
-	jwtPattern         = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
-	secretLinePattern  = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|token|jwt|access_token|id_token|refresh_token|client_secret|password|passwd|secret|api_key|private_key)\b\s*[:=]\s*([^\s]+)`)
-	privateKeyPattern  = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`)
 	terminalAllocState = map[string]struct{}{
 		api.AllocClientStatusFailed: {},
 		api.AllocClientStatusLost:   {},
@@ -76,10 +67,6 @@ type config struct {
 	nomadAddr             string
 	namespace             string
 	otlpEndpoint          string
-	stderrTailBytes       int64
-	stdoutTailBytes       int64
-	captureWorkers        int
-	captureQueueSize      int
 	clickhouseAddr        string
 	clickhouseUser        string
 	clickhouseCACertPath  string
@@ -124,12 +111,6 @@ type crdSpec struct {
 	OTel struct {
 		ExporterEndpoint string `json:"exporterEndpoint"`
 	} `json:"otel"`
-	Capture struct {
-		Workers         int   `json:"workers"`
-		QueueSize       int   `json:"queueSize"`
-		StderrTailBytes int64 `json:"stderrTailBytes"`
-		StdoutTailBytes int64 `json:"stdoutTailBytes"`
-	} `json:"capture"`
 	Fleet struct {
 		SnapshotIntervalSeconds int `json:"snapshotIntervalSeconds"`
 	} `json:"fleet"`
@@ -169,19 +150,6 @@ func (m deployMeta) empty() bool {
 	return m.DeployRunKey == "" && m.DeploySHA == "" && m.SpecSHA256 == "" && m.ArtifactSHA256 == ""
 }
 
-type logCaptureRequest struct {
-	Namespace    string
-	AllocID      string
-	JobID        string
-	DeploymentID string
-	EvalID       string
-	TaskGroup    string
-	Task         string
-	Stream       string
-	TailBytes    int64
-	Meta         deployMeta
-}
-
 type jobMetaCache struct {
 	mu     sync.Mutex
 	values map[string]deployMeta
@@ -214,51 +182,19 @@ func jobCacheKey(namespace, jobID string) string {
 	return namespace + "\x00" + jobID
 }
 
-type captureDedupe struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
-}
-
-func newCaptureDedupe() *captureDedupe {
-	return &captureDedupe{seen: make(map[string]time.Time)}
-}
-
-func (d *captureDedupe) mark(req logCaptureRequest) bool {
-	key := req.Namespace + "\x00" + req.AllocID + "\x00" + req.Task + "\x00" + req.Stream
-	now := time.Now()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if firstSeen, ok := d.seen[key]; ok && now.Sub(firstSeen) < dedupeMaxAge {
-		return false
-	}
-	if len(d.seen) > 4096 {
-		for candidate, firstSeen := range d.seen {
-			if now.Sub(firstSeen) > dedupeMaxAge {
-				delete(d.seen, candidate)
-			}
-		}
-	}
-	d.seen[key] = now
-	return true
-}
-
 type observerStats struct {
 	events       atomic.Uint64
 	failures     atomic.Uint64
-	captures     atomic.Uint64
-	captureDrops atomic.Uint64
 	streamErrors atomic.Uint64
 }
 
 type observer struct {
-	cfg     config
-	client  *api.Client
-	logger  *slog.Logger
-	tracer  trace.Tracer
-	meta    *jobMetaCache
-	dedupe  *captureDedupe
-	stats   observerStats
-	capture chan logCaptureRequest
+	cfg    config
+	client *api.Client
+	logger *slog.Logger
+	tracer trace.Tracer
+	meta   *jobMetaCache
+	stats  observerStats
 }
 
 func main() {
@@ -308,9 +244,7 @@ func run(ctx context.Context, cfg config) error {
 	)
 	slog.SetDefault(logger)
 
-	nomadConfig := api.DefaultConfig()
-	nomadConfig.Address = cfg.nomadAddr
-	nomadClient, err := api.NewClient(nomadConfig)
+	nomadClient, err := newNomadClient(cfg.nomadAddr)
 	if err != nil {
 		return fmt.Errorf("nomad client: %w", err)
 	}
@@ -320,20 +254,28 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	obs := &observer{
-		cfg:     cfg,
-		client:  nomadClient,
-		logger:  logger,
-		tracer:  otel.Tracer(serviceName),
-		meta:    newJobMetaCache(),
-		dedupe:  newCaptureDedupe(),
-		capture: make(chan logCaptureRequest, cfg.captureQueueSize),
-	}
-	for i := 0; i < cfg.captureWorkers; i++ {
-		go obs.captureWorker(ctx, i)
+		cfg:    cfg,
+		client: nomadClient,
+		logger: logger,
+		tracer: otel.Tracer(serviceName),
+		meta:   newJobMetaCache(),
 	}
 	go obs.heartbeat(ctx)
 
 	return obs.streamLoop(ctx)
+}
+
+func newNomadClient(address string) (*api.Client, error) {
+	nomadConfig := api.DefaultConfig()
+	nomadConfig.Address = address
+	nomadConfig.HttpClient = &http.Client{
+		Transport: &http.Transport{
+			MaxConnsPerHost:     8,
+			MaxIdleConnsPerHost: 4,
+			IdleConnTimeout:     30 * time.Second,
+		},
+	}
+	return api.NewClient(nomadConfig)
 }
 
 func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) error {
@@ -510,10 +452,6 @@ func loadConfig(opts graphOptions) (config, error) {
 		nomadAddr:             spec.Nomad.Address,
 		namespace:             spec.Nomad.Namespace,
 		otlpEndpoint:          spec.OTel.ExporterEndpoint,
-		stderrTailBytes:       spec.Capture.StderrTailBytes,
-		stdoutTailBytes:       spec.Capture.StdoutTailBytes,
-		captureWorkers:        spec.Capture.Workers,
-		captureQueueSize:      spec.Capture.QueueSize,
 		clickhouseAddr:        spec.ClickHouse.Address,
 		clickhouseUser:        spec.ClickHouse.User,
 		clickhouseCACertPath:  spec.ClickHouse.CACertPath,
@@ -556,18 +494,6 @@ func validateConfig(cfg config) error {
 		if !filepath.IsAbs(value) {
 			return fmt.Errorf("NomadObserver.spec.%s must be an absolute path", name)
 		}
-	}
-	if cfg.stderrTailBytes < 0 || cfg.stderrTailBytes > maxTailBytes {
-		return fmt.Errorf("NomadObserver.spec.capture.stderrTailBytes must be between 0 and %d", maxTailBytes)
-	}
-	if cfg.stdoutTailBytes < 0 || cfg.stdoutTailBytes > maxTailBytes {
-		return fmt.Errorf("NomadObserver.spec.capture.stdoutTailBytes must be between 0 and %d", maxTailBytes)
-	}
-	if cfg.captureWorkers < 1 || cfg.captureWorkers > 32 {
-		return errors.New("NomadObserver.spec.capture.workers must be between 1 and 32")
-	}
-	if cfg.captureQueueSize < 1 || cfg.captureQueueSize > 4096 {
-		return errors.New("NomadObserver.spec.capture.queueSize must be between 1 and 4096")
 	}
 	if cfg.fleetSnapshotInterval < 5*time.Second || cfg.fleetSnapshotInterval > time.Hour {
 		return errors.New("NomadObserver.spec.fleet.snapshotIntervalSeconds must be between 5 and 3600")
@@ -898,7 +824,8 @@ func (o *observer) streamLoop(ctx context.Context) error {
 	var nextIndex uint64
 	backoff := time.Second
 	for ctx.Err() == nil {
-		streamCtx, span := o.tracer.Start(ctx, "nomad_observer.event_stream",
+		streamBaseCtx, cancelStream := context.WithCancel(ctx)
+		streamCtx, span := o.tracer.Start(streamBaseCtx, "nomad_observer.event_stream",
 			trace.WithAttributes(
 				attribute.String("nomad.namespace", o.cfg.namespace),
 				attribute.Int64("nomad.stream.index", int64(nextIndex)),
@@ -908,6 +835,7 @@ func (o *observer) streamLoop(ctx context.Context) error {
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
+			cancelStream()
 			span.End()
 			o.stats.streamErrors.Add(1)
 			o.logger.WarnContext(streamCtx, "nomad.observer.stream_open_failed",
@@ -950,6 +878,7 @@ func (o *observer) streamLoop(ctx context.Context) error {
 				o.handleEvent(streamCtx, event)
 			}
 		}
+		cancelStream()
 		span.End()
 		if !sleepContext(ctx, backoff) {
 			return ctx.Err()
@@ -989,8 +918,6 @@ func (o *observer) heartbeat(ctx context.Context) {
 			o.logger.InfoContext(ctx, "nomad.observer.heartbeat",
 				slog.Uint64("nomad.observer.events", o.stats.events.Load()),
 				slog.Uint64("nomad.observer.failures", o.stats.failures.Load()),
-				slog.Uint64("nomad.observer.log_captures", o.stats.captures.Load()),
-				slog.Uint64("nomad.observer.capture_drops", o.stats.captureDrops.Load()),
 				slog.Uint64("nomad.observer.stream_errors", o.stats.streamErrors.Load()),
 			)
 		}
@@ -1166,7 +1093,6 @@ func (o *observer) handleAllocationEvent(ctx context.Context, event api.Event) {
 		if allocationFailed(alloc.ClientStatus) {
 			level = slog.LevelWarn
 			o.stats.failures.Add(1)
-			o.enqueueLogCaptures(ctx, alloc, meta)
 		}
 	}
 	o.logAttrs(ctx, level, "nomad.allocation.event", attrs)
@@ -1292,252 +1218,6 @@ func metadataFromMap(values map[string]string) deployMeta {
 		SpecSHA256:     values["spec_sha256"],
 		ArtifactSHA256: values["artifact_sha256"],
 	}
-}
-
-func (o *observer) enqueueLogCaptures(ctx context.Context, alloc *api.Allocation, meta deployMeta) {
-	tasks := failedTaskNames(alloc.TaskStates)
-	if len(tasks) == 0 {
-		return
-	}
-	namespace := normalizeNamespace(alloc.Namespace, o.cfg.namespace)
-	for _, task := range tasks {
-		for _, stream := range []string{api.FSLogNameStderr, api.FSLogNameStdout} {
-			tailBytes := o.cfg.stderrTailBytes
-			if stream == api.FSLogNameStdout {
-				tailBytes = o.cfg.stdoutTailBytes
-			}
-			if tailBytes <= 0 {
-				continue
-			}
-			req := logCaptureRequest{
-				Namespace:    namespace,
-				AllocID:      alloc.ID,
-				JobID:        alloc.JobID,
-				DeploymentID: alloc.DeploymentID,
-				EvalID:       alloc.EvalID,
-				TaskGroup:    alloc.TaskGroup,
-				Task:         task,
-				Stream:       stream,
-				TailBytes:    tailBytes,
-				Meta:         meta,
-			}
-			if !o.dedupe.mark(req) {
-				continue
-			}
-			select {
-			case o.capture <- req:
-			default:
-				o.stats.captureDrops.Add(1)
-				o.logger.LogAttrs(ctx, slog.LevelWarn, "nomad.alloc.log_capture_dropped",
-					append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_capture_dropped"))...)
-			}
-		}
-	}
-}
-
-func (o *observer) captureWorker(ctx context.Context, workerID int) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req := <-o.capture:
-			o.captureLogTail(ctx, workerID, req)
-		}
-	}
-}
-
-func (o *observer) captureLogTail(ctx context.Context, workerID int, req logCaptureRequest) {
-	ctx, cancel := context.WithTimeout(ctx, logCaptureTimeout)
-	defer cancel()
-	ctx, span := o.tracer.Start(ctx, "nomad_observer.log_capture",
-		trace.WithAttributes(
-			attribute.String("nomad.namespace", req.Namespace),
-			attribute.String("nomad.alloc_id", req.AllocID),
-			attribute.String("nomad.job_id", req.JobID),
-			attribute.String("nomad.deployment_id", req.DeploymentID),
-			attribute.String("nomad.eval_id", req.EvalID),
-			attribute.String("nomad.task_group", req.TaskGroup),
-			attribute.String("nomad.task", req.Task),
-			attribute.String("nomad.log.stream", req.Stream),
-			attribute.Int64("nomad.log.tail_bytes", req.TailBytes),
-			attribute.Int("nomad.observer.worker_id", workerID),
-		),
-	)
-	defer span.End()
-
-	alloc, _, err := o.client.Allocations().Info(req.AllocID, (&api.QueryOptions{Namespace: req.Namespace}).WithContext(ctx))
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		o.logger.LogAttrs(ctx, slog.LevelWarn, "nomad.alloc.log_capture_failed",
-			append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_capture_failed"), slog.String("error", err.Error()))...)
-		return
-	}
-	if alloc != nil {
-		if req.JobID == "" {
-			req.JobID = alloc.JobID
-		}
-		if req.DeploymentID == "" {
-			req.DeploymentID = alloc.DeploymentID
-		}
-		if req.EvalID == "" {
-			req.EvalID = alloc.EvalID
-		}
-		if req.TaskGroup == "" {
-			req.TaskGroup = alloc.TaskGroup
-		}
-		if req.Meta.empty() {
-			req.Meta = metadataFromAlloc(alloc)
-		}
-		if req.Meta.empty() {
-			if meta, err := o.metadataForJob(ctx, req.Namespace, req.JobID); err == nil {
-				req.Meta = meta
-			}
-		}
-	}
-	setMetaSpanAttributes(span, req.Meta)
-
-	body, err := o.readLogTail(ctx, alloc, req)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		o.logger.LogAttrs(ctx, slog.LevelWarn, "nomad.alloc.log_capture_failed",
-			append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_capture_failed"), slog.String("error", err.Error()))...)
-		return
-	}
-	span.SetAttributes(attribute.Int("nomad.log.captured_bytes", len(body)))
-	if len(bytes.TrimSpace(body)) == 0 {
-		o.logger.LogAttrs(ctx, slog.LevelInfo, "nomad.alloc.log_tail_empty",
-			append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_tail_empty"))...)
-		return
-	}
-	redacted := redactLogTail(string(body))
-	redacted = trimStringTail(redacted, req.TailBytes)
-	o.stats.captures.Add(1)
-	o.logger.LogAttrs(ctx, slog.LevelWarn, redacted,
-		append(captureAttrs(req, len(redacted)), slog.String("nomad.event_name", "nomad.alloc."+req.Stream+"_tail"))...)
-}
-
-func (o *observer) readLogTail(ctx context.Context, alloc *api.Allocation, req logCaptureRequest) ([]byte, error) {
-	if alloc == nil {
-		return nil, errors.New("allocation not found")
-	}
-	cancel := make(chan struct{})
-	defer close(cancel)
-	frames, errCh := o.client.AllocFS().Logs(
-		alloc,
-		false,
-		req.Task,
-		req.Stream,
-		api.OriginEnd,
-		req.TailBytes,
-		cancel,
-		(&api.QueryOptions{Namespace: req.Namespace}).WithContext(ctx),
-	)
-	if frames == nil {
-		select {
-		case err := <-errCh:
-			if err == nil {
-				err = errors.New("log stream unavailable")
-			}
-			return nil, err
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-	var buf bytes.Buffer
-	limit := int(req.TailBytes)
-	for {
-		select {
-		case frame, ok := <-frames:
-			if !ok {
-				if limit > 0 && buf.Len() > limit {
-					trimBuffer(&buf, limit)
-				}
-				return buf.Bytes(), nil
-			}
-			if frame == nil || len(frame.Data) == 0 {
-				continue
-			}
-			_, _ = buf.Write(frame.Data)
-			if limit > 0 && buf.Len() > limit*2 {
-				trimBuffer(&buf, limit)
-			}
-		case err := <-errCh:
-			if err != nil {
-				return nil, err
-			}
-		case <-ctx.Done():
-			if buf.Len() > 0 {
-				if limit > 0 && buf.Len() > limit {
-					trimBuffer(&buf, limit)
-				}
-				return buf.Bytes(), nil
-			}
-			return nil, ctx.Err()
-		}
-	}
-}
-
-func trimBuffer(buf *bytes.Buffer, limit int) {
-	if limit <= 0 || buf.Len() <= limit {
-		return
-	}
-	data := append([]byte(nil), buf.Bytes()[buf.Len()-limit:]...)
-	buf.Reset()
-	_, _ = buf.Write(data)
-}
-
-func trimStringTail(value string, maxBytes int64) string {
-	if maxBytes <= 0 || int64(len(value)) <= maxBytes {
-		return value
-	}
-	start := len(value) - int(maxBytes)
-	for start < len(value) && !utf8.RuneStart(value[start]) {
-		start++
-	}
-	return value[start:]
-}
-
-func captureAttrs(req logCaptureRequest, capturedBytes int) []slog.Attr {
-	attrs := []slog.Attr{
-		slog.String("nomad.namespace", req.Namespace),
-		slog.String("nomad.alloc_id", req.AllocID),
-		slog.String("nomad.job_id", req.JobID),
-		slog.String("nomad.deployment_id", req.DeploymentID),
-		slog.String("nomad.eval_id", req.EvalID),
-		slog.String("nomad.task_group", req.TaskGroup),
-		slog.String("nomad.task", req.Task),
-		slog.String("nomad.log.stream", req.Stream),
-		slog.Int64("nomad.log.tail_bytes", req.TailBytes),
-		slog.Int("nomad.log.captured_bytes", capturedBytes),
-	}
-	return appendMetaAttrs(attrs, req.Meta)
-}
-
-func failedTaskNames(states map[string]*api.TaskState) []string {
-	if len(states) == 0 {
-		return nil
-	}
-	tasks := make([]string, 0, len(states))
-	for name, state := range states {
-		if state == nil {
-			continue
-		}
-		if taskStateFailed(state) {
-			tasks = append(tasks, name)
-		}
-	}
-	if len(tasks) == 0 {
-		for name := range states {
-			tasks = append(tasks, name)
-		}
-	}
-	sort.Strings(tasks)
-	if len(tasks) > 8 {
-		tasks = tasks[:8]
-	}
-	return tasks
 }
 
 func latestTaskFailure(states map[string]*api.TaskState) (string, api.TaskState, *api.TaskEvent) {
@@ -1677,15 +1357,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func redactLogTail(value string) string {
-	if !utf8.ValidString(value) {
-		value = strings.ToValidUTF8(value, "\uFFFD")
-	}
-	value = privateKeyPattern.ReplaceAllString(value, "[redacted:private-key]")
-	value = bearerPattern.ReplaceAllString(value, "Bearer [redacted:jwt]")
-	value = jwtPattern.ReplaceAllString(value, "[redacted:jwt]")
-	value = secretLinePattern.ReplaceAllString(value, "$1=[redacted:secret]")
-	return strings.TrimRight(value, "\r\n")
 }

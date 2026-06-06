@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -40,7 +41,7 @@ const (
 	defaultDataDir     = "/var/lib/openbao/raft"
 	defaultConfigPath  = "/etc/openbao/openbao.hcl"
 	defaultAddr        = "https://127.0.0.1:8200"
-	defaultCACert      = "/etc/openbao/tls/cert.pem"
+	defaultCACert      = "/etc/verself/openbao/ca.pem"
 	defaultReportPath  = "/run/verself/recovery/openbao/report.json"
 	defaultKeyShares   = 3
 	defaultThreshold   = 2
@@ -1588,22 +1589,15 @@ func prepareHost(ctx context.Context, cfg config) error {
 	}
 	certPath := "/etc/openbao/tls/cert.pem"
 	keyPath := "/etc/openbao/tls/key.pem"
-	tlsMissing, err := tlsPairMissing(certPath, keyPath)
+	publicCA := "/etc/verself/openbao/ca.pem"
+	tlsNeedsRotation, err := tlsMaterialNeedsRotation(certPath, keyPath, publicCA)
 	if err != nil {
 		return err
 	}
-	if tlsMissing {
-		if err := writeSelfSignedTLS(certPath, keyPath, gid); err != nil {
+	if tlsNeedsRotation {
+		if err := writeLocalTLS(certPath, keyPath, publicCA, gid); err != nil {
 			return err
 		}
-	}
-	publicCA := "/etc/verself/openbao/ca.pem"
-	certBytes, err := os.ReadFile(certPath)
-	if err != nil {
-		return fmt.Errorf("read OpenBao cert: %w", err)
-	}
-	if err := writeFileAtomic(publicCA, certBytes, 0o644); err != nil {
-		return err
 	}
 	config := openBaoConfig(cfg)
 	if err := writeFileAtomic(cfg.configPath, []byte(config), 0o640); err != nil {
@@ -1647,15 +1641,58 @@ func safeWipeDataDir(path string) (string, error) {
 	return clean, nil
 }
 
-func tlsPairMissing(certPath string, keyPath string) (bool, error) {
-	for _, path := range []string{certPath, keyPath} {
+func tlsMaterialNeedsRotation(certPath string, keyPath string, caPath string) (bool, error) {
+	for _, path := range []string{certPath, keyPath, caPath} {
 		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 			return true, nil
 		} else if err != nil {
 			return false, fmt.Errorf("stat OpenBao TLS file %s: %w", path, err)
 		}
 	}
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		return true, nil
+	}
+	ca, err := readCertificate(caPath)
+	if err != nil {
+		return true, nil
+	}
+	if !ca.IsCA {
+		return true, nil
+	}
+	leaf, err := readCertificate(certPath)
+	if err != nil {
+		return true, nil
+	}
+	if err := leaf.CheckSignatureFrom(ca); err != nil {
+		return true, nil
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := leaf.Verify(x509.VerifyOptions{
+		Roots:       roots,
+		DNSName:     "localhost",
+		CurrentTime: time.Now(),
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}); err != nil {
+		return true, nil
+	}
 	return false, nil
+}
+
+func readCertificate(path string) (*x509.Certificate, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(body)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("%s does not contain a PEM certificate", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	return cert, nil
 }
 
 func ensureGroup(ctx context.Context, name string) error {
@@ -1717,17 +1754,46 @@ func mkdirOwned(path string, uid int, gid int, mode os.FileMode) error {
 	return os.Chmod(path, mode)
 }
 
-func writeSelfSignedTLS(certPath string, keyPath string, groupID int) error {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+func writeLocalTLS(certPath string, keyPath string, caPath string, groupID int) error {
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("generate OpenBao TLS key: %w", err)
+		return fmt.Errorf("generate OpenBao TLS CA key: %w", err)
 	}
-	serial := make([]byte, 16)
-	if _, err := rand.Read(serial); err != nil {
-		return fmt.Errorf("generate OpenBao TLS serial: %w", err)
+	caSerial, err := randomSerial()
+	if err != nil {
+		return fmt.Errorf("generate OpenBao TLS CA serial: %w", err)
 	}
-	template := x509.Certificate{
-		SerialNumber:          new(big.Int).SetBytes(serial),
+	now := time.Now()
+	caTemplate := x509.Certificate{
+		SerialNumber: caSerial,
+		Subject: pkix.Name{
+			CommonName: "Verself OpenBao local CA",
+		},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.AddDate(10, 0, 0),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return fmt.Errorf("create OpenBao TLS CA cert: %w", err)
+	}
+
+	serverKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generate OpenBao TLS server key: %w", err)
+	}
+	serverSerial, err := randomSerial()
+	if err != nil {
+		return fmt.Errorf("generate OpenBao TLS server serial: %w", err)
+	}
+	serverTemplate := x509.Certificate{
+		SerialNumber: serverSerial,
+		Subject: pkix.Name{
+			CommonName: "localhost",
+		},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
@@ -1736,16 +1802,20 @@ func writeSelfSignedTLS(certPath string, keyPath string, groupID int) error {
 		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
 		DNSNames:              []string{"localhost"},
 	}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	certDER, err := x509.CreateCertificate(rand.Reader, &serverTemplate, &caTemplate, &serverKey.PublicKey, caKey)
 	if err != nil {
 		return fmt.Errorf("create OpenBao TLS cert: %w", err)
 	}
-	keyDER, err := x509.MarshalECPrivateKey(key)
+	keyDER, err := x509.MarshalECPrivateKey(serverKey)
 	if err != nil {
 		return fmt.Errorf("marshal OpenBao TLS key: %w", err)
 	}
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	if err := writeFileAtomic(caPath, caPEM, 0o644); err != nil {
+		return err
+	}
 	if err := writeFileAtomic(certPath, certPEM, 0o640); err != nil {
 		return err
 	}
@@ -1759,6 +1829,18 @@ func writeSelfSignedTLS(certPath string, keyPath string, groupID int) error {
 		return fmt.Errorf("chown OpenBao TLS key: %w", err)
 	}
 	return nil
+}
+
+func randomSerial() (*big.Int, error) {
+	limit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serial, err := rand.Int(rand.Reader, limit)
+	if err != nil {
+		return nil, err
+	}
+	if serial.Sign() == 0 {
+		return randomSerial()
+	}
+	return serial, nil
 }
 
 func openBaoConfig(cfg config) string {

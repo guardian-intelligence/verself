@@ -5,5 +5,8 @@ FirstInstance:
         Verified: true
       PasswordChangeRequired: false
     Machine:
+      MachineKey:
+        ExpirationDate: "2099-01-01T00:00:00Z"
+        Type: 1
       Pat:
         ExpirationDate: "2099-01-01T00:00:00Z"

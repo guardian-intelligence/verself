@@ -122,10 +122,6 @@ func testConfig(t *testing.T) config {
 		nomadAddr:             spec.Nomad.Address,
 		namespace:             spec.Nomad.Namespace,
 		otlpEndpoint:          spec.OTel.ExporterEndpoint,
-		stderrTailBytes:       spec.Capture.StderrTailBytes,
-		stdoutTailBytes:       spec.Capture.StdoutTailBytes,
-		captureWorkers:        spec.Capture.Workers,
-		captureQueueSize:      spec.Capture.QueueSize,
 		clickhouseAddr:        spec.ClickHouse.Address,
 		clickhouseUser:        spec.ClickHouse.User,
 		clickhouseCACertPath:  spec.ClickHouse.CACertPath,
@@ -169,12 +165,6 @@ func testSpec() map[string]any {
 		},
 		"otel": map[string]any{
 			"exporterEndpoint": "http://127.0.0.1:4317",
-		},
-		"capture": map[string]any{
-			"workers":         4,
-			"queueSize":       128,
-			"stderrTailBytes": 65536,
-			"stdoutTailBytes": 32768,
 		},
 		"fleet": map[string]any{
 			"snapshotIntervalSeconds": 30,
