@@ -23,33 +23,14 @@ pkg_tar(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "tigerbeetle-runtime",
-    },
     component = "tigerbeetle",
     deploy_phase = "platform",
     job_id = "tigerbeetle",
     job_spec = "nomad.hcl",
+    pre_artifacts = {
+        ":runtime_artifact": "tigerbeetle-runtime",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

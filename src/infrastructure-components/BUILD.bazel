@@ -20,7 +20,6 @@ filegroup(
         "//src/infrastructure-components/haproxy:role_sources",
         "//src/infrastructure-components/openbao:role_sources",
         "//src/infrastructure-components/pomerium:role_sources",
-        "//src/infrastructure-components/tigerbeetle:role_sources",
         "//src/infrastructure-components/zitadel:role_sources",
         "//src/infrastructure-components/zot:role_sources",
     ],
