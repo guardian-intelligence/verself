@@ -190,13 +190,13 @@ func loadConfig(opts options) (config, error) {
 	for _, resource := range doc.Resources {
 		key := resourceKey(resource.APIVersion, resource.Kind, resource.Metadata.Name)
 		if _, exists := resources[key]; exists {
-			return config{}, fmt.Errorf("Guardian resource graph duplicates %s", key)
+			return config{}, fmt.Errorf("guardian resource graph duplicates %s", key)
 		}
 		resources[key] = resource
 	}
 	platform, ok := resources[resourceKey(apiVersion, kind, opts.resourceName)]
 	if !ok {
-		return config{}, fmt.Errorf("Guardian resource graph missing %s %q", kind, opts.resourceName)
+		return config{}, fmt.Errorf("guardian resource graph missing %s %q", kind, opts.resourceName)
 	}
 	var cfg config
 	cfgDecoder := json.NewDecoder(bytes.NewReader(platform.Spec))
@@ -433,7 +433,7 @@ func extractRuntimeTar(artifact string, release string) error {
 		return err
 	}
 	if !runtimeInstalled(tmp) {
-		return errors.New("Temporal runtime artifact missing required binaries")
+		return errors.New("temporal runtime artifact missing required binaries")
 	}
 	if err := os.RemoveAll(release); err != nil {
 		return fmt.Errorf("remove stale Temporal runtime release: %w", err)

@@ -174,7 +174,7 @@ func loadSpecs(opts options) ([]namespaceadmin.Spec, error) {
 		}
 		return namespaceSpecs(spec)
 	}
-	return nil, fmt.Errorf("Guardian resource graph missing TemporalPlatform %q", opts.resourceName)
+	return nil, fmt.Errorf("guardian resource graph missing TemporalPlatform %q", opts.resourceName)
 }
 
 func namespaceSpecs(spec temporalSpec) ([]namespaceadmin.Spec, error) {
