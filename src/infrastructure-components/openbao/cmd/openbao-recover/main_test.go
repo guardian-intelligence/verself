@@ -200,6 +200,23 @@ func TestUnsealedOpenBaoRequiresNoOperatorIntervention(t *testing.T) {
 	assertReportDoesNotContain(t, rep, token)
 }
 
+func TestUnsealedOpenBaoReportsBaselineBlockedWithoutOperatorToken(t *testing.T) {
+	client := &fakeOpenBaoClient{
+		status: baoStatus{Initialized: true, Sealed: false},
+	}
+	cfg := testConfig(t)
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
+	if len(client.baselineTokens) != 0 {
+		t.Fatalf("baseline reconciled without an operator token")
+	}
+}
+
 func TestUnsealedOpenBaoUsesOperatorTokenFromStdin(t *testing.T) {
 	token := randomSecret(t)
 	client := &fakeOpenBaoClient{

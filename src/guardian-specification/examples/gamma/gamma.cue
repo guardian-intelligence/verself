@@ -340,6 +340,40 @@ resources: [
 		spec: publicKeyBase64: openbaoOperatorRootPublicKeyBase64
 	},
 	{
+		apiVersion: "postgresql.guardianintelligence.org/v1alpha1"
+		kind:       "PostgreSQLCluster"
+		metadata: name: "postgresql"
+		spec: {
+			runtimeArtifact:              "bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar"
+			runtimeRoot:                  "/var/lib/postgresql/runtime"
+			dataDir:                      "/var/lib/postgresql/16/verself"
+			configDir:                    "/etc/postgresql/verself"
+			logDir:                       "/var/log/postgresql"
+			socketDir:                    "/var/run/postgresql"
+			reportPath:                   "/run/verself/recovery/postgresql/report.json"
+			listenAddress:                "127.0.0.1"
+			port:                         5432
+			maxConnections:               300
+			superuserReservedConnections: 10
+			databases: [
+				{
+					name:  "object_storage_service"
+					owner: "object_storage_service"
+				},
+			]
+			peerMappings: [
+				{
+					systemUser:   "object_storage_service"
+					postgresUser: "object_storage_service"
+				},
+				{
+					systemUser:   "object_storage_admin"
+					postgresUser: "object_storage_service"
+				},
+			]
+		}
+	},
+	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "CloudflareControlPlane"
 		metadata: name: "gamma-cloudflare"

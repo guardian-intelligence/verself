@@ -11,11 +11,11 @@ consecutive submissions do not create unexpected allocation churn.
 | --- | --- | --- | --- | --- |
 | Substrate boarding | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad | `nomad.guardianintelligence.org/v1alpha1/NomadCluster/nomad` | Converged | None | Boarded repo, Nomad runtime artifact, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Converged | None | PGP recipient identities, threshold unseal material, root token for baseline reconciliation |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Server available, baseline blocked | `RootTrustMaterialAvailable=False`, `OpenBaoBaselineReconciled=False` | Operator root token for baseline reconciliation |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Blocked | `CloudflareAccountAuthorityAvailable=False` | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin` through the component import action |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to board-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Submitted, blocked in prestart/admin startup | PostgreSQL socket unavailable; OpenBao JWT role missing | PostgreSQL recovery, OpenBao baseline reconciliation, OpenBao-backed R2 credentials, ClickHouse, SPIFFE |
-| PostgreSQL | Component CRD not yet declared | Absent on gamma | `/var/run/postgresql/.s.PGSQL.5432` missing | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
+| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged | None | Boarded PostgreSQL runtime artifact, component-owned recovery job, service database/peer mapping config |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Setup/migrations pass, runtime blocked before start | OpenBao JWT role missing: `object-storage-service-runtime` | OpenBao baseline reconciliation, OpenBao-backed R2 credentials, ClickHouse, SPIFFE |
 
 ## Latest Gamma Evidence
 
@@ -59,14 +59,25 @@ Observed results:
   present in the boarded tree;
 - object-storage-service setup projects the boarded graph into
   `/run/verself/recovery/object-storage/document.json` for the service user;
-- object-storage-service service prestart reaches migrations and blocks on
-  absent PostgreSQL:
-  `/var/run/postgresql/.s.PGSQL.5432: connect: no such file or directory`;
-- object-storage-service admin startup blocks before templates render because
-  live OpenBao has not reconciled the new `object-storage-service-runtime`
-  Nomad JWT role;
-- gamma has no `postgresql` Nomad job and `systemctl is-active postgresql`
-  reports `inactive`.
+- PostgreSQL now has a component CRD and a component-owned Nomad job that
+  installs the boarded runtime artifact, initializes the data directory when
+  empty, starts `postgres`, and runs a poststart reconciliation loop;
+- PostgreSQL reports healthy in Nomad, writes
+  `/run/verself/recovery/postgresql/report.json`, and exposes
+  `/var/run/postgresql/.s.PGSQL.5432`;
+- PostgreSQL reconciled the `object_storage_service` role, database, and peer
+  mappings for `object_storage_service` and `object_storage_admin`;
+- object-storage-service setup now exits successfully and reaches past
+  migrations;
+- object-storage-service runtime and admin tasks still fail before process start
+  because Nomad cannot derive an OpenBao token: role
+  `object-storage-service-runtime` does not exist;
+- OpenBao recovery now reports the hidden blocker explicitly:
+  `RootTrustMaterialAvailable=False`,
+  `OpenBaoBaselineReconciled=False`, and
+  `OpenBaoRecoveryComplete=False` with reason `BaselineBlocked`;
+- the missing OpenBao role is caused by baseline reconciliation requiring an
+  operator root token.
 
 Evidence commands:
 
@@ -82,8 +93,11 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task setup <object-storage-service-allocation-id>'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task recover <cloudflare-allocation-id>'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/openbao/report.json'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
+ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_service env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d object_storage_service -A -t -c "select current_user;"'
+ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_admin env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -U object_storage_service -d object_storage_service -A -t -c "select current_user;"'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
-ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql || true; systemctl is-active postgresql || true'
 ```
 
 Cloudflare account-admin import is an operator gate. The stdin payload shape is:
@@ -111,9 +125,8 @@ cloudflare-control-plane \
 
 ## Next Component
 
-The next recovery target is PostgreSQL. Object-storage-service now reaches its
-database migration prestart and blocks because the PostgreSQL socket does not
-exist. PostgreSQL recovery should declare its own CRD, install the boarded
-runtime artifact, initialize or restore the data directory, start the server,
-and reconcile service databases plus peer mappings such as
-`object_storage_service -> object_storage_service`.
+The next recovery target is OpenBao baseline reconciliation. PostgreSQL now
+converges and object-storage-service reaches its OpenBao-backed secret delivery
+boundary. OpenBao must accept an operator root token through a component-owned
+operator path, reconcile mounts, policies, and Nomad JWT roles from the boarded
+graph, then object-storage-service can retry and discover the next dependency.

@@ -676,6 +676,14 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 	switch classify(status) {
 	case "InitializedUnsealed":
+		if cfg.baseline.Reconcile && !cfg.tokenStdin {
+			rep.Conditions = append(rep.Conditions,
+				conditionFalse("RootTrustMaterialAvailable", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires an operator token"),
+				conditionFalse("OpenBaoBaselineReconciled", "OperatorRootCredentialsRequired", "openbao", "baseline reconciliation requires an operator token"),
+				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+			)
+			return rep
+		}
 		if !cfg.tokenStdin {
 			rep.Conditions = append(rep.Conditions,
 				conditionTrue("RootTrustMaterialAvailable", "NotRequired", "openbao", "OpenBao is already unsealed"),
