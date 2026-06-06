@@ -63,3 +63,25 @@ func TestValidateInstanceRejectsBadIdentifiers(t *testing.T) {
 		t.Fatalf("validateInstance accepted invalid database identifier")
 	}
 }
+
+func TestIsElectricContainerdProcessMatchesOnlyConfiguredRuntime(t *testing.T) {
+	if !isElectricContainerdProcess("/var/lib/electric/runtime/current/bin/containerd --address /run/electric-containerd/containerd.sock --root /var/lib/electric-containerd/root --state /run/electric-containerd/state", "/run/electric-containerd/containerd.sock", "/var/lib/electric-containerd/root") {
+		t.Fatal("expected Electric containerd command to match")
+	}
+	if !isElectricContainerdProcess("/var/lib/electric/runtime/current/bin/containerd-shim-runc-v2 -namespace default -id electric-old -address /run/electric-containerd/containerd.sock", "/run/electric-containerd/containerd.sock", "/var/lib/electric-containerd/root") {
+		t.Fatal("expected Electric containerd shim command to match")
+	}
+	if isElectricContainerdProcess("/usr/bin/containerd --address /run/containerd/containerd.sock --root /var/lib/containerd", "/run/electric-containerd/containerd.sock", "/var/lib/electric-containerd/root") {
+		t.Fatal("did not expect unrelated containerd command to match")
+	}
+}
+
+func TestProcessStateFromStatHandlesNamesWithSpaces(t *testing.T) {
+	state, ok := processStateFromStat("1234 (containerd worker) Z 1 2 3 4")
+	if !ok {
+		t.Fatal("expected process state")
+	}
+	if state != "Z" {
+		t.Fatalf("state = %q, want Z", state)
+	}
+}

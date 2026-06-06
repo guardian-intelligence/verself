@@ -634,7 +634,11 @@ func promoteRuntime(root string, release string) error {
 }
 
 func execContainerd(cfg config) error {
+	if err := reclaimStaleContainerd(cfg); err != nil {
+		return err
+	}
 	_ = os.Remove(cfg.Containerd.SocketPath)
+	_ = os.Remove(cfg.Containerd.SocketPath + ".ttrpc")
 	for _, dir := range []string{filepath.Dir(cfg.Containerd.SocketPath), cfg.Containerd.StateDir, cfg.Containerd.RootDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create Electric containerd directory %s: %w", dir, err)
@@ -650,6 +654,120 @@ func execContainerd(cfg config) error {
 	}
 	env := append(os.Environ(), "PATH="+binDir+":"+os.Getenv("PATH"))
 	return syscall.Exec(command, argv, env)
+}
+
+func reclaimStaleContainerd(cfg config) error {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return fmt.Errorf("read /proc: %w", err)
+	}
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == os.Getpid() {
+			continue
+		}
+		cmdline, err := readCmdline(pid)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
+				continue
+			}
+			return fmt.Errorf("read process %d command line: %w", pid, err)
+		}
+		if !isElectricContainerdProcess(cmdline, cfg.Containerd.SocketPath, cfg.Containerd.RootDir) {
+			continue
+		}
+		if err := terminateProcess(pid); err != nil {
+			return fmt.Errorf("terminate stale Electric containerd process %d: %w", pid, err)
+		}
+	}
+	return nil
+}
+
+func readCmdline(pid int) (string, error) {
+	body, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(strings.ReplaceAll(string(body), "\x00", " ")), nil
+}
+
+func isElectricContainerdProcess(cmdline string, socketPath string, rootDir string) bool {
+	fields := strings.Fields(cmdline)
+	if len(fields) == 0 {
+		return false
+	}
+	switch filepath.Base(fields[0]) {
+	case "containerd":
+		return commandHasFlagValue(fields, "--address", socketPath) && commandHasFlagValue(fields, "--root", rootDir)
+	case "containerd-shim-runc-v2":
+		return commandHasFlagValue(fields, "-address", socketPath) || commandHasFlagValue(fields, "--address", socketPath)
+	default:
+		return false
+	}
+}
+
+func commandHasFlagValue(fields []string, flag string, value string) bool {
+	for i, field := range fields {
+		if field == flag && i+1 < len(fields) && fields[i+1] == value {
+			return true
+		}
+		if strings.HasPrefix(field, flag+"=") && strings.TrimPrefix(field, flag+"=") == value {
+			return true
+		}
+	}
+	return false
+}
+
+func terminateProcess(pid int) error {
+	if !processAlive(pid) {
+		return nil
+	}
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for processAlive(pid) && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !processAlive(pid) {
+		return nil
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	killDeadline := time.Now().Add(3 * time.Second)
+	for processAlive(pid) && time.Now().Before(killDeadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if processAlive(pid) {
+		return errors.New("process survived SIGKILL")
+	}
+	return nil
+}
+
+func processAlive(pid int) bool {
+	if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		return false
+	}
+	body, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return true
+	}
+	state, ok := processStateFromStat(string(body))
+	return !ok || state != "Z"
+}
+
+func processStateFromStat(body string) (string, bool) {
+	end := strings.LastIndex(body, ")")
+	if end < 0 || end+2 >= len(body) {
+		return "", false
+	}
+	rest := strings.TrimSpace(body[end+1:])
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return "", false
+	}
+	return fields[0], true
 }
 
 func ensureImage(cfg config) error {
