@@ -51,6 +51,8 @@ references, backup policy, and component-local invariants. The Guardian base
 schema validates the envelope and shared resources, then leaves
 component-specific fields to the component-owned schema.
 
+Base-spec additions are gated by the scope test in [Spec Scope](spec-scope.md).
+
 Site differences are expressed by selecting a different root resource graph:
 different component CRDs, different origins, different provider authorities,
 and different substrate hooks.

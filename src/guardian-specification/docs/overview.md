@@ -17,6 +17,9 @@ A Guardian resource graph document contains:
 Implementations load resource graphs from CUE, YAML, JSON, TOML, or TOON. The
 source format is an interchange detail.
 
+See [Spec Scope](spec-scope.md) for the boundary between the base Guardian
+protocol, component CRDs, component-owned Nomad jobs, and runtime evidence.
+
 ## Operations
 
 `board` runs the state machine through substrate readiness. It resolves the

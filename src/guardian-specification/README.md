@@ -27,6 +27,7 @@ credential import, health checks, and stabilization logic.
 ## Documents
 
 - [Overview](docs/overview.md)
+- [Spec Scope](docs/spec-scope.md)
 - [Resource Model](docs/resource-model.md)
 - [Boarding](docs/boarding.md)
 - [Fly](docs/fly.md)
