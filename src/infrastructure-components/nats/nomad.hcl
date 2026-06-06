@@ -16,6 +16,11 @@ job "nats" {
   group "nats" {
     count = 1
 
+    reschedule {
+      attempts  = 0
+      unlimited = false
+    }
+
     network {
       mode = "host"
       port "client" {
@@ -33,6 +38,11 @@ job "nats" {
     task "recover" {
       driver = "raw_exec"
       user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
 
       lifecycle {
         hook    = "prestart"
@@ -57,16 +67,23 @@ job "nats" {
 
     task "spiffe-helper" {
       driver = "raw_exec"
-      user   = "nats"
+      user   = "root"
 
-      lifecycle {
-        hook    = "prestart"
-        sidecar = true
+      restart {
+        attempts = 0
+        mode     = "fail"
       }
 
       config {
-        command = "/var/lib/nats/runtime/current/bin/spiffe-helper"
-        args    = ["-config", "/etc/nats/nats-spiffe-helper.conf"]
+        command = "/var/lib/nats/runtime/current/bin/nats-recover"
+        args = [
+          "exec",
+          "--user=nats",
+          "--",
+          "/var/lib/nats/runtime/current/bin/spiffe-helper",
+          "-config",
+          "/etc/nats/nats-spiffe-helper.conf",
+        ]
       }
 
       resources {
@@ -77,11 +94,26 @@ job "nats" {
 
     task "server" {
       driver = "raw_exec"
-      user   = "nats"
+      user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
 
       config {
-        command = "/var/lib/nats/runtime/current/bin/nats-server"
-        args    = ["-c", "/etc/nats/nats-server.conf"]
+        command = "/var/lib/nats/runtime/current/bin/nats-recover"
+        args = [
+          "exec",
+          "--user=nats",
+          "--wait-file=/var/lib/nats/spiffe/svid.pem",
+          "--wait-file=/var/lib/nats/spiffe/svid_key.pem",
+          "--wait-file=/var/lib/nats/spiffe/bundle.pem",
+          "--",
+          "/var/lib/nats/runtime/current/bin/nats-server",
+          "-c",
+          "/etc/nats/nats-server.conf",
+        ]
       }
 
       resources {

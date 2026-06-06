@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -16,7 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
 )
 
 type fakeOpenBaoClient struct {
@@ -28,6 +30,7 @@ type fakeOpenBaoClient struct {
 	baselines              []openBaoBaselineSpec
 	revokedTokens          []string
 	restored               bool
+	reconcileErrs          []error
 	reconcileErr           error
 	revokeErr              error
 	generatedRootToken     string
@@ -48,7 +51,7 @@ func (f *fakeOpenBaoClient) Status(context.Context) (baoStatus, error) {
 
 func (f *fakeOpenBaoClient) Init(_ context.Context, opts initOptions) (initResponse, error) {
 	f.status.Initialized = true
-	f.status.Sealed = false
+	f.status.Sealed = true
 	shares := f.unsealShares
 	if len(shares) == 0 {
 		for i := 0; i < opts.KeyShares; i++ {
@@ -56,22 +59,9 @@ func (f *fakeOpenBaoClient) Init(_ context.Context, opts initOptions) (initRespo
 		}
 		f.unsealShares = shares
 	}
-	responseShares := shares
-	if len(opts.PGPKeys) > 0 {
-		responseShares = make([]string, 0, len(shares))
-		for i, share := range shares {
-			sum := sha256.Sum256([]byte(share + opts.PGPKeys[i%len(opts.PGPKeys)]))
-			responseShares = append(responseShares, "encrypted:"+hex.EncodeToString(sum[:]))
-		}
-	}
-	rootToken := f.rootToken
-	if opts.RootTokenPGPKey != "" {
-		sum := sha256.Sum256([]byte(rootToken + opts.RootTokenPGPKey))
-		rootToken = "encrypted:" + hex.EncodeToString(sum[:])
-	}
 	return initResponse{
-		RootToken:     rootToken,
-		UnsealKeysB64: responseShares,
+		RootToken:     f.rootToken,
+		UnsealKeysB64: shares,
 	}, nil
 }
 
@@ -100,6 +90,11 @@ func (f *fakeOpenBaoClient) SaveSnapshot(context.Context, string) ([]byte, error
 func (f *fakeOpenBaoClient) ReconcileBaseline(_ context.Context, token string, baseline openBaoBaselineSpec) error {
 	f.baselineTokens = append(f.baselineTokens, token)
 	f.baselines = append(f.baselines, baseline)
+	if len(f.reconcileErrs) > 0 {
+		err := f.reconcileErrs[0]
+		f.reconcileErrs = f.reconcileErrs[1:]
+		return err
+	}
 	return f.reconcileErr
 }
 
@@ -179,7 +174,7 @@ func (f *fakeOpenBaoClient) DecodeGeneratedRootToken(_ context.Context, encoded 
 	return f.generatedRootToken, nil
 }
 
-func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
+func TestFreshInitWritesEncryptedInitMaterial(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		rootToken := randomSecret(t)
 		client := &fakeOpenBaoClient{
@@ -195,20 +190,21 @@ func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
 		cfg := testConfig(t)
 		cfg.keyShares = 3
 		cfg.threshold = 2
-		cfg.pgpKeys = stringList{"operator-a.asc", "operator-b.asc", "operator-c.asc"}
-		cfg.rootTokenPGPKey = "operator-root.asc"
+		cfg.pgpKeys = writeTestPGPRecipientFiles(t, 3)
 		cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
 
 		rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
-		assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "Created")
+		assertCondition(t, rep, "OpenBaoInitialized", "True", "FreshInitComplete")
 		assertCondition(t, rep, "OpenBaoInitMaterialDelivered", "True", "InitOutputWritten")
-		assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForRootTrustMaterial")
+		assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
+		assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+		assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 		if len(client.baselineTokens) != 0 {
-			t.Fatalf("baseline reconciled before unseal material was presented")
+			t.Fatalf("baseline reconciled when baseline reconcile was disabled")
 		}
-		if len(client.revokedTokens) != 0 {
-			t.Fatalf("root token was revoked before operator decrypted and presented it")
+		if len(client.revokedTokens) != 1 || client.revokedTokens[0] != rootToken {
+			t.Fatalf("initial root token was not revoked after fresh init")
 		}
 		assertReportDoesNotContain(t, rep, rootToken)
 		for _, share := range client.unsealShares {
@@ -230,13 +226,54 @@ func TestFreshInitWithRandomRootTrustMaterial(t *testing.T) {
 		if err := json.Unmarshal(material, &decoded); err != nil {
 			t.Fatal(err)
 		}
-		if decoded.Spec.EncryptedRootTokenB64 == "" || !decoded.Spec.RootTokenPGPRecipient {
-			t.Fatalf("init material omitted encrypted root token handoff: %#v", decoded.Spec)
+		if decoded.APIVersion != "openbao.guardianintelligence.org/v1alpha1" {
+			t.Fatalf("init material apiVersion = %q", decoded.APIVersion)
+		}
+		if len(decoded.Spec.EncryptedUnsealSharesB64) != 3 {
+			t.Fatalf("encrypted share count = %d", len(decoded.Spec.EncryptedUnsealSharesB64))
+		}
+		for _, encrypted := range decoded.Spec.EncryptedUnsealSharesB64 {
+			if _, err := base64.StdEncoding.DecodeString(encrypted); err != nil {
+				t.Fatalf("encrypted share was not base64: %v", err)
+			}
 		}
 	}
 }
 
-func TestSealedOpenBaoRequiresPresentedRootTrustMaterial(t *testing.T) {
+func TestFreshInitReconcilesBaselineWithInitialRootTokenAndRevokes(t *testing.T) {
+	rootToken := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: false, Sealed: true, Version: "2.5.2", SealType: "shamir"},
+		rootToken:    rootToken,
+		unsealShares: []string{randomSecret(t), randomSecret(t), randomSecret(t)},
+	}
+	cfg := testConfig(t)
+	cfg.keyShares = 3
+	cfg.threshold = 2
+	cfg.pgpKeys = writeTestPGPRecipientFiles(t, 3)
+	cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "OpenBaoInitialized", "True", "FreshInitComplete")
+	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != rootToken {
+		t.Fatalf("baseline did not use initial root token")
+	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != rootToken {
+		t.Fatalf("initial root token was not revoked")
+	}
+	assertReportDoesNotContain(t, rep, rootToken)
+	for _, share := range client.unsealShares {
+		assertReportDoesNotContain(t, rep, share)
+	}
+}
+
+func TestSealedOpenBaoRequiresUnsealMaterial(t *testing.T) {
 	share := randomSecret(t)
 	client := &fakeOpenBaoClient{
 		status: baoStatus{Initialized: true, Sealed: true, Threshold: 2, Progress: 0},
@@ -248,7 +285,7 @@ func TestSealedOpenBaoRequiresPresentedRootTrustMaterial(t *testing.T) {
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "UnsealQuorumIncomplete")
+	assertCondition(t, rep, "OpenBaoUnsealed", "False", "UnsealQuorumIncomplete")
 	assertReportDoesNotContain(t, rep, share)
 }
 
@@ -263,7 +300,6 @@ func TestSealedOpenBaoAcceptsUnsealMaterialFromStdin(t *testing.T) {
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "Presented")
 	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 	assertReportDoesNotContain(t, rep, share)
@@ -282,11 +318,10 @@ func TestSealedOpenBaoReportsBaselineBlockedAfterUnsealWithoutRootAuthority(t *t
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
 
 	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "OperatorRootCredentialsRequired")
-	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "BaselineAuthorityRequired")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
 	if len(client.baselineTokens) != 0 {
-		t.Fatalf("baseline reconciled without root authority")
+		t.Fatalf("baseline reconciled without operator authority")
 	}
 	assertReportDoesNotContain(t, rep, share)
 }
@@ -307,7 +342,6 @@ func TestSealedOpenBaoGeneratesRootTokenAfterUnsealForBaseline(t *testing.T) {
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(shareA+"\n"+shareB+"\n"))
 
 	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "GeneratedRootToken")
 	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "True", "Generated")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
 	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
@@ -336,7 +370,6 @@ func TestUnsealedOpenBaoRequiresNoOperatorIntervention(t *testing.T) {
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "NotRequired")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Available")
 	if len(client.baselineTokens) != 0 {
 		t.Fatalf("baseline reconciled without an operator token")
@@ -353,8 +386,7 @@ func TestUnsealedOpenBaoReportsBaselineBlockedWithoutOperatorToken(t *testing.T)
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "OperatorRootCredentialsRequired")
-	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "BaselineAuthorityRequired")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
 	if len(client.baselineTokens) != 0 {
 		t.Fatalf("baseline reconciled without an operator token")
@@ -371,13 +403,39 @@ func TestUnsealedOpenBaoUsesOperatorTokenFromStdin(t *testing.T) {
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "Presented")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
 	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != token {
 		t.Fatalf("baseline did not use presented token")
 	}
 	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
 		t.Fatalf("operator token was not revoked after baseline reconciliation")
+	}
+	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestBaselineReconcileRetriesTransientOpenBaoErrors(t *testing.T) {
+	token := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status: baoStatus{Initialized: true, Sealed: false},
+		reconcileErrs: []error{
+			errors.New(`openbao GET sys/mounts status 500: {"errors":["internal error"]}`),
+			nil,
+		},
+	}
+	cfg := testConfig(t)
+	cfg.tokenStdin = true
+	cfg.baseline = openBaoBaselineSpec{Reconcile: true}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
+	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if len(client.baselineTokens) != 2 {
+		t.Fatalf("baseline reconcile attempts = %d", len(client.baselineTokens))
+	}
+	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
+		t.Fatalf("operator token was not revoked after transient baseline retry")
 	}
 	assertReportDoesNotContain(t, rep, token)
 }
@@ -415,8 +473,7 @@ func TestUnsealedOpenBaoReportsInsufficientOperatorTokenAuthority(t *testing.T) 
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(token+"\n"))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "OperatorRootCredentialsRequired")
-	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "OperatorRootCredentialsRequired")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "BaselineAuthorityInsufficient")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
 	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
 	assertReportDoesNotContain(t, rep, token)
@@ -454,7 +511,6 @@ func TestUnsealedOpenBaoGeneratesRootTokenFromUnsealSharesForBaseline(t *testing
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(shareA+"\n"+shareB+"\n"))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "True", "GeneratedRootToken")
 	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "True", "Generated")
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
 	assertCondition(t, rep, "OpenBaoOperatorTokenRevoked", "True", "Revoked")
@@ -486,7 +542,6 @@ func TestUnsealedOpenBaoCancelsIncompleteGenerateRootAttempt(t *testing.T) {
 
 	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "GenerateRootFailed")
 	assertCondition(t, rep, "OpenBaoGeneratedRootToken", "False", "GenerateRootFailed")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
 	if !client.generateRootCanceled {
@@ -589,7 +644,7 @@ func TestRestoreSnapshotVerifiesDigestAndThenRequiresSnapshotUnsealMaterial(t *t
 	}
 	assertCondition(t, rep, "OpenBaoSnapshotVerified", "True", "DigestVerified")
 	assertCondition(t, rep, "OpenBaoServerRestartRequired", "True", "AfterSnapshotRestore")
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "UnsealQuorumIncomplete")
+	assertCondition(t, rep, "OpenBaoUnsealed", "False", "UnsealQuorumIncomplete")
 	assertReportDoesNotContain(t, rep, client.rootToken)
 }
 
@@ -627,8 +682,8 @@ func TestFreshInitRequiresOperatorRecipientIdentities(t *testing.T) {
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "InitRecipientIdentityRequired")
-	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForRootTrustMaterial")
+	assertCondition(t, rep, "OpenBaoInitialized", "False", "InitRecipientIdentityRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForInit")
 	if len(client.baselineTokens) != 0 {
 		t.Fatalf("baseline reconciled before recipient identities were available")
 	}
@@ -647,39 +702,15 @@ func TestFreshInitRequiresInitMaterialOutput(t *testing.T) {
 	cfg.keyShares = 3
 	cfg.threshold = 2
 	cfg.pgpKeys = stringList{"operator-a.asc", "operator-b.asc", "operator-c.asc"}
-	cfg.rootTokenPGPKey = "operator-root.asc"
 
 	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
 
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "InitMaterialDeliveryRequired")
-	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForRootTrustMaterial")
+	assertCondition(t, rep, "OpenBaoInitMaterialDelivered", "False", "InitMaterialDeliveryRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForInit")
 	if len(client.baselineTokens) != 0 {
 		t.Fatalf("baseline reconciled before init material delivery was configured")
 	}
 	assertReportDoesNotContain(t, rep, client.rootToken)
-}
-
-func TestFreshInitRequiresRootTokenRecipientIdentity(t *testing.T) {
-	client := &fakeOpenBaoClient{
-		status: baoStatus{
-			Initialized: false,
-			Sealed:      true,
-		},
-		rootToken: randomSecret(t),
-	}
-	cfg := testConfig(t)
-	cfg.keyShares = 3
-	cfg.threshold = 2
-	cfg.pgpKeys = stringList{"operator-a.asc", "operator-b.asc", "operator-c.asc"}
-	cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
-
-	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
-
-	assertCondition(t, rep, "RootTrustMaterialAvailable", "False", "InitRootTokenRecipientIdentityRequired")
-	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "WaitingForRootTrustMaterial")
-	if _, err := os.Stat(cfg.initOutputPath); !os.IsNotExist(err) {
-		t.Fatalf("init material should not be written without root token recipient, stat err=%v", err)
-	}
 }
 
 func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
@@ -707,7 +738,9 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 					"configPath":       "/etc/openbao/openbao-from-graph.hcl",
 					"reportPath":       "/run/verself/recovery/openbao/report-from-graph.json",
 					"initMaterialPath": "/run/verself/recovery/openbao/init-material-from-graph.json",
-					"loopInterval":     "7s",
+					"freshInit": map[string]any{
+						"wipeDataDirBeforeStart": true,
+					},
 					"seal": map[string]any{
 						"shamir": map[string]any{
 							"keyShares":    3,
@@ -716,11 +749,6 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 								{"apiVersion": "openbao.guardianintelligence.org/v1alpha1", "kind": "PGPRecipient", "name": "operator-a"},
 								{"apiVersion": "openbao.guardianintelligence.org/v1alpha1", "kind": "PGPRecipient", "name": "operator-b"},
 								{"apiVersion": "openbao.guardianintelligence.org/v1alpha1", "kind": "PGPRecipient", "name": "operator-c"},
-							},
-							"rootTokenRecipientRef": map[string]any{
-								"apiVersion": "openbao.guardianintelligence.org/v1alpha1",
-								"kind":       "PGPRecipient",
-								"name":       "operator-root",
 							},
 						},
 					},
@@ -759,7 +787,6 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 			pgpRecipient("operator-a", "pubkey-a"),
 			pgpRecipient("operator-b", "pubkey-b"),
 			pgpRecipient("operator-c", "pubkey-c"),
-			pgpRecipient("operator-root", "pubkey-root"),
 			secretPath("object-storage-service.credential_kek", map[string]any{
 				"path":   "kv-runtime/data/secret/org/object-storage-service.credential_kek",
 				"key":    "value",
@@ -794,8 +821,8 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 	if cfg.bao != "/var/lib/openbao/runtime-from-graph/current/bin/bao" {
 		t.Fatalf("bao path was not derived from graph runtimeRoot: %q", cfg.bao)
 	}
-	if cfg.loopInterval != 7*time.Second {
-		t.Fatalf("loopInterval = %s", cfg.loopInterval)
+	if !cfg.wipeDataDir {
+		t.Fatalf("freshInit.wipeDataDirBeforeStart was not loaded")
 	}
 	if len(cfg.pgpKeys) != 3 {
 		t.Fatalf("pgpKeys = %#v", cfg.pgpKeys)
@@ -809,7 +836,7 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 	if got := cfg.baseline.SecretPaths[0].Path; got != "kv-runtime/data/secret/org/object-storage-service.credential_kek" {
 		t.Fatalf("secret path = %q", got)
 	}
-	for _, path := range append([]string(cfg.pgpKeys), cfg.rootTokenPGPKey) {
+	for _, path := range []string(cfg.pgpKeys) {
 		body, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read materialized PGP key %s: %v", path, err)
@@ -1068,6 +1095,21 @@ func TestRuntimeInstalledRequiresRecoveryBinary(t *testing.T) {
 	}
 }
 
+func TestSafeWipeDataDirRejectsBroadSystemPaths(t *testing.T) {
+	for _, path := range []string{"/", "/var", "/var/lib", "/var/lib/openbao"} {
+		if _, err := safeWipeDataDir(path); err == nil {
+			t.Fatalf("safeWipeDataDir accepted %s", path)
+		}
+	}
+	accepted, err := safeWipeDataDir("/var/lib/openbao/raft")
+	if err != nil {
+		t.Fatalf("safeWipeDataDir rejected raft dir: %v", err)
+	}
+	if accepted != "/var/lib/openbao/raft" {
+		t.Fatalf("safeWipeDataDir = %q", accepted)
+	}
+}
+
 func testConfig(t *testing.T) config {
 	t.Helper()
 	repoRoot := t.TempDir()
@@ -1140,6 +1182,28 @@ func writeSnapshotAndManifest(t *testing.T, snapshot []byte) (string, string) {
 		t.Fatal(err)
 	}
 	return snapshotPath, manifestPath
+}
+
+func writeTestPGPRecipientFiles(t *testing.T, count int) stringList {
+	t.Helper()
+	dir := t.TempDir()
+	out := make(stringList, 0, count)
+	for i := 0; i < count; i++ {
+		entity, err := openpgp.NewEntity(fmt.Sprintf("operator-%d", i), "", fmt.Sprintf("operator-%d@example.invalid", i), nil)
+		if err != nil {
+			t.Fatalf("generate PGP entity: %v", err)
+		}
+		var public bytes.Buffer
+		if err := entity.Serialize(&public); err != nil {
+			t.Fatalf("serialize PGP public key: %v", err)
+		}
+		path := filepath.Join(dir, fmt.Sprintf("operator-%d.pgp.b64", i))
+		if err := os.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(public.Bytes())+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, path)
+	}
+	return out
 }
 
 func randomSecret(t *testing.T) string {

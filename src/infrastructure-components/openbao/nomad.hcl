@@ -11,6 +11,11 @@ job "openbao" {
   group "openbao" {
     count = 1
 
+    reschedule {
+      attempts  = 0
+      unlimited = false
+    }
+
     network {
       mode = "host"
 
@@ -91,15 +96,20 @@ job "openbao" {
       driver = "raw_exec"
       user   = "root"
 
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
+
       lifecycle {
         hook    = "poststart"
-        sidecar = true
+        sidecar = false
       }
 
       config {
         command = "/var/lib/openbao/runtime/current/bin/openbao-recover"
         args = [
-          "loop",
+          "recover",
           "--repo-root=${var.guardian_repo_root}",
           "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
           "--resource-name=openbao",

@@ -26,6 +26,7 @@ go_test(
     srcs = ["main_test.go"],
     embed = [":guardian_lib"],
     deps = [
+        "//src/guardian-specification/cli/internal/uploadbundle",
         "@com_github_burntsushi_toml//:toml",
         "@com_github_toon_format_toon_go//:toon-go",
         "@in_gopkg_yaml_v3//:yaml_v3",

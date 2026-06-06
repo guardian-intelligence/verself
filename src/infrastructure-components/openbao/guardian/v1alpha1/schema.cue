@@ -26,7 +26,9 @@ package v1alpha1
 		configPath:       #AbsolutePath
 		reportPath:       #AbsolutePath
 		initMaterialPath: #AbsolutePath
-		loopInterval:     #NonEmptyString
+		freshInit?: {
+			wipeDataDirBeforeStart: bool
+		}
 		seal: {
 			shamir: {
 				keyShares:    int & >0
@@ -35,10 +37,6 @@ package v1alpha1
 					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 					kind:       "PGPRecipient"
 				}, ...]
-				rootTokenRecipientRef: #ObjectRef & {
-					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
-					kind:       "PGPRecipient"
-				}
 			}
 		}
 		snapshots?: {

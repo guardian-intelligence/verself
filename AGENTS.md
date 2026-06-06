@@ -42,7 +42,7 @@ The only ingredients necessary to recover the system, therefore, are:
 2. Network ingress to download pinned dependencies (including build tools + OCI images)
 3. Network egress to a node
 
-Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external root trust -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
+Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure operator-held recovery authority -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
 
 Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by ensuring we build openbao locally and then, inside the OpenBao recovery prestart, either using the system-present OpenBao or the one from the repo artifacts. A "check + bootstrap-if-needed" prestart is all we need. 
 
@@ -228,7 +228,7 @@ Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, diff
 
 OpenBao is the runtime secret source of truth; Nomad is the runtime secret delivery mechanism; SPIRE is workload mTLS identity, not the normal secret-delivery path.
 
-Per environment, the founder is responsible for OpenBao root trust material: Shamir unseal shares or recovery shares for an existing store, PGP recipient identities for fresh initialization, and explicit operator root credentials for breakglass or baseline operations. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
+Per environment, the founder is responsible for OpenBao operator recovery material: Shamir unseal shares or recovery shares for an existing store, PGP recipient identities for fresh initialization, and explicit operator credentials for breakglass or baseline operations. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 

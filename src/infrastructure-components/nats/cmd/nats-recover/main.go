@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 const (
@@ -28,6 +30,27 @@ type options struct {
 	repoRoot      string
 	resourceGraph string
 	resourceName  string
+}
+
+type execOptions struct {
+	user        string
+	waitFiles   stringList
+	waitTimeout time.Duration
+	command     []string
+}
+
+type stringList []string
+
+func (l *stringList) String() string {
+	return strings.Join(*l, ",")
+}
+
+func (l *stringList) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value != "" {
+		*l = append(*l, value)
+	}
+	return nil
 }
 
 type document struct {
@@ -103,6 +126,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "exec" {
+		return runExec(args[1:])
+	}
 	if len(args) > 0 && args[0] == "recover" {
 		args = args[1:]
 	}
@@ -148,6 +174,96 @@ func run(args []string) error {
 		},
 	}
 	return writeReport(cfg.ReportPath, rep)
+}
+
+func runExec(args []string) error {
+	opts, err := parseExecOptions(args)
+	if err != nil {
+		return err
+	}
+	if err := waitForFiles(opts.waitFiles, opts.waitTimeout); err != nil {
+		return err
+	}
+	return execAsUser(opts.user, opts.command)
+}
+
+func parseExecOptions(args []string) (execOptions, error) {
+	opts := execOptions{waitTimeout: 60 * time.Second}
+	fs := flag.NewFlagSet("nats-recover exec", flag.ContinueOnError)
+	fs.StringVar(&opts.user, "user", "", "User to drop to before exec.")
+	fs.Var(&opts.waitFiles, "wait-file", "File that must exist before exec; repeatable.")
+	fs.DurationVar(&opts.waitTimeout, "wait-timeout", opts.waitTimeout, "Maximum time to wait for required files.")
+	if err := fs.Parse(args); err != nil {
+		return execOptions{}, err
+	}
+	if strings.TrimSpace(opts.user) == "" {
+		return execOptions{}, errors.New("nats-recover exec requires --user")
+	}
+	if fs.NArg() == 0 {
+		return execOptions{}, errors.New("nats-recover exec requires a command")
+	}
+	opts.command = fs.Args()
+	return opts, nil
+}
+
+func waitForFiles(paths []string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		var missing []string
+		for _, path := range paths {
+			stat, err := os.Stat(path)
+			if err != nil || !stat.Mode().IsRegular() || stat.Size() == 0 {
+				missing = append(missing, path)
+			}
+		}
+		if len(missing) == 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for %s", strings.Join(missing, ", "))
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func execAsUser(userName string, command []string) error {
+	if os.Geteuid() != 0 {
+		return errors.New("nats-recover exec must run as root")
+	}
+	u, err := user.Lookup(userName)
+	if err != nil {
+		return fmt.Errorf("lookup user %s: %w", userName, err)
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return fmt.Errorf("parse uid %s: %w", u.Uid, err)
+	}
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		return fmt.Errorf("parse gid %s: %w", u.Gid, err)
+	}
+	groupIDs, err := u.GroupIds()
+	if err != nil {
+		return fmt.Errorf("load supplementary groups for %s: %w", userName, err)
+	}
+	groups := make([]int, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		group, err := strconv.Atoi(groupID)
+		if err != nil {
+			return fmt.Errorf("parse supplementary gid %s: %w", groupID, err)
+		}
+		groups = append(groups, group)
+	}
+	if err := syscall.Setgroups(groups); err != nil {
+		return fmt.Errorf("set supplementary groups for %s: %w", userName, err)
+	}
+	if err := syscall.Setgid(gid); err != nil {
+		return fmt.Errorf("set gid for %s: %w", userName, err)
+	}
+	if err := syscall.Setuid(uid); err != nil {
+		return fmt.Errorf("set uid for %s: %w", userName, err)
+	}
+	return syscall.Exec(command[0], command, os.Environ())
 }
 
 func parseOptions(args []string) (options, error) {
@@ -264,11 +380,11 @@ func validateConfig(cfg config) error {
 }
 
 func ensureAccount(cfg config) error {
-	if _, err := user.LookupGroup(cfg.Group); err != nil {
-		if _, ok := err.(user.UnknownGroupError); !ok {
-			return fmt.Errorf("lookup NATS group: %w", err)
-		}
-		if err := command("/usr/sbin/groupadd", "--system", cfg.Group); err != nil {
+	if err := ensureGroup(cfg.Group); err != nil {
+		return err
+	}
+	if cfg.WorkloadGroup != "" {
+		if err := ensureGroup(cfg.WorkloadGroup); err != nil {
 			return err
 		}
 	}
@@ -283,6 +399,18 @@ func ensureAccount(cfg config) error {
 	}
 	if cfg.WorkloadGroup != "" {
 		if err := command("/usr/sbin/usermod", "-a", "-G", cfg.WorkloadGroup, cfg.User); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureGroup(groupName string) error {
+	if _, err := user.LookupGroup(groupName); err != nil {
+		if _, ok := err.(user.UnknownGroupError); !ok {
+			return fmt.Errorf("lookup group %s: %w", groupName, err)
+		}
+		if err := command("/usr/sbin/groupadd", "--system", groupName); err != nil {
 			return err
 		}
 	}

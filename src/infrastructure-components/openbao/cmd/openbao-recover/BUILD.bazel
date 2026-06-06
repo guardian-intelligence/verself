@@ -5,6 +5,10 @@ go_library(
     srcs = ["main.go"],
     importpath = "github.com/verself/infrastructure-components/openbao/cmd/openbao-recover",
     visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_protonmail_go_crypto//openpgp",
+        "@org_golang_x_crypto//ripemd160",
+    ],
 )
 
 go_binary(
@@ -17,4 +21,5 @@ go_test(
     name = "openbao-recover_test",
     srcs = ["main_test.go"],
     embed = [":openbao-recover_lib"],
+    deps = ["@com_github_protonmail_go_crypto//openpgp"],
 )

@@ -9,7 +9,6 @@ let uploadDigestPath = ".guardian/board/upload.sha256"
 let openbaoOperatorAPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAAYbADEfH17sDLX0SI7iAC9bcdPH8aotQRTtD8Zsmyf60TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYSA8b3BlcmF0b3ItYS5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEJb5vLYzeQToxU4BAPkVtbeOQmuDizUjl/gJO5SHezdDHWfyzoyUtackFBm5AP9TVpFLbOb0aFgw1LQxjdYLAZQkh0NlizTtFU1fGKgkDbg4BGojifkSCisGAQQBl1UBBQEBB0BuQaidG8ObtxFzAEwIrKZAChiP7TTpV1Xx/UJIDsZ6NwMBCAeIeAQYFgoAIBYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsMAAoJEJb5vLYzeQTo3JoA/0v35/RUCPblBuwSC7sdSnpUHBzfjyYr0roc+eJHHSltAQDXnVUtg/O/B2mibJt87LtT1hijA/Oiox4/D5fj/XdABA=="
 let openbaoOperatorBPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdA6bubGkccdirSzvgIIgVVpt4Fj3NcYhs/9wqeCPmfqz20TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYiA8b3BlcmF0b3ItYi5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJECsvVrVb81xIdjUBAMmkwKz1aZ6M6p/hy8VCERUaifleNguTvL0MoFOMt9KLAQDS4geMPEWp7Ot7m5vMZN9jMIDnLE7LE9ExT725kJXIArg4BGojifkSCisGAQQBl1UBBQEBB0BBzz6cUUJWeUMbPmL8AjY9bqGX+s6/NMwpisBbXXnvCwMBCAeIeAQYFgoAIBYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsMAAoJECsvVrVb81xIP6ABAKa68/nvx5mGA6Ukz05sJhQqcLMNMUzfFu50NfJS6DrvAPwMAkX/AKJKJv0kn/YLG/WS3PTjNNRhwZtef9lTQc9kDA=="
 let openbaoOperatorCPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAk8b33//YRFh+tnQTHdF8YBoRbdQlK0f9GTjc8uK3dcC0TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYyA8b3BlcmF0b3ItYy5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEOT897zG400NCVkA/iGDVuMteClIXDhC75Z5mQdD9xS3/k0g1zt1DihRPK2uAP0bmmC8TZObdVBNn7mQ8TxzMwisK0CDmtwJHp8yQ/H+A7g4BGojifkSCisGAQQBl1UBBQEBB0C8tq2q7d+EeFOMdkpP4c9xyGukm9M6FlFLV59zgiD0UQMBCAeIeAQYFgoAIBYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsMAAoJEOT897zG400NydsA/0oeRRJ3ZAoy7bMXsBXd3wgaUA4w8R+JgSH5RwbErvfXAQC8Ckpse31YZ3CF6d+PgXOiLeafNr8+B1hQU3+5ATGdAQ=="
-let openbaoOperatorRootPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdApCXuLXfnj0HFyjIhFl95zf4r4A/qjYTiVHVHLfVofoa0UkdhbW1hIE9wZW5CYW8gb3BlcmF0b3Itcm9vdCA8b3BlcmF0b3Itcm9vdC5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBE1X0ex4EEvEsAZ99v/rLwb9qUeDBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEP/rLwb9qUeD+lQBALOCKUzCNta2JiUdWdIRdz7nOAB1+PFngf2h62dQRPtTAQDDid/6qBml+eSJxY55QxXZtTCYFvpEV1s0fNYIJhTsD7g4BGojifkSCisGAQQBl1UBBQEBB0AaHTop0n/C+95X0P8BrRgGel6soPaXOZPgnaBWt/9tIgMBCAeIeAQYFgoAIBYhBE1X0ex4EEvEsAZ99v/rLwb9qUeDBQJqI4n5AhsMAAoJEP/rLwb9qUeDIbsBAN2NVXFxgN1ThCIWEb5KizmjAKEpDDmuQqRGoilrSwwCAQCeNJCG/BS56xx/CcnDJ5o/7gVDfJCVXVr6RxK5QboZBQ=="
 
 entrypoint: {
 	apiVersion: "guardian.guardianintelligence.org/v1alpha1"
@@ -41,6 +40,7 @@ resources: [
 				"-o", "BatchMode=yes",
 				"-o", "StrictHostKeyChecking=yes",
 				"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+				"-o", "ConnectTimeout=10",
 				"ubuntu@206.223.228.87",
 				"true",
 			]
@@ -54,8 +54,8 @@ resources: [
 					"""
 						set -eu
 						remote_dir=/home/ubuntu/.local/state/guardian/uploads/current
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 "mkdir -p $remote_dir"
-						rsync -a -- "\(uploadBundlePath)" "ubuntu@206.223.228.87:$remote_dir/upload.tar.gz"
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 "mkdir -p $remote_dir"
+						rsync -a --timeout=60 -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10" -- "\(uploadBundlePath)" "ubuntu@206.223.228.87:$remote_dir/upload.tar.gz"
 						""",
 				]
 				extract: argv: [
@@ -64,7 +64,7 @@ resources: [
 					"""
 						set -eu
 						digest_dir=$(tr ':' '-' < "\(uploadDigestPath)")
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 "sh -s -- '$digest_dir'" <<'REMOTE'
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 "sh -s -- '$digest_dir'" <<'REMOTE'
 						set -eu
 						digest_dir=$1
 						repo_root=/home/ubuntu/.local/state/guardian/repo
@@ -96,7 +96,7 @@ resources: [
 					"-c",
 					"""
 						set -eu
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts ubuntu@206.223.228.87 'cd /home/ubuntu/.local/state/guardian/repo/current && sha256sum -c guardian-upload-sha256sums.txt >/dev/null && sha256sum /home/ubuntu/.local/state/guardian/uploads/current/upload.tar.gz'
+						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'cd /home/ubuntu/.local/state/guardian/repo/current && sha256sum -c guardian-upload-sha256sums.txt >/dev/null && sha256sum /home/ubuntu/.local/state/guardian/uploads/current/upload.tar.gz'
 						""",
 				]
 			}
@@ -132,7 +132,7 @@ resources: [
 			configPath:       "/etc/openbao/openbao.hcl"
 			reportPath:       "/run/verself/recovery/openbao/report.json"
 			initMaterialPath: "/run/verself/recovery/openbao/init-material.json"
-			loopInterval:     "15s"
+			freshInit: wipeDataDirBeforeStart: true
 			seal: shamir: {
 				keyShares:    3
 				keyThreshold: 2
@@ -153,11 +153,6 @@ resources: [
 						name:       "operator-c"
 					},
 				]
-				rootTokenRecipientRef: {
-					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
-					kind:       "PGPRecipient"
-					name:       "operator-root"
-				}
 			}
 			snapshots: {
 				restore: sourceRef: {
@@ -398,6 +393,32 @@ resources: [
 		}
 	},
 	{
+		apiVersion: "spire.guardianintelligence.org/v1alpha1"
+		kind:       "SPIRECluster"
+		metadata: name: "spire"
+		spec: {
+			runtimeArtifact:          "bazel-bin/src/infrastructure-components/spire/spire-runtime.tar"
+			identityRegistryArtifact: "bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json"
+			runtimeRoot:              "/var/lib/spire/runtime"
+			serverConfigPath:         "/etc/spire/server.conf"
+			agentConfigPath:          "/etc/spire/agent.conf"
+			serverDataDir:            "/var/lib/spire/server"
+			agentDataDir:             "/var/lib/spire/agent"
+			serverSocketPath:         "/run/spire-server/private/api.sock"
+			agentSocketPath:          "/run/spire-agent/sockets/agent.sock"
+			joinTokenPath:            "/run/verself/recovery/spire/join-token"
+			reportPath:               "/run/verself/recovery/spire/report.json"
+			trustDomain:              "gamma.verself.sh"
+			agentSpiffeID:            "spiffe://gamma.verself.sh/agent/gamma-primary"
+			serverAddress:            "127.0.0.1"
+			serverPort:               8081
+			serverUser:               "spire"
+			serverGroup:              "spire"
+			workloadGroup:            "spire_workload"
+			registrarIntervalSeconds: 5
+		}
+	},
+	{
 		apiVersion: "nats.guardianintelligence.org/v1alpha1"
 		kind:       "NATSCluster"
 		metadata: name: "nats"
@@ -504,12 +525,6 @@ resources: [
 		kind:       "PGPRecipient"
 		metadata: name:        "operator-c"
 		spec: publicKeyBase64: openbaoOperatorCPublicKeyBase64
-	},
-	{
-		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
-		kind:       "PGPRecipient"
-		metadata: name:        "operator-root"
-		spec: publicKeyBase64: openbaoOperatorRootPublicKeyBase64
 	},
 	{
 		apiVersion: "postgresql.guardianintelligence.org/v1alpha1"

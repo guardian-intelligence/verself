@@ -76,6 +76,21 @@ var RequiredBuildArtifacts = []RequiredArtifact{
 		Mode:   "0755",
 	},
 	{
+		Source: "bazel-bin/src/infrastructure-components/spire/spire-runtime.tar",
+		Target: "bazel-bin/src/infrastructure-components/spire/spire-runtime.tar",
+		Mode:   "0644",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover",
+		Target: "bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover",
+		Mode:   "0755",
+	},
+	{
+		Source: "bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json",
+		Target: "bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json",
+		Mode:   "0644",
+	},
+	{
 		Source: "bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar",
 		Target: "bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar",
 		Mode:   "0644",

@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	toon "github.com/toon-format/toon-go"
+	"github.com/verself/guardian-specification/cli/internal/uploadbundle"
 	"gopkg.in/yaml.v3"
 )
 
@@ -337,36 +338,13 @@ func withWorkingDir(t *testing.T, dir string, fn func()) {
 
 func writeRequiredArtifacts(t *testing.T, dir string) {
 	t.Helper()
-	artifacts := map[string][]byte{
-		"bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian":                                                []byte("guardian binary\n"),
-		"bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar":                                                         []byte("nomad runtime\n"),
-		"bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover":                            []byte("nomad recover\n"),
-		"bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar":                                                     []byte("openbao runtime\n"),
-		"bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover":                    []byte("openbao recover\n"),
-		"bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar":                                                     []byte("haproxy runtime\n"),
-		"bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar":                                                   []byte("nftables runtime\n"),
-		"bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply":                      []byte("nftables apply\n"),
-		"bazel-bin/src/infrastructure-components/nats/nats-runtime.tar":                                                           []byte("nats runtime\n"),
-		"bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover":                                []byte("nats recover\n"),
-		"bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar":                            []byte("nomad observer runtime\n"),
-		"bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer_/nomad-observer":                []byte("nomad observer binary\n"),
-		"bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar":                                                      []byte("otelcol runtime\n"),
-		"bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar":                                                       []byte("otelcol config\n"),
-		"bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover":                    []byte("otelcol recover\n"),
-		"bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar":                                               []byte("postgresql runtime\n"),
-		"bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar":                                               []byte("clickhouse runtime\n"),
-		"bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover":        []byte("clickhouse recover\n"),
-		"bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar":                                []byte("cloudflare runtime\n"),
-		"bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar":                     []byte("object storage runtime\n"),
-		"bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service": []byte("object storage binary\n"),
-	}
-	for rel, data := range artifacts {
-		path := filepath.Join(dir, filepath.FromSlash(rel))
+	for _, artifact := range uploadbundle.RequiredBuildArtifacts {
+		path := filepath.Join(dir, filepath.FromSlash(artifact.Source))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("mkdir artifact parent: %v", err)
 		}
-		if err := os.WriteFile(path, data, 0o755); err != nil {
-			t.Fatalf("write artifact %s: %v", rel, err)
+		if err := os.WriteFile(path, []byte(artifact.Source+"\n"), 0o755); err != nil {
+			t.Fatalf("write artifact %s: %v", artifact.Source, err)
 		}
 	}
 }
