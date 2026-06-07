@@ -29,6 +29,7 @@ consecutive submissions do not create unexpected allocation churn.
 | SpiceDB | `spicedb.guardianintelligence.org/v1alpha1/SpiceDBCluster/spicedb` | Converged on latest gamma run | None in current gamma state | Materialized SpiceDB runtime artifact, `spicedb-recover`, OpenBao generated gRPC preshared key, PostgreSQL `spicedb` database, Nomad OpenBao workload token |
 | Grafana | `grafana.guardianintelligence.org/v1alpha1/GrafanaInstance/grafana` | Converged on latest gamma run | None in current gamma state | Materialized Grafana runtime artifact, `grafana-recover`, OpenBao generated admin password and secret key, PostgreSQL `grafana` database |
 | Forgejo | `forgejo.guardianintelligence.org/v1alpha1/ForgejoInstance/forgejo` | Converged on latest gamma run | None in current gamma state | Materialized Forgejo runtime artifact, direct `forgejo-recover` prestart binary, OpenBao generated Forgejo secrets, PostgreSQL `forgejo` database, Nomad OpenBao workload token |
+| Stalwart | `stalwart.guardianintelligence.org/v1alpha1/StalwartMailServer/stalwart` | Converged on latest gamma run | None in current gamma state | Materialized Stalwart runtime artifact, direct `stalwart-recover` prestart binary, OpenBao generated admin secret, PostgreSQL `stalwart` database, Nomad OpenBao workload token |
 
 ## Latest Gamma Evidence
 
@@ -44,9 +45,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:b4af09e5c99973dbf0f0f8379ace508ebfe43d7d5da589b6d239a7a836b744f9`;
+  `sha256:706f32b3daca29778efbc546955078a0164b4f92f0e1d13f683eb1b9b9de4d65`;
 - latest verified upload digest:
-  `sha256:ebc82be58d38f721f2ad0b7d2b54637bcd33730b0f33d5f0e93ac2d2d5354b60`;
+  `sha256:80b687cb8648b05a0be99a9645bb5045d7c7fbfbbe76ea40a04892e987c23499`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -188,6 +189,22 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   reports `status: pass` with passing cache and database checks;
 - Forgejo `recover` and `automation-token` tasks exited `0`, the `server` task
   remains running, and task stderr tails were empty;
+- the first Stalwart submission in the latest run failed before starting
+  because the boarded artifact set omitted the direct `stalwart-recover`
+  prestart binary and `stalwart-runtime.tar`;
+- after adding those artifacts to board upload and verify, `stalwart`
+  deployment `e219ed1d` completed successfully with allocation `0e966a50`
+  running and healthy;
+- `/run/verself/recovery/stalwart/report.json` reports
+  `StalwartRuntimeInstalled=True`, `StalwartSecretReady=True`,
+  `StalwartConfigWritten=True`, and `StalwartRecoveryComplete=True`;
+- local and remote Stalwart artifact hashes matched:
+  runtime `sha256:0ca2039c7fdd1a6bb6e2ac548576b3d0b665bddd89dd55dae6733c95b7f703d5`
+  and direct recovery binary
+  `sha256:5957cc17296950271ab308ce1796499c0a0b51d663ffc49e9012cd935a19f6ff`;
+- Nomad reports `stalwart-http-tcp` and `stalwart-smtp-tcp` as `success`;
+  HTTP on `127.0.0.1:8090` returned `200 OK`, SMTP listens on
+  `127.0.0.1:25`, and task stderr tails were empty;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after
@@ -574,6 +591,10 @@ ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/forgejo/report.json
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default forgejo'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default eb35c7e8'
 ssh -T ubuntu@206.223.228.87 'curl -fsS http://127.0.0.1:3000/api/healthz'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/stalwart/report.json'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default stalwart'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 0e966a50'
+ssh -T ubuntu@206.223.228.87 'curl -fsSI http://127.0.0.1:8090/'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 
