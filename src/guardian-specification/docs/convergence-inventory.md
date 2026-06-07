@@ -19,7 +19,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Materialized Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | Runtime jobs still need artifact/config CRD cutover and live verification against the latest bootstrapped graph | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
-| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Previous job running; not yet re-submitted after latest wipe | Cloudflare recovery has not produced the recovery R2 capability on this host | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
+| PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; not yet re-submitted after latest wipe | Cloudflare-produced R2 credentials and Zitadel-produced auth audience are not yet available on this host | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
 
@@ -31,15 +31,15 @@ Live command:
 guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --stream
 ```
 
-Observed results from the latest gamma run on June 6, 2026:
+Observed results from the latest gamma run on June 7, 2026 UTC:
 
 - `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:40a23eeede55d2f47e0afaa25d0f99c84a9f411c95e3530fc423ff550e77036c`;
+  `sha256:4f42f68f126355ddbf3fb68f54c61efa0cca309df1b170cf49d05f004715027e`;
 - latest verified upload digest:
-  `sha256:fcf8fe8d160d0a1119399ae933ca66ceaac857fbd03d291ef3258807729cd92c`;
+  `sha256:36b944d3cecba73532f51914c7b5d2665957c828306b0a52b9cca15f602ac6a1`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -68,6 +68,24 @@ Observed results from the latest gamma run on June 6, 2026:
 - the latest Cloudflare recovery report showed `bucket: verself-recovery`,
   `bucket_created: true`, `verification_object_get_status: 200`, and
   `verified_with: object-storage-proxy`;
+- PostgreSQL setup initially misclassified an empty reachable pgBackRest
+  repository as unreachable because `postgresql-recovery --action=info` passed
+  the pgBackRest `--process-max` option to a command that does not accept it;
+- `postgresql-recovery` now only passes `--process-max` to pgBackRest backup
+  and restore actions;
+- after re-boarding the rebuilt PostgreSQL runtime, the `postgresql` Nomad job
+  deployed successfully with one healthy allocation;
+- `/run/verself/recovery/postgresql/report.json` reports `status: healthy`,
+  `backup_status: initial_full_backup_created`, port `5432`, socket dir
+  `/var/run/postgresql`, seven reconciled databases, and eight reconciled roles;
+- pgBackRest reports `status: ok`, one valid full backup, one archive timeline,
+  and latest backup label `20260607-002712F`;
+- PostgreSQL catalog checks confirm the `object_storage_service` and `otelcol`
+  roles, the `object_storage_service` and `zitadel` databases, and `otelcol`
+  membership in `pg_monitor`;
+- service Unix accounts such as `object_storage_service` are intentionally
+  component-owned, so direct peer-auth smoke tests must run after the owning
+  service recovery task creates its local account;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
@@ -97,9 +115,6 @@ Previous observed results:
   transient initial root token, and revoke that token;
 - Cloudflare cannot write the recovery R2 capability until OpenBao baseline
   reconciliation updates the `cloudflare-integration-recovery-runtime` policy;
-- PostgreSQL cannot start the pgBackRest-enabled job until OpenBao baseline
-  reconciliation creates the `postgresql-runtime` Nomad JWT role and generated
-  `postgresql.pgbackrest.cipher_pass` secret;
 - the Cloudflare CRD carries the OpenBao account-admin path and omits durable
   host file paths for provider token values;
 - the Cloudflare CRD declares `accountAdminOpenBaoPath`, and the component
@@ -304,8 +319,9 @@ ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/curre
 ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --breakglass-generate-root-token-stdin' < <unseal-shares-file>
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
-ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_service env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d object_storage_service -A -t -c "select current_user;"'
-ssh -T ubuntu@206.223.228.87 'sudo -u object_storage_admin env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -U object_storage_service -d object_storage_service -A -t -c "select current_user;"'
+ssh -T ubuntu@206.223.228.87 'sudo -u postgres env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d postgres -A -t -c "select rolname from pg_roles where rolname in ('\''object_storage_service'\'', '\''otelcol'\'') order by rolname;"'
+ssh -T ubuntu@206.223.228.87 'sudo -u postgres env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d postgres -A -t -c "select datname from pg_database where datname in ('\''object_storage_service'\'', '\''zitadel'\'') order by datname;"'
+ssh -T ubuntu@206.223.228.87 'sudo -u postgres env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d postgres -A -t -c "select pg_has_role('\''otelcol'\'', '\''pg_monitor'\'', '\''member'\'');"'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default clickhouse'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/clickhouse/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count() FROM system.tables WHERE database = '\''verself'\''"'

@@ -195,7 +195,7 @@ func runPgBackRest(cfg config, commandArgs []string) error {
 	if err := requireExecutable(binary); err != nil {
 		return err
 	}
-	args := commonPgBackRestArgs(cfg)
+	args := commonPgBackRestArgs(cfg, actionUsesProcessMax(cfg.action))
 	args = append(args, commandArgs...)
 	cmd := exec.Command(binary, args...)
 	cmd.Stdout = os.Stdout
@@ -204,16 +204,27 @@ func runPgBackRest(cfg config, commandArgs []string) error {
 	return cmd.Run()
 }
 
-func commonPgBackRestArgs(cfg config) []string {
+func commonPgBackRestArgs(cfg config, includeProcessMax bool) []string {
 	args := []string{
 		"--config=" + cfg.configPath,
 		"--stanza=" + cfg.stanza,
-		"--process-max=" + strconv.Itoa(cfg.processMax),
+	}
+	if includeProcessMax {
+		args = append(args, "--process-max="+strconv.Itoa(cfg.processMax))
 	}
 	if cfg.repo > 0 {
 		args = append(args, "--repo="+strconv.Itoa(cfg.repo))
 	}
 	return args
+}
+
+func actionUsesProcessMax(action string) bool {
+	switch action {
+	case actionBackup, actionRestore:
+		return true
+	default:
+		return false
+	}
 }
 
 func backupArgs(cfg config) []string {
