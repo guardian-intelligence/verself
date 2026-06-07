@@ -91,6 +91,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
+						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
+						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
 						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
 						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
@@ -149,6 +151,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
+						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
+						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
 						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
 						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar

@@ -16,7 +16,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | None in current gamma state | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
-| NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Materialized NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
+| NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged on latest gamma run | None in current gamma state | Materialized NATS runtime artifact, `nats-recover`, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Materialized Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
@@ -39,9 +39,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:97616f8f7d71013fa1a7be284a2dbc361f0b6251b66569f945c43d977e331392`;
+  `sha256:74f6e61d09b7c1a329597b5d459acea77c1f3734103c6e4805cadac8e6018f44`;
 - latest verified upload digest:
-  `sha256:e783ddef0b45bf68ac77c8149d9575a0c59f8fbfae575161b018ec5038d40e1d`;
+  `sha256:d09b662ddd43af40369e8bd69640f9759e7fe143dea7026bbd9f05ceeac6097b`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -95,6 +95,20 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - SPIRE registered `23` identities and the workload socket
   `/run/spire-agent/sockets/agent.sock` is owned by `root:spire_workload` with
   mode `0770`;
+- the first NATS submission failed before starting because the boarded artifact
+  set omitted the direct `nats-recover` prestart binary and
+  `nats-runtime.tar`;
+- after adding those artifacts to board upload and verify, `nats` deployment
+  `314aed26` completed successfully with allocation `6f5326d7` running and
+  healthy;
+- `/run/verself/recovery/nats/report.json` reports
+  `NATSRuntimeInstalled=True`, `NATSConfigWritten=True`, and
+  `NATSRecoveryComplete=True`;
+- NATS runtime artifact digest:
+  `sha256:88a1ad53c74f1f4893560de7fbb18afb20acc030aeac926efa3a477e98e3c5a8`;
+- Nomad reports the `nats-monitoring` check as `success`, `/varz` reports
+  NATS `2.12.7` with JetStream enabled, and the server is listening on
+  `127.0.0.1:4222` and `127.0.0.1:8222`;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after
