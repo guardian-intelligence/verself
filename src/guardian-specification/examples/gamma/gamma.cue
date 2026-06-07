@@ -90,6 +90,7 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
 						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
@@ -145,6 +146,7 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
 						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply

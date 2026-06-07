@@ -14,7 +14,7 @@ consecutive submissions do not create unexpected allocation churn.
 | OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
 | SPIRE | `spire.guardianintelligence.org/v1alpha1/SPIRECluster/spire` | Converged on latest gamma run | None in current gamma state | Materialized SPIRE runtime artifact, identity registry artifact, server/agent sockets, join-token attestation, `spire_workload` socket group |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
-| HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to preflight-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
+| HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | None in current gamma state | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Materialized NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Materialized Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
@@ -38,9 +38,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:6de6326e5d98ba31221c3b8609458008c2964de80b6b68b0d3e521676fa02e38`;
+  `sha256:9cef0c35ba73c7f64de53a3f9bb28a3eb293d3234ecfe64d050af336ccfa7d35`;
 - latest verified upload digest:
-  `sha256:23ca3bcf3430cdd9eacda60ef14d03e44b1a2fc62e1b402b5d07516d0cbcdb72`;
+  `sha256:190daa1653f4dde253696fb4fe4b34a2aa482a8ace9226ab37bc3ff3ff574a77`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -139,6 +139,15 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `object-storage-service` deployment `4434cf34` completed successfully with
   admin allocation `c6ff8184` and S3 allocations `5e30ae93` and `fe399014`
   running and healthy;
+- HAProxy certificate material exists for `gamma.verself.sh` and
+  `gamma.guardianintelligence.org`, but the first HAProxy retry failed because
+  the boarded artifact set omitted
+  `bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar`;
+- after adding the HAProxy runtime tar to the board upload and verify lists,
+  `haproxy-upstreams` deployment `57a009aa` completed successfully with
+  allocation `bf6df579` running and healthy;
+- local HTTPS readiness checks through HAProxy returned `guardian haproxy ready`
+  for both `gamma.verself.sh` and `gamma.guardianintelligence.org`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
