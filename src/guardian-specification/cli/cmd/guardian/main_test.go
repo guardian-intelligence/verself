@@ -51,7 +51,7 @@ func TestProjectionOutputFormatsRejected(t *testing.T) {
 	}
 }
 
-func TestMaterializeBazelBuildOutputs(t *testing.T) {
+func TestReadBazelBuildOutputs(t *testing.T) {
 	dir := t.TempDir()
 	sourcePath := filepath.Join(dir, "bazel-out", "k8-fastbuild", "bin", "pkg", "tool")
 	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
@@ -70,23 +70,18 @@ func TestMaterializeBazelBuildOutputs(t *testing.T) {
 	if err := os.WriteFile(bepPath, []byte(bep), 0o644); err != nil {
 		t.Fatalf("write BEP: %v", err)
 	}
-	if err := materializeBazelBuildOutputs(dir, bepPath); err != nil {
-		t.Fatalf("materialize outputs: %v", err)
-	}
-	materialized := filepath.Join(dir, ".guardian", "build", "bazel-bin", "pkg", "tool")
-	data, err := os.ReadFile(materialized)
+	outputs, err := readBazelBuildOutputs(bepPath)
 	if err != nil {
-		t.Fatalf("read materialized output: %v", err)
+		t.Fatalf("read outputs: %v", err)
 	}
-	if string(data) != "tool bytes\n" {
-		t.Fatalf("materialized output = %q", string(data))
+	if len(outputs) != 1 {
+		t.Fatalf("outputs = %#v, want one output", outputs)
 	}
-	manifestData, err := os.ReadFile(filepath.Join(dir, ".guardian", "build", "manifest.json"))
-	if err != nil {
-		t.Fatalf("read manifest: %v", err)
+	if outputs[0].TargetPath != "bazel-bin/pkg/tool" {
+		t.Fatalf("target path = %q", outputs[0].TargetPath)
 	}
-	if !strings.Contains(string(manifestData), `"target_path": "bazel-bin/pkg/tool"`) {
-		t.Fatalf("manifest omitted target path:\n%s", string(manifestData))
+	if outputs[0].SourceURI != "file://"+filepath.ToSlash(sourcePath) {
+		t.Fatalf("source uri = %q", outputs[0].SourceURI)
 	}
 }
 
@@ -543,28 +538,58 @@ profiles: gamma: document: "../../gamma.cue"
 	}
 }
 
-func writeTestBuildManifest(t *testing.T, dir string, outputs map[string]string) {
+func writeTestBuildEvents(t *testing.T, dir string, outputs map[string]string) {
 	t.Helper()
-	manifest := bazelBuildManifest{Outputs: make([]bazelBuildOutput, 0, len(outputs))}
+	var files []map[string]any
 	for targetPath, sourcePath := range outputs {
 		data, err := os.ReadFile(sourcePath)
 		if err != nil {
-			t.Fatalf("read manifest source %s: %v", sourcePath, err)
+			t.Fatalf("read build output %s: %v", sourcePath, err)
 		}
 		sum := sha256.Sum256(data)
-		manifest.Outputs = append(manifest.Outputs, bazelBuildOutput{
-			SourceURI:  "file://" + filepath.ToSlash(sourcePath),
-			Digest:     hex.EncodeToString(sum[:]),
-			TargetPath: targetPath,
+		name := strings.TrimPrefix(filepath.ToSlash(targetPath), "bazel-bin/")
+		files = append(files, map[string]any{
+			"name":       name,
+			"uri":        "file://" + filepath.ToSlash(sourcePath),
+			"pathPrefix": []string{"bazel-out", "k8-fastbuild", "bin"},
+			"digest":     hex.EncodeToString(sum[:]),
 		})
 	}
-	body, err := json.MarshalIndent(manifest, "", "  ")
+	namedSet, err := json.Marshal(map[string]any{
+		"id": map[string]any{"namedSet": map[string]any{"id": "0"}},
+		"namedSetOfFiles": map[string]any{
+			"files": files,
+		},
+	})
 	if err != nil {
-		t.Fatalf("encode build manifest: %v", err)
+		t.Fatalf("encode named set: %v", err)
 	}
+	completed, err := json.Marshal(map[string]any{
+		"id": map[string]any{"targetCompleted": map[string]any{"label": "//test:fly_artifacts"}},
+		"completed": map[string]any{
+			"success": true,
+			"outputGroup": []map[string]any{
+				{
+					"name": "default",
+					"fileSets": []map[string]any{
+						{"id": "0"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode completed event: %v", err)
+	}
+	body := append(namedSet, '\n')
+	body = append(body, completed...)
 	body = append(body, '\n')
-	if err := os.WriteFile(filepath.Join(dir, ".guardian", "build", "manifest.json"), body, 0o644); err != nil {
-		t.Fatalf("write build manifest: %v", err)
+	path := filepath.Join(dir, ".guardian", "build", "build-events.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir build events dir: %v", err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write build events: %v", err)
 	}
 }
 
@@ -612,32 +637,28 @@ language: version: "v0.11.0"
 	if err := os.WriteFile(filepath.Join(dir, "guardian"), []byte("guardian binary\n"), 0o755); err != nil {
 		t.Fatalf("write guardian source: %v", err)
 	}
-	materializedBazelBin := filepath.Join(dir, ".guardian", "build", "bazel-bin")
-	if err := os.MkdirAll(materializedBazelBin, 0o755); err != nil {
-		t.Fatalf("mkdir materialized bazel-bin: %v", err)
+	bazelOut := filepath.Join(dir, "bazel-out", "k8-fastbuild", "bin")
+	if err := os.MkdirAll(bazelOut, 0o755); err != nil {
+		t.Fatalf("mkdir bazel output dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(materializedBazelBin, "guardian"), []byte("built guardian\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bazelOut, "guardian"), []byte("built guardian\n"), 0o755); err != nil {
 		t.Fatalf("write built artifact: %v", err)
 	}
-	openBaoRuntime := filepath.Join(materializedBazelBin, "src", "infrastructure-components", "openbao", "openbao-runtime.tar")
+	openBaoRuntime := filepath.Join(bazelOut, "src", "infrastructure-components", "openbao", "openbao-runtime.tar")
 	if err := os.MkdirAll(filepath.Dir(openBaoRuntime), 0o755); err != nil {
 		t.Fatalf("mkdir openbao runtime dir: %v", err)
 	}
 	if err := os.WriteFile(openBaoRuntime, []byte("openbao runtime\n"), 0o644); err != nil {
 		t.Fatalf("write openbao runtime: %v", err)
 	}
-	nomadRuntime := filepath.Join(materializedBazelBin, "src", "infrastructure-components", "nomad", "nomad-runtime.tar")
+	nomadRuntime := filepath.Join(bazelOut, "src", "infrastructure-components", "nomad", "nomad-runtime.tar")
 	if err := os.MkdirAll(filepath.Dir(nomadRuntime), 0o755); err != nil {
 		t.Fatalf("mkdir nomad runtime dir: %v", err)
 	}
 	if err := os.WriteFile(nomadRuntime, []byte("nomad runtime\n"), 0o644); err != nil {
 		t.Fatalf("write nomad runtime: %v", err)
 	}
-	writeTestBuildManifest(t, dir, map[string]string{
-		openBaoRuntimeTargetPath: openBaoRuntime,
-		nomadRuntimeTargetPath:   nomadRuntime,
-	})
-	uvxPath := filepath.Join(materializedBazelBin, "src", "tools", "dev", "binaries", "uvx")
+	uvxPath := filepath.Join(bazelOut, "src", "tools", "dev", "binaries", "uvx")
 	if err := os.MkdirAll(filepath.Dir(uvxPath), 0o755); err != nil {
 		t.Fatalf("mkdir uvx dir: %v", err)
 	}
@@ -654,13 +675,19 @@ printf 'ansible ran\n' > ansible-ran
 `), 0o755); err != nil {
 		t.Fatalf("write fake uvx: %v", err)
 	}
-	rsyncPath := filepath.Join(materializedBazelBin, "src", "guardian-specification", "tools", "rsync")
+	rsyncPath := filepath.Join(bazelOut, "src", "guardian-specification", "tools", "rsync")
 	if err := os.MkdirAll(filepath.Dir(rsyncPath), 0o755); err != nil {
 		t.Fatalf("mkdir rsync dir: %v", err)
 	}
 	if err := os.WriteFile(rsyncPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write fake rsync: %v", err)
 	}
+	writeTestBuildEvents(t, dir, map[string]string{
+		openBaoRuntimeTargetPath: openBaoRuntime,
+		nomadRuntimeTargetPath:   nomadRuntime,
+		uvxTargetPath:            uvxPath,
+		rsyncTargetPath:          rsyncPath,
+	})
 	if err := os.WriteFile(filepath.Join(dir, "preflight.yml"), []byte("---\n- hosts: all\n"), 0o644); err != nil {
 		t.Fatalf("write preflight playbook: %v", err)
 	}
@@ -704,7 +731,7 @@ case "$2" in
       shift || true
     done
     printf 'Job Modify Index: 7\n'
-    exit 1
+    exit 0
     ;;
   run)
     test "$3" = "-detach"

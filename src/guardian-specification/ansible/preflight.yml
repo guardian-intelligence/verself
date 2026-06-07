@@ -132,6 +132,7 @@
         argv:
           - "{{ guardian_rsync_bin }}"
           - -a
+          - --checksum
           - --delete
           - --timeout=60
           - "--filter=:- .gitignore"
@@ -150,26 +151,12 @@
         argv:
           - "{{ guardian_rsync_bin }}"
           - -a
+          - --checksum
           - --relative
           - --timeout=60
           - -e
           - "{{ guardian_rsync_ssh_command }}"
           - .guardian/fly/document.json
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/workspace/"
-        chdir: "{{ guardian_workspace_root }}"
-      delegate_to: localhost
-      become: false
-
-    - name: Upload generated build manifest
-      ansible.builtin.command:
-        argv:
-          - "{{ guardian_rsync_bin }}"
-          - -a
-          - --relative
-          - --timeout=60
-          - -e
-          - "{{ guardian_rsync_ssh_command }}"
-          - .guardian/build/manifest.json
           - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/workspace/"
         chdir: "{{ guardian_workspace_root }}"
       delegate_to: localhost
@@ -250,29 +237,6 @@
       ansible.builtin.assert:
         that:
           - guardian_local_fly_digest.stdout.split()[0] == guardian_remote_fly_digest.stdout.split()[0]
-
-    - name: Read local build manifest digest
-      ansible.builtin.command:
-        argv:
-          - sha256sum
-          - "{{ guardian_bazel_manifest_path }}"
-      delegate_to: localhost
-      become: false
-      register: guardian_local_bazel_manifest_digest
-      changed_when: false
-
-    - name: Read remote build manifest digest
-      ansible.builtin.command:
-        argv:
-          - sha256sum
-          - "{{ guardian_remote_repo_root }}/workspace/.guardian/build/manifest.json"
-      register: guardian_remote_bazel_manifest_digest
-      changed_when: false
-
-    - name: Verify build manifest digest
-      ansible.builtin.assert:
-        that:
-          - guardian_local_bazel_manifest_digest.stdout.split()[0] == guardian_remote_bazel_manifest_digest.stdout.split()[0]
 
     - name: Verify content-addressed artifact digests
       ansible.builtin.command:

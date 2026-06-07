@@ -1,10 +1,10 @@
 # Guardian Specification
 
 Guardian Specification defines a configuration protocol for converging a built
-repo on a substrate. The reference CLI resolves a profile, materializes a
-verified repo tree on the target, prepares OpenBao host integration inputs,
-starts the Nomad executor, and writes the resolved resource graph into the
-materialized workspace for component-owned Nomad jobs.
+repo on a substrate. The reference CLI resolves a profile, uploads the repo
+workspace and Bazel-reported build outputs to the target, prepares OpenBao host
+integration inputs, starts the Nomad executor, and writes the resolved resource
+graph for component-owned Nomad jobs.
 
 The command surface:
 
@@ -18,18 +18,19 @@ guardian fly gamma
 
 `preflight` is the first cut point in the convergence state machine. It
 resolves the profile, loads the resource graph, verifies local build artifacts
-and the Bazel build manifest are present under `.guardian/build`, uploads
-repo files plus Bazel outputs by content digest, runs the referenced Ansible
-preflight, verifies the remote repo tree, prepares OpenBao integration
-material for Nomad, starts the Nomad executor, and stops.
+reported by Bazel's build event file, uploads repo files plus Bazel outputs by
+content digest, runs the referenced Ansible preflight, verifies the remote repo
+tree and artifact store, prepares OpenBao integration material for Nomad,
+starts the Nomad executor, and stops.
 
 `fly` starts with the same preflight phase and then plans the configured Nomad
 jobs. Changed jobs are submitted with the Nomad plan check index; unchanged
 jobs are left in place. Component runtime behavior is a Nomad convention:
-owner job files include lifecycle tasks and consume the materialized resource
-graph, generated vars, and content-addressed artifacts. The base protocol does
-not encode component internals. Infrastructure components own their binaries,
-backup retrieval, credential import, health checks, and stabilization logic.
+owner job files include lifecycle tasks and consume the uploaded resource graph,
+generated vars, and content-addressed artifacts from the remote repo root. The
+base protocol does not encode component internals. Infrastructure components
+own their binaries, backup retrieval, credential import, health checks, and
+stabilization logic.
 
 ## Scope Convention
 

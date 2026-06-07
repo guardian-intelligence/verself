@@ -105,9 +105,9 @@ After:
   but a failed or lost batch allocation is purged and resubmitted so operator
   imports can be retried without changing job bytes.
 - The repo upload is source and generated graph state. `guardian run bazel --
-  build //src/guardian-specification/examples/<site>:fly_artifacts` records
-  Bazel-reported outputs in `.guardian/build/manifest.json`, and the preflight
-  playbook uploads those outputs once by SHA-256 digest under
+  build //src/guardian-specification/examples/<site>:fly_artifacts` writes
+  Bazel build events to `.guardian/build/build-events.json`, and the preflight
+  playbook uploads the reported outputs once by SHA-256 digest under
   `<repoRoot>/artifacts/sha256`.
 - `guardian fly` plans each declared Nomad job, submits only changed jobs with
   Nomad's plan check index, and treats unchanged plans as successful no-ops.

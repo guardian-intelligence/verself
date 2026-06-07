@@ -33,7 +33,7 @@ import (
 const (
 	defaultFlyDocumentPath = ".guardian/fly/document.json"
 	defaultBazelBuildRoot  = ".guardian/build"
-	bazelBuildManifestPath = ".guardian/build/manifest.json"
+	bazelBuildEventsPath   = ".guardian/build/build-events.json"
 	hookOutputTailBytes    = 12000
 
 	nomadSubmitTimeout             = 10 * time.Second
@@ -43,6 +43,8 @@ const (
 
 	openBaoRuntimeTargetPath = "bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar"
 	nomadRuntimeTargetPath   = "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
+	uvxTargetPath            = "bazel-bin/src/tools/dev/binaries/uvx"
+	rsyncTargetPath          = "bazel-bin/src/guardian-specification/tools/rsync"
 )
 
 type guardianDocument struct {
@@ -281,7 +283,7 @@ func runBazelBuildTool(ctx context.Context, tool toolcatalog.ResolvedTool, args 
 	}
 	bepPath, hasBEPPath := bazelBuildEventJSONPath(args, workspaceRoot)
 	if !hasBEPPath {
-		bepPath = filepath.Join(buildRoot, "build-events.json")
+		bepPath = filepath.Join(workspaceRoot, filepath.FromSlash(bazelBuildEventsPath))
 	}
 	bazelArgs := append([]string(nil), args...)
 	bazelArgs = append(bazelArgs,
@@ -299,8 +301,8 @@ func runBazelBuildTool(ctx context.Context, tool toolcatalog.ResolvedTool, args 
 	if code != 0 {
 		return code
 	}
-	if err := materializeBazelBuildOutputs(workspaceRoot, bepPath); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian run: materialize Bazel outputs: %v\n", err)
+	if _, err := readBazelBuildOutputs(bepPath); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian run: read Bazel build events: %v\n", err)
 		return 1
 	}
 	return 0
@@ -921,7 +923,7 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	}
 	result.Upload.Status = "prepared"
 	result.Upload.Reason = "WorkspaceReady"
-	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and materialized Bazel outputs are present locally", "preflight.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and Bazel build outputs are present locally", "preflight.upload"))
 	if hasFalseCondition(result.Conditions) {
 		return result
 	}
@@ -942,7 +944,7 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	result.Upload.Reason = "AnsibleVerified"
 	result.ReadyToFly = "yes"
 	result.Status = "ready"
-	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "AnsibleVerified", "preflight playbook verified the materialized repo tree", "preflight.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "AnsibleVerified", "preflight playbook verified the remote repo tree and artifacts", "preflight.upload"))
 	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "PreflightComplete", "preflight completed successfully", "preflight"))
 	return result
 }
@@ -969,12 +971,19 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 		result.Message = err.Error()
 		return result, err
 	}
-	uvxPath := filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultBazelBuildRoot+"/bazel-bin/src/tools/dev/binaries/uvx"))
-	if _, err := os.Stat(uvxPath); err != nil {
-		result.Reason = "AnsibleRunnerMissing"
-		result.Message = defaultBazelBuildRoot + "/bazel-bin/src/tools/dev/binaries/uvx is missing; run guardian run bazel -- build //src/tools/dev/binaries:uv_tools before preflight"
-		return result, fmt.Errorf("%s: %w", result.Message, err)
+	_, artifactsByTargetPath, err := remoteArtifactsFromBuildEvents(opts.WorkspaceRoot, "/guardian-local-validation")
+	if err != nil {
+		result.Reason = "BuildEventsInvalid"
+		result.Message = err.Error()
+		return result, err
 	}
+	uvxArtifact, err := requireRemoteArtifact(artifactsByTargetPath, uvxTargetPath)
+	if err != nil {
+		result.Reason = "AnsibleRunnerMissing"
+		result.Message = err.Error()
+		return result, err
+	}
+	uvxPath := uvxArtifact.SourcePath
 	target, err := parseAnsibleSSHTarget(doc.Compiled.SubstrateSpec.Remote.SSH)
 	if err != nil {
 		result.Reason = "SubstrateSSHInvalid"
@@ -1173,7 +1182,7 @@ func inventoryValue(value string) string {
 func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest string, target ansibleSSHTarget) (map[string]any, error) {
 	remote := doc.Compiled.SubstrateSpec.Remote
 	workspaceState := gitWorkspaceState(opts.WorkspaceRoot)
-	artifacts, artifactsByTargetPath, err := remoteArtifactsFromBuildManifest(opts.WorkspaceRoot, remote.RepoRoot)
+	artifacts, artifactsByTargetPath, err := remoteArtifactsFromBuildEvents(opts.WorkspaceRoot, remote.RepoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -1189,6 +1198,10 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 	if err != nil {
 		return nil, err
 	}
+	rsyncBin, err := requireRemoteArtifact(artifactsByTargetPath, rsyncTargetPath)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"guardian_profile":                opts.Profile,
 		"guardian_resource_digest":        resourceDigest,
@@ -1196,7 +1209,6 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		"guardian_workspace_git_clean":    workspaceState.Clean,
 		"guardian_workspace_root":         opts.WorkspaceRoot,
 		"guardian_fly_document_path":      filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultFlyDocumentPath)),
-		"guardian_bazel_manifest_path":    filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(bazelBuildManifestPath)),
 		"guardian_artifact_root":          remoteArtifactRoot(remote.RepoRoot),
 		"guardian_artifacts":              artifacts,
 		"guardian_openbao_runtime":        openBaoRuntime,
@@ -1204,26 +1216,26 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		"guardian_nomad_jobs":             nomadInputs,
 		"guardian_nomad_common_var_args":  nomadCommonVarArgs(remote.RepoRoot, doc.Compiled.Fly.Metadata.Name),
 		"guardian_remote_repo_root":       remote.RepoRoot,
-		"guardian_rsync_bin":              filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultBazelBuildRoot+"/bazel-bin/src/guardian-specification/tools/rsync")),
+		"guardian_rsync_bin":              rsyncBin.SourcePath,
 		"guardian_rsync_target":           target.User + "@" + target.Host,
 		"guardian_rsync_ssh_command":      ansibleRsyncSSHCommand(target),
 	}, nil
 }
 
-func remoteArtifactsFromBuildManifest(workspaceRoot string, repoRoot string) ([]remoteArtifact, map[string]remoteArtifact, error) {
-	manifest, err := readBazelBuildManifest(workspaceRoot)
+func remoteArtifactsFromBuildEvents(workspaceRoot string, repoRoot string) ([]remoteArtifact, map[string]remoteArtifact, error) {
+	outputs, err := readBazelBuildOutputs(filepath.Join(workspaceRoot, filepath.FromSlash(bazelBuildEventsPath)))
 	if err != nil {
 		return nil, nil, err
 	}
 	byTargetPath := map[string]remoteArtifact{}
-	artifacts := make([]remoteArtifact, 0, len(manifest.Outputs))
-	for _, output := range manifest.Outputs {
+	artifacts := make([]remoteArtifact, 0, len(outputs))
+	for _, output := range outputs {
 		targetPath := filepath.ToSlash(strings.TrimSpace(output.TargetPath))
 		if targetPath == "" {
-			return nil, nil, errors.New("build manifest output omitted target_path")
+			return nil, nil, errors.New("Bazel build output omitted target path")
 		}
 		if _, exists := byTargetPath[targetPath]; exists {
-			return nil, nil, fmt.Errorf("build manifest contains duplicate target_path %s", targetPath)
+			return nil, nil, fmt.Errorf("Bazel build events contain duplicate output %s", targetPath)
 		}
 		digest, err := normalizeSHA256Digest(output.Digest)
 		if err != nil {
@@ -1255,22 +1267,6 @@ func remoteArtifactsFromBuildManifest(workspaceRoot string, repoRoot string) ([]
 	return artifacts, byTargetPath, nil
 }
 
-func readBazelBuildManifest(workspaceRoot string) (bazelBuildManifest, error) {
-	path := filepath.Join(workspaceRoot, filepath.FromSlash(bazelBuildManifestPath))
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return bazelBuildManifest{}, fmt.Errorf("read build manifest: %w", err)
-	}
-	var manifest bazelBuildManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return bazelBuildManifest{}, fmt.Errorf("decode build manifest: %w", err)
-	}
-	if len(manifest.Outputs) == 0 {
-		return bazelBuildManifest{}, errors.New("build manifest contains no outputs")
-	}
-	return manifest, nil
-}
-
 func normalizeSHA256Digest(raw string) (string, error) {
 	digest := strings.TrimSpace(raw)
 	digest = strings.TrimPrefix(digest, "sha256:")
@@ -1288,7 +1284,7 @@ func normalizeSHA256Digest(raw string) (string, error) {
 func requireRemoteArtifact(artifacts map[string]remoteArtifact, targetPath string) (remoteArtifact, error) {
 	artifact, ok := artifacts[targetPath]
 	if !ok {
-		return remoteArtifact{}, fmt.Errorf("%s is missing from %s; build the required fly artifacts before preflight", targetPath, bazelBuildManifestPath)
+		return remoteArtifact{}, fmt.Errorf("%s is missing from %s; build the required fly artifacts before preflight", targetPath, bazelBuildEventsPath)
 	}
 	return artifact, nil
 }
@@ -1321,7 +1317,7 @@ func remoteInputPath(repoRoot string, rel string, artifacts map[string]remoteArt
 	if strings.HasPrefix(rel, "bazel-bin/") {
 		artifact, ok := artifacts[rel]
 		if !ok {
-			return "", fmt.Errorf("%s is missing from %s", rel, bazelBuildManifestPath)
+			return "", fmt.Errorf("%s is missing from %s", rel, bazelBuildEventsPath)
 		}
 		return artifact.RemotePath, nil
 	}
@@ -1386,9 +1382,7 @@ func ansibleRsyncSSHCommand(target ansibleSSHTarget) string {
 func preparePreflightWorkspace(workspaceRoot string) error {
 	for _, rel := range []string{
 		defaultFlyDocumentPath,
-		bazelBuildManifestPath,
-		defaultBazelBuildRoot + "/bazel-bin/src/tools/dev/binaries/uvx",
-		defaultBazelBuildRoot + "/bazel-bin/src/guardian-specification/tools/rsync",
+		bazelBuildEventsPath,
 	} {
 		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {
@@ -1398,11 +1392,11 @@ func preparePreflightWorkspace(workspaceRoot string) error {
 			return fmt.Errorf("stat %s: %w", rel, err)
 		}
 	}
-	_, artifactsByTargetPath, err := remoteArtifactsFromBuildManifest(workspaceRoot, "/guardian-preflight-validation")
+	_, artifactsByTargetPath, err := remoteArtifactsFromBuildEvents(workspaceRoot, "/guardian-preflight-validation")
 	if err != nil {
 		return err
 	}
-	for _, targetPath := range []string{openBaoRuntimeTargetPath, nomadRuntimeTargetPath} {
+	for _, targetPath := range []string{openBaoRuntimeTargetPath, nomadRuntimeTargetPath, uvxTargetPath, rsyncTargetPath} {
 		if _, err := requireRemoteArtifact(artifactsByTargetPath, targetPath); err != nil {
 			return err
 		}
@@ -1410,14 +1404,10 @@ func preparePreflightWorkspace(workspaceRoot string) error {
 	return nil
 }
 
-type bazelBuildManifest struct {
-	Outputs []bazelBuildOutput `json:"outputs"`
-}
-
 type bazelBuildOutput struct {
-	SourceURI  string `json:"source_uri"`
-	Digest     string `json:"digest,omitempty"`
-	TargetPath string `json:"target_path"`
+	SourceURI  string
+	Digest     string
+	TargetPath string
 }
 
 type bazelBuildEvent struct {
@@ -1454,10 +1444,10 @@ type bazelOutputFile struct {
 	Digest     string   `json:"digest"`
 }
 
-func materializeBazelBuildOutputs(workspaceRoot string, bepPath string) error {
+func readBazelBuildOutputs(bepPath string) ([]bazelBuildOutput, error) {
 	file, err := os.Open(bepPath)
 	if err != nil {
-		return fmt.Errorf("open build event file: %w", err)
+		return nil, fmt.Errorf("open build event file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 	namedSets := map[string]bazelNamedSetOfFiles{}
@@ -1469,7 +1459,7 @@ func materializeBazelBuildOutputs(workspaceRoot string, bepPath string) error {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return fmt.Errorf("decode build event: %w", err)
+			return nil, fmt.Errorf("decode build event: %w", err)
 		}
 		if event.ID.NamedSet != nil && event.NamedSetOfFiles != nil {
 			namedSets[event.ID.NamedSet.ID] = *event.NamedSetOfFiles
@@ -1488,54 +1478,39 @@ func materializeBazelBuildOutputs(workspaceRoot string, bepPath string) error {
 		}
 	}
 	if len(completedSets) == 0 {
-		return errors.New("Bazel build did not report default output files")
-	}
-	buildRoot := filepath.Join(workspaceRoot, filepath.FromSlash(defaultBazelBuildRoot))
-	materializedRoot := filepath.Join(buildRoot, "bazel-bin")
-	if err := os.RemoveAll(materializedRoot); err != nil {
-		return fmt.Errorf("clear materialized bazel-bin: %w", err)
+		return nil, errors.New("Bazel build did not report default output files")
 	}
 	seenFiles := map[string]bool{}
 	seenSets := map[string]bool{}
-	var manifest bazelBuildManifest
+	outputs := make([]bazelBuildOutput, 0)
 	for _, setID := range completedSets {
 		files, err := flattenBazelFileSet(setID, namedSets, seenSets)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, output := range files {
 			targetPath, err := bazelOutputTargetPath(output)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if seenFiles[targetPath] {
 				continue
 			}
 			seenFiles[targetPath] = true
-			sourcePath, err := fileURIPath(output.URI)
-			if err != nil {
-				return err
-			}
-			destination := filepath.Join(buildRoot, filepath.FromSlash(targetPath))
-			if err := copyMaterializedOutput(sourcePath, destination); err != nil {
-				return err
-			}
-			manifest.Outputs = append(manifest.Outputs, bazelBuildOutput{
+			outputs = append(outputs, bazelBuildOutput{
 				SourceURI:  output.URI,
 				Digest:     output.Digest,
 				TargetPath: targetPath,
 			})
 		}
 	}
-	sort.Slice(manifest.Outputs, func(i, j int) bool {
-		return manifest.Outputs[i].TargetPath < manifest.Outputs[j].TargetPath
+	sort.Slice(outputs, func(i, j int) bool {
+		return outputs[i].TargetPath < outputs[j].TargetPath
 	})
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode build manifest: %w", err)
+	if len(outputs) == 0 {
+		return nil, errors.New("Bazel build reported no output files")
 	}
-	data = append(data, '\n')
-	return writeWorkspaceFile(filepath.Join(workspaceRoot, filepath.FromSlash(bazelBuildManifestPath)), data, 0o644)
+	return outputs, nil
 }
 
 func flattenBazelFileSet(setID string, namedSets map[string]bazelNamedSetOfFiles, seen map[string]bool) ([]bazelOutputFile, error) {
@@ -1585,75 +1560,6 @@ func fileURIPath(uri string) (string, error) {
 		return "", fmt.Errorf("Bazel output URI %q has no path", uri)
 	}
 	return parsed.Path, nil
-}
-
-func copyMaterializedOutput(src string, dst string) error {
-	stat, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("stat Bazel output %s: %w", src, err)
-	}
-	if stat.IsDir() {
-		return copyMaterializedDirectory(src, dst)
-	}
-	return copyMaterializedFile(src, dst, stat.Mode().Perm())
-}
-
-func copyMaterializedDirectory(src string, dst string) error {
-	return filepath.WalkDir(src, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return os.MkdirAll(target, info.Mode().Perm())
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("Bazel output %s is not a regular file", path)
-		}
-		return copyMaterializedFile(path, target, info.Mode().Perm())
-	})
-}
-
-func copyMaterializedFile(src string, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open Bazel output %s: %w", src, err)
-	}
-	defer func() { _ = in.Close() }()
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fmt.Errorf("create output directory %s: %w", filepath.Dir(dst), err)
-	}
-	tmp := dst + ".tmp." + fmt.Sprint(os.Getpid())
-	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
-	if err != nil {
-		return fmt.Errorf("create materialized output %s: %w", dst, err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmp)
-		return fmt.Errorf("copy materialized output %s: %w", dst, err)
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("close materialized output %s: %w", dst, err)
-	}
-	if err := os.Chmod(tmp, mode); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("chmod materialized output %s: %w", dst, err)
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("promote materialized output %s: %w", dst, err)
-	}
-	return nil
 }
 
 func writeWorkspaceFile(path string, body []byte, mode os.FileMode) error {
@@ -1799,10 +1705,10 @@ func runNomadJobs(doc guardianDocument, opts commandOptions, emitter eventWriter
 	result := nomadPending(nomad)
 	result.Status = "running"
 	result.Reason = "PlanningJobs"
-	_, artifactsByTargetPath, err := remoteArtifactsFromBuildManifest(opts.WorkspaceRoot, doc.Compiled.SubstrateSpec.Remote.RepoRoot)
+	_, artifactsByTargetPath, err := remoteArtifactsFromBuildEvents(opts.WorkspaceRoot, doc.Compiled.SubstrateSpec.Remote.RepoRoot)
 	if err != nil {
 		result.Status = "blocked"
-		result.Reason = "BuildManifestInvalid"
+		result.Reason = "BuildEventsInvalid"
 		result.Message = err.Error()
 		return result
 	}
@@ -1872,7 +1778,7 @@ func requireLocalInputFile(workspaceRoot string, rel string, artifacts map[strin
 	rel = filepath.ToSlash(strings.TrimSpace(rel))
 	if strings.HasPrefix(rel, "bazel-bin/") {
 		if _, ok := artifacts[rel]; !ok {
-			return fmt.Errorf("%s %s is missing from %s", label, rel, bazelBuildManifestPath)
+			return fmt.Errorf("%s %s is missing from %s", label, rel, bazelBuildEventsPath)
 		}
 		return nil
 	}
@@ -1933,15 +1839,15 @@ func planRemoteNomadJob(remote specdoc.Remote, nomad specdoc.NomadFly, job nomad
 	planArgs = append(planArgs, nomadCommonVarArgs(remote.RepoRoot, site)...)
 	planArgs = append(planArgs, "-var-file", remoteVarsPath, remoteJobPath)
 	result := runRemoteCommandResult(remote, workspaceRoot, nomadSubmitTimeout, remoteNomadCommand(nomad, planArgs...)...)
+	checkIndex := nomadPlanCheckIndex(result.Stdout)
+	if checkIndex != "" {
+		return nomadPlanResult{Changed: true, CheckIndex: checkIndex}, nil
+	}
 	switch result.ExitCode {
 	case 0:
 		return nomadPlanResult{}, nil
 	case 1:
-		checkIndex := nomadPlanCheckIndex(result.Stdout)
-		if checkIndex == "" {
-			return nomadPlanResult{}, fmt.Errorf("%s: Nomad plan reported changes but did not return Job Modify Index; stdout: %s", job.Name, outputTail(result.Stdout, hookOutputTailBytes))
-		}
-		return nomadPlanResult{Changed: true, CheckIndex: checkIndex}, nil
+		return nomadPlanResult{}, fmt.Errorf("%s: Nomad plan reported changes but did not return Job Modify Index; stdout: %s", job.Name, outputTail(result.Stdout, hookOutputTailBytes))
 	default:
 		if result.Err != nil {
 			return nomadPlanResult{}, errors.New(commandFailureMessage(result.Err, result.Stdout, result.Stderr))
@@ -2273,8 +2179,8 @@ func flyUsage(w io.Writer) {
 usage:
   guardian fly [-f <config>] [profile] [--dry-run] [-o yaml|json|toml|toon] [--stream]
 
-fly runs the same preflight phase and then runs the FlyProcedure Nomad job hook
-from the materialized workspace.
+fly runs the same preflight phase and then plans and submits the declared Nomad
+jobs from the remote workspace and digest-addressed artifact store.
 `)
 }
 

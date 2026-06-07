@@ -24,12 +24,12 @@ protocol, component CRDs, component-owned Nomad jobs, and runtime evidence.
 
 `preflight` runs the state machine through substrate readiness. It resolves the
 profile, entrypoint, and referenced substrate, checks local build artifacts,
-materializes the resolved resource graph, runs the configured Ansible
+generates the resolved resource graph, runs the configured Ansible
 preflight, and emits a structured command result with `ready_to_fly`, upload
 details, hook details, and stable conditions. Preflight recovers the fixed
 Nomad/OpenBao substrate prerequisites.
 
-`fly` starts with preflight and writes the resource graph into the materialized
+`fly` starts with preflight and writes the resource graph into the remote
 workspace, then submits the declared Nomad jobs. Component behavior is
 expressed in component-owned Nomad job files, typically as lifecycle tasks that
 install, restore, reconcile, or block with stable health evidence.

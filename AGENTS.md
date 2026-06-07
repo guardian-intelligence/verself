@@ -23,8 +23,10 @@ guardian preflight gamma
 guardian fly gamma --dry-run
 ```
 
-`preflight` establishes a connection with a remote, uploads the repo's built artifacts, verifies the materialized repo tree, and prepares fixed host executor prerequisites. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, feeds CRD values into the declared Ansible preflight playbook, and reports whether the target is ready for `fly`.
+`preflight` establishes a connection with a remote, uploads the repo plus built artifacts, verifies the remote workspace and artifact store, and prepares fixed host executor prerequisites. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, feeds CRD values into the declared Ansible preflight playbook, and reports whether the target is ready for `fly`.
 `fly` starts with the same preflight phase and then relies on repo-owned Nomad job conventions. Promoting a specific ref of the source code to gamma/prod/beta/dev is updating the declared desired state and running the component-owned control loops.
+
+All binaries used at development time, build time, and runtime are version pinned and included in the `guardian` binary under `guardian run`. E.g. use `guardian run bazel -- query '//src/...' --output=package` to learn about the top level structure of `/src`
 
 # Disaster Recovery / `fly`
 
@@ -32,7 +34,7 @@ A foundational invariant of the system is that is able to execute a `fly` (disas
 
 IOW, disaster recovery is just like any other deployment, where the control loop spends additional time in the recovery process because the system was in a degraded state.
 
-The process is `guardian preflight` -> Guardian synchronous checks to make sure the materialized repo is verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
+The process is `guardian preflight` -> Guardian synchronous checks to make sure the remote workspace and artifact store are verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
 
 We accomplish this through the following two core techniques:
 

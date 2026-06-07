@@ -1,7 +1,7 @@
 # Fly
 
 `fly` runs Guardian preflight and then plans the declared Nomad jobs against
-the materialized workspace and content-addressed Bazel artifacts.
+the remote workspace and content-addressed Bazel artifacts.
 
 ```sh
 guardian run bazel -- build //src/guardian-specification/examples/gamma:fly_artifacts
@@ -12,8 +12,8 @@ guardian fly -f gamma.cue
 
 The command resolves a profile, writes the graph to
 `.guardian/fly/document.json`, runs the preflight phase, and verifies the
-materialized repo tree and kernel prerequisites. Re-running `fly` is the normal
-way to refresh the materialized workspace before Nomad jobs run their
+remote repo tree, artifact store, and kernel prerequisites. Re-running `fly` is
+the normal way to refresh the remote workspace before Nomad jobs run their
 owner-defined lifecycle tasks.
 
 The site-owned `fly_artifacts` Bazel target is the build contract for live
@@ -132,7 +132,7 @@ task "recover" {
 }
 ```
 
-The recovery task reads the materialized graph, selects its component CRD,
+The recovery task reads the uploaded graph, selects its component CRD,
 installs repo-built artifacts from `<repoRoot>/artifacts/sha256/<digest>`,
 reconciles static configuration, restores durable state when configured, and
 reports conditions when external authority is missing. Nomad handles retries
@@ -146,16 +146,16 @@ refreshes the graph available to component Nomad jobs. Components that are
 already healthy perform no-op recovery. Components that are degraded attempt to
 repair or block loudly with stable conditions.
 
-The second consecutive successful `fly` run for the same config and build
-manifest should report no Nomad plan changes and no unexpected allocation
-churn. This is the primary steady-state regression signal.
+The second consecutive successful `fly` run for the same config and Bazel build
+outputs should report no Nomad plan changes and no unexpected allocation churn.
+This is the primary steady-state regression signal.
 
 ## Component Progress
 
 Component readiness for `fly` is measured in levels:
 
 - the component has an owner-defined Nomad job with a recovery prestart task;
-- the job starts on an empty materialized host;
+- the job starts on an empty remote host;
 - recovery detects absent, initialized/sealed, initialized/unsealed, and
   degraded states;
 - prestart tasks bootstrap empty state;

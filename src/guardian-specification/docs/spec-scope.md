@@ -67,8 +67,8 @@ Use this convention when authoring a graph:
 - make the component schema complete for static inputs: public names, provider
   account identifiers, OpenBao paths, artifact paths, socket paths, backup
   object names, policy names, and refs to shared resources;
-- let component Nomad jobs read `.guardian/fly/document.json` from the
-  materialized workspace and select the resources they own;
+- let component Nomad jobs read `.guardian/fly/document.json` from the remote
+  workspace and select the resources they own;
 - express restore, initialize, unseal, migrate, wait, import, publish, and
   health-check actions in component lifecycle tasks or owner-local binaries;
 - report blockers as command conditions, component reports, Nomad state,
@@ -143,7 +143,7 @@ defines static configuration and invariants for that component:
 - references to other resources in the graph.
 
 Component CRDs describe desired inputs that component-owned code can read from
-the materialized graph. They do not describe step order.
+the generated graph. They do not describe step order.
 
 The component CUE schema is the semantic source for static configuration. Go
 structs, Nomad templates, generated validators, and docs may mirror that schema
@@ -199,8 +199,8 @@ owns OpenBao-specific seal, policy, auth, and backup configuration.
 ## Nomad Convention
 
 Component convergence and deployment are Nomad conventions. A component job
-file is checked into the component directory and shipped inside the materialized
-repo. The job file may include lifecycle tasks that:
+file is checked into the component directory and shipped inside the remote
+workspace. The job file may include lifecycle tasks that:
 
 - read `$repo_root/workspace/.guardian/fly/document.json`;
 - select the component CRD resources it owns;

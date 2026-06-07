@@ -1,9 +1,9 @@
 # Preflight
 
 `guardian preflight` resolves one Guardian CRD graph, writes the generated fly
-document into the workspace, verifies the repo-local Bazel build manifest is
-present, uploads Bazel outputs by content digest, and runs the declared
-Ansible playbook.
+document into the workspace, verifies Bazel build events from the prior
+`guardian run bazel -- build`, uploads Bazel outputs by content digest, and
+runs the declared Ansible playbook.
 
 ```sh
 guardian preflight gamma -o yaml
@@ -67,9 +67,9 @@ The preflight playbook must fail loudly when the target is not ready for
 - uploads the workspace and generated fly graph into
   `Substrate.spec.remote.repoRoot` with the repo-pinned rsync when repair or
   refresh is needed,
-- uploads Bazel outputs listed in `.guardian/build/manifest.json` into
+- uploads Bazel outputs reported in `.guardian/build/build-events.json` into
   `<repoRoot>/artifacts/sha256/<digest>`,
-- verifies workspace, build manifest, and content-addressed artifact digests,
+- verifies workspace and content-addressed artifact digests,
 - runs `openbao-recover prepare` to materialize OpenBao host integration inputs,
 - starts OpenBao as a systemd root service and runs one bounded
   recovery-or-verification pass,
