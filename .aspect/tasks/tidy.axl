@@ -6,7 +6,7 @@ index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_bin_path", "bazel_command", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_bin_path", "bazel_command", "bazel_run", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
 
 GOFUMPT_TARGET = "//src/tools/dev/binaries:gofumpt"
 GOOGLE_JAVA_FORMAT_TARGET = "//src/smithy/tools:google_java_format"
@@ -50,9 +50,9 @@ def _java(ctx):
         return 1
     if len(files) == 0:
         return 0
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        _tool_path(ctx, "src/smithy/tools/google_java_format"),
+        GOOGLE_JAVA_FORMAT_TARGET,
         ["--replace"] + files,
         cwd = ws_path(ctx),
         label = "google-java-format --replace",
