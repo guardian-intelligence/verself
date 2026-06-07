@@ -42,6 +42,21 @@ func TestSecretsServicePublicBackendUsesPlainHTTP(t *testing.T) {
 	}
 }
 
+func TestSourceCodeHostingPublicBackendsUsePlainHTTP(t *testing.T) {
+	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
+	for _, backend := range []string{
+		"backend be_route_product_git_source_code_hosting_service_git_smart_http",
+		"backend be_route_product_source_api_source_code_hosting_service_public_api",
+		"backend be_source_forgejo_webhook",
+	} {
+		runtimeBackend := backendBlock(t, runtimeTemplate, backend)
+		requireContains(t, runtimeBackend, `[[ with nomadService "source-code-hosting-service-public-http" ]]`)
+		if strings.Contains(runtimeBackend, "proto h2") {
+			t.Fatalf("%s is plain HTTP/1.1 until the service explicitly supports h2c", backend)
+		}
+	}
+}
+
 func readRepoFile(t *testing.T, rel string) string {
 	t.Helper()
 	for _, path := range []string{

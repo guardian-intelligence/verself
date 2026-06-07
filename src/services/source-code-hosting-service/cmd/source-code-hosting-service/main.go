@@ -32,30 +32,56 @@ const (
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, fmt.Errorf("usage: migrate [--resource-graph path] [--resource-name name] up")
+	}
+	runtimeCfg, err := loadSourceRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	opts, err := parseRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadSourceRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -68,24 +94,14 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4261")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4262")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	forgejoBaseURL := cfg.RequireURL("SOURCE_FORGEJO_BASE_URL")
-	forgejoOwner := cfg.RequireString("SOURCE_FORGEJO_OWNER")
-	forgejoToken := cfg.RequireCredential("forgejo-automation-token")
-	publicBaseURL := cfg.RequireURL("SOURCE_PUBLIC_BASE_URL")
-	webhookSecret := cfg.RequireCredential("webhook-secret")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
+	forgejoToken := cfg.RequireCredential(runtimeCfg.ForgejoTokenName)
+	webhookSecret := cfg.RequireCredential(runtimeCfg.WebhookSecretName)
 	if err := cfg.Err(); err != nil {
 		return err
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("source spiffe workload source: %w", err)
 	}
@@ -122,7 +138,7 @@ func run() error {
 		return fmt.Errorf("create identity internal client: %w", err)
 	}
 
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open source postgres: %w", err)
 	}
@@ -131,9 +147,9 @@ func run() error {
 	svc := &source.Service{
 		Store: source.Store{PG: pg},
 		Forgejo: source.ForgejoClient{
-			BaseURL: forgejoBaseURL,
+			BaseURL: runtimeCfg.ForgejoBaseURL,
 			Token:   forgejoToken,
-			Owner:   forgejoOwner,
+			Owner:   runtimeCfg.ForgejoOwner,
 			Client:  &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport), Timeout: 5 * time.Second},
 		},
 		Organizations: iamClient,
@@ -164,15 +180,15 @@ func run() error {
 	rootMux.Handle("/webhooks/forgejo", sourceapi.WebhookHandler(svc, webhookSecret))
 
 	privateMux := http.NewServeMux()
-	sourceapi.NewAPI(privateMux, serviceVersion, publicBaseURL, sourceapi.Config{
+	sourceapi.NewAPI(privateMux, serviceVersion, runtimeCfg.PublicBaseURL, sourceapi.Config{
 		Service:        svc,
-		PublicBaseURL:  publicBaseURL,
+		PublicBaseURL:  runtimeCfg.PublicBaseURL,
 		WebhookSecret:  webhookSecret,
 		Authorizer:     iamclient.NewAuthorizer(iamClient.Client),
-		InstallationID: installationID,
+		InstallationID: runtimeCfg.InstallationID,
 	})
 	authenticated := auth.Middleware(auth.Config{
-		IssuerURL: authIssuerURL,
+		IssuerURL: runtimeCfg.AuthIssuerURL,
 		Audience:  authAudience,
 	})(privateMux)
 	gitHTTP := sourceapi.GitHTTPHandler(svc)
@@ -193,14 +209,14 @@ func run() error {
 		return fmt.Errorf("source spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	sourceapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, sourceapi.Config{Service: svc, InstallationID: installationID})
+	sourceapi.NewInternalAPI(internalMux, serviceVersion, "https://"+opts.InternalListenAddr, sourceapi.Config{Service: svc, InstallationID: runtimeCfg.InstallationID})
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("source internal allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, public, internal)
 }
@@ -210,7 +226,7 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 	if err != nil {
 		return nil, err
 	}
-	config.MaxConns = int32FromInt(maxConns, "SOURCE_PG_MAX_CONNS")
+	config.MaxConns = int32FromInt(maxConns, "postgres.maxConns")
 	config.MinConns = 1
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute

@@ -130,6 +130,7 @@ resources: [
 							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
 							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
 							bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
+							bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
 							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
@@ -217,6 +218,7 @@ resources: [
 							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
 							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
 							bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
+							bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
 							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
@@ -506,6 +508,20 @@ resources: [
 							"""
 					},
 					{
+						name: "source-code-hosting-service-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" {
+							  capabilities = ["read"]
+							}
+							"""
+					},
+					{
 						name: "zitadel-runtime"
 						hcl: """
 							path "kv-runtime/data/secret/org/zitadel.masterkey" {
@@ -742,6 +758,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["secrets-service-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "source-code-hosting-service-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "source-code-hosting-service"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["source-code-hosting-service-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -1074,6 +1107,10 @@ resources: [
 					owner: "deployment_service"
 				},
 				{
+					name:  "source_code_hosting"
+					owner: "source_code_hosting_service"
+				},
+				{
 					name:  "zitadel"
 					owner: "zitadel"
 				},
@@ -1113,6 +1150,10 @@ resources: [
 					login: true
 				},
 				{
+					name:  "source_code_hosting_service"
+					login: true
+				},
+				{
 					name:  "zitadel"
 					login: true
 				},
@@ -1149,6 +1190,10 @@ resources: [
 				{
 					systemUser:   "deployment_service"
 					postgresUser: "deployment_service"
+				},
+				{
+					systemUser:   "source_code_hosting_service"
+					postgresUser: "source_code_hosting_service"
 				},
 				{
 					systemUser:   "otelcol"
@@ -1743,6 +1788,7 @@ resources: [
 						"api.gamma.verself.sh",
 						"deployments.api.gamma.verself.sh",
 						"iam.api.gamma.verself.sh",
+						"source.api.gamma.verself.sh",
 					]
 					pemPath: "/etc/haproxy/certs/gamma.verself.sh.pem"
 				},
@@ -1811,6 +1857,16 @@ resources: [
 					}
 					hostname: "iam.api.gamma.verself.sh"
 					backend:  "be_route_product_iam_api_iam_service_public_api"
+				},
+				{
+					name: "source-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "source.api.gamma.verself.sh"
+					backend:  "be_route_product_source_api_source_code_hosting_service_public_api"
 				},
 				{
 					name: "dashboard"
@@ -1942,7 +1998,7 @@ resources: [
 			source: "generated"
 			generate: {
 				bytes:    32
-				encoding: "password"
+				encoding: "alphanumeric"
 			}
 		}
 	},
@@ -2148,6 +2204,20 @@ resources: [
 				apiVersion: "forgejo.guardianintelligence.org/v1alpha1"
 				kind:       "ForgejoInstance"
 				name:       "forgejo"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "source-code-hosting-service.forgejo.webhook_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
 			}
 		}
 	},
@@ -2574,6 +2644,42 @@ resources: [
 				workloadAudience: "openbao"
 			}
 			runtimeSecretNamespace: "runtime"
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+	{
+		apiVersion: "source.guardianintelligence.org/v1alpha1"
+		kind:       "SourceCodeHostingService"
+		metadata: name: "source-code-hosting-service"
+		spec: {
+			installationID: "inst_gamma_01JZ0000000000000000000000"
+			publicBaseURL:  "https://git.gamma.verself.sh"
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.auth_audience"
+				}
+			}
+			forgejo: {
+				baseURL: "http://127.0.0.1:3000"
+				owner:   "forgejo-automation"
+				automationTokenRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "source-code-hosting-service.forgejo.automation_token"
+				}
+				webhookSecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "source-code-hosting-service.forgejo.webhook_secret"
+				}
+			}
+			postgres: {
+				dsn:      "postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable"
+				maxConns: 8
+			}
 			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
 		}
 	},

@@ -23,6 +23,7 @@ consecutive submissions do not create unexpected allocation churn.
 | IAM Service | `iam.guardianintelligence.org/v1alpha1/IAMService/iam-service` | Converged on latest gamma run | None in current gamma state | Materialized IAM binary, IAM CRD static config, PostgreSQL `iam_service` database/peer role, OpenBao-generated/runtime Zitadel credentials, SpiceDB, ClickHouse, Zitadel OIDC issuer reachable through HAProxy |
 | Deployment Service | `deployment.guardianintelligence.org/v1alpha1/DeploymentService/deployment-service` | Converged on latest gamma run | None in current gamma state | Materialized deployment-service binary, Bazel-pinned Git runtime tools, PostgreSQL `deployment_service` database/peer role, SPIRE workload identity, object-storage admin API, Nomad API, HAProxy public route |
 | Secrets Service | `secrets.guardianintelligence.org/v1alpha1/SecretsService/secrets-service` | Converged on latest gamma run | None in current gamma state | Materialized secrets-service binary, SecretsService CRD static config, OpenBao Nomad JWT role `secrets-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy public route |
+| Source Code Hosting Service | `source.guardianintelligence.org/v1alpha1/SourceCodeHostingService/source-code-hosting-service` | Converged on latest gamma run | None in current gamma state | Materialized source-code-hosting-service binary, SourceCodeHostingService CRD static config, PostgreSQL `source_code_hosting` database/peer role, Forgejo runtime and automation token, generated webhook secret, OpenBao Nomad JWT role `source-code-hosting-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy source API route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
@@ -46,6 +47,39 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the source-code-hosting-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:0a1e9cd149b9d5511774aeeb18141716c29a177e291865eba83a4acb7603e23d`,
+  and verified upload digest
+  `sha256:65d20f31272a0dea97700f9effd3c813ad8bf9ee4dfeef46a8353121435b2d6f`;
+- source-code-hosting-service deployment `c95b1328` is successful with
+  allocations `6f37d357` and `aa8321f9` running and healthy;
+- Nomad reports `source-code-hosting-service-public-http` on
+  `127.0.0.1:27891` and `127.0.0.1:29531`; both direct `/readyz` checks
+  return `ready`;
+- the projected credentials
+  `iam-service.zitadel.auth_audience`,
+  `source-code-hosting-service.forgejo.automation_token`, and
+  `source-code-hosting-service.forgejo.webhook_secret` are rendered in the
+  task secrets directory with mode `0600`;
+- PostgreSQL reconciled the new `source_code_hosting` database and
+  `source_code_hosting_service` peer role before the service migration prestart
+  could succeed;
+- HAProxy deployment `90aa67dd`, allocation `45c95408`, is successful after
+  regenerating the source-code-hosting backends. The generated
+  `be_route_product_source_api_source_code_hosting_service_public_api` and
+  `be_route_product_git_source_code_hosting_service_git_smart_http` blocks point
+  at `127.0.0.1:27891` and `127.0.0.1:29531` with plain HTTP server entries
+  and no `proto h2`;
+- `https://source.api.gamma.verself.sh/api/v1/openapi.json` through HAProxy
+  reaches source-code-hosting-service and returns the expected `401` response
+  for an unauthenticated request;
+- source-code-hosting-service initially blocked on a missing OpenBao
+  `source-code-hosting-service-runtime` Nomad JWT role. The underlying root
+  cause was OpenBao baseline reconciliation crashing on an invalid
+  `SecretPath` graph value, `zitadel.admin_password.generate.encoding:
+  "password"`. The graph now uses `alphanumeric`, OpenBao runtime artifacts were
+  rebuilt and boarded, and the reconciler applied the new role;
 - current preflight after the secrets-service slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:d78dda3972963c4a6987ce7f5a4f85f5c608a2005c40e7cd5cfa685a89964a09`,

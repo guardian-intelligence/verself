@@ -623,7 +623,7 @@ backend be_route_product_git_source_code_hosting_service_git_smart_http
   http-request set-header X-Forwarded-Proto https
 [[ with nomadService "source-code-hosting-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_git_source_code_hosting_service_git_smart_http_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_git_source_code_hosting_service_git_smart_http_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"
@@ -853,7 +853,7 @@ backend be_route_product_source_api_source_code_hosting_service_public_api
   http-request deny deny_status 413 if { req.body_size gt 1048576 }
 [[ with nomadService "source-code-hosting-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_source_api_source_code_hosting_service_public_api_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_source_api_source_code_hosting_service_public_api_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"
@@ -941,7 +941,7 @@ backend be_source_forgejo_webhook
   http-request deny deny_status 413 if { req.body_size gt 1048576 }
 [[ with nomadService "source-code-hosting-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_source_forgejo_webhook_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_source_forgejo_webhook_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"

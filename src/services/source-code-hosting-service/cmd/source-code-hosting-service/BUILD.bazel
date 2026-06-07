@@ -3,7 +3,11 @@ load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "source-code-hosting-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+        "recover.go",
+    ],
     importpath = "github.com/verself/source-code-hosting-service/cmd/source-code-hosting-service",
     visibility = ["//visibility:private"],
     deps = [
