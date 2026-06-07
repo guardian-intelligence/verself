@@ -33,7 +33,7 @@ func TestWriteInstanceEnvFileUsesEncodedCredentials(t *testing.T) {
 		t.Fatalf("read env file: %v", err)
 	}
 	text := string(body)
-	if !strings.Contains(text, "DATABASE_URL=postgresql://electric:pass+word%2Fwith%3Asymbols@127.0.0.1:5432/sandbox_rental") {
+	if !strings.Contains(text, "DATABASE_URL=postgresql://electric:pass+word%2Fwith%3Asymbols@127.0.0.1:5432/sandbox_rental?sslmode=disable") {
 		t.Fatalf("env file did not contain encoded database URL:\n%s", text)
 	}
 	if !strings.Contains(text, "ELECTRIC_SECRET=api-secret\n") {

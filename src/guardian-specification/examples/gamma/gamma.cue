@@ -92,6 +92,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/electric/electric-runtime.tar
+						bazel-bin/src/infrastructure-components/electric/cmd/electric-recover/electric-recover_/electric-recover
 						bazel-bin/src/infrastructure-components/forgejo/forgejo-runtime.tar
 						bazel-bin/src/infrastructure-components/forgejo/cmd/forgejo-recover/forgejo-recover_/forgejo-recover
 						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
@@ -171,6 +173,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/electric/electric-runtime.tar
+						bazel-bin/src/infrastructure-components/electric/cmd/electric-recover/electric-recover_/electric-recover
 						bazel-bin/src/infrastructure-components/forgejo/forgejo-runtime.tar
 						bazel-bin/src/infrastructure-components/forgejo/cmd/forgejo-recover/forgejo-recover_/forgejo-recover
 						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar

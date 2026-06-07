@@ -1095,7 +1095,7 @@ func writeInstanceEnvFile(instance electricInstance, secrets runtimeSecrets, pos
 		return "", fmt.Errorf("create Nomad secrets directory: %w", err)
 	}
 	path := filepath.Join(secretDir, instance.Name+".env")
-	dsn := "postgresql://" + url.QueryEscape(instance.DatabaseUser) + ":" + url.QueryEscape(secrets.pgPassword) + "@" + netHost(postgres.Host) + ":" + strconv.Itoa(postgres.Port) + "/" + url.PathEscape(instance.Database)
+	dsn := "postgresql://" + url.QueryEscape(instance.DatabaseUser) + ":" + url.QueryEscape(secrets.pgPassword) + "@" + netHost(postgres.Host) + ":" + strconv.Itoa(postgres.Port) + "/" + url.PathEscape(instance.Database) + "?sslmode=disable"
 	body := []byte("DATABASE_URL=" + dsn + "\nELECTRIC_SECRET=" + secrets.apiSecret + "\n")
 	tmp, err := os.CreateTemp(secretDir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {

@@ -30,6 +30,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Grafana | `grafana.guardianintelligence.org/v1alpha1/GrafanaInstance/grafana` | Converged on latest gamma run | None in current gamma state | Materialized Grafana runtime artifact, `grafana-recover`, OpenBao generated admin password and secret key, PostgreSQL `grafana` database |
 | Forgejo | `forgejo.guardianintelligence.org/v1alpha1/ForgejoInstance/forgejo` | Converged on latest gamma run | None in current gamma state | Materialized Forgejo runtime artifact, direct `forgejo-recover` prestart binary, OpenBao generated Forgejo secrets, PostgreSQL `forgejo` database, Nomad OpenBao workload token |
 | Stalwart | `stalwart.guardianintelligence.org/v1alpha1/StalwartMailServer/stalwart` | Converged on latest gamma run | None in current gamma state | Materialized Stalwart runtime artifact, direct `stalwart-recover` prestart binary, OpenBao generated admin secret, PostgreSQL `stalwart` database, Nomad OpenBao workload token |
+| Electric | `electric.guardianintelligence.org/v1alpha1/ElectricDeployment/electric` | Converged on latest gamma run | None in current gamma state | Materialized Electric runtime artifact, direct `electric-recover` prestart binary, Electric containerd socket, OpenBao generated PostgreSQL/API secrets, PostgreSQL `electric`, `electric_notifications`, and `electric_iam` databases, Nomad OpenBao workload token |
 
 ## Latest Gamma Evidence
 
@@ -45,9 +46,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:706f32b3daca29778efbc546955078a0164b4f92f0e1d13f683eb1b9b9de4d65`;
+  `sha256:35e8d64149ad35a1fcff385ae962e7d7d7ae469a6b47c65072468fadc3ca5e41`;
 - latest verified upload digest:
-  `sha256:80b687cb8648b05a0be99a9645bb5045d7c7fbfbbe76ea40a04892e987c23499`;
+  `sha256:1e9b926144f8ceac848beabefb68cd87a9a971ce7ace3ebb7d79064a8ac73564`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -205,6 +206,28 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Nomad reports `stalwart-http-tcp` and `stalwart-smtp-tcp` as `success`;
   HTTP on `127.0.0.1:8090` returned `200 OK`, SMTP listens on
   `127.0.0.1:25`, and task stderr tails were empty;
+- the first Electric containerd submission in the latest run failed before
+  starting because the boarded artifact set omitted the direct
+  `electric-recover` prestart binary and `electric-runtime.tar`;
+- after adding those artifacts to board upload and verify, and making the local
+  PostgreSQL connection string explicit with `sslmode=disable`, Electric
+  containerd deployment `b8383ba9` completed successfully with allocation
+  `65f25886` running and healthy;
+- `electric` deployment `92b667d6` completed successfully with allocations
+  `a1647620`, `74904497`, and `658fb021` running and healthy for the default,
+  notifications, and IAM instances;
+- local and remote Electric artifact hashes matched:
+  runtime `sha256:6d00694813fd0d0e62d897f634cfd6a9d2aef08d4633602eb6472e05526b9107`
+  and direct recovery binary
+  `sha256:edee9bff0eed25d2a9d267d35803003bdaa0b424756598b5c8a18c17b24a6b8a`;
+- `/run/electric-containerd/containerd.sock` exists and `ctr version` reports
+  containerd `v2.3.1` from the materialized Electric runtime;
+- Nomad reports `electric-http-tcp`, `electric-notifications-http-tcp`, and
+  `electric-iam-http-tcp` as `success`;
+- Electric server logs show `Starting ElectricSQL 1.5.0`, ready PostgreSQL
+  admin/snapshot connection pools, and verified publications for `default`,
+  `notifications`, and `iam` without the previous PostgreSQL SSL fallback
+  errors;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after
