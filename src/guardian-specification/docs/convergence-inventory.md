@@ -28,6 +28,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Verdaccio | `verdaccio.guardianintelligence.org/v1alpha1/VerdaccioRegistry/verdaccio` | Converged on latest gamma run | None in current gamma state | Materialized Verdaccio runtime artifact, `verdaccio-recover`, local storage directory, generated htpasswd file, npm uplink network egress |
 | SpiceDB | `spicedb.guardianintelligence.org/v1alpha1/SpiceDBCluster/spicedb` | Converged on latest gamma run | None in current gamma state | Materialized SpiceDB runtime artifact, `spicedb-recover`, OpenBao generated gRPC preshared key, PostgreSQL `spicedb` database, Nomad OpenBao workload token |
 | Grafana | `grafana.guardianintelligence.org/v1alpha1/GrafanaInstance/grafana` | Converged on latest gamma run | None in current gamma state | Materialized Grafana runtime artifact, `grafana-recover`, OpenBao generated admin password and secret key, PostgreSQL `grafana` database |
+| Forgejo | `forgejo.guardianintelligence.org/v1alpha1/ForgejoInstance/forgejo` | Converged on latest gamma run | None in current gamma state | Materialized Forgejo runtime artifact, direct `forgejo-recover` prestart binary, OpenBao generated Forgejo secrets, PostgreSQL `forgejo` database, Nomad OpenBao workload token |
 
 ## Latest Gamma Evidence
 
@@ -43,9 +44,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:11b8db0ce8ad4fc633cdbb6d666cce60335bf4545575099a5424ed0c9f7234f6`;
+  `sha256:b4af09e5c99973dbf0f0f8379ace508ebfe43d7d5da589b6d239a7a836b744f9`;
 - latest verified upload digest:
-  `sha256:37f1c0492ac460b35e1f4f7c1d493c228fc4b63dca70e48d16a83ef7680e0d2b`;
+  `sha256:ebc82be58d38f721f2ad0b7d2b54637bcd33730b0f33d5f0e93ac2d2d5354b60`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -169,6 +170,24 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `default.otel_logs` had `546` rows with max `Timestamp`
   `2026-06-07 01:46:43.793246253`, and `default.otel_traces` had `470` rows
   with max `Timestamp` `2026-06-07 01:46:44.806890316`;
+- the first Forgejo submission in the latest run failed before starting because
+  the boarded artifact set omitted the direct `forgejo-recover` prestart binary
+  and `forgejo-runtime.tar`;
+- after adding those artifacts to board upload and verify, `forgejo`
+  deployment `afc49cf6` completed successfully with allocation `eb35c7e8`
+  running and healthy;
+- `/run/verself/recovery/forgejo/report.json` reports
+  `ForgejoRuntimeInstalled=True`, `ForgejoSecretsReady=True`,
+  `ForgejoConfigWritten=True`, `ForgejoRecoveryComplete=True`, and
+  `ForgejoAutomationTokenReady=True`;
+- local and remote Forgejo artifact hashes matched:
+  runtime `sha256:9879fbc04aca355ac36fda95cc5e2bdd64b29825c390483f1a923c8428a8fea6`
+  and direct recovery binary
+  `sha256:7a4bdae744b3d94d01b1bfda063a1288659642dcd9705580ef0ea3f979cc1176`;
+- Nomad reports `forgejo-tcp` as `success`; `http://127.0.0.1:3000/api/healthz`
+  reports `status: pass` with passing cache and database checks;
+- Forgejo `recover` and `automation-token` tasks exited `0`, the `server` task
+  remains running, and task stderr tails were empty;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after
@@ -551,6 +570,10 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -addre
 ssh -T ubuntu@206.223.228.87 'curl -fsS http://127.0.0.1:13133/'
 ssh -T ubuntu@206.223.228.87 'sudo /opt/verself/clickhouse/current/bin/clickhouse client --config-file=/etc/clickhouse-client/operator.xml --query "SELECT count(), max(Timestamp) FROM default.otel_logs"'
 ssh -T ubuntu@206.223.228.87 'sudo /opt/verself/clickhouse/current/bin/clickhouse client --config-file=/etc/clickhouse-client/operator.xml --query "SELECT count(), max(Timestamp) FROM default.otel_traces"'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/forgejo/report.json'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default forgejo'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default eb35c7e8'
+ssh -T ubuntu@206.223.228.87 'curl -fsS http://127.0.0.1:3000/api/healthz'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 
