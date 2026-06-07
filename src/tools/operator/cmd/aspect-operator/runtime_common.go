@@ -32,8 +32,7 @@ func addOperatorRuntimeFlags(opts *operatorRuntimeOptions) {
 // Pomerium session (re-established out of band via `aspect operator device`) and
 // fail loud otherwise. Long automated commands (e.g. the service-discovery canary)
 // pass an explicit budget >= their duration rather than flipping into interactive
-// mode to dodge the default cap -- interactive mode under a non-TTY parent like
-// verself-deploy destabilizes the run.
+// mode to dodge the default cap under non-TTY automation.
 func runOperatorRuntime(command string, opts operatorRuntimeOptions, commandBudget time.Duration, chConfig opch.Config, fn func(*opruntime.Runtime, *opch.Client) error) error {
 	parentCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -1,9 +1,10 @@
 # Fly
 
-`fly` runs Guardian preflight and then submits the declared Nomad jobs against
-the materialized workspace.
+`fly` runs Guardian preflight and then plans the declared Nomad jobs against
+the materialized workspace and content-addressed Bazel artifacts.
 
 ```sh
+guardian run bazel -- build //src/guardian-specification/examples/gamma:fly_artifacts
 guardian fly gamma --dry-run -o yaml
 guardian fly gamma
 guardian fly -f gamma.cue
@@ -14,6 +15,11 @@ The command resolves a profile, writes the graph to
 materialized repo tree and kernel prerequisites. Re-running `fly` is the normal
 way to refresh the materialized workspace before Nomad jobs run their
 owner-defined lifecycle tasks.
+
+The site-owned `fly_artifacts` Bazel target is the build contract for live
+deploys. It must include the Guardian/preflight tools, root-service runtime
+artifacts, component-owned vars files, and every artifact digest those vars
+files name.
 
 ## Config Shape
 
@@ -39,8 +45,10 @@ resources:
         jobs:
           - name: cloudflare-integration-recovery
             path: src/integrations/cloudflare/control-plane/nomad.hcl
+            varsPath: bazel-bin/src/integrations/cloudflare/control-plane/nomad.vars.hcl
           - name: postgresql
             path: src/infrastructure-components/postgresql/nomad.hcl
+            varsPath: bazel-bin/src/infrastructure-components/postgresql/nomad.vars.hcl
 
   - apiVersion: networking.guardianintelligence.org/v1alpha1
     kind: PublicOrigin
@@ -69,11 +77,14 @@ jobs.
 
 ## Live Run
 
-`guardian fly` performs preflight, then submits
-`FlyProcedure.spec.nomad.jobs` in declaration order through the repo-bundled
-Nomad binary on the boarded host. Owner job files use lifecycle tasks to
-install runtime artifacts, restore or initialize state, reconcile
-configuration, and block loudly when external authority is missing.
+`guardian fly` performs preflight, then plans `FlyProcedure.spec.nomad.jobs`
+in declaration order through the repo-bundled Nomad binary on the boarded
+host. Guardian passes common cross-component variables with `-var`, passes each
+component-owned vars file with `-var-file`, submits changed jobs with
+`nomad job run -detach -check-index`, and leaves unchanged jobs in place.
+Owner job files use lifecycle tasks to install runtime artifacts, restore or
+initialize state, reconcile configuration, and block loudly when external
+authority is missing.
 
 On a wiped node, preflight prepares and starts OpenBao before Nomad starts. The
 `openbao-recover prepare` hook installs the repo-built OpenBao runtime, writes
@@ -122,10 +133,11 @@ task "recover" {
 ```
 
 The recovery task reads the materialized graph, selects its component CRD,
-installs repo-built artifacts, reconciles static configuration, restores
-durable state when configured, and reports conditions when external authority
-is missing. Nomad handles retries and health-driven scheduling. A healthy
-component treats the recovery task as a no-op.
+installs repo-built artifacts from `<repoRoot>/artifacts/sha256/<digest>`,
+reconciles static configuration, restores durable state when configured, and
+reports conditions when external authority is missing. Nomad handles retries
+and health-driven scheduling. A healthy component treats the recovery task as
+a no-op.
 
 ## Repeatability
 
@@ -134,9 +146,9 @@ refreshes the graph available to component Nomad jobs. Components that are
 already healthy perform no-op recovery. Components that are degraded attempt to
 repair or block loudly with stable conditions.
 
-The second consecutive successful `fly` run for the same config should produce
-the same upload digest and no unexpected allocation churn after component Nomad
-jobs are run. This is the primary steady-state regression signal.
+The second consecutive successful `fly` run for the same config and build
+manifest should report no Nomad plan changes and no unexpected allocation
+churn. This is the primary steady-state regression signal.
 
 ## Component Progress
 

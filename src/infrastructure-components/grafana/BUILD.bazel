@@ -1,4 +1,4 @@
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
+load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
 
 deploy_declarations(visibility = ["//visibility:public"])
 

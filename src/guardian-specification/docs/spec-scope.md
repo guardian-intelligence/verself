@@ -41,6 +41,7 @@ Place every new concept at the narrowest layer that can validate and use it.
 | Concept | Location | Example |
 | --- | --- | --- |
 | Graph envelope, entrypoint, preflight playbook, declared Nomad job list, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
+| Cross-component Nomad submission inputs | Guardian common vars plus component-owned vars file named by the Guardian job entry | `repo_root`, `artifact_root`, `site`, and `nomad.vars.hcl` passed with `nomad job plan/run` |
 | Static configuration for one deployable component | Component CRD beside the owner | `OpenBaoCluster`, `HAProxyGateway`, `ObjectStorageService` |
 | Runtime behavior and convergence steps | Component-owned Nomad job and owner-local binary | `task "recover"` prestart logic |
 | Provider authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
@@ -60,6 +61,7 @@ Use this convention when authoring a graph:
 
 - put the `FlyProcedure`, `Substrate`, and shared `PublicOrigin` resources in
   the root graph;
+- give every declared Nomad job an owner-local `varsPath`;
 - put every component's static configuration in that component's CRD schema
   under `guardian/v1alpha1/schema.cue` beside the owner;
 - make the component schema complete for static inputs: public names, provider
@@ -200,9 +202,9 @@ Component convergence and deployment are Nomad conventions. A component job
 file is checked into the component directory and shipped inside the materialized
 repo. The job file may include lifecycle tasks that:
 
-- read `$guardian_repo_root/workspace/.guardian/fly/document.json`;
+- read `$repo_root/workspace/.guardian/fly/document.json`;
 - select the component CRD resources it owns;
-- install repo-built runtime artifacts;
+- install repo-built runtime artifacts from `$artifact_root/sha256/<digest>`;
 - restore or initialize state;
 - reconcile static configuration;
 - emit component health evidence;
@@ -210,15 +212,16 @@ repo. The job file may include lifecycle tasks that:
   authority is missing.
 
 The component job is the runtime boundary. Guardian keeps the graph available;
-Nomad and component code decide how to start, retry, block, and converge.
+Guardian promotes Bazel outputs by content digest; Nomad and component code
+decide how to start, retry, block, and converge.
 
 Use `prestart` lifecycle tasks for idempotent recovery work that must complete
 before the main task starts. Use a long-running task only when the component
 needs continuous reconciliation after startup.
 
 Nomad agent recovery is preflight machinery for the current alpha slice. The
-pinned Nomad runtime is shipped in the materialized repo and installed by the
-declared preflight playbook. Add owner-local component CRDs when static
+pinned Nomad runtime is uploaded as a content-addressed artifact and installed
+by the declared preflight playbook. Add owner-local component CRDs when static
 configuration no longer fits in the playbook and Nomad-owned job file defaults.
 
 ## Evidence

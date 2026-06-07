@@ -270,7 +270,7 @@ aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
 guardian run bazel -- build //src/%s-cli:%s
 ./bazel-bin/src/%s-cli/%s company inspect %s --json
-./bazel-bin/src/%s-cli/%s env run --org %s --project %s --environment bootstrap -- aspect deploy --site=%s --sha=HEAD
+./bazel-bin/src/%s-cli/%s env run --org %s --project %s --environment bootstrap -- guardian fly %s
 `+"```"+`
 `, company.CompanyName, company.CLIName, company.CLIName, company.CLIName, company.CLIName, company.Name, company.CLIName, company.CLIName, company.OrganizationName, company.Project, company.Site)
 }

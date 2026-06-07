@@ -467,13 +467,14 @@ func testFlyResult() flyResult {
 			Address:   "http://127.0.0.1:4646",
 			Namespace: "default",
 			Status:    "ready",
-			Reason:    "JobsConverged",
+			Reason:    "JobsPlanned",
 			Jobs: []nomadJobResult{{
-				Name:   "example",
-				Path:   "example.nomad.hcl",
-				Type:   "service",
-				Status: "ready",
-				Reason: "AllocationRunning",
+				Name:     "example",
+				Path:     "example.nomad.hcl",
+				VarsPath: "example.nomad.vars.hcl",
+				Type:     "service",
+				Status:   "ready",
+				Reason:   "AllocationRunning",
 			}},
 		},
 		Conditions: []condition{{
@@ -542,6 +543,33 @@ profiles: gamma: document: "../../gamma.cue"
 	}
 }
 
+func writeTestBuildManifest(t *testing.T, dir string, outputs map[string]string) {
+	t.Helper()
+	manifest := bazelBuildManifest{Outputs: make([]bazelBuildOutput, 0, len(outputs))}
+	for targetPath, sourcePath := range outputs {
+		data, err := os.ReadFile(sourcePath)
+		if err != nil {
+			t.Fatalf("read manifest source %s: %v", sourcePath, err)
+		}
+		sum := sha256.Sum256(data)
+		manifest.Outputs = append(manifest.Outputs, bazelBuildOutput{
+			Path:       strings.TrimPrefix(targetPath, "bazel-bin/"),
+			SourceURI:  "file://" + filepath.ToSlash(sourcePath),
+			Digest:     hex.EncodeToString(sum[:]),
+			Length:     fmt.Sprint(len(data)),
+			TargetPath: targetPath,
+		})
+	}
+	body, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatalf("encode build manifest: %v", err)
+	}
+	body = append(body, '\n')
+	if err := os.WriteFile(filepath.Join(dir, ".guardian", "build", "manifest.json"), body, 0o644); err != nil {
+		t.Fatalf("write build manifest: %v", err)
+	}
+}
+
 func assertDecodable(t *testing.T, format string, data []byte) {
 	t.Helper()
 	switch format {
@@ -593,9 +621,24 @@ language: version: "v0.11.0"
 	if err := os.WriteFile(filepath.Join(materializedBazelBin, "guardian"), []byte("built guardian\n"), 0o755); err != nil {
 		t.Fatalf("write built artifact: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".guardian", "build", "manifest.json"), []byte("{\"outputs\":[]}\n"), 0o644); err != nil {
-		t.Fatalf("write build manifest: %v", err)
+	openBaoRuntime := filepath.Join(materializedBazelBin, "src", "infrastructure-components", "openbao", "openbao-runtime.tar")
+	if err := os.MkdirAll(filepath.Dir(openBaoRuntime), 0o755); err != nil {
+		t.Fatalf("mkdir openbao runtime dir: %v", err)
 	}
+	if err := os.WriteFile(openBaoRuntime, []byte("openbao runtime\n"), 0o644); err != nil {
+		t.Fatalf("write openbao runtime: %v", err)
+	}
+	nomadRuntime := filepath.Join(materializedBazelBin, "src", "infrastructure-components", "nomad", "nomad-runtime.tar")
+	if err := os.MkdirAll(filepath.Dir(nomadRuntime), 0o755); err != nil {
+		t.Fatalf("mkdir nomad runtime dir: %v", err)
+	}
+	if err := os.WriteFile(nomadRuntime, []byte("nomad runtime\n"), 0o644); err != nil {
+		t.Fatalf("write nomad runtime: %v", err)
+	}
+	writeTestBuildManifest(t, dir, map[string]string{
+		openBaoRuntimeTargetPath: openBaoRuntime,
+		nomadRuntimeTargetPath:   nomadRuntime,
+	})
 	uvxPath := filepath.Join(materializedBazelBin, "src", "tools", "dev", "binaries", "uvx")
 	if err := os.MkdirAll(filepath.Dir(uvxPath), 0o755); err != nil {
 		t.Fatalf("mkdir uvx dir: %v", err)
@@ -644,18 +687,51 @@ if [ "$1" != job ]; then
   exit 1
 fi
 case "$2" in
-  validate)
-    exit 0
+  plan)
+    shift 2
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -no-color) ;;
+        -var=repo_root=*) ;;
+        -var=artifact_root=*) ;;
+        -var=site=gamma) ;;
+        -var-file)
+          shift
+          test -f "$1"
+          ;;
+        *)
+          test -f "$1"
+          ;;
+      esac
+      shift || true
+    done
+    printf 'Job Modify Index: 7\n'
+    exit 1
     ;;
   run)
-    exit 0
-    ;;
-  inspect)
-    printf '{"Job":{"Type":"service"}}\n'
+    test "$3" = "-detach"
+    test "$4" = "-check-index"
+    test "$5" = "7"
+    shift 5
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -var=repo_root=*) ;;
+        -var=artifact_root=*) ;;
+        -var=site=gamma) ;;
+        -var-file)
+          shift
+          test -f "$1"
+          ;;
+        *)
+          test -f "$1"
+          ;;
+      esac
+      shift || true
+    done
     exit 0
     ;;
   allocs)
-    printf '[{"CreateIndex":1,"ClientStatus":"running","ID":"alloc-test"}]\n'
+    printf '[{"CreateIndex":1,"ClientStatus":"running","DesiredStatus":"run","ID":"alloc-test","JobType":"service"}]\n'
     exit 0
     ;;
 esac
@@ -675,6 +751,10 @@ exit 1
 `), 0o644); err != nil {
 		t.Fatalf("write fake job: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(jobDir, "example.nomad.vars.hcl"), []byte(`example_sha256 = "1111111111111111111111111111111111111111111111111111111111111111"
+`), 0o644); err != nil {
+		t.Fatalf("write fake vars: %v", err)
+	}
 	path := filepath.Join(dir, "gamma.cue")
 	repoRoot := filepath.Join(dir, "remote-repo")
 	remoteJobPath := filepath.Join(repoRoot, "workspace", "jobs", "example.nomad.hcl")
@@ -683,6 +763,10 @@ exit 1
 	}
 	if err := os.WriteFile(remoteJobPath, []byte("job \"example\" {}\n"), 0o644); err != nil {
 		t.Fatalf("write remote fake job: %v", err)
+	}
+	remoteVarsPath := filepath.Join(repoRoot, "workspace", "jobs", "example.nomad.vars.hcl")
+	if err := os.WriteFile(remoteVarsPath, []byte("example_sha256 = \"1111111111111111111111111111111111111111111111111111111111111111\"\n"), 0o644); err != nil {
+		t.Fatalf("write remote fake vars: %v", err)
 	}
 	document := fmt.Sprintf(`package gamma
 
@@ -711,6 +795,7 @@ resources: [
 					{
 						name: "example"
 						path: "jobs/example.nomad.hcl"
+						varsPath: "jobs/example.nomad.vars.hcl"
 					},
 				]
 			}

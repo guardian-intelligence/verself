@@ -12,8 +12,14 @@ new integrations when the provider exists in the Projects catalog. A Stripe
 project represents a single app or codebase, groups provider accounts,
 services, resources, credentials, and environment variables, and supports
 catalog search, provisioning, credential rotation, and `env --pull`. Stripe
-Projects does not support named environments inside one project, so Verself uses
-one provider project per deployment site.
+Projects supports named environments within a project, but Verself uses one
+provider project per deployment site to keep provider resources and credentials
+isolated per trust domain. `env --pull` writes to a local output file and is not
+a production secret distribution system, so Projects stays in the provisioning
+plane only: an authenticated import writes catalog-approved names into OpenBao,
+which is the runtime truth, and recovery never re-pulls from Projects. The
+recovery trust root and bootstrap ceremony are defined in
+`disaster-recovery-bootstrap-trust.md`.
 
 ```text
 Verself site
@@ -330,7 +336,7 @@ integrations:
         target: site_vars
         site_var: stripe_publishable_key
     verification:
-      - command: aspect deploy --site=gamma --sha=HEAD
+      - command: guardian fly gamma
       - evidence: billing Stripe webhook provider canary passes for the deploy run key
 ```
 
@@ -401,7 +407,7 @@ variable exported by `stripe projects env --pull`:
 
 7. Deploy and capture evidence.
 
-   Deploy with `aspect deploy --site=<site> --sha=<sha>` and use ClickHouse
+   Check out the target ref, run `guardian fly <site>`, and use ClickHouse
    evidence plus provider-specific canaries to prove the value was consumed by
    the intended component.
 
@@ -479,7 +485,7 @@ secrets, or operator terminals.
 
 ## Validator Rules
 
-The catalog validator should run in CI and before `aspect deploy`.
+The catalog validator should run in CI and before `guardian fly`.
 
 - Every OpenBao target name has a catalog entry.
 - Every OpenBao target name has exactly one owner-local consumer declaration.
@@ -523,7 +529,7 @@ provider-specific canary evidence in ClickHouse.
    reconciliation commands.
 5. Add provider-project import for Stripe Projects-backed providers.
 6. Add rotation and provider canary evidence.
-7. Gate `aspect deploy` on catalog validation for non-bootstrap deploys.
+7. Gate `guardian fly` on catalog validation for non-bootstrap deploys.
 
 ## References
 

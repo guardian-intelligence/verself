@@ -138,7 +138,7 @@ already in use. Vite HMR gives sub-second feedback on every file save.
 Interactive browser login is owned by iam-service and the public apex route;
 the frontend does not create local OIDC apps or local auth-session databases.
 
-Remote frontend deploys go through `aspect deploy`; Nomad supervises the
+Remote frontend deploys go through `guardian fly <site>`; Nomad supervises the
 Bazel-built node-app artifacts.
 
 ### External Data Sources

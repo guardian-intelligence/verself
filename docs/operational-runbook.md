@@ -31,18 +31,18 @@ Run `aspect observe` to discover available telemetry and `aspect db ch query`/`a
 
 Before testing the authenticated console against the production website, read the agent-browser login runbook in `src/viteplus-monorepo/apps/verself-web/AGENTS.md`.
 
-Deployment requests go through the site-local deployment-service for the requested SHA:
+Deployments promote the checked-out repo state through Guardian and repo-owned Nomad jobs:
 
 ```shell
-aspect deploy
-aspect deploy --site=gamma
-aspect deploy --site=prod --sha=HEAD
+guardian run bazel -- build //src/guardian-specification/examples/gamma:fly_artifacts
+guardian fly gamma
 ```
 
-`aspect deploy` resolves the site endpoint, authenticates, submits the request,
-and returns a deployment ID. The deployment-service owns build orchestration,
-artifact publication, Nomad submission, state, errors as data, and ClickHouse
-evidence. Nomad jobs own runtime rollout behavior.
+`guardian fly` runs preflight, uploads the repo graph and content-addressed
+Bazel outputs, submits component-owned Nomad jobs, and observes allocation
+status. The deployment-service owns deployment state, errors as data, and
+ClickHouse evidence for the long-running site-local control loops. Nomad jobs
+own runtime rollout behavior.
 
 **Don't use personal access tokens**. We don't use static permanent long-standing credentials.
 
@@ -231,7 +231,7 @@ cloudflare-control-plane --action=recover --recovery-config=<gamma-cloudflare-re
 ```
 
 ```shell
-aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
+guardian fly gamma
 ```
 
 ## Recovery State Machine
@@ -253,7 +253,7 @@ Deployment-service-managed deploys require S0-S7 to pass in under one second:
 S0 site metadata, S1 Nomad allocation evidence, S2 recovery SSH
 handoff declaration, S3 Guardian-resolved `bazel` and `git`, S4 OpenBao runtime secret
 delivery, S6 Nomad, S7 Postgres, deployment repo, and artifact publishing
-through `object-storage-service`. `aspect deploy` reports
+through `object-storage-service`. The deployment API reports
 `deployment_service_unavailable` with the failed stage and does not SSH or run
 recovery.
 

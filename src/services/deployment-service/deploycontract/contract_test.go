@@ -272,19 +272,6 @@ func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	}
 }
 
-func TestValidateRepoRejectsToolLayerDeploymentEngine(t *testing.T) {
-	root := t.TempDir()
-	write(t, root, "src/tools/deployment/deployengine/engine.go", `package deployengine`)
-
-	_, err := ValidateRepo(root)
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-	if !strings.Contains(err.Error(), "normal deployment runtime code must live under src/services/deployment-service") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func write(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))
@@ -330,6 +317,6 @@ jobs:
         run: src/tools/dev/bootstrap/bootstrap-linux-amd64
 
       - name: Deploy
-        run: aspect deploy --site=gamma --sha="$GITHUB_SHA"
+        run: guardian fly gamma
 `
 }

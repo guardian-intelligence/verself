@@ -30,9 +30,7 @@ filegroup(
 
 filegroup(
     name = "examples",
-    srcs = glob([
-        "examples/**/*.cue",
-    ]),
+    srcs = ["//src/guardian-specification/examples/gamma:examples"],
     visibility = ["//visibility:public"],
 )
 

@@ -1,5 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 
 exports_files(["tools.lock.json"])
 

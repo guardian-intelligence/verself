@@ -231,7 +231,7 @@ More detail in docs/architecture/release-architecture.md
 
 # Deployments
 
-Each site runs its own deployment-service. `aspect deploy` is a thin client that resolves the site endpoint, authenticates, submits a deployment request for a commit SHA, and returns a deployment ID for status, logs, and ClickHouse evidence.
+Each site runs its own deployment-service. `guardian fly <site>` promotes the checked-out repo state through repo-owned Nomad jobs and deployment-service-owned control loops.
 
 Bazel produces every byte that is deployed. If we know the commit SHA that was deployed, we should be able to byte-for-byte reproduce what's deployed by pulling the commit and building.
 
@@ -396,7 +396,7 @@ Before writing markdown architecture in docs/ directories, please read docs/agen
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term*. Read docs/architecture/service-change-reference-architecture.md for more information on how to think about architecture.
 - Unit tests and successful `guardian run bazel` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are typically the only admissible completion evidence for service changes. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
-- Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
+- Do not stop work short of verifying changes with a live rehearsal of a deployment via `guardian fly <site>`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 </output_contract>
 
 

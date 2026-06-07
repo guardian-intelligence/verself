@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+load("//src/infrastructure-components/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "iam-service_lib",

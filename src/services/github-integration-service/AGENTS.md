@@ -244,7 +244,7 @@ Deployability and release evidence:
   installation, selected repository removed, repository rename/transfer,
   provider 401/403/404, secondary rate limit, process death during sync, and
   outbox retry after sandbox rejection.
-- Release evidence is live evidence: run `aspect deploy`, exercise the setup,
+- Release evidence is live evidence: run `guardian fly <site>`, exercise the setup,
   repository enablement, out-of-band revocation, and runtime webhook paths, then
   query ClickHouse, PostgreSQL, governance audit rows, and relevant host
   metrics. Unit tests, generated OpenAPI, and successful Bazel builds are

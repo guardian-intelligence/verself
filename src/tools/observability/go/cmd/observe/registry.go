@@ -43,7 +43,7 @@ var families = []family{
 	{Name: "trace", Purpose: "Inspect a single trace by TraceId."},
 	{Name: "logs", Purpose: "Discover or query structured log attributes; recent log windows accept --since, --until, and --minutes."},
 	{Name: "http", Purpose: "Query normalized HTTP access events; recent access windows accept --since, --until, and --minutes."},
-	{Name: "deploy", Purpose: "Inspect verself-deploy, Bazel, and Nomad spans correlated by deploy_run_key; recent run lists accept --since, --until, and --minutes."},
+	{Name: "deploy", Purpose: "Inspect deployment-service, Bazel, and Nomad spans correlated by deploy_run_key; recent run lists accept --since, --until, and --minutes."},
 	{Name: "nomad", Purpose: "Inspect Nomad event-stream logs and bounded failed-allocation log tails emitted by nomad-observer; windows accept --since, --until, and --minutes."},
 	{Name: "bazel", Purpose: "Inspect instrumented CI Bazel invocations, parser lifecycle events, BUILD.bazel package spans, and execution spawns; windows accept --since, --until, and --minutes."},
 	{Name: "mail", Purpose: "Inspect inbound and outbound mail events and current mail metrics; event windows accept --since, --until, and --minutes."},
@@ -193,7 +193,7 @@ var queryDocs = []queryDoc{
 		},
 		Examples: []string{
 			"aspect observe --what=catalog --signal=traces",
-			"aspect observe --what=catalog --signal=traces --service=verself-deploy",
+			"aspect observe --what=catalog --signal=traces --service=deployment-service",
 			"aspect observe --what=describe --span=verself_deploy.run",
 		},
 		Next: []string{
@@ -522,7 +522,7 @@ var queryDocs = []queryDoc{
 		ID:      "deploy.tasks",
 		Family:  "deploy",
 		Title:   "Deploy Runs",
-		Purpose: "Recent verself-deploy run spans, or the deploy/Bazel/Nomad timeline for one deploy_run_key.",
+		Purpose: "Recent deployment-service run spans, or the deploy/Bazel/Nomad timeline for one deploy_run_key.",
 		Optional: []string{
 			"--run-key=<deploy-run-key>",
 			"--since=<duration-or-UTC>",
@@ -563,7 +563,7 @@ var queryDocs = []queryDoc{
 		ID:      "deploy.nomad_decisions",
 		Family:  "deploy",
 		Title:   "Deploy Nomad Decisions",
-		Purpose: "Nomad decisions emitted by verself-deploy span events for one deploy_run_key, including no-op decisions, submits, and terminal deployment outcomes.",
+		Purpose: "Nomad decisions emitted by deployment-service span events for one deploy_run_key, including no-op decisions, submits, and terminal deployment outcomes.",
 		Required: []string{
 			"--run-key=<deploy-run-key>",
 		},

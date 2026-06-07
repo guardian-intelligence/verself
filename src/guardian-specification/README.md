@@ -10,6 +10,7 @@ The command surface:
 
 ```sh
 guardian run bazel -- build //src/guardian-specification/...
+guardian run bazel -- build //src/guardian-specification/examples/gamma:fly_artifacts
 guardian preflight gamma -o <yaml|json|toml|toon>
 guardian fly gamma --dry-run -o yaml
 guardian fly gamma
@@ -17,16 +18,18 @@ guardian fly gamma
 
 `preflight` is the first cut point in the convergence state machine. It
 resolves the profile, loads the resource graph, verifies local build artifacts
-and the materialized Bazel output tree are present under `.guardian/build`,
-runs the referenced Ansible preflight, verifies the remote repo tree, prepares
-OpenBao integration material for Nomad, starts the Nomad executor, and stops.
+and the Bazel build manifest are present under `.guardian/build`, uploads
+repo files plus Bazel outputs by content digest, runs the referenced Ansible
+preflight, verifies the remote repo tree, prepares OpenBao integration
+material for Nomad, starts the Nomad executor, and stops.
 
-`fly` starts with the same preflight phase and then runs the configured Nomad
-hook. Component runtime behavior is a Nomad convention: owner job files include
-lifecycle tasks and consume the materialized resource graph and build manifest.
-The base protocol does not encode component internals. Infrastructure
-components own their binaries, backup retrieval, credential import, health
-checks, and stabilization logic.
+`fly` starts with the same preflight phase and then plans the configured Nomad
+jobs. Changed jobs are submitted with the Nomad plan check index; unchanged
+jobs are left in place. Component runtime behavior is a Nomad convention:
+owner job files include lifecycle tasks and consume the materialized resource
+graph, generated vars, and content-addressed artifacts. The base protocol does
+not encode component internals. Infrastructure components own their binaries,
+backup retrieval, credential import, health checks, and stabilization logic.
 
 ## Scope Convention
 

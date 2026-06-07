@@ -31,7 +31,7 @@ Verification gates:
 - repository search shows converted substrate resources are declared only beside
   owning packages;
 - `aspect check` passes, including deployment-contract validation;
-- `aspect deploy --site=<site> --sha=<sha>` succeeds for the target site;
+- `guardian fly <site>` succeeds for the target site;
 - ClickHouse evidence proves reconcilers, canaries, and promotion gates ran;
 - direct substrate checks confirm PostgreSQL roles/databases, OpenBao policies
   and JWT roles, Zitadel objects, and service-owned route state.
@@ -73,7 +73,7 @@ server functions, and generated OpenAPI projections conform to the Smithy model.
 | Deployability | Owning Bazel target, owner-local substrate declarations, migrations, Nomad job, route registration, config/secrets, recovery status endpoint, independent deploy path, rollback or full-cutover plan, and generated artifact ownership. |
 | Load and failure testing | Product-level load test, maximum payload test, failure injection, worker retry test, reconciliation test, and saturation behavior. |
 | Documentation and communication | Public docs, internal docs, AGENTS guidance, SDK examples, policy updates, release note, customer notification, and lead-time rule for customer-impacting runtime changes. |
-| Release evidence | Canary scenario, `aspect deploy` evidence, ClickHouse queries, PostgreSQL/TigerBeetle checks, host metrics, billing projection checks, audit rows, and SLO gate. |
+| Release evidence | Canary scenario, `guardian fly` evidence, ClickHouse queries, PostgreSQL/TigerBeetle checks, host metrics, billing projection checks, audit rows, and SLO gate. |
 
 ## SDK And API Ergonomics
 

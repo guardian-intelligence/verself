@@ -88,9 +88,9 @@ package v1alpha1
 }
 
 #NomadJob: {
-	name:          #NonEmptyString
-	path:          #WorkspaceRelativePath
-	artifactPaths?: [...#WorkspaceRelativePath]
+	name:     #NonEmptyString
+	path:     #WorkspaceRelativePath
+	varsPath: #WorkspaceRelativePath
 }
 
 #WorkspaceRelativePath: string & !="" & !~"^/" & !~"(^|/)\\.\\.(/|$)"

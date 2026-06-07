@@ -46,7 +46,6 @@ load(
     db_tb_query_accounts = "tb_query_accounts",
     db_tb_shell = "tb_shell",
 )
-load(".aspect/tasks/deploy.axl", "deploy")
 load(".aspect/tasks/detect_intrusions.axl", "detect_intrusions")
 load(
     ".aspect/tasks/dev.axl",
@@ -87,7 +86,6 @@ load(".aspect/tasks/vp.axl", "vp")
 
 def config(ctx):
     # Top-level tasks.
-    ctx.tasks.add(deploy)
     ctx.tasks.add(observe)
     ctx.tasks.add(check)
     ctx.tasks.add(tidy)

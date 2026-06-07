@@ -13,3 +13,25 @@ filegroup(
     srcs = glob(["guardian/**/*.cue"]),
     visibility = ["//visibility:public"],
 )
+
+genrule(
+    name = "nomad_vars",
+    srcs = ["//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane_image_archive"],
+    outs = ["nomad.vars.hcl"],
+    cmd = """
+set -euo pipefail
+artifact="$(location //src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane_image_archive)"
+digest="$$(sha256sum "$$artifact" | awk '{print $$1}')"
+printf 'cloudflare_control_plane_image_sha256 = "%s"\\n' "$$digest" > "$@"
+""",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "fly_artifacts",
+    srcs = [
+        ":nomad_vars",
+        "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane_image_archive",
+    ],
+    visibility = ["//visibility:public"],
+)

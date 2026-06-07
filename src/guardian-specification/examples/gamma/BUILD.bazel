@@ -1,0 +1,19 @@
+filegroup(
+    name = "examples",
+    srcs = ["gamma.cue"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "fly_artifacts",
+    srcs = [
+        "//src/guardian-specification/cli/cmd/guardian",
+        "//src/guardian-specification/tools:rsync_bin",
+        "//src/infrastructure-components/nomad:runtime_artifact",
+        "//src/infrastructure-components/openbao:runtime_artifact",
+        "//src/infrastructure-components/postgresql:fly_artifacts",
+        "//src/integrations/cloudflare/control-plane:fly_artifacts",
+        "//src/tools/dev/binaries:uv_tools",
+    ],
+    visibility = ["//visibility:public"],
+)

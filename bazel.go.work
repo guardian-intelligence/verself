@@ -27,7 +27,6 @@ use (
 	./src/infrastructure-components/openbao
 	./src/make-skill/release
 	./src/verself-cli
-	./src/tools/deployment
 	./src/tools/dev
 	./src/substrate/vm-orchestrator
 )

@@ -1,7 +1,7 @@
 # gazelle:prefix github.com/verself/distribution-service
 
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 go_module_checks()
 

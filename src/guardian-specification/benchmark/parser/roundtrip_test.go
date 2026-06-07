@@ -182,8 +182,9 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 							Address:   "http://127.0.0.1:4646",
 							Namespace: token(t, "nomad_namespace"),
 							Jobs: []specdoc.NomadJob{{
-								Name: token(t, "nomad_job"),
-								Path: "src/" + token(t, "nomad_job_dir") + "/nomad.hcl",
+								Name:     token(t, "nomad_job"),
+								Path:     "src/" + token(t, "nomad_job_dir") + "/nomad.hcl",
+								VarsPath: "src/" + token(t, "nomad_vars_dir") + "/nomad.vars.hcl",
 							}},
 						},
 					}),

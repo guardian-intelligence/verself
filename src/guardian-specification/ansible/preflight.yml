@@ -8,7 +8,8 @@
     guardian_remote_owner: "{{ ansible_user | default('ubuntu') }}"
     guardian_remote_group: "{{ ansible_user | default('ubuntu') }}"
     guardian_preflight_marker_path: "{{ guardian_remote_repo_root }}/workspace/.guardian/preflight/ready.json"
-    guardian_openbao_recover: "{{ guardian_remote_repo_root }}/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover"
+    guardian_openbao_recover_dir: "{{ guardian_remote_repo_root }}/bootstrap/openbao-recover/{{ guardian_openbao_runtime.digest }}"
+    guardian_openbao_recover: "{{ guardian_openbao_recover_dir }}/bin/openbao-recover"
     guardian_openbao_bao: /var/lib/openbao/runtime/current/bin/bao
     guardian_openbao_addr: https://127.0.0.1:8200
     guardian_openbao_ca_cert: /etc/verself/openbao/ca.pem
@@ -123,7 +124,8 @@
       loop:
         - "{{ guardian_remote_repo_root }}"
         - "{{ guardian_remote_repo_root }}/workspace"
-        - "{{ guardian_remote_repo_root }}/bazel-bin"
+        - "{{ guardian_artifact_root }}/sha256"
+        - "{{ guardian_remote_repo_root }}/bootstrap"
 
     - name: Upload workspace
       ansible.builtin.command:
@@ -173,19 +175,22 @@
       delegate_to: localhost
       become: false
 
-    - name: Upload materialized Bazel output tree
+    - name: Upload content-addressed Bazel artifacts
       ansible.builtin.command:
         argv:
           - "{{ guardian_rsync_bin }}"
           - -a
-          - --delete
+          - --checksum
           - --timeout=60
           - -e
           - "{{ guardian_rsync_ssh_command }}"
-          - "{{ guardian_bazel_output_root }}/"
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/bazel-bin/"
+          - "{{ item.source_path }}"
+          - "{{ guardian_rsync_target }}:{{ item.remote_path }}"
       delegate_to: localhost
       become: false
+      loop: "{{ guardian_artifacts }}"
+      loop_control:
+        label: "{{ item.target_path }}"
 
     - name: Verify remote fly graph exists
       ansible.builtin.stat:
@@ -269,25 +274,32 @@
         that:
           - guardian_local_bazel_manifest_digest.stdout.split()[0] == guardian_remote_bazel_manifest_digest.stdout.split()[0]
 
-    - name: Verify materialized Bazel output rsync checksum delta is empty
+    - name: Verify content-addressed artifact digests
       ansible.builtin.command:
         argv:
-          - "{{ guardian_rsync_bin }}"
-          - -a
-          - --delete
-          - --dry-run
-          - --checksum
-          - --itemize-changes
-          - --timeout=60
-          - -e
-          - "{{ guardian_rsync_ssh_command }}"
-          - "{{ guardian_bazel_output_root }}/"
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/bazel-bin/"
-      delegate_to: localhost
-      become: false
-      register: guardian_bazel_output_delta
+          - sha256sum
+          - "{{ item.remote_path }}"
+      loop: "{{ guardian_artifacts }}"
+      loop_control:
+        label: "{{ item.target_path }}"
+      register: guardian_artifact_digest
       changed_when: false
-      failed_when: guardian_bazel_output_delta.stdout != ""
+      failed_when: guardian_artifact_digest.stdout.split()[0] != item.digest
+
+    - name: Prepare OpenBao recovery runner directory
+      ansible.builtin.file:
+        path: "{{ guardian_openbao_recover_dir }}"
+        state: "{{ item }}"
+        mode: "0755"
+      loop:
+        - absent
+        - directory
+
+    - name: Extract OpenBao recovery runner
+      ansible.builtin.unarchive:
+        src: "{{ guardian_openbao_runtime.remote_path }}"
+        dest: "{{ guardian_openbao_recover_dir }}"
+        remote_src: true
 
     - name: Prepare OpenBao host integration
       ansible.builtin.command:
@@ -296,6 +308,7 @@
           - prepare
           - "--repo-root={{ guardian_remote_repo_root }}"
           - "--resource-graph={{ guardian_remote_repo_root }}/workspace/.guardian/fly/document.json"
+          - "--runtime-artifact={{ guardian_openbao_runtime.remote_path }}"
           - --resource-name=openbao
 
     - name: Configure OpenBao systemd unit
@@ -374,7 +387,7 @@
 
     - name: Install Nomad runtime artifact
       ansible.builtin.unarchive:
-        src: "{{ guardian_remote_repo_root }}/bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
+        src: "{{ guardian_nomad_runtime.remote_path }}"
         dest: /opt/verself/profile
         remote_src: true
 
@@ -548,6 +561,7 @@
           - recover
           - "--repo-root={{ guardian_remote_repo_root }}"
           - "--resource-graph={{ guardian_remote_repo_root }}/workspace/.guardian/fly/document.json"
+          - "--runtime-artifact={{ guardian_openbao_runtime.remote_path }}"
           - --resource-name=openbao
       register: guardian_openbao_recovery
       changed_when: false
@@ -586,16 +600,12 @@
 
     - name: Validate first recovery Nomad jobs
       ansible.builtin.command:
-        argv:
-          - /opt/verself/profile/bin/nomad
-          - job
-          - validate
-          - "{{ guardian_remote_repo_root }}/workspace/{{ item }}"
+        argv: "{{ ['/opt/verself/profile/bin/nomad', 'job', 'validate'] + guardian_nomad_common_var_args + ['-var-file', item.vars_path, item.job_path] }}"
       environment:
         NOMAD_ADDR: http://127.0.0.1:4646
-      loop:
-        - src/integrations/cloudflare/control-plane/nomad.hcl
-        - src/infrastructure-components/postgresql/nomad.hcl
+      loop: "{{ guardian_nomad_jobs }}"
+      loop_control:
+        label: "{{ item.name }}"
       changed_when: false
 
     - name: Create preflight marker directory

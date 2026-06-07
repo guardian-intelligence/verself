@@ -24,13 +24,11 @@ def _repo_label(label):
         return raw[2:]
     return raw
 
-def _write_descriptor(ctx, out, content, mnemonic):
-    ctx.actions.run_shell(
-        outputs = [out],
-        arguments = [out.path],
-        command = "cat > \"$1\" <<'EOF'\n" + content + "EOF\n",
-        mnemonic = mnemonic,
-        progress_message = "Writing SPIRE identity descriptor %{label}",
+def _write_descriptor(ctx, out, content):
+    ctx.actions.write(
+        output = out,
+        content = content,
+        is_executable = False,
     )
 
 def _clean_path(path):
@@ -83,7 +81,7 @@ def _spire_identity_impl(ctx):
     _write_descriptor(ctx, descriptor, json.encode({
         "schema_version": 1,
         "identity": row,
-    }) + "\n", "SpireIdentityDescriptor")
+    }) + "\n")
     return [
         DefaultInfo(files = depset([descriptor])),
         SpireIdentityInfo(
@@ -155,7 +153,7 @@ def _spire_identity_registry_impl(ctx):
     _write_descriptor(ctx, descriptor, json.encode({
         "schema_version": 1,
         "identities": rows,
-    }) + "\n", "SpireIdentityRegistry")
+    }) + "\n")
     return [DefaultInfo(files = depset([descriptor]))]
 
 spire_identity_registry = rule(

@@ -48,7 +48,7 @@ job "<component>" {
       lifecycle { hook = "prestart"; sidecar = false }
       config {
         command = "<component>-recover"
-        args    = ["prepare", "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json", "--resource-name=<component>"]
+        args    = ["prepare", "--resource-graph=${var.repo_root}/workspace/.guardian/fly/document.json", "--resource-name=<component>"]
       }
     }
 
@@ -71,7 +71,7 @@ job "<component>" {
         command = "<component>-recover"
         args = [
           "reconcile", "--loop",
-          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-graph=${var.repo_root}/workspace/.guardian/fly/document.json",
           "--resource-name=<component>",
           "--report=/run/verself/recovery/<component>/report.json",
         ]

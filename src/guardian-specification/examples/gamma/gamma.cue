@@ -37,17 +37,12 @@ resources: [
 					{
 						name: "cloudflare-integration-recovery"
 						path: "src/integrations/cloudflare/control-plane/nomad.hcl"
-						artifactPaths: [
-							"bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar",
-						]
+						varsPath: "bazel-bin/src/integrations/cloudflare/control-plane/nomad.vars.hcl"
 					},
 					{
 						name: "postgresql"
 						path: "src/infrastructure-components/postgresql/nomad.hcl"
-						artifactPaths: [
-							"bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar",
-							"bazel-bin/src/infrastructure-components/postgresql/cmd/postgresql-recovery/postgresql-recovery_/postgresql-recovery",
-						]
+						varsPath: "bazel-bin/src/infrastructure-components/postgresql/nomad.vars.hcl"
 					},
 				]
 			}

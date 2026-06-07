@@ -4,7 +4,7 @@ load(
     "@npm//src/viteplus-monorepo/apps/verself-web:@hey-api/openapi-ts/package_json.bzl",
     openapi_ts_bin = "bin",
 )
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
+load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
 load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree", "viteplus_server_plugin_bundles")
 
 package(default_visibility = ["//visibility:public"])

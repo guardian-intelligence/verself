@@ -1,7 +1,7 @@
 # gazelle:prefix github.com/verself/infrastructure-components/electric
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
+load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
 
 exports_files(["tools.lock.json"])
 

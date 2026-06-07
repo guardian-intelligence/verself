@@ -48,7 +48,7 @@ ARRAY JOIN
     `Events.Name` AS event_name,
     `Events.Timestamp` AS event_time,
     `Events.Attributes` AS event_attrs
-WHERE ServiceName = 'verself-deploy'
+WHERE ServiceName = 'deployment-service'
   AND event_name IN ('verself.canary.succeeded', 'verself.canary.failed', 'verself.canary.skipped');
 
 CREATE TABLE IF NOT EXISTS verself_deploy.canary_executions_v1
@@ -92,5 +92,5 @@ SELECT
     SpanId AS span_id,
     Timestamp AS started_at
 FROM default.otel_traces
-WHERE ServiceName = 'verself-deploy'
+WHERE ServiceName = 'deployment-service'
   AND SpanName = 'verself_deploy.canary.execute';

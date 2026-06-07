@@ -1,20 +1,26 @@
-variable "guardian_repo_root" {
+variable "repo_root" {
   type    = string
   default = "/home/ubuntu/.local/state/guardian/repo"
 }
 
-variable "guardian_job_input_digest" {
+variable "artifact_root" {
   type    = string
-  default = "sha256:local"
+  default = "/home/ubuntu/.local/state/guardian/repo/artifacts"
+}
+
+variable "site" {
+  type    = string
+  default = "gamma"
+}
+
+variable "cloudflare_control_plane_image_sha256" {
+  type = string
 }
 
 job "cloudflare-integration-recovery" {
   name        = "cloudflare-integration-recovery"
   datacenters = ["*"]
   type        = "batch"
-  meta {
-    guardian_job_input_digest = "${var.guardian_job_input_digest}"
-  }
 
   group "cloudflare-integration-recovery" {
     count = 1
@@ -53,14 +59,14 @@ job "cloudflare-integration-recovery" {
       }
 
       config {
-        image           = "docker-archive:${var.guardian_repo_root}/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
+        image           = "docker-archive:${var.artifact_root}/sha256/${var.cloudflare_control_plane_image_sha256}"
         init            = true
         network_mode    = "host"
         readonly_rootfs = true
         cap_drop        = ["all"]
         security_opt    = ["no-new-privileges"]
         volumes = [
-          "${var.guardian_repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
+          "${var.repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
           "/etc/haproxy:/etc/haproxy:rw,noexec",
           "/etc/ssl/certs:/etc/ssl/certs:ro,noexec",
           "/etc/verself/openbao/ca.pem:/etc/verself/openbao/ca.pem:ro",
@@ -81,7 +87,7 @@ job "cloudflare-integration-recovery" {
         OTEL_RESOURCE_ATTRIBUTES    = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME           = "cloudflare-integration-recovery"
         TMPDIR                      = "/tmp"
-        VERSELF_SITE                = "gamma"
+        VERSELF_SITE                = "${var.site}"
         VERSELF_SUPERVISOR          = "nomad"
       }
 

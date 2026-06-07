@@ -131,7 +131,6 @@ func ValidateRepo(root string) (Report, error) {
 	if err := v.walkSiteVars(); err != nil {
 		return Report{}, err
 	}
-	v.validateNoToolLayerDeployEngine()
 	v.validateBootstrapRuntimeSecretContracts()
 	if err := v.walkNomadSpecs(); err != nil {
 		return Report{}, err
@@ -330,7 +329,7 @@ func (v *Validator) validateDeploymentWorkflowFile(rel, path, repo, gitRef, site
 		}
 	}
 	if deployJobs == 0 {
-		v.add(rel, fmt.Sprintf("deployment workflow must run aspect deploy --site=%s --sha=$GITHUB_SHA", site))
+		v.add(rel, fmt.Sprintf("deployment workflow must run guardian fly %s", site))
 	}
 }
 
@@ -366,14 +365,16 @@ func (v *Validator) validateWorkflowActionUse(rel, job string, step int, action 
 }
 
 func deploymentRunMatches(run, site string) bool {
-	run = strings.TrimSpace(run)
-	if site == "" || !strings.Contains(run, "aspect deploy") {
+	if site == "" {
 		return false
 	}
-	if !strings.Contains(run, "--site="+site) {
-		return false
+	fields := strings.Fields(strings.TrimSpace(run))
+	for i := 0; i+2 < len(fields); i++ {
+		if filepath.Base(fields[i]) == "guardian" && fields[i+1] == "fly" && fields[i+2] == site {
+			return true
+		}
 	}
-	return strings.Contains(run, `--sha="$GITHUB_SHA"`) || strings.Contains(run, "--sha=$GITHUB_SHA")
+	return false
 }
 
 func siteNameFromVarsRel(rel string) string {
@@ -427,27 +428,6 @@ func (v *Validator) validateBootstrapRuntimeSecretContracts() {
 			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.private_key")
 			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.webhook_secret")
 			v.requireExternalOpenBaoSecret(rel, doc, "github-integration-service.github.oauth_client_secret")
-		}
-	}
-}
-
-func (v *Validator) validateNoToolLayerDeployEngine() {
-	for _, rel := range []string{
-		"src/tools/deployment/deployengine",
-		"src/tools/deployment/internal/bazelbuild",
-		"src/tools/deployment/internal/bep",
-		"src/tools/deployment/internal/deploycontract",
-		"src/tools/deployment/internal/nomadclient",
-		"src/tools/deployment/internal/runtime",
-		"src/tools/deployment/internal/siteconfig",
-		"src/tools/deployment/internal/siteinject",
-		"src/tools/deployment/internal/sshtun",
-	} {
-		path := filepath.Join(v.root, filepath.FromSlash(rel))
-		if _, err := os.Stat(path); err == nil {
-			v.add(rel, "normal deployment runtime code must live under src/services/deployment-service; src/tools/deployment is limited to thin clients")
-		} else if err != nil && !os.IsNotExist(err) {
-			v.add(rel, "inspect: "+err.Error())
 		}
 	}
 }

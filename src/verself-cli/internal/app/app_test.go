@@ -173,7 +173,7 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 	})
 	assertFileContains(t, filepath.Join(repoRoot, "README.md"), []string{
 		"guardian run bazel -- build //src/guardian-cli:guardian",
-		"aspect deploy --site=prod --sha=HEAD",
+		"guardian fly prod",
 	})
 
 	overrideRepoRoot := t.TempDir()

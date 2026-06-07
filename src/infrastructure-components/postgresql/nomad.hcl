@@ -1,6 +1,16 @@
-variable "guardian_repo_root" {
+variable "repo_root" {
   type    = string
   default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
+variable "artifact_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/artifacts"
+}
+
+variable "site" {
+  type    = string
+  default = "gamma"
 }
 
 variable "postgresql_resource_name" {
@@ -8,18 +18,14 @@ variable "postgresql_resource_name" {
   default = "postgresql"
 }
 
-variable "guardian_job_input_digest" {
-  type    = string
-  default = "sha256:local"
+variable "postgresql_runtime_sha256" {
+  type = string
 }
 
 job "postgresql" {
   name        = "postgresql"
   datacenters = ["*"]
   type        = "service"
-  meta {
-    guardian_job_input_digest = "${var.guardian_job_input_digest}"
-  }
 
   group "postgresql" {
     count = 1
@@ -78,12 +84,15 @@ import shutil
 import subprocess
 import tarfile
 
-repo_root = pathlib.Path("${var.guardian_repo_root}")
+repo_root = pathlib.Path("${var.repo_root}")
+artifact_root = pathlib.Path("${var.artifact_root}")
+postgresql_runtime_sha256 = "${var.postgresql_runtime_sha256}"
 resource_name = "${var.postgresql_resource_name}"
 doc_path = repo_root / "workspace/.guardian/fly/document.json"
 projected_doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
 postgres_major = "16"
 identifier_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+sha256_pattern = re.compile(r"^[a-f0-9]{64}$")
 
 def run(args, **kwargs):
     subprocess.run(args, check=True, **kwargs)
@@ -109,11 +118,10 @@ def required_path(spec, key):
         raise SystemExit(f"PostgreSQLCluster.spec.{key} must be an absolute path")
     return pathlib.Path(value)
 
-def required_repo_path(spec, key):
-    value = spec.get(key)
-    if not isinstance(value, str) or value.startswith("/") or ".." in pathlib.PurePosixPath(value).parts:
-        raise SystemExit(f"PostgreSQLCluster.spec.{key} must be a repo-relative path")
-    return repo_root / value
+def required_artifact_path(digest):
+    if not sha256_pattern.match(digest):
+        raise SystemExit("postgresql_runtime_sha256 must be lowercase sha256 hex")
+    return artifact_root / "sha256" / digest
 
 def required_int(spec, key):
     value = spec.get(key)
@@ -536,7 +544,7 @@ doc, spec = load_resource()
 ensure_group("postgres")
 ensure_user("postgres")
 postgres = pwd.getpwnam("postgres")
-artifact = required_repo_path(spec, "runtimeArtifact")
+artifact = required_artifact_path(postgresql_runtime_sha256)
 runtime_root = required_path(spec, "runtimeRoot")
 data_dir = required_path(spec, "dataDir")
 config_dir = required_path(spec, "configDir")
@@ -736,7 +744,7 @@ import subprocess
 import time
 
 resource_name = "${var.postgresql_resource_name}"
-repo_root = pathlib.Path("${var.guardian_repo_root}")
+repo_root = pathlib.Path("${var.repo_root}")
 doc_path = repo_root / "workspace/.guardian/fly/document.json"
 projected_doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
 postgres_major = "16"

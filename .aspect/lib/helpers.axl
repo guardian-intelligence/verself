@@ -23,7 +23,6 @@ GO_DIRS = [
     "src/services/analytics-service",
     "src/services/billing-service",
     "src/tools/actions",
-    "src/tools/deployment",
     "src/tools/dev",
     "src/tools/operator",
     "src/verself-cli",
@@ -46,7 +45,6 @@ GO_DIRS = [
     "src/substrate/vm-orchestrator",
 ]
 
-VERSELF_DEPLOY_TARGET = "//src/tools/deployment/cmd/verself-deploy:verself-deploy"
 ASPECT_OPERATOR_TARGET = "//src/tools/operator/cmd/aspect-operator:aspect-operator"
 ACTIONS_PUBLISHER_TARGET = "//src/tools/actions/cmd/actions-publisher:actions-publisher"
 DEFAULT_PROCESS_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

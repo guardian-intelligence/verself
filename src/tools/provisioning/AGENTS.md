@@ -6,4 +6,4 @@ site inventory.
 
 Do not add host package convergence, daemon configuration, Nomad deployment,
 or product service rollout here. Those belong to the owning component's
-recovery/deployment definitions and the `aspect deploy` path.
+recovery/deployment definitions and the `guardian fly` path.

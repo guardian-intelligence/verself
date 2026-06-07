@@ -416,15 +416,16 @@ func testConfig(t *testing.T) config {
 		t.Fatal(err)
 	}
 	return config{
-		repoRoot:    repoRoot,
-		runtimeRoot: filepath.Join(t.TempDir(), "runtime"),
-		dataDir:     filepath.Join(t.TempDir(), "raft"),
-		configPath:  filepath.Join(t.TempDir(), "openbao.hcl"),
-		reportPath:  "",
-		addr:        defaultAddr,
-		caCert:      "",
-		keyShares:   defaultKeyShares,
-		threshold:   defaultThreshold,
+		repoRoot:        repoRoot,
+		runtimeArtifact: artifact,
+		runtimeRoot:     filepath.Join(t.TempDir(), "runtime"),
+		dataDir:         filepath.Join(t.TempDir(), "raft"),
+		configPath:      filepath.Join(t.TempDir(), "openbao.hcl"),
+		reportPath:      "",
+		addr:            defaultAddr,
+		caCert:          "",
+		keyShares:       defaultKeyShares,
+		threshold:       defaultThreshold,
 	}
 }
 

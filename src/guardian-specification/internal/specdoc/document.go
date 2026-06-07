@@ -74,9 +74,9 @@ type NomadFly struct {
 }
 
 type NomadJob struct {
-	Name          string   `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
-	Path          string   `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty" toon:"path,omitempty"`
-	ArtifactPaths []string `json:"artifactPaths,omitempty" yaml:"artifactPaths,omitempty" toml:"artifactPaths,omitempty" toon:"artifactPaths,omitempty"`
+	Name     string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	Path     string `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty" toon:"path,omitempty"`
+	VarsPath string `json:"varsPath,omitempty" yaml:"varsPath,omitempty" toml:"varsPath,omitempty" toon:"varsPath,omitempty"`
 }
 
 type Remote struct {
@@ -347,10 +347,8 @@ func validateNomadFly(name string, nomad NomadFly) error {
 		if err := validateWorkspacePath(fmt.Sprintf("%s.jobs[%d].path", name, i), job.Path); err != nil {
 			return err
 		}
-		for j, path := range job.ArtifactPaths {
-			if err := validateWorkspacePath(fmt.Sprintf("%s.jobs[%d].artifactPaths[%d]", name, i, j), path); err != nil {
-				return err
-			}
+		if err := validateWorkspacePath(fmt.Sprintf("%s.jobs[%d].varsPath", name, i), job.VarsPath); err != nil {
+			return err
 		}
 	}
 	return nil

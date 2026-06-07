@@ -59,6 +59,7 @@ const (
 
 type config struct {
 	repoRoot         string
+	runtimeArtifact  string
 	runtimeRoot      string
 	dataDir          string
 	configPath       string
@@ -341,6 +342,7 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.StringVar(&cfg.repoRoot, "repo-root", cfg.repoRoot, "materialized repo root")
+	fs.StringVar(&cfg.runtimeArtifact, "runtime-artifact", "", "content-addressed OpenBao runtime artifact path")
 	fs.StringVar(&cfg.runtimeRoot, "runtime-root", cfg.runtimeRoot, "OpenBao runtime root")
 	fs.StringVar(&cfg.dataDir, "data-dir", cfg.dataDir, "OpenBao Raft data directory")
 	fs.StringVar(&cfg.configPath, "config", cfg.configPath, "OpenBao config path")
@@ -412,6 +414,7 @@ func flagProvided(args []string, name string) bool {
 
 func normalizeConfig(cfg config) config {
 	cfg.repoRoot = strings.TrimSpace(cfg.repoRoot)
+	cfg.runtimeArtifact = strings.TrimSpace(cfg.runtimeArtifact)
 	cfg.runtimeRoot = strings.TrimSpace(cfg.runtimeRoot)
 	cfg.dataDir = strings.TrimSpace(cfg.dataDir)
 	cfg.configPath = strings.TrimSpace(cfg.configPath)
@@ -1625,7 +1628,10 @@ func prepare(ctx context.Context, cfg config, _ prepareOptions) error {
 }
 
 func installRuntime(cfg config) error {
-	artifact := filepath.Join(cfg.repoRoot, "bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar")
+	artifact := strings.TrimSpace(cfg.runtimeArtifact)
+	if artifact == "" {
+		return errors.New("--runtime-artifact is required")
+	}
 	releaseName, err := artifactReleaseName(artifact)
 	if err != nil {
 		return err

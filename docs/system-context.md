@@ -38,7 +38,8 @@ entries. Devtools remain controller-local/host-local tooling outside Nomad.
 
 Each site runs a deployment-service that accepts deployment requests, records
 state and ClickHouse evidence, publishes artifacts, and submits owner-local
-Nomad jobs. `aspect deploy` is the operator client for that service.
+Nomad jobs. `guardian fly <site>` is the repo-local recovery/deployment entry
+point.
 
 Recovery and operator-access secrets enter through catalog-approved local
 handoff files and controller OpenBao. Site OpenBao initializes fresh state with
