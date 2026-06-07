@@ -283,7 +283,7 @@ go_deps.gazelle_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//patches:tigerbeetle-go-bazel-cgo.patch"],
+    patches = ["//src/infrastructure-components/tigerbeetle/patches:tigerbeetle-go-bazel-cgo.patch"],
     path = "github.com/tigerbeetle/tigerbeetle-go",
 )
 go_deps.module_override(
@@ -302,7 +302,7 @@ go_deps.gazelle_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//patches:pg-query-go-bazel-cgo.patch"],
+    patches = ["//src/tools/dev/patches:pg-query-go-bazel-cgo.patch"],
     path = "github.com/pganalyze/pg_query_go/v6",
 )
 go_deps.gazelle_override(

@@ -1,6 +1,0 @@
-package(default_visibility = ["//visibility:public"])
-
-exports_files([
-    "pg-query-go-bazel-cgo.patch",
-    "tigerbeetle-go-bazel-cgo.patch",
-])
