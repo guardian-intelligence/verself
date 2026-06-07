@@ -95,6 +95,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
 						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
+						bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar
+						bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply
 						bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar
 						bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar
 						bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover
@@ -168,6 +170,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
 						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
+						bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar
+						bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply
 						bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar
 						bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar
 						bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover

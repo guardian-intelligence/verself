@@ -15,7 +15,7 @@ consecutive submissions do not create unexpected allocation churn.
 | SPIRE | `spire.guardianintelligence.org/v1alpha1/SPIRECluster/spire` | Converged on latest gamma run | None in current gamma state | Materialized SPIRE runtime artifact, identity registry artifact, server/agent sockets, join-token attestation, `spire_workload` socket group |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | None in current gamma state | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
-| nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
+| nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged on latest gamma run | None in current gamma state | Materialized nftables runtime artifact, direct `nftables-apply` batch binary, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged on latest gamma run | None in current gamma state | Materialized NATS runtime artifact, `nats-recover`, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged on latest gamma run | None in current gamma state | Materialized Nomad Observer runtime artifact, direct `nomad-observer` prestart binary, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged on latest gamma run | None in current gamma state | Materialized OTel Collector runtime/config artifacts, direct `otelcol-recover` prestart binary, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
@@ -43,9 +43,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:4460bc6abeb1182f0c1b9a6bed0b985948dba9d7dee3bb2d7efef74ff35f433c`;
+  `sha256:11b8db0ce8ad4fc633cdbb6d666cce60335bf4545575099a5424ed0c9f7234f6`;
 - latest verified upload digest:
-  `sha256:79e40e62f8857c2d307f7dd4dcbd4688838f70a347f338f9552cb4aa589ee18f`;
+  `sha256:37f1c0492ac460b35e1f4f7c1d493c228fc4b63dca70e48d16a83ef7680e0d2b`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -99,6 +99,22 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - SPIRE registered `23` identities and the workload socket
   `/run/spire-agent/sockets/agent.sock` is owned by `root:spire_workload` with
   mode `0770`;
+- the first nftables submission in the latest run failed before starting
+  because the boarded artifact set omitted the direct `nftables-apply` batch
+  binary and `nftables-runtime.tar`;
+- after adding those artifacts to board upload and verify, `nftables`
+  allocation `a6a5a315` completed with exit code `0`;
+- local and remote nftables artifact hashes matched:
+  runtime `sha256:6c1c11dad7fa2e20a653501dd2c366f71d16c8029f83cc56cf59a05031d52506`
+  and apply binary
+  `sha256:ab8acf1dc710f47e14b6127ac3afe3672e7f88fdce2771ed640e35f14610a3fe`;
+- `nftables-apply` printed `host firewall converged`, enabled
+  `verself-nftables.service`, and activated `verself-firewall.target`;
+- live `nft list table inet verself_host` shows default-deny host ingress with
+  loopback, established/related, ICMP, SSH, SMTP, HTTP, HTTPS, WireGuard, and
+  Firecracker TAP allowances;
+- live `nft list table inet verself_nomad` blocks non-loopback access to Nomad
+  port `4646`;
 - the first NATS submission failed before starting because the boarded artifact
   set omitted the direct `nats-recover` prestart binary and
   `nats-runtime.tar`;
@@ -346,8 +362,11 @@ Previous observed results:
 - nftables installs the materialized runtime tar into `/opt/verself/nftables`,
   writes `/etc/nftables.conf`, `/etc/nftables.d/host-firewall.nft`,
   `/etc/nftables.d/nomad.nft`, and component-owned systemd units;
-- two fresh nftables Nomad batch submissions completed successfully, latest
-  allocation `8d12f79e`;
+- latest nftables Nomad batch allocation `a6a5a315` completed successfully;
+- latest nftables runtime digest:
+  `sha256:6c1c11dad7fa2e20a653501dd2c366f71d16c8029f83cc56cf59a05031d52506`;
+- latest direct nftables apply binary digest:
+  `sha256:ab8acf1dc710f47e14b6127ac3afe3672e7f88fdce2771ed640e35f14610a3fe`;
 - live `nft list table inet verself_host` shows default-deny host ingress with
   loopback, established/related, ICMP, SSH, SMTP, HTTP, HTTPS, WireGuard, and
   Firecracker TAP allowances;
@@ -514,7 +533,7 @@ ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/clickhouse/report.j
 ssh -T ubuntu@206.223.228.87 'sudo test -s /etc/verself/clickhouse/server-ca.pem && sudo ls -l /etc/verself/clickhouse/server-ca.pem'
 ssh -T ubuntu@206.223.228.87 'sudo /opt/verself/clickhouse/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count() FROM system.tables WHERE database = '\''verself'\''"'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default nftables'
-ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -task apply 8d12f79e'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -task apply a6a5a315'
 ssh -T ubuntu@206.223.228.87 'sudo env LD_LIBRARY_PATH=/opt/verself/nftables/current/lib/x86_64-linux-gnu /opt/verself/nftables/current/bin/nft list table inet verself_host'
 ssh -T ubuntu@206.223.228.87 'sudo env LD_LIBRARY_PATH=/opt/verself/nftables/current/lib/x86_64-linux-gnu /opt/verself/nftables/current/bin/nft list table inet verself_nomad'
 ssh -T ubuntu@206.223.228.87 'sudo systemctl status --no-pager verself-nftables.service verself-firewall.target'
