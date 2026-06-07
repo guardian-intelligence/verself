@@ -1,4 +1,4 @@
-// bazel-profile-to-otel parses a `bazelisk build --profile=<path>` JSON
+// bazel-profile-to-otel parses a `guardian run bazel -- build --profile=<path>` JSON
 // profile and emits one OTel span per kept event. The spans share the
 // calling shell's OTLP endpoint + OTEL_RESOURCE_ATTRIBUTES (set by
 // `verself-deploy run` via internal/identity.Generate), so each event
