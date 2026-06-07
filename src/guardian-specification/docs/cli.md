@@ -10,8 +10,8 @@ guardian fly gamma --dry-run -o yaml
 guardian fly run gamma -- nomad status
 ```
 
-The stable command response is written to stdout. Progress events are written
-to stderr when `--stream` is set, so machine callers can collect the final
+The stable command response is written to stdout. State transitions and
+diagnostics are written to stderr, so machine callers can collect the final
 response without parsing progress logs.
 
 ## Response Formats
@@ -82,3 +82,9 @@ other runtime behavior through their job files and owner-local binaries.
 
 `fly run <profile> -- <tool> <args...>` runs `fly` first, verifies the remote
 Guardian and remote catalog tool, then streams the remote tool output.
+
+## Observability
+
+State transitions are emitted by default for `preflight`, `fly`, and `fly run`.
+Use [Command Observability](command-observability.md) for verbosity, filters,
+tee-friendly logs, and structured event formats.

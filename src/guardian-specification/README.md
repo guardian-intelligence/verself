@@ -63,6 +63,7 @@ the base Guardian resource kind set.
 - [Preflight](docs/preflight.md)
 - [Fly](docs/fly.md)
 - [CLI](docs/cli.md)
+- [Command Observability](docs/command-observability.md)
 - [Configuration and Credentials](docs/configuration-and-credentials.md)
 - [Convergence Inventory](docs/convergence-inventory.md)
 - [OpenBao Recovery](docs/openbao-recovery.md)
