@@ -134,6 +134,7 @@ resources: [
 								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
 								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
 								bazel-bin/src/services/governance-service/cmd/governance-service/governance-service_/governance-service
+								bazel-bin/src/services/billing-service/cmd/billing-service/billing-service_/billing-service
 								'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
@@ -225,6 +226,7 @@ resources: [
 								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
 								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
 								bazel-bin/src/services/governance-service/cmd/governance-service/governance-service_/governance-service
+								bazel-bin/src/services/billing-service/cmd/billing-service/billing-service_/billing-service
 								'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
@@ -411,6 +413,12 @@ resources: [
 							path "auth/jwt-nomad/role/*" {
 							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
 							}
+							path "auth/spiffe-jwt/config" {
+							  capabilities = ["create", "update", "read", "sudo"]
+							}
+							path "auth/spiffe-jwt/role/*" {
+							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
+							}
 							path "kv-runtime/data/secret/org/*" {
 							  capabilities = ["create", "update", "read"]
 							}
@@ -514,6 +522,25 @@ resources: [
 								"""
 					},
 					{
+						name: "secrets-runtime-read"
+						hcl: """
+							path "kv-runtime/data/secret/org/*" {
+							  capabilities = ["read"]
+							}
+							"""
+					},
+					{
+						name: "secrets-runtime-write"
+						hcl: """
+							path "kv-runtime/data/secret/org/*" {
+							  capabilities = ["create", "update", "read", "delete"]
+							}
+							path "kv-runtime/metadata/secret/org/*" {
+							  capabilities = ["read", "list", "delete"]
+							}
+							"""
+					},
+					{
 						name: "profile-service-runtime"
 						hcl: """
 								path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
@@ -536,6 +563,14 @@ resources: [
 							  capabilities = ["read"]
 							}
 							path "kv-runtime/data/secret/org/governance-service.api_activity.hmac_key" {
+							  capabilities = ["read"]
+							}
+							"""
+					},
+					{
+						name: "billing-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
 							  capabilities = ["read"]
 							}
 							"""
@@ -686,7 +721,7 @@ resources: [
 							"""
 					},
 				]
-				nomadJWT: {
+				jwtAuths: [{
 					path:        "jwt-nomad"
 					description: "Verself Nomad workload identity auth"
 					jwksURL:     "http://127.0.0.1:4646/.well-known/jwks.json"
@@ -846,6 +881,23 @@ resources: [
 							tokenExplicitMaxTTL: 0
 						},
 						{
+							name:     "billing-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "billing"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["billing-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
 							name:     "source-code-hosting-service-runtime"
 							roleType: "jwt"
 							boundAudiences: ["vault.io"]
@@ -982,7 +1034,41 @@ resources: [
 							tokenExplicitMaxTTL: 0
 						},
 					]
-				}
+				}, {
+					path:        "spiffe-jwt"
+					description: "Verself SPIFFE workload JWT-SVID auth"
+					spireBundle: {
+						spireServerPath: "/var/lib/spire/runtime/current/bin/spire-server"
+						socketPath:      "/run/spire-server/private/api.sock"
+					}
+					supportedAlgs: ["ES256"]
+					roles: [
+						{
+							name:     "secrets-runtime-read"
+							roleType: "jwt"
+							boundAudiences: ["openbao"]
+							boundSubject:         "spiffe://gamma.verself.sh/svc/secrets-service"
+							userClaim:            "sub"
+							userClaimJSONPointer: false
+							tokenType:            "service"
+							tokenPolicies: ["secrets-runtime-read"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "secrets-runtime-write"
+							roleType: "jwt"
+							boundAudiences: ["openbao"]
+							boundSubject:         "spiffe://gamma.verself.sh/svc/secrets-service"
+							userClaim:            "sub"
+							userClaimJSONPointer: false
+							tokenType:            "service"
+							tokenPolicies: ["secrets-runtime-write"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+					]
+				}]
 				operatorImportTokens: [
 					{
 						name:   "cloudflare-account-admin-import"
@@ -1342,6 +1428,10 @@ resources: [
 				{
 					systemUser:   "governance_service"
 					postgresUser: "sandbox_rental"
+				},
+				{
+					systemUser:   "billing"
+					postgresUser: "billing"
 				},
 				{
 					systemUser:   "otelcol"
@@ -1934,6 +2024,7 @@ resources: [
 					dnsNames: [
 						"gamma.verself.sh",
 						"api.gamma.verself.sh",
+						"billing.api.gamma.verself.sh",
 						"deployments.api.gamma.verself.sh",
 						"iam.api.gamma.verself.sh",
 						"profile.api.gamma.verself.sh",
@@ -1988,6 +2079,16 @@ resources: [
 					}
 					hostname: "gamma.guardianintelligence.org"
 					backend:  "be_route_company_apex_company_frontend"
+				},
+				{
+					name: "billing-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "billing.api.gamma.verself.sh"
+					backend:  "be_route_product_billing_api_billing_public_api"
 				},
 				{
 					name: "deployment-api"
@@ -2414,6 +2515,26 @@ resources: [
 				bytes:    32
 				encoding: "hex"
 			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "billing-service.stripe.secret_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/billing-service.stripe.secret_key"
+			key:    "value"
+			source: "operatorImport"
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "billing-service.stripe.webhook_secret"
+		spec: {
+			path:   "kv-runtime/data/secret/org/billing-service.stripe.webhook_secret"
+			key:    "value"
+			source: "operatorImport"
 		}
 	},
 	{
@@ -2968,6 +3089,54 @@ resources: [
 			exports: {
 				dir:      "/var/lib/governance-service/exports"
 				ttlHours: 168
+			}
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+	{
+		apiVersion: "billing.guardianintelligence.org/v1alpha1"
+		kind:       "BillingService"
+		metadata: name: "billing-service"
+		spec: {
+			installationID: "inst_gamma_01JZ0000000000000000000000"
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.auth_audience"
+				}
+			}
+			postgres: {
+				dsn:                    "postgres://billing@/billing?host=/var/run/postgresql&sslmode=disable"
+				maxConns:               12
+				minConns:               1
+				maxConnLifetimeSeconds: 1800
+				maxConnIdleSeconds:     300
+			}
+			clickhouse: {
+				address:    "127.0.0.1:9440"
+				user:       "billing_service"
+				caCertPath: "/etc/verself/clickhouse/server-ca.pem"
+			}
+			tigerbeetle: {
+				addresses: ["127.0.0.1:3320"]
+				clusterID: 0
+			}
+			billing: {
+				returnOrigins: ["https://gamma.verself.sh"]
+			}
+			stripe: {
+				secretKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "billing-service.stripe.secret_key"
+				}
+				webhookSecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "billing-service.stripe.webhook_secret"
+				}
 			}
 			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
 		}

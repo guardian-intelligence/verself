@@ -1,7 +1,0 @@
-haproxy_public_routes:
-  - host: '{{ billing_service_domain }}'
-    backend: be_route_product_billing_api_billing_public_api
-haproxy_public_apis:
-  - key: billing
-    host: '{{ billing_service_domain }}'
-    path_prefix: /api/v1

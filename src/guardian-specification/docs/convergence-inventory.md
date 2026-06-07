@@ -27,6 +27,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Projects Service | `projects.guardianintelligence.org/v1alpha1/ProjectsService/projects-service` | Converged on latest gamma run | None in current gamma state | Materialized projects-service binary, ProjectsService CRD static config, PostgreSQL `projects_service` database/peer role, OpenBao Nomad JWT role `projects-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy projects API route |
 | Source Code Hosting Service | `source.guardianintelligence.org/v1alpha1/SourceCodeHostingService/source-code-hosting-service` | Converged on latest gamma run | None in current gamma state | Materialized source-code-hosting-service binary, SourceCodeHostingService CRD static config, PostgreSQL `source_code_hosting` database/peer role, Forgejo runtime and automation token, generated webhook secret, OpenBao Nomad JWT role `source-code-hosting-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy source API route |
 | Governance Service | `governance.guardianintelligence.org/v1alpha1/GovernanceService/governance-service` | Converged on latest gamma run | None in current gamma state | Materialized governance-service binary, GovernanceService CRD static config, PostgreSQL `governance_service`, `billing`, and `sandbox_rental` databases/peer roles, OpenBao Nomad JWT role `governance-service-runtime`, generated API activity HMAC key, Zitadel auth audience secret, IAM internal API, ClickHouse `governance_service` user, SPIRE workload identity, HAProxy governance API route |
+| Billing Service | `billing.guardianintelligence.org/v1alpha1/BillingService/billing-service` | Converged on latest gamma run | None in current gamma state | Materialized billing-service binary, BillingService CRD static config, PostgreSQL `billing` database/peer role, OpenBao Nomad JWT role `billing-runtime`, secrets-service runtime read path backed by OpenBao SPIFFE JWT roles, operator-imported Stripe secrets, TigerBeetle, ClickHouse, SPIRE workload identity, HAProxy billing API route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations, sustained operator query monitor |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
@@ -50,6 +51,46 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the billing-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:1643c6a8c540bf91691314d386544e3ef4957f7bf44473db67c142307506e08d`,
+  and verified upload digest
+  `sha256:278ce8bd45884cbf383485e9afd5ab0481358ae554bac85a82151ae54f2c6cb1`;
+- `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue --stream`
+  completed the OpenBao hook with resource graph digest
+  `sha256:d6e02f174a4c08fd0520880ecbf3d266ed80328a1d0c2bbec5a045dc9eb9b809`
+  and upload digest
+  `sha256:55aa8b88e22872a668beb10c881044d5aa7da9e4939cb4f8523fc433f81286cd`;
+- OpenBao reported `OpenBaoRecoveryComplete=True` after reconciling both
+  Nomad JWT auth and the new SPIFFE JWT auth mount sourced from the local
+  SPIRE bundle; this fixed the previous secrets-service `403` when resolving
+  billing runtime Stripe secrets;
+- billing-service deployment `c605b89b` is successful with allocations
+  `23e3bfc5` and `faba3c77` running and healthy;
+- Nomad reports `billing-public-http` on `127.0.0.1:31540` and
+  `127.0.0.1:22265`; both direct `/readyz` and `/healthz` checks return `ok`;
+- `https://billing.api.gamma.verself.sh/api/v1/plans` and
+  `https://billing.api.gamma.verself.sh/api/v1/contracts` through HAProxy
+  reach billing-service and return the expected `401` problem response without
+  a bearer token;
+- billing-service initially failed its setup prestart with PostgreSQL peer
+  authentication denied because the `PostgreSQLCluster` graph lacked the
+  `billing -> billing` peer mapping. After adding that mapping, PostgreSQL
+  reconciled `pg_ident.conf` and the migration prestart succeeded;
+- billing-service then failed at startup with
+  `read runtime secret billing-service.stripe.secret_key: status 403`.
+  The root cause was not billing's SPIFFE allowlist; secrets-service accepted
+  the billing caller but then logged into OpenBao as `secrets-runtime-read`,
+  and OpenBao did not declare the `spiffe-jwt` auth mount or
+  `secrets-runtime-read/write` roles. OpenBao now reconciles a generic
+  `jwtAuths` list and derives SPIFFE JWT validation keys from the local SPIRE
+  bundle;
+- HAProxy initially returned a proxy `404` for
+  `billing.api.gamma.verself.sh` because the `HAProxyGateway` CRD did not
+  declare the billing route or certificate SAN, even though the backend and
+  DNS record existed. Adding the route and restarting the allocation regenerated
+  `/etc/haproxy/haproxy.cfg` with `billing.api.gamma.verself.sh` routed to
+  `be_route_product_billing_api_billing_public_api`;
 - current preflight after the profile-service slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:cb085bf005d6cab0c298446015c4a1b33f436425be83238a439ab6a401eeb7ec`,

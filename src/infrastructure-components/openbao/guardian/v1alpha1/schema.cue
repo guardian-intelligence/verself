@@ -60,15 +60,20 @@ package v1alpha1
 				name: #NonEmptyString
 				hcl:  #NonEmptyString
 			}]
-			nomadJWT?: {
+			jwtAuths?: [...{
 				path:         #NonEmptyString
 				description?: #NonEmptyString
-				jwksURL:      #HTTPURL
+				jwksURL?:     #HTTPURL
+				spireBundle?: {
+					spireServerPath: #AbsolutePath
+					socketPath:      #AbsolutePath
+				}
 				supportedAlgs: [#NonEmptyString, ...#NonEmptyString]
 				roles: [...{
 					name:     #NonEmptyString
 					roleType: "jwt"
 					boundAudiences: [#NonEmptyString, ...#NonEmptyString]
+					boundSubject?: #NonEmptyString
 					boundClaims?: [#NonEmptyString]: #NonEmptyString
 					userClaim:            #NonEmptyString
 					userClaimJSONPointer: bool
@@ -78,7 +83,7 @@ package v1alpha1
 					tokenPeriod:         #NonEmptyString
 					tokenExplicitMaxTTL: int & >=0
 				}]
-			}
+			}]
 			operatorImportTokens?: [...{
 				name:   #NonEmptyString
 				policy: #NonEmptyString

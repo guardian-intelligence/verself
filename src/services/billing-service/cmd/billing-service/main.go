@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,63 +31,69 @@ import (
 )
 
 const (
-	serviceVersion                   = "2.0.0"
-	stripeSecretKeyRuntimeSecret     = "billing-service.stripe.secret_key"
-	stripeWebhookSecretRuntimeSecret = "billing-service.stripe.webhook_secret"
+	serviceName    = "billing-service"
+	serviceVersion = "2.0.0"
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	ctx := context.Background()
+	if handled, err := runRecoveryCLI(ctx, os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(ctx, os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], "billing-service")
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, errors.New("usage: migrate [--resource-graph path] [--resource-name name] up")
+	}
+	runtimeCfg, err := loadBillingRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
-	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4242")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4255")
-	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "billing_service")
-	tbAddress := cfg.String("BILLING_TB_ADDRESS", "127.0.0.1:3320")
-	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
-	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
-	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)
-	pgMaxLifetime := cfg.Int("VERSELF_PG_CONN_MAX_LIFETIME_SECONDS", 1800)
-	pgMaxIdle := cfg.Int("VERSELF_PG_CONN_MAX_IDLE_SECONDS", 300)
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
-	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
-	if err := cfg.Err(); err != nil {
+func run(args []string) error {
+	opts, err := parseRunOptions(args)
+	if err != nil {
 		return err
 	}
-	billingReturnOrigins, err := billingapi.ParseBillingReturnOrigins(billingReturnOriginsRaw)
+	runtimeCfg, err := loadBillingRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
 	if err != nil {
+		return err
+	}
+	cfg := envconfig.New()
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
+	if err := cfg.Err(); err != nil {
 		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: "billing-service", ServiceVersion: serviceVersion})
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -94,7 +101,7 @@ func run() error {
 	slog.SetDefault(logger)
 	logger.InfoContext(ctx, "billing-service deploy timing probe", "service_version", serviceVersion)
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("billing spiffe workload source: %w", err)
 	}
@@ -119,18 +126,18 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create secrets internal client: %w", err)
 	}
-	stripeKey, webhookSecret, err := loadStripeProviderSecrets(ctx, secretsClient)
+	stripeKey, webhookSecret, err := loadStripeProviderSecrets(ctx, secretsClient, runtimeCfg.StripeSecretKeyName, runtimeCfg.StripeWebhookSecretName)
 	if err != nil {
 		return err
 	}
-	pgConfig, err := pgxpool.ParseConfig(pgDSN)
+	pgConfig, err := pgxpool.ParseConfig(runtimeCfg.PostgresDSN)
 	if err != nil {
 		return fmt.Errorf("parse postgres dsn: %w", err)
 	}
-	pgConfig.MaxConns = int32FromInt(pgMaxConns, "BILLING_PG_MAX_CONNS")
-	pgConfig.MinConns = int32FromInt(pgMinConns, "BILLING_PG_MIN_CONNS")
-	pgConfig.MaxConnLifetime = time.Duration(pgMaxLifetime) * time.Second
-	pgConfig.MaxConnIdleTime = time.Duration(pgMaxIdle) * time.Second
+	pgConfig.MaxConns = int32FromInt(runtimeCfg.PostgresMaxConns, "BillingService.spec.postgres.maxConns")
+	pgConfig.MinConns = int32FromInt(runtimeCfg.PostgresMinConns, "BillingService.spec.postgres.minConns")
+	pgConfig.MaxConnLifetime = time.Duration(runtimeCfg.PostgresMaxConnLifetimeSecs) * time.Second
+	pgConfig.MaxConnIdleTime = time.Duration(runtimeCfg.PostgresMaxConnIdleSecs) * time.Second
 	pgPool, err := pgxpool.NewWithConfig(ctx, pgConfig)
 	if err != nil {
 		return fmt.Errorf("open postgres pool: %w", err)
@@ -140,15 +147,15 @@ func run() error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, runtimeCfg.ClickHouseCACertPath)
 	if err != nil {
 		return fmt.Errorf("billing clickhouse tls: %w", err)
 	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{chAddress},
+		Addr: []string{runtimeCfg.ClickHouseAddress},
 		Auth: clickhouse.Auth{
 			Database: "verself",
-			Username: chUser,
+			Username: runtimeCfg.ClickHouseUser,
 		},
 		TLS: chTLSConfig,
 	})
@@ -164,7 +171,7 @@ func run() error {
 	if stripeKey != "" {
 		stripeClient = stripe.NewClient(stripeKey)
 	}
-	ledgerClient, err := ledger.NewClient(tbClusterID, strings.Split(tbAddress, ","))
+	ledgerClient, err := ledger.NewClient(runtimeCfg.TigerBeetleClusterID, runtimeCfg.TigerBeetleAddresses)
 	if err != nil {
 		return fmt.Errorf("create tigerbeetle client: %w", err)
 	}
@@ -212,22 +219,22 @@ func run() error {
 	}
 
 	privateMux := http.NewServeMux()
-	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Client: billingClient, Logger: logger, Authorizer: iamclient.NewAuthorizer(iamClient), StripeWebhookSecret: webhookSecret, BillingReturnOrigins: billingReturnOrigins, InstallationID: installationID})
+	billingapi.NewAPI(privateMux, billingapi.Config{Version: serviceVersion, ListenAddr: opts.ListenAddr, Client: billingClient, Logger: logger, Authorizer: iamclient.NewAuthorizer(iamClient), StripeWebhookSecret: webhookSecret, BillingReturnOrigins: runtimeCfg.BillingReturnOrigins, InstallationID: runtimeCfg.InstallationID})
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	rootMux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-	protected := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(privateMux)
+	protected := auth.Middleware(auth.Config{IssuerURL: runtimeCfg.AuthIssuerURL, Audience: authAudience})(privateMux)
 	rootMux.Handle("/", billingHandler(privateMux, protected))
 
 	internalMux := http.NewServeMux()
-	billingapi.NewInternalAPI(internalMux, billingapi.Config{Version: serviceVersion, ListenAddr: "https://" + internalListenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs, InstallationID: installationID})
+	billingapi.NewInternalAPI(internalMux, billingapi.Config{Version: serviceVersion, ListenAddr: "https://" + opts.InternalListenAddr, Client: billingClient, Logger: logger, InternalPeers: internalPeerIDs, InstallationID: runtimeCfg.InstallationID})
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("billing internal allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(rootMux, "billing-service"))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(internalAllowlist, "billing-service-internal"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(rootMux, serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(internalAllowlist, serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 
 	return httpserver.RunPair(ctx, logger, public, internal)
@@ -241,12 +248,12 @@ func billingInternalPeerServices() []string {
 	}
 }
 
-func loadStripeProviderSecrets(ctx context.Context, client *secretsinternalclient.Client) (string, string, error) {
-	stripeKey, stripeKeyFound, err := loadOptionalRuntimeSecret(ctx, client, stripeSecretKeyRuntimeSecret)
+func loadStripeProviderSecrets(ctx context.Context, client *secretsinternalclient.Client, stripeSecretName string, webhookSecretName string) (string, string, error) {
+	stripeKey, stripeKeyFound, err := loadOptionalRuntimeSecret(ctx, client, stripeSecretName)
 	if err != nil {
 		return "", "", err
 	}
-	webhookSecret, webhookSecretFound, err := loadOptionalRuntimeSecret(ctx, client, stripeWebhookSecretRuntimeSecret)
+	webhookSecret, webhookSecretFound, err := loadOptionalRuntimeSecret(ctx, client, webhookSecretName)
 	if err != nil {
 		return "", "", err
 	}
@@ -254,10 +261,10 @@ func loadStripeProviderSecrets(ctx context.Context, client *secretsinternalclien
 		return "", "", nil
 	}
 	if !stripeKeyFound {
-		return "", "", fmt.Errorf("billing stripe provider secret %s is required when %s exists", stripeSecretKeyRuntimeSecret, stripeWebhookSecretRuntimeSecret)
+		return "", "", fmt.Errorf("billing stripe provider secret %s is required when %s exists", stripeSecretName, webhookSecretName)
 	}
 	if !webhookSecretFound {
-		return "", "", fmt.Errorf("billing stripe provider secret %s is required when %s exists", stripeWebhookSecretRuntimeSecret, stripeSecretKeyRuntimeSecret)
+		return "", "", fmt.Errorf("billing stripe provider secret %s is required when %s exists", webhookSecretName, stripeSecretName)
 	}
 	return stripeKey, webhookSecret, nil
 }

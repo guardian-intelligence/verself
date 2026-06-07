@@ -72,6 +72,20 @@ func TestGovernanceServicePublicBackendUsesPlainHTTP(t *testing.T) {
 	}
 }
 
+func TestBillingPublicBackendsUsePlainHTTP(t *testing.T) {
+	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
+	for _, backend := range []string{
+		"backend be_route_product_billing_api_billing_public_api",
+		"backend be_billing_stripe_webhook",
+	} {
+		runtimeBackend := backendBlock(t, runtimeTemplate, backend)
+		requireContains(t, runtimeBackend, `[[ with nomadService "billing-public-http" ]]`)
+		if strings.Contains(runtimeBackend, "proto h2") {
+			t.Fatalf("%s is plain HTTP/1.1 until the service explicitly supports h2c", backend)
+		}
+	}
+}
+
 func TestSourceCodeHostingPublicBackendsUsePlainHTTP(t *testing.T) {
 	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
 	for _, backend := range []string{

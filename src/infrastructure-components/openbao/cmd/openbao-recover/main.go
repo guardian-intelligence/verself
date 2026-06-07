@@ -517,7 +517,7 @@ type openBaoBaselineSpec struct {
 	Reconcile            bool                             `json:"reconcile"`
 	Mounts               []openBaoMountSpec               `json:"mounts"`
 	Policies             []openBaoPolicySpec              `json:"policies"`
-	NomadJWT             *openBaoNomadJWTAuthSpec         `json:"nomadJWT"`
+	JWTAuths             []openBaoJWTAuthSpec             `json:"jwtAuths"`
 	OperatorImportTokens []openBaoOperatorImportTokenSpec `json:"operatorImportTokens"`
 	SecretPaths          []openBaoSecretPathSpec          `json:"-"`
 }
@@ -541,18 +541,25 @@ type openBaoOperatorImportTokenSpec struct {
 	Uses   int    `json:"uses"`
 }
 
-type openBaoNomadJWTAuthSpec struct {
-	Path          string                    `json:"path"`
-	Description   string                    `json:"description"`
-	JWKSURL       string                    `json:"jwksURL"`
-	SupportedAlgs []string                  `json:"supportedAlgs"`
-	Roles         []openBaoNomadJWTRoleSpec `json:"roles"`
+type openBaoJWTAuthSpec struct {
+	Path          string                  `json:"path"`
+	Description   string                  `json:"description"`
+	JWKSURL       string                  `json:"jwksURL"`
+	SPIREBundle   *openBaoSPIREBundleSpec `json:"spireBundle"`
+	SupportedAlgs []string                `json:"supportedAlgs"`
+	Roles         []openBaoJWTRoleSpec    `json:"roles"`
 }
 
-type openBaoNomadJWTRoleSpec struct {
+type openBaoSPIREBundleSpec struct {
+	SPIREServerPath string `json:"spireServerPath"`
+	SocketPath      string `json:"socketPath"`
+}
+
+type openBaoJWTRoleSpec struct {
 	Name                 string            `json:"name"`
 	RoleType             string            `json:"roleType"`
 	BoundAudiences       []string          `json:"boundAudiences"`
+	BoundSubject         string            `json:"boundSubject"`
 	BoundClaims          map[string]string `json:"boundClaims"`
 	UserClaim            string            `json:"userClaim"`
 	UserClaimJSONPointer bool              `json:"userClaimJSONPointer"`
@@ -943,10 +950,11 @@ func hasNomadWorkloadAuthority(cfg config) bool {
 }
 
 func reconcileBaselineWithNomadWorkload(ctx context.Context, cfg config, client openBaoClient, rep report, extra []condition) report {
-	if cfg.baseline.NomadJWT == nil || strings.TrimSpace(cfg.baseline.NomadJWT.Path) == "" {
+	authPath, err := jwtAuthPathForRole(cfg.baseline.JWTAuths, cfg.nomadWorkloadRole)
+	if err != nil {
 		rep.Conditions = append(rep.Conditions, extra...)
 		rep.Conditions = append(rep.Conditions,
-			conditionFalse("OpenBaoWorkloadToken", "JWTAuthUnavailable", "openbao", "Nomad workload JWT auth is not configured"),
+			conditionFalse("OpenBaoWorkloadToken", "JWTAuthUnavailable", "openbao", err.Error()),
 			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
 			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
 		)
@@ -962,7 +970,7 @@ func reconcileBaselineWithNomadWorkload(ctx context.Context, cfg config, client 
 		)
 		return rep
 	}
-	token, err := client.LoginJWT(ctx, cfg.baseline.NomadJWT.Path, cfg.nomadWorkloadRole, jwt)
+	token, err := client.LoginJWT(ctx, authPath, cfg.nomadWorkloadRole, jwt)
 	if err != nil {
 		rep.Conditions = append(rep.Conditions, extra...)
 		rep.Conditions = append(rep.Conditions,
@@ -977,6 +985,32 @@ func reconcileBaselineWithNomadWorkload(ctx context.Context, cfg config, client 
 		extra = append(extra, handoffCondition)
 	}
 	return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
+}
+
+func jwtAuthPathForRole(auths []openBaoJWTAuthSpec, role string) (string, error) {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "", errors.New("Nomad workload JWT role is required")
+	}
+	var matches []string
+	for _, auth := range auths {
+		for _, candidate := range auth.Roles {
+			if strings.TrimSpace(candidate.Name) == role {
+				matches = append(matches, strings.Trim(strings.TrimSpace(auth.Path), "/"))
+			}
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("OpenBao JWT auth role %q is not configured", role)
+	case 1:
+		if matches[0] == "" {
+			return "", fmt.Errorf("OpenBao JWT auth role %q has an empty auth path", role)
+		}
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("OpenBao JWT auth role %q is configured on multiple auth paths", role)
+	}
 }
 
 func readNomadWorkloadJWT(path string) (string, error) {
@@ -2228,19 +2262,17 @@ func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken str
 			return err
 		}
 	}
-	if baseline.NomadJWT == nil {
-		return nil
-	}
-	auth := *baseline.NomadJWT
-	if err := c.ensureAuth(ctx, rootToken, auth.Path, "jwt", auth.Description); err != nil {
-		return err
-	}
-	if err := c.configureJWTAuth(ctx, rootToken, auth); err != nil {
-		return err
-	}
-	for _, role := range auth.Roles {
-		if err := c.writeJWTRole(ctx, rootToken, auth.Path, role); err != nil {
+	for _, auth := range baseline.JWTAuths {
+		if err := c.ensureAuth(ctx, rootToken, auth.Path, "jwt", auth.Description); err != nil {
 			return err
+		}
+		if err := c.configureJWTAuth(ctx, rootToken, auth); err != nil {
+			return err
+		}
+		for _, role := range auth.Roles {
+			if err := c.writeJWTRole(ctx, rootToken, auth.Path, role); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -2587,23 +2619,84 @@ func containsRuneFrom(value string, alphabet string) bool {
 	return false
 }
 
-func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoNomadJWTAuthSpec) error {
+func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoJWTAuthSpec) error {
 	path := strings.Trim(strings.TrimSpace(auth.Path), "/")
 	jwksURL := strings.TrimSpace(auth.JWKSURL)
-	if path == "" || jwksURL == "" || len(auth.SupportedAlgs) == 0 {
-		return errors.New("OpenBao Nomad JWT auth path, jwksURL, and supportedAlgs are required")
+	if path == "" || len(auth.SupportedAlgs) == 0 {
+		return errors.New("OpenBao JWT auth path and supportedAlgs are required")
 	}
-	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+path+"/config", map[string]any{
-		"jwks_url":           jwksURL,
+	body := map[string]any{
 		"jwt_supported_algs": auth.SupportedAlgs,
-	}, nil, http.StatusNoContent, http.StatusOK)
+	}
+	switch {
+	case jwksURL != "" && auth.SPIREBundle == nil:
+		body["jwks_url"] = jwksURL
+	case jwksURL == "" && auth.SPIREBundle != nil:
+		pubkeys, err := spireJWTValidationPubkeys(ctx, *auth.SPIREBundle)
+		if err != nil {
+			return err
+		}
+		body["jwt_validation_pubkeys"] = pubkeys
+	default:
+		return errors.New("OpenBao JWT auth requires exactly one validation source")
+	}
+	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+path+"/config", body, nil, http.StatusNoContent, http.StatusOK)
 }
 
-func (c *realOpenBaoClient) writeJWTRole(ctx context.Context, token string, authPath string, role openBaoNomadJWTRoleSpec) error {
+func spireJWTValidationPubkeys(ctx context.Context, spec openBaoSPIREBundleSpec) ([]string, error) {
+	spireServer := strings.TrimSpace(spec.SPIREServerPath)
+	socketPath := strings.TrimSpace(spec.SocketPath)
+	if spireServer == "" || socketPath == "" {
+		return nil, errors.New("OpenBao SPIRE bundle source requires spireServerPath and socketPath")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, spireServer, "bundle", "show", "-socketPath", socketPath, "-format", "spiffe", "-output", "json").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("read SPIRE JWT bundle: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return spireJWTValidationPubkeysFromBundle(out)
+}
+
+func spireJWTValidationPubkeysFromBundle(raw []byte) ([]string, error) {
+	var bundle struct {
+		JWTAuthorities []struct {
+			PublicKey string `json:"public_key"`
+			Tainted   bool   `json:"tainted"`
+		} `json:"jwt_authorities"`
+	}
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		return nil, fmt.Errorf("decode SPIRE JWT bundle: %w", err)
+	}
+	pubkeys := make([]string, 0, len(bundle.JWTAuthorities))
+	for _, authority := range bundle.JWTAuthorities {
+		if authority.Tainted {
+			continue
+		}
+		der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(authority.PublicKey))
+		if err != nil {
+			return nil, fmt.Errorf("decode SPIRE JWT public key: %w", err)
+		}
+		if _, err := x509.ParsePKIXPublicKey(der); err != nil {
+			return nil, fmt.Errorf("parse SPIRE JWT public key: %w", err)
+		}
+		pemBlock := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+		if len(pemBlock) == 0 {
+			return nil, errors.New("encode SPIRE JWT public key")
+		}
+		pubkeys = append(pubkeys, string(pemBlock))
+	}
+	if len(pubkeys) == 0 {
+		return nil, errors.New("SPIRE bundle contains no active JWT authorities")
+	}
+	return pubkeys, nil
+}
+
+func (c *realOpenBaoClient) writeJWTRole(ctx context.Context, token string, authPath string, role openBaoJWTRoleSpec) error {
 	authPath = strings.Trim(strings.TrimSpace(authPath), "/")
 	name := strings.TrimSpace(role.Name)
 	if authPath == "" || name == "" {
-		return errors.New("OpenBao Nomad JWT auth path and role name are required")
+		return errors.New("OpenBao JWT auth path and role name are required")
 	}
 	body := map[string]any{
 		"role_type":               role.RoleType,
@@ -2619,6 +2712,9 @@ func (c *realOpenBaoClient) writeJWTRole(ctx context.Context, token string, auth
 	if len(role.BoundClaims) > 0 {
 		body["bound_claims"] = role.BoundClaims
 	}
+	if strings.TrimSpace(role.BoundSubject) != "" {
+		body["bound_subject"] = strings.TrimSpace(role.BoundSubject)
+	}
 	if err := requireJWTString("roleType", role.RoleType); err != nil {
 		return err
 	}
@@ -2632,14 +2728,14 @@ func (c *realOpenBaoClient) writeJWTRole(ctx context.Context, token string, auth
 		return err
 	}
 	if len(role.BoundAudiences) == 0 || len(role.TokenPolicies) == 0 {
-		return errors.New("OpenBao Nomad JWT role boundAudiences and tokenPolicies are required")
+		return errors.New("OpenBao JWT role boundAudiences and tokenPolicies are required")
 	}
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+authPath+"/role/"+name, body, nil, http.StatusNoContent, http.StatusOK)
 }
 
 func requireJWTString(field string, value string) error {
 	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("OpenBao Nomad JWT role %s is required", field)
+		return fmt.Errorf("OpenBao JWT role %s is required", field)
 	}
 	return nil
 }

@@ -519,7 +519,14 @@ func TestUnsealedOpenBaoUsesNomadWorkloadJWTForBaseline(t *testing.T) {
 	cfg.nomadWorkloadRole = "openbao-reconcile-runtime"
 	cfg.baseline = openBaoBaselineSpec{
 		Reconcile: true,
-		NomadJWT:  &openBaoNomadJWTAuthSpec{Path: "jwt-nomad"},
+		JWTAuths: []openBaoJWTAuthSpec{
+			{
+				Path: "jwt-nomad",
+				Roles: []openBaoJWTRoleSpec{
+					{Name: "openbao-reconcile-runtime"},
+				},
+			},
+		},
 		OperatorImportTokens: []openBaoOperatorImportTokenSpec{
 			{Name: "cloudflare-account-admin-import", Policy: "cloudflare-account-admin-import", TTL: "4h", Uses: 5},
 		},
@@ -563,6 +570,32 @@ func TestUnsealedOpenBaoUsesOperatorTokenFromStdin(t *testing.T) {
 		t.Fatalf("operator token was not revoked after baseline reconciliation")
 	}
 	assertReportDoesNotContain(t, rep, token)
+}
+
+func TestSPIREJWTValidationPubkeysFromBundle(t *testing.T) {
+	raw := []byte(`{
+		"jwt_authorities": [
+			{
+				"public_key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENVnWPfvh2IPvZsErFs/WZgL3j9EoslSlAalETzK79gBPkEzj92oPvWz6UXWMRTI+IlUK/Mv5Z0r0RUQwSQNRqQ==",
+				"tainted": false
+			},
+			{
+				"public_key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENVnWPfvh2IPvZsErFs/WZgL3j9EoslSlAalETzK79gBPkEzj92oPvWz6UXWMRTI+IlUK/Mv5Z0r0RUQwSQNRqQ==",
+				"tainted": true
+			}
+		]
+	}`)
+
+	pubkeys, err := spireJWTValidationPubkeysFromBundle(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pubkeys) != 1 {
+		t.Fatalf("pubkeys = %#v", pubkeys)
+	}
+	if !strings.Contains(pubkeys[0], "-----BEGIN PUBLIC KEY-----") || !strings.Contains(pubkeys[0], "-----END PUBLIC KEY-----") {
+		t.Fatalf("pubkey was not PEM encoded: %q", pubkeys[0])
+	}
 }
 
 func TestBaselineReconcileRetriesTransientOpenBaoErrors(t *testing.T) {
@@ -742,23 +775,47 @@ func TestUnsealedOpenBaoUsesBaselineFromResourceGraph(t *testing.T) {
 		Policies: []openBaoPolicySpec{
 			{Name: "cloudflare-integration-recovery-runtime", HCL: `path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" { capabilities = ["create", "update"] }`},
 		},
-		NomadJWT: &openBaoNomadJWTAuthSpec{
-			Path:          "jwt-nomad",
-			Description:   "Verself Nomad workload identity auth",
-			JWKSURL:       "http://127.0.0.1:4646/.well-known/jwks.json",
-			SupportedAlgs: []string{"RS256", "EdDSA"},
-			Roles: []openBaoNomadJWTRoleSpec{
-				{
-					Name:                 "cloudflare-integration-recovery-runtime",
-					RoleType:             "jwt",
-					BoundAudiences:       []string{"vault.io"},
-					BoundClaims:          map[string]string{"nomad_job_id": "cloudflare-integration-recovery"},
-					UserClaim:            "/nomad_job_id",
-					UserClaimJSONPointer: true,
-					ClaimMappings:        map[string]string{"nomad_job_id": "nomad_job_id"},
-					TokenType:            "service",
-					TokenPolicies:        []string{"cloudflare-integration-recovery-runtime"},
-					TokenPeriod:          "30m",
+		JWTAuths: []openBaoJWTAuthSpec{
+			{
+				Path:          "jwt-nomad",
+				Description:   "Verself Nomad workload identity auth",
+				JWKSURL:       "http://127.0.0.1:4646/.well-known/jwks.json",
+				SupportedAlgs: []string{"RS256", "EdDSA"},
+				Roles: []openBaoJWTRoleSpec{
+					{
+						Name:                 "cloudflare-integration-recovery-runtime",
+						RoleType:             "jwt",
+						BoundAudiences:       []string{"vault.io"},
+						BoundClaims:          map[string]string{"nomad_job_id": "cloudflare-integration-recovery"},
+						UserClaim:            "/nomad_job_id",
+						UserClaimJSONPointer: true,
+						ClaimMappings:        map[string]string{"nomad_job_id": "nomad_job_id"},
+						TokenType:            "service",
+						TokenPolicies:        []string{"cloudflare-integration-recovery-runtime"},
+						TokenPeriod:          "30m",
+					},
+				},
+			},
+			{
+				Path:          "spiffe-jwt",
+				Description:   "Verself SPIFFE workload JWT-SVID auth",
+				SupportedAlgs: []string{"ES256"},
+				SPIREBundle: &openBaoSPIREBundleSpec{
+					SPIREServerPath: "/var/lib/spire/runtime/current/bin/spire-server",
+					SocketPath:      "/run/spire-server/private/api.sock",
+				},
+				Roles: []openBaoJWTRoleSpec{
+					{
+						Name:                 "secrets-runtime-read",
+						RoleType:             "jwt",
+						BoundAudiences:       []string{"openbao"},
+						BoundSubject:         "spiffe://gamma.verself.sh/svc/secrets-service",
+						UserClaim:            "sub",
+						UserClaimJSONPointer: false,
+						TokenType:            "service",
+						TokenPolicies:        []string{"secrets-runtime-read"},
+						TokenPeriod:          "30m",
+					},
 				},
 			},
 		},
@@ -770,8 +827,11 @@ func TestUnsealedOpenBaoUsesBaselineFromResourceGraph(t *testing.T) {
 	if len(client.baselines) != 1 {
 		t.Fatalf("baseline reconcile calls = %d", len(client.baselines))
 	}
-	if got := client.baselines[0].NomadJWT.Roles[0].Name; got != "cloudflare-integration-recovery-runtime" {
+	if got := client.baselines[0].JWTAuths[0].Roles[0].Name; got != "cloudflare-integration-recovery-runtime" {
 		t.Fatalf("jwt role = %q", got)
+	}
+	if got := client.baselines[0].JWTAuths[1].Roles[0].Name; got != "secrets-runtime-read" {
+		t.Fatalf("spiffe jwt role = %q", got)
 	}
 	if len(client.revokedTokens) != 1 || client.revokedTokens[0] != token {
 		t.Fatalf("operator token was not revoked after baseline reconciliation")
@@ -909,24 +969,26 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 						"policies": []map[string]any{
 							{"name": "cloudflare-integration-recovery-runtime", "hcl": `path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id" { capabilities = ["create", "update"] }`},
 						},
-						"nomadJWT": map[string]any{
-							"path":          "jwt-nomad",
-							"description":   "Verself Nomad workload identity auth",
-							"jwksURL":       "http://127.0.0.1:4646/.well-known/jwks.json",
-							"supportedAlgs": []string{"RS256", "EdDSA"},
-							"roles": []map[string]any{
-								{
-									"name":                 "cloudflare-integration-recovery-runtime",
-									"roleType":             "jwt",
-									"boundAudiences":       []string{"vault.io"},
-									"boundClaims":          map[string]string{"nomad_job_id": "cloudflare-integration-recovery"},
-									"userClaim":            "/nomad_job_id",
-									"userClaimJSONPointer": true,
-									"claimMappings":        map[string]string{"nomad_job_id": "nomad_job_id"},
-									"tokenType":            "service",
-									"tokenPolicies":        []string{"cloudflare-integration-recovery-runtime"},
-									"tokenPeriod":          "30m",
-									"tokenExplicitMaxTTL":  0,
+						"jwtAuths": []map[string]any{
+							{
+								"path":          "jwt-nomad",
+								"description":   "Verself Nomad workload identity auth",
+								"jwksURL":       "http://127.0.0.1:4646/.well-known/jwks.json",
+								"supportedAlgs": []string{"RS256", "EdDSA"},
+								"roles": []map[string]any{
+									{
+										"name":                 "cloudflare-integration-recovery-runtime",
+										"roleType":             "jwt",
+										"boundAudiences":       []string{"vault.io"},
+										"boundClaims":          map[string]string{"nomad_job_id": "cloudflare-integration-recovery"},
+										"userClaim":            "/nomad_job_id",
+										"userClaimJSONPointer": true,
+										"claimMappings":        map[string]string{"nomad_job_id": "nomad_job_id"},
+										"tokenType":            "service",
+										"tokenPolicies":        []string{"cloudflare-integration-recovery-runtime"},
+										"tokenPeriod":          "30m",
+										"tokenExplicitMaxTTL":  0,
+									},
 								},
 							},
 						},
@@ -973,7 +1035,7 @@ func TestParseConfigLoadsOpenBaoClusterFromGuardianGraph(t *testing.T) {
 	if len(cfg.pgpKeys) != 3 {
 		t.Fatalf("pgpKeys = %#v", cfg.pgpKeys)
 	}
-	if !cfg.baseline.Reconcile || cfg.baseline.NomadJWT == nil || len(cfg.baseline.NomadJWT.Roles) != 1 {
+	if !cfg.baseline.Reconcile || len(cfg.baseline.JWTAuths) != 1 || len(cfg.baseline.JWTAuths[0].Roles) != 1 {
 		t.Fatalf("baseline = %#v", cfg.baseline)
 	}
 	if len(cfg.baseline.SecretPaths) != 1 {

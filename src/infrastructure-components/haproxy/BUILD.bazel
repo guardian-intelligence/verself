@@ -123,7 +123,6 @@ filegroup(
         "//src/infrastructure-components/stalwart:deploy_declarations",
         "//src/infrastructure-components/verdaccio:deploy_declarations",
         "//src/services/analytics-service:deploy_declarations",
-        "//src/services/billing-service:deploy_declarations",
         "//src/services/deployment-service:deploy_declarations",
         "//src/services/distribution-service:deploy_declarations",
         "//src/services/email-service:deploy_declarations",
