@@ -112,11 +112,8 @@ func TestPreflightCUEDocument(t *testing.T) {
 	if result.Status != "ready" {
 		t.Fatalf("status = %q, want ready for dry run", result.Status)
 	}
-	if result.Access.Status != "pending" {
-		t.Fatalf("dry-run access status = %q, want pending", result.Access.Status)
-	}
-	if result.Kernel.Status != "pending" {
-		t.Fatalf("dry-run kernel status = %q, want pending", result.Kernel.Status)
+	if result.Preflight.Status != "pending" {
+		t.Fatalf("dry-run preflight status = %q, want pending", result.Preflight.Status)
 	}
 	if result.Entrypoint.Name != "gamma" {
 		t.Fatalf("entrypoint = %#v, want gamma FlyProcedure", result.Entrypoint)
@@ -169,7 +166,7 @@ func TestPreflightProfileDiscovery(t *testing.T) {
 	}
 }
 
-func TestPreflightHooksVerifyDigest(t *testing.T) {
+func TestPreflightRunsAnsiblePlaybook(t *testing.T) {
 	dir, path := writeTestCUEDocument(t)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -187,17 +184,14 @@ func TestPreflightHooksVerifyDigest(t *testing.T) {
 	if result.ReadyToFly != "yes" {
 		t.Fatalf("ready_to_fly = %q, want yes\n%s", result.ReadyToFly, stdout.String())
 	}
-	if result.Upload.Digest == "" {
-		t.Fatalf("upload digest was not reported: %#v", result.Upload)
+	if result.Upload.Status != "ready" {
+		t.Fatalf("upload status = %q, want ready: %#v", result.Upload.Status, result.Upload)
 	}
-	if result.Upload.Run.Status != "ready" || result.Upload.Extract.Status != "ready" || result.Upload.Verify.Status != "ready" {
-		t.Fatalf("hooks not ready: run=%#v extract=%#v verify=%#v", result.Upload.Run, result.Upload.Extract, result.Upload.Verify)
+	if result.Preflight.Status != "ready" {
+		t.Fatalf("preflight playbook not ready: %#v", result.Preflight)
 	}
-	if result.Access.Status != "ready" {
-		t.Fatalf("access hook not ready: %#v", result.Access)
-	}
-	if result.Kernel.Status != "ready" {
-		t.Fatalf("kernel hooks not ready: %#v", result.Kernel)
+	if result.Preflight.Playbook != "preflight.yml" {
+		t.Fatalf("playbook = %q, want preflight.yml", result.Preflight.Playbook)
 	}
 }
 
@@ -571,6 +565,45 @@ language: version: "v0.11.0"
 	if err := os.WriteFile(filepath.Join(dir, "bazel-bin", "guardian"), []byte("built guardian\n"), 0o755); err != nil {
 		t.Fatalf("write built artifact: %v", err)
 	}
+	uvxPath := filepath.Join(dir, "bazel-bin", "src", "tools", "dev", "binaries", "uvx")
+	if err := os.MkdirAll(filepath.Dir(uvxPath), 0o755); err != nil {
+		t.Fatalf("mkdir uvx dir: %v", err)
+	}
+	if err := os.WriteFile(uvxPath, []byte(`#!/bin/sh
+set -eu
+found=0
+for arg in "$@"; do
+  if [ "$arg" = "ansible-playbook" ]; then
+    found=1
+  fi
+done
+test "$found" = 1
+printf 'ansible ran\n' > ansible-ran
+`), 0o755); err != nil {
+		t.Fatalf("write fake uvx: %v", err)
+	}
+	rsyncPath := filepath.Join(dir, "bazel-bin", "src", "guardian-specification", "tools", "rsync")
+	if err := os.MkdirAll(filepath.Dir(rsyncPath), 0o755); err != nil {
+		t.Fatalf("mkdir rsync dir: %v", err)
+	}
+	if err := os.WriteFile(rsyncPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake rsync: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "preflight.yml"), []byte("---\n- hosts: all\n"), 0o644); err != nil {
+		t.Fatalf("write preflight playbook: %v", err)
+	}
+	sshPath := filepath.Join(dir, "ssh")
+	if err := os.WriteFile(sshPath, []byte(`#!/bin/sh
+set -eu
+remote_command=
+for arg in "$@"; do
+  remote_command="$arg"
+done
+test -n "$remote_command"
+exec sh -c "$remote_command"
+`), 0o755); err != nil {
+		t.Fatalf("write fake ssh: %v", err)
+	}
 	path := filepath.Join(dir, "gamma.cue")
 	repoRoot := filepath.Join(dir, "remote-repo")
 	remoteGuardian := filepath.Join(dir, "remote-guardian")
@@ -593,7 +626,8 @@ resources: [
 				kind:       "Substrate"
 				name:       "local"
 			}
-			nomad: run: argv: ["sh", "-c", "test -d extracted"]
+			preflight: ansible: playbook: "preflight.yml"
+			nomad: run: argv: ["sh", "-c", "test -f ansible-ran"]
 		}
 	},
 	{
@@ -601,24 +635,13 @@ resources: [
 		kind:       "Substrate"
 		metadata: name: "local"
 		spec: {
-				access: argv: ["sh", "-c", "test -f MODULE.bazel"]
-				upload: {
-					run: argv: ["sh", "-c", "rm -rf uploaded && mkdir -p uploaded && cp -a MODULE.bazel guardian bazel-bin .guardian uploaded/"]
-					extract: argv: ["sh", "-c", "rm -rf extracted && cp -a uploaded extracted"]
-					verify: argv: ["sh", "-c", "test -f extracted/.guardian/fly/document.json && find extracted -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum"]
-				}
-					kernel: {
-						openbaoPrepare: argv: ["sh", "-c", "test -d extracted"]
-						nomad: argv: ["sh", "-c", "test -d extracted"]
-						verify: argv: ["sh", "-c", "test -d extracted"]
-					}
-					remote: {
-						repoRoot: %q
-						guardian: %q
-						ssh: ["sh", "-c"]
-					}
+			remote: {
+				repoRoot: %q
+				guardian: %q
+				ssh: [%q, "test-target"]
 			}
-		},
+		}
+	},
 	{
 		apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
 		kind:       "AccountAuthority"
@@ -632,7 +655,7 @@ resources: [
 		spec: url: "https://gamma.verself.sh"
 	},
 ]
-`, repoRoot, remoteGuardian)
+`, repoRoot, remoteGuardian, sshPath)
 	if err := os.WriteFile(path, []byte(document), 0o644); err != nil {
 		t.Fatalf("write gamma.cue: %v", err)
 	}

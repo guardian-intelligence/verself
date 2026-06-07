@@ -72,14 +72,18 @@ uninitialized + no snapshot
 initialized + sealed
   -> unseal through configured auto-unseal, or obtain threshold material for
      manual unseal
-  -> reconcile baseline only through scoped workload identity or explicit
-     operator token
+  -> accept prior non-secret recovery evidence when its baseline digest matches
+     the current OpenBao CRD-derived baseline
+  -> otherwise reconcile baseline only through scoped workload identity or
+     explicit operator token
   -> otherwise report OpenBaoBaselineReconciled=False
   -> report available only after required baseline state is reconciled
 
 initialized + unsealed
-  -> reconcile baseline only through scoped workload identity or explicit
-     operator token
+  -> accept prior non-secret recovery evidence when its baseline digest matches
+     the current OpenBao CRD-derived baseline
+  -> otherwise reconcile baseline only through scoped workload identity or
+     explicit operator token
   -> otherwise report OpenBaoBaselineReconciled=False
   -> report available only after required baseline state is reconciled
 
@@ -121,6 +125,13 @@ The recovery binary performs these steps:
    baseline state is reconciled.
 12. Emit a recovery report that contains status, digests, fingerprints, and
     conditions.
+
+The recovery report includes `evidence.baseline_digest` after successful
+baseline reconciliation. A later run may treat an initialized and unsealed
+OpenBao as ready without presenting root authority only when the previous report
+has `OpenBaoRecoveryComplete=True` and the stored baseline digest matches the
+current OpenBao CRD-derived baseline. If the digest is absent or stale, recovery
+fails with `BaselineAuthorityRequired` instead of silently accepting drift.
 
 ## Snapshot Restore
 

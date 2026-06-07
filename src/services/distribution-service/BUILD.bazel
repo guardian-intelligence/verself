@@ -1,13 +1,16 @@
 # gazelle:prefix github.com/verself/distribution-service
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
-deploy_declarations(visibility = ["//visibility:public"])
-
 go_module_checks()
+
+filegroup(
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//src/guardian-specification:__pkg__"],
+)
 
 spire_identity(
     name = "spiffe_identity",
@@ -22,10 +25,9 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     artifacts = {
-        "//src/services/distribution-service/cmd/distribution-service:distribution-service_nomad_artifact": "distribution-service",
+        "//src/services/distribution-service/cmd/distribution-service:distribution-service_image_archive": "distribution-service-image",
     },
     component = "distribution_service",
-    digest_inputs = [":deploy_declarations"],
     job_id = "distribution-service",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],

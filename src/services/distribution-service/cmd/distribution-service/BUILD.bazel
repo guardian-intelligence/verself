@@ -1,9 +1,14 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "distribution-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+        "recover.go",
+    ],
     importpath = "github.com/verself/distribution-service/cmd/distribution-service",
     visibility = ["//visibility:private"],
     deps = [
@@ -12,7 +17,6 @@ go_library(
         "//src/services/distribution-service/internal/releaseattest",
         "//src/services/distribution-service/migrations",
         "//src/services/service-runtime/go/auth",
-        "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
         "//src/services/service-runtime/go/workload",
         "//src/tools/observability/go/otel",
@@ -28,8 +32,38 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-nomad_binary_artifact(
-    name = "distribution-service_nomad_artifact",
-    binary = ":distribution-service",
-    output = "distribution-service",
+go_test(
+    name = "distribution-service_test",
+    srcs = [
+        "guardian_config_test.go",
+        "recover_test.go",
+    ],
+    embed = [":distribution-service_lib"],
+)
+
+pkg_tar(
+    name = "distribution-service_image_layer",
+    files = {":distribution-service": "usr/local/bin/distribution-service"},
+    modes = {"usr/local/bin/distribution-service": "0755"},
+)
+
+oci_image(
+    name = "distribution-service_image",
+    architecture = "amd64",
+    entrypoint = ":distribution-service.entrypoint",
+    os = "linux",
+    tars = [":distribution-service_image_layer"],
+)
+
+oci_load(
+    name = "distribution-service_image_load",
+    image = ":distribution-service_image",
+    repo_tags = ":distribution-service.image-tags.txt",
+)
+
+filegroup(
+    name = "distribution-service_image_archive",
+    srcs = [":distribution-service_image_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
 )

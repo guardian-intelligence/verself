@@ -1,0 +1,612 @@
+---
+- name: Guardian preflight
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    guardian_remote_next: "{{ guardian_remote_repo_base }}/next"
+    guardian_remote_current: "{{ guardian_remote_repo_base }}/current"
+    guardian_remote_previous: "{{ guardian_remote_repo_base }}/previous"
+    guardian_remote_owner: "{{ ansible_user | default('ubuntu') }}"
+    guardian_remote_group: "{{ ansible_user | default('ubuntu') }}"
+    guardian_preflight_marker_path: "{{ guardian_remote_current }}/workspace/.guardian/preflight/ready.json"
+    guardian_openbao_recover: "{{ guardian_remote_current }}/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover"
+    guardian_openbao_bao: /var/lib/openbao/runtime/current/bin/bao
+    guardian_openbao_addr: https://127.0.0.1:8200
+    guardian_openbao_ca_cert: /etc/verself/openbao/ca.pem
+    guardian_preflight_artifact_manifest: "{{ guardian_preflight_work_dir }}/artifacts.txt"
+    guardian_preflight_artifact_paths:
+      - bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
+      - bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
+      - bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
+      - bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
+      - bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
+      - bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
+
+  tasks:
+    - name: Probe already healthy preflight target
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - |
+            set -eu
+            python3 - "$GUARDIAN_PREFLIGHT_MARKER" <<'PY'
+            import json
+            import os
+            import sys
+
+            if os.environ["GUARDIAN_WORKSPACE_GIT_CLEAN"] != "true":
+                raise SystemExit(20)
+            marker_path = sys.argv[1]
+            with open(marker_path, encoding="utf-8") as handle:
+                marker = json.load(handle)
+            if marker.get("resource_digest") != os.environ["GUARDIAN_RESOURCE_DIGEST"]:
+                raise SystemExit(21)
+            if marker.get("workspace_git_revision") != os.environ["GUARDIAN_WORKSPACE_GIT_REVISION"]:
+                raise SystemExit(22)
+            PY
+            systemctl is-active --quiet openbao.service
+            systemctl is-active --quiet nomad.service
+            BAO_ADDR="$GUARDIAN_OPENBAO_ADDR" BAO_CACERT="$GUARDIAN_OPENBAO_CA_CERT" "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
+            NOMAD_ADDR=http://127.0.0.1:4646 /opt/verself/profile/bin/nomad node status -self >/dev/null
+            NOMAD_ADDR=http://127.0.0.1:4646 /opt/verself/profile/bin/nomad node status -self -json | python3 -c 'import json, sys; node=json.load(sys.stdin); podman=node.get("Drivers", {}).get("podman", {}); sys.exit(0 if podman.get("Detected") and podman.get("Healthy") else 1)'
+      environment:
+        GUARDIAN_PREFLIGHT_MARKER: "{{ guardian_preflight_marker_path }}"
+        GUARDIAN_RESOURCE_DIGEST: "{{ guardian_resource_digest }}"
+        GUARDIAN_WORKSPACE_GIT_REVISION: "{{ guardian_workspace_git_revision }}"
+        GUARDIAN_WORKSPACE_GIT_CLEAN: "{{ guardian_workspace_git_clean | ternary('true', 'false') }}"
+        GUARDIAN_OPENBAO_ADDR: "{{ guardian_openbao_addr }}"
+        GUARDIAN_OPENBAO_CA_CERT: "{{ guardian_openbao_ca_cert }}"
+        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
+      register: guardian_preflight_fast_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Record preflight fast path result
+      ansible.builtin.set_fact:
+        guardian_preflight_fast_ready: "{{ guardian_preflight_fast_probe.rc == 0 }}"
+
+    - name: End preflight when root services are already healthy
+      ansible.builtin.meta: end_play
+      when: guardian_preflight_fast_ready | bool
+
+    - name: Verify substrate connection
+      ansible.builtin.ping:
+
+    - name: Verify controller rsync
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - --version
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    - name: Install host preflight packages
+      ansible.builtin.apt:
+        name:
+          - rsync=3.2.7-1ubuntu1.4
+          - podman=4.9.3+ds1-1ubuntu0.2
+        state: present
+        update_cache: true
+
+    - name: Start Podman socket
+      ansible.builtin.systemd:
+        name: podman.socket
+        enabled: true
+        state: started
+
+    - name: Remove stale next repo tree
+      ansible.builtin.file:
+        path: "{{ guardian_remote_next }}"
+        state: absent
+
+    - name: Create remote repo staging directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ guardian_remote_owner }}"
+        group: "{{ guardian_remote_group }}"
+        mode: "0755"
+      loop:
+        - "{{ guardian_remote_next }}"
+        - "{{ guardian_remote_next }}/workspace"
+        - "{{ guardian_remote_next }}/bazel-bin"
+
+    - name: Write local artifact manifest
+      ansible.builtin.copy:
+        dest: "{{ guardian_preflight_artifact_manifest }}"
+        content: "{{ guardian_preflight_artifact_paths | join('\n') }}\n"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    - name: Upload workspace
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - -a
+          - --delete
+          - --timeout=60
+          - "--filter=:- .gitignore"
+          - "--exclude=.git/"
+          - "--exclude=.guardian/"
+          - "--exclude=bazel-*"
+          - -e
+          - "{{ guardian_rsync_ssh_command }}"
+          - "{{ guardian_workspace_root }}/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_next }}/workspace/"
+      delegate_to: localhost
+      become: false
+
+    - name: Upload generated fly graph
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - -a
+          - --relative
+          - --timeout=60
+          - -e
+          - "{{ guardian_rsync_ssh_command }}"
+          - .guardian/fly/document.json
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_next }}/workspace/"
+        chdir: "{{ guardian_workspace_root }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Upload built artifacts
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - -aL
+          - --mkpath
+          - --relative
+          - "--files-from={{ guardian_preflight_artifact_manifest }}"
+          - --timeout=60
+          - -e
+          - "{{ guardian_rsync_ssh_command }}"
+          - "{{ guardian_workspace_root }}/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_next }}/"
+      delegate_to: localhost
+      become: false
+
+    - name: Verify staged fly graph exists
+      ansible.builtin.stat:
+        path: "{{ guardian_remote_next }}/workspace/.guardian/fly/document.json"
+      register: guardian_fly_graph
+
+    - name: Require staged fly graph
+      ansible.builtin.assert:
+        that:
+          - guardian_fly_graph.stat.exists
+          - guardian_fly_graph.stat.isreg
+
+    - name: Check current repo tree
+      ansible.builtin.stat:
+        path: "{{ guardian_remote_current }}"
+      register: guardian_current_tree
+
+    - name: Remove previous repo tree
+      ansible.builtin.file:
+        path: "{{ guardian_remote_previous }}"
+        state: absent
+      when: guardian_current_tree.stat.exists
+
+    - name: Preserve current repo tree
+      ansible.builtin.command:
+        argv:
+          - mv
+          - -Tf
+          - "{{ guardian_remote_current }}"
+          - "{{ guardian_remote_previous }}"
+      when: guardian_current_tree.stat.exists
+
+    - name: Promote staged repo tree
+      ansible.builtin.command:
+        argv:
+          - mv
+          - -Tf
+          - "{{ guardian_remote_next }}"
+          - "{{ guardian_remote_current }}"
+
+    - name: Verify workspace rsync checksum delta is empty
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - -a
+          - --omit-dir-times
+          - --dry-run
+          - --checksum
+          - --itemize-changes
+          - --delete
+          - --timeout=60
+          - "--filter=:- .gitignore"
+          - "--exclude=.git/"
+          - "--exclude=.guardian/"
+          - "--exclude=bazel-*"
+          - -e
+          - "{{ guardian_rsync_ssh_command }}"
+          - "{{ guardian_workspace_root }}/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_current }}/workspace/"
+      delegate_to: localhost
+      become: false
+      register: guardian_workspace_delta
+      changed_when: false
+      failed_when: guardian_workspace_delta.stdout != ""
+
+    - name: Read local fly graph digest
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - "{{ guardian_fly_document_path }}"
+      delegate_to: localhost
+      become: false
+      register: guardian_local_fly_digest
+      changed_when: false
+
+    - name: Read remote fly graph digest
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - "{{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+      register: guardian_remote_fly_digest
+      changed_when: false
+
+    - name: Verify fly graph digest
+      ansible.builtin.assert:
+        that:
+          - guardian_local_fly_digest.stdout.split()[0] == guardian_remote_fly_digest.stdout.split()[0]
+
+    - name: Verify artifact rsync checksum delta is empty
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - -aL
+          - --mkpath
+          - --dry-run
+          - --checksum
+          - --itemize-changes
+          - --relative
+          - "--files-from={{ guardian_preflight_artifact_manifest }}"
+          - --timeout=60
+          - -e
+          - "{{ guardian_rsync_ssh_command }}"
+          - "{{ guardian_workspace_root }}/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_current }}/"
+      delegate_to: localhost
+      become: false
+      register: guardian_artifact_delta
+      changed_when: false
+      failed_when: guardian_artifact_delta.stdout != ""
+
+    - name: Prepare OpenBao host integration
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_openbao_recover }}"
+          - prepare
+          - "--repo-root={{ guardian_remote_current }}"
+          - "--resource-graph={{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+          - --resource-name=openbao
+
+    - name: Configure OpenBao systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/openbao.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Verself OpenBao
+          After=network-online.target
+          Wants=network-online.target
+          Before=nomad.service
+
+          [Service]
+          Type=simple
+          User=openbao
+          Group=openbao
+          Environment=HOME=/var/lib/openbao
+          Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+          Environment=OTEL_RESOURCE_ATTRIBUTES=verself.supervisor=systemd
+          Environment=OTEL_SERVICE_NAME=openbao
+          ExecStart=/var/lib/openbao/runtime/current/bin/bao server -config=/etc/openbao/openbao.hcl
+          Restart=always
+          RestartSec=2s
+          KillSignal=SIGINT
+          LimitNOFILE=1048576
+          TasksMax=infinity
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd for OpenBao
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Ensure OpenBao service is started
+      ansible.builtin.systemd:
+        name: openbao.service
+        enabled: true
+        state: started
+
+    - name: Wait for OpenBao status endpoint
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - |
+            set -eu
+            status_file="$(mktemp)"
+            err_file="$(mktemp)"
+            trap 'rm -f "$status_file" "$err_file"' EXIT
+            set +e
+            "$GUARDIAN_OPENBAO_BAO" status -format=json >"$status_file" 2>"$err_file"
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+              cat "$err_file" >&2
+              exit "$rc"
+            fi
+            python3 -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$status_file"
+      environment:
+        BAO_ADDR: "{{ guardian_openbao_addr }}"
+        BAO_CACERT: "{{ guardian_openbao_ca_cert }}"
+        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
+      register: guardian_openbao_status
+      changed_when: false
+      until: guardian_openbao_status.rc == 0
+      retries: 60
+      delay: 1
+
+    - name: Check OpenBao root service health
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - |
+            set -eu
+            "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
+      environment:
+        BAO_ADDR: "{{ guardian_openbao_addr }}"
+        BAO_CACERT: "{{ guardian_openbao_ca_cert }}"
+        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
+      register: guardian_openbao_ready
+      changed_when: false
+      failed_when: false
+
+    - name: Recover or verify OpenBao root service
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_openbao_recover }}"
+          - recover
+          - "--repo-root={{ guardian_remote_current }}"
+          - "--resource-graph={{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+          - --resource-name=openbao
+      register: guardian_openbao_recovery
+      changed_when: false
+
+    - name: Verify OpenBao is initialized and unsealed
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - |
+            set -eu
+            "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
+      environment:
+        BAO_ADDR: "{{ guardian_openbao_addr }}"
+        BAO_CACERT: "{{ guardian_openbao_ca_cert }}"
+        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
+      changed_when: false
+
+    - name: Install Nomad runtime directory
+      ansible.builtin.file:
+        path: /opt/verself/profile
+        state: directory
+        mode: "0755"
+
+    - name: Install Nomad runtime artifact
+      ansible.builtin.unarchive:
+        src: "{{ guardian_remote_current }}/bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
+        dest: /opt/verself/profile
+        remote_src: true
+
+    - name: Create Nomad data directory
+      ansible.builtin.file:
+        path: /var/lib/nomad
+        state: directory
+        mode: "0755"
+
+    - name: Create Nomad config directory
+      ansible.builtin.file:
+        path: /etc/nomad
+        state: directory
+        mode: "0755"
+
+    - name: Configure Nomad agent
+      ansible.builtin.copy:
+        dest: /etc/nomad/nomad.hcl
+        mode: "0644"
+        content: |
+          data_dir  = "/var/lib/nomad"
+          log_level = "INFO"
+          datacenter = "iad1"
+          bind_addr = "127.0.0.1"
+          plugin_dir = "/opt/verself/profile/plugins"
+
+          ports {
+            http = 4646
+          }
+
+          advertise {
+            http = "127.0.0.1:4646"
+            rpc  = "127.0.0.1:4647"
+            serf = "127.0.0.1:4648"
+          }
+
+          server {
+            enabled          = true
+            bootstrap_expect = 1
+          }
+
+          client {
+            enabled = true
+            node_pool = "default"
+            min_dynamic_port = 20000
+            max_dynamic_port = 32000
+
+            servers = ["127.0.0.1:4647"]
+
+            host_network "loopback" {
+              cidr = "127.0.0.0/8"
+            }
+          }
+
+          consul {
+            auto_advertise   = false
+            client_auto_join = false
+            server_auto_join = false
+          }
+
+          plugin "raw_exec" {
+            config {
+              enabled = true
+            }
+          }
+
+          plugin "nomad-driver-podman" {
+            config {
+              socket_path = "unix:///run/podman/podman.sock"
+
+              volumes {
+                enabled = true
+              }
+            }
+          }
+
+          vault {
+            enabled               = true
+            address               = "https://127.0.0.1:8200"
+            ca_file               = "/etc/verself/openbao/ca.pem"
+            jwt_auth_backend_path = "jwt-nomad"
+
+            default_identity {
+              aud = ["vault.io"]
+              ttl = "1h"
+            }
+          }
+
+          telemetry {
+            collection_interval        = "10s"
+            disable_hostname           = true
+            prometheus_metrics         = true
+            publish_allocation_metrics = true
+            publish_node_metrics       = true
+          }
+
+          acl {
+            enabled = false
+          }
+
+    - name: Configure Nomad systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/nomad.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Verself Nomad
+          After=network-online.target podman.socket
+          Wants=network-online.target podman.socket
+
+          [Service]
+          Type=simple
+          ExecStart=/opt/verself/profile/bin/nomad agent -config=/etc/nomad/nomad.hcl
+          Restart=always
+          RestartSec=2s
+          KillSignal=SIGINT
+          LimitNOFILE=1048576
+          TasksMax=infinity
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Ensure Nomad agent is started
+      ansible.builtin.systemd:
+        name: nomad.service
+        enabled: true
+        state: started
+
+    - name: Wait for Nomad agent
+      ansible.builtin.command:
+        argv:
+          - /opt/verself/profile/bin/nomad
+          - node
+          - status
+          - -self
+      environment:
+        NOMAD_ADDR: http://127.0.0.1:4646
+      register: guardian_nomad_status
+      changed_when: false
+      until: guardian_nomad_status.rc == 0
+      retries: 60
+      delay: 1
+
+    - name: Wait for Nomad Podman driver
+      ansible.builtin.command:
+        argv:
+          - /opt/verself/profile/bin/nomad
+          - node
+          - status
+          - -self
+          - -json
+      environment:
+        NOMAD_ADDR: http://127.0.0.1:4646
+      register: guardian_nomad_node_json
+      changed_when: false
+      until: >
+        (guardian_nomad_node_json.stdout | from_json).Drivers.get('podman', {}).get('Detected', false)
+        and (guardian_nomad_node_json.stdout | from_json).Drivers.get('podman', {}).get('Healthy', false)
+      retries: 60
+      delay: 1
+
+    - name: Validate first recovery Nomad jobs
+      ansible.builtin.command:
+        argv:
+          - /opt/verself/profile/bin/nomad
+          - job
+          - validate
+          - "{{ guardian_remote_current }}/workspace/{{ item }}"
+      environment:
+        NOMAD_ADDR: http://127.0.0.1:4646
+      loop:
+        - src/integrations/cloudflare/control-plane/nomad.hcl
+        - src/infrastructure-components/postgresql/nomad.hcl
+      changed_when: false
+
+    - name: Create preflight marker directory
+      ansible.builtin.file:
+        path: "{{ guardian_preflight_marker_path | dirname }}"
+        state: directory
+        owner: "{{ guardian_remote_owner }}"
+        group: "{{ guardian_remote_group }}"
+        mode: "0755"
+
+    - name: Write preflight ready marker
+      ansible.builtin.copy:
+        dest: "{{ guardian_preflight_marker_path }}"
+        owner: "{{ guardian_remote_owner }}"
+        group: "{{ guardian_remote_group }}"
+        mode: "0644"
+        content: |
+          {
+            "profile": {{ guardian_profile | to_json }},
+            "resource_digest": {{ guardian_resource_digest | to_json }},
+            "workspace_git_revision": {{ guardian_workspace_git_revision | to_json }},
+            "workspace_git_clean": {{ guardian_workspace_git_clean | to_json }},
+            "nomad": "healthy",
+            "openbao": "healthy"
+          }

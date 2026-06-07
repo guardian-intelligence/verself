@@ -86,6 +86,16 @@ func TestBillingPublicBackendsUsePlainHTTP(t *testing.T) {
 	}
 }
 
+func TestDistributionServicePublicBackendUsesPlainHTTP(t *testing.T) {
+	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
+	runtimeBackend := backendBlock(t, runtimeTemplate, "backend be_route_product_distribution_api_distribution_service_public_api")
+	requireContains(t, runtimeBackend, `[[ with nomadService "distribution-service-public-http" ]]`)
+	requireContains(t, runtimeBackend, "http-request return status 404 unless distribution_allowed")
+	if strings.Contains(runtimeBackend, "proto h2") {
+		t.Fatalf("distribution-service backend is plain HTTP/1.1 until the service explicitly supports h2c")
+	}
+}
+
 func TestSourceCodeHostingPublicBackendsUsePlainHTTP(t *testing.T) {
 	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
 	for _, backend := range []string{

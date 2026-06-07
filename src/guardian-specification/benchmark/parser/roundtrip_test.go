@@ -173,6 +173,11 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 							Kind:       specdoc.KindSubstrate,
 							Name:       substrateName,
 						},
+						Preflight: specdoc.Preflight{
+							Ansible: specdoc.AnsiblePreflight{
+								Playbook: "src/guardian-specification/ansible/" + token(t, "playbook") + ".yml",
+							},
+						},
 						Nomad: specdoc.NomadRun{
 							Run: lifecycleHook(t, "nomad_run"),
 						},
@@ -182,19 +187,7 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 					APIVersion: specdoc.APISubstrate,
 					Kind:       specdoc.KindSubstrate,
 					Metadata:   specdoc.ObjectMeta{Name: substrateName},
-					Spec: specdoc.MustResourceSpec(specdoc.SubstrateSpec{
-						Access: lifecycleHook(t, "access"),
-						Upload: specdoc.Upload{
-							Run:     lifecycleHook(t, "upload_run"),
-							Extract: lifecycleHook(t, "upload_extract"),
-							Verify:  lifecycleHook(t, "upload_verify"),
-						},
-						Kernel: specdoc.Kernel{
-							OpenBaoPrepare: lifecycleHook(t, "kernel_openbao_prepare"),
-							Nomad:          lifecycleHook(t, "kernel_nomad"),
-							Verify:         lifecycleHook(t, "kernel_verify"),
-						},
-					}),
+					Spec:       specdoc.MustResourceSpec(specdoc.SubstrateSpec{}),
 				},
 				{
 					APIVersion: specdoc.APINetworking,

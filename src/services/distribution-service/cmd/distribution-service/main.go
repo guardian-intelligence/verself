@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,7 +23,6 @@ import (
 	"github.com/verself/distribution-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
 	auth "github.com/verself/service-runtime/auth"
-	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
@@ -34,29 +34,56 @@ const (
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, errors.New("usage: migrate [--resource-graph path] [--resource-name name] up")
+	}
+	runtimeCfg, err := loadDistributionRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	opts, err := parseRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadDistributionRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
@@ -69,25 +96,7 @@ func run() error {
 	}()
 	slog.SetDefault(logger)
 
-	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4280")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4281")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	trustedBuilders := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_BUILDERS"))
-	trustedSigners := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_SIGNERS"))
-	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "distribution_service")
-	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
-	if err := cfg.Err(); err != nil {
-		return err
-	}
-
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("distribution spiffe workload source: %w", err)
 	}
@@ -100,21 +109,21 @@ func run() error {
 		return err
 	}
 
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open distribution postgres: %w", err)
 	}
 	defer pg.Close()
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, runtimeCfg.ClickHouseCACertPath)
 	if err != nil {
 		return fmt.Errorf("distribution clickhouse tls: %w", err)
 	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{chAddress},
+		Addr: []string{runtimeCfg.ClickHouseAddress},
 		Auth: clickhouse.Auth{
 			Database: "verself",
-			Username: chUser,
+			Username: runtimeCfg.ClickHouseUser,
 		},
 		TLS: chTLSConfig,
 	})
@@ -132,13 +141,13 @@ func run() error {
 		Store:           distribution.SQLStore{PG: pg},
 		CH:              chConn,
 		Logger:          logger,
-		TrustedBuilders: trustedBuilders,
-		TrustedSigners:  trustedSigners,
+		TrustedBuilders: setFromList(runtimeCfg.TrustedBuilders),
+		TrustedSigners:  setFromList(runtimeCfg.TrustedSigners),
 		ReleaseVerifier: distributionreleaseattest.Verifier{
 			TrustedAKs:  map[string]distributionreleaseattest.TrustedAK{},
 			PCRPolicies: map[string]distributionreleaseattest.PCRPolicy{},
 		},
-		InstallationID: installationID,
+		InstallationID: runtimeCfg.InstallationID,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("distribution readiness: %w", err)
@@ -162,8 +171,8 @@ func run() error {
 	rootMux.HandleFunc("/recoveryz", recoveryz(svc))
 
 	publicMux := http.NewServeMux()
-	distributionapi.RegisterPublicRoutes(publicMux, distributionapi.Config{Service: svc, InstallationID: installationID})
-	authenticated := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(publicMux)
+	distributionapi.RegisterPublicRoutes(publicMux, distributionapi.Config{Service: svc, InstallationID: runtimeCfg.InstallationID})
+	authenticated := auth.Middleware(auth.Config{IssuerURL: runtimeCfg.AuthIssuerURL, Audience: runtimeCfg.AuthAudience})(publicMux)
 	rootMux.Handle("/api/v1/distribution/", publicMux)
 	rootMux.Handle("/api/", authenticated)
 	rootMux.Handle("/v2/", publicMux)
@@ -180,14 +189,14 @@ func run() error {
 		return fmt.Errorf("distribution internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	distributionapi.RegisterInternalRoutes(internalMux, distributionapi.Config{Service: svc, InstallationID: installationID})
+	distributionapi.RegisterInternalRoutes(internalMux, distributionapi.Config{Service: svc, InstallationID: runtimeCfg.InstallationID})
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("distribution internal allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, public, internal)
 }
@@ -197,7 +206,7 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 	if err != nil {
 		return nil, err
 	}
-	pgMaxConns, err := int32FromInt(maxConns, "VERSELF_PG_MAX_CONNS")
+	pgMaxConns, err := int32FromInt(maxConns, "DistributionService.spec.postgres.maxConns")
 	if err != nil {
 		return nil, err
 	}
@@ -226,9 +235,9 @@ func int32FromInt(value int, field string) (int32, error) {
 	return int32(value), nil // #nosec G115 -- value is checked against the int32 range above.
 }
 
-func setFromCSV(value string) map[string]struct{} {
+func setFromList(values []string) map[string]struct{} {
 	out := make(map[string]struct{})
-	for _, item := range strings.Split(value, ",") {
+	for _, item := range values {
 		item = strings.TrimSpace(item)
 		if item != "" {
 			out[item] = struct{}{}

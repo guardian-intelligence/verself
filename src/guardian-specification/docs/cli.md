@@ -60,14 +60,14 @@ Profiles are named contexts. There is no mutable local profile selection.
 
 `preflight` runs through substrate readiness and stops. It resolves the profile
 and referenced `Substrate`, verifies local build artifacts exist, runs the
-access and upload lifecycle hooks, materializes the repo tree on the target,
-prepares OpenBao integration inputs, and starts the Nomad executor. Preflight
-writes `.guardian/fly/document.json` before upload hooks run so component-owned
-Nomad jobs can read the graph from the materialized workspace.
+configured preflight playbook, materializes the repo tree on the target when
+needed, and verifies OpenBao, Nomad, and the Podman driver. Preflight writes
+`.guardian/fly/document.json` before upload hooks run so component-owned Nomad
+jobs can read the graph from the materialized workspace.
 
-`ready_to_fly: yes` means the access hook completed, the upload was extracted,
-the verify hook proved the materialized tree and printed a sha256 digest, and
-Nomad can run component-owned recovery jobs. Missing build artifacts, failed
+`ready_to_fly: yes` means the configured preflight playbook completed, the
+materialized tree is verified or already marked healthy, and Nomad can run
+component-owned recovery jobs. Missing build artifacts, failed
 hooks, missing verify digests, or kernel blockers produce `ready_to_fly: no`
 with stable condition reasons.
 

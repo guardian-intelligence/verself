@@ -9,9 +9,9 @@ consecutive submissions do not create unexpected allocation churn.
 
 | Component | CRD | Current State | Blocking Conditions | Dependencies Needed For Convergence |
 | --- | --- | --- | --- | --- |
-| Substrate preflight | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
-| Nomad runtime | component bootstrap machinery | Converged | None | Materialized repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
-| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
+| Substrate preflight | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, Ansible preflight playbook |
+| Nomad runtime | component bootstrap machinery | Converged | None | Materialized repo, pinned Nomad runtime artifact, root access for systemd and host config |
+| OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Preflight root-service bootstrap converges fresh destructive init | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
 | SPIRE | `spire.guardianintelligence.org/v1alpha1/SPIRECluster/spire` | Converged on latest gamma run | None in current gamma state | Materialized SPIRE runtime artifact, identity registry artifact, server/agent sockets, join-token attestation, `spire_workload` socket group |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | Day-2 graph-only route changes currently require an allocation restart because the route graph is rendered in the setup prestart task; fresh recovery from a wiped host converges | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
@@ -57,14 +57,14 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   and verified upload digest
   `sha256:278ce8bd45884cbf383485e9afd5ab0481358ae554bac85a82151ae54f2c6cb1`;
 - `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue --stream`
-  completed the OpenBao hook with resource graph digest
+  completed the first post-root Nomad hook with resource graph digest
   `sha256:d6e02f174a4c08fd0520880ecbf3d266ed80328a1d0c2bbec5a045dc9eb9b809`
   and upload digest
   `sha256:55aa8b88e22872a668beb10c881044d5aa7da9e4939cb4f8523fc433f81286cd`;
-- OpenBao reported `OpenBaoRecoveryComplete=True` after reconciling both
-  Nomad JWT auth and the new SPIFFE JWT auth mount sourced from the local
-  SPIRE bundle; this fixed the previous secrets-service `403` when resolving
-  billing runtime Stripe secrets;
+- OpenBao is now a preflight root service. Its baseline reconciles only
+  OpenBao mounts, policies, and Nomad JWT auth; SPIRE-backed OpenBao auth is a
+  downstream service concern because SPIRE is not a root-service preflight
+  prerequisite;
 - billing-service deployment `c605b89b` is successful with allocations
   `23e3bfc5` and `faba3c77` running and healthy;
 - Nomad reports `billing-public-http` on `127.0.0.1:31540` and
@@ -80,11 +80,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - billing-service then failed at startup with
   `read runtime secret billing-service.stripe.secret_key: status 403`.
   The root cause was not billing's SPIFFE allowlist; secrets-service accepted
-  the billing caller but then logged into OpenBao as `secrets-runtime-read`,
-  and OpenBao did not declare the `spiffe-jwt` auth mount or
-  `secrets-runtime-read/write` roles. OpenBao now reconciles a generic
-  `jwtAuths` list and derives SPIFFE JWT validation keys from the local SPIRE
-  bundle;
+  the billing caller but then logged into OpenBao through SPIRE-backed auth
+  that is no longer part of the root-service baseline. That downstream
+  reconciliation belongs to the SPIRE/secrets-service recovery slice;
 - HAProxy initially returned a proxy `404` for
   `billing.api.gamma.verself.sh` because the `HAProxyGateway` CRD did not
   declare the billing route or certificate SAN, even though the backend and
@@ -123,7 +121,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - profile-service previously had no CRD/runtime recovery path and still used
   `verself-artifact://profile-service` plus `__VERSELF_*`/PG env injection.
   The service now loads static config from the `ProfileService` CRD, installs
-  its boarded binary through a hidden `recover` command, projects the Guardian
+  its materialized binary through a hidden `recover` command, projects the Guardian
   graph into `/run/verself/recovery/profile-service/document.json`, and runs
   migrations from the CRD Postgres DSN;
 - current preflight after the projects-service slice reported
@@ -158,7 +156,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - projects-service initially had no CRD/runtime recovery path and still used
   `verself-artifact://projects-service` plus `__VERSELF_*`/PG env injection.
   The service now loads static config from the `ProjectsService` CRD, installs
-  its boarded binary through a hidden `recover` command, projects the Guardian
+  its materialized binary through a hidden `recover` command, projects the Guardian
   graph into `/run/verself/recovery/projects-service/document.json`, and runs
   migrations from the CRD Postgres DSN;
 - HAProxy initially returned a proxy `404` for
@@ -175,9 +173,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   and verified upload digest
   `sha256:21ca562bb7a6dab3493e36c46800dda76bb6919a01820f68cc820914df74d4bf`;
 - `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue --stream`
-  completed the OpenBao hook after the governance-service CRD changes.
-  OpenBao reported `OpenBaoRecoveryComplete=True` with baseline mounts,
-  policies, auth, and generated secrets reconciled;
+  completed the first post-root Nomad hook after the governance-service CRD
+  changes. OpenBao now converges during preflight as a root service before
+  component-owned Nomad jobs run;
 - PostgreSQL reported the new `governance_service`, `billing`, and
   `sandbox_rental` databases and login roles before governance-service was
   submitted;
@@ -200,7 +198,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - governance-service previously had no CRD/runtime recovery path and still used
   `verself-artifact://governance-service` plus `__VERSELF_*`/PG env injection.
   The service now loads static config from the `GovernanceService` CRD,
-  installs its boarded binary through a hidden `recover` command, projects the
+  installs its materialized binary through a hidden `recover` command, projects the
   Guardian graph into
   `/run/verself/recovery/governance-service/document.json`, and runs migrations
   from the CRD Postgres DSN;
@@ -210,7 +208,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   and verified upload digest
   `sha256:2f79b62b4604d77593b7e8acb6f0faae2f4e7cc493fe25801ad1c55d23e22c36`;
 - `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue --stream`
-  currently runs preflight and the OpenBao Nomad hook only. ClickHouse was
+  currently runs preflight and the first post-root Nomad hook. ClickHouse was
   verified by submitting its component-owned Nomad job directly after preflight;
 - ClickHouse originally stalled because allocation `4c0f7962` had a dead
   `monitor` task. The underlying dependency was operator SPIFFE SVID
@@ -260,7 +258,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   cause was OpenBao baseline reconciliation crashing on an invalid
   `SecretPath` graph value, `zitadel.admin_password.generate.encoding:
   "password"`. The graph now uses `alphanumeric`, OpenBao runtime artifacts were
-  rebuilt and boarded, and the reconciler applied the new role;
+  rebuilt and materialized, and the reconciler applied the new role;
 - current preflight after the secrets-service slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:d78dda3972963c4a6987ce7f5a4f85f5c608a2005c40e7cd5cfa685a89964a09`,
@@ -283,7 +281,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `verself-artifact://secrets-service` stanza, then on a missing OpenBao
   `secrets-service-runtime` Nomad JWT role, then on a stale OpenBao reconcile
   loop that had loaded the previous resource graph once at process start. The
-  OpenBao reconcile sidecar now reloads the boarded graph on each loop
+  OpenBao reconcile sidecar now reloads the materialized graph on each loop
   iteration before reconciling baseline roles;
 - the final secrets-service blockers were local to the component job: the
   template destination was `secrets/auth-audience` while the CRD-referenced
@@ -316,7 +314,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - deployment-service initially blocked on PostgreSQL peer auth because the
   PostgreSQL reconciler was operating from a stale projected resource graph
   without the `deployment_service` peer mapping. The PostgreSQL sidecar now
-  projects the current boarded graph, rewrites `pg_hba.conf` and
+  projects the current materialized graph, rewrites `pg_hba.conf` and
   `pg_ident.conf`, reloads PostgreSQL, and reconciles the declared database and
   role set;
 - deployment-service then blocked because the runtime had no `git` in PATH.
@@ -331,9 +329,10 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `sha256:096e2129fd26d529d229fc83a51c2c11cb50410aca9c12bbff037f3a9ff828e8`,
   and verified upload digest
   `sha256:c86703aa8d9a80cb9b1270df818a9425bb8f212c0a5b1887ec4ff0f9cefe47d8`;
-- `guardian fly` still runs the OpenBao hook only; HAProxy/IAM convergence in
-  this slice was completed by submitting/restarting the repo-owned Nomad jobs
-  from the boarded tree after preflight verified the graph;
+- `guardian fly` submitted the first post-root Nomad hook only; HAProxy/IAM
+  convergence in this slice was completed by submitting/restarting the
+  repo-owned Nomad jobs from the materialized tree after preflight verified the
+  graph;
 - HAProxy deployment `3ff78b7f` is successful, allocation `13b16d9d` is
   running, and generated route ACLs now route
   `/.well-known/openid-configuration`, `/oauth/v2/`, `/oidc/v1/`, `/ui/`, and
@@ -361,19 +360,17 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   the GitHub IDP secret, so IAM starts without GitHub login enabled instead of
   treating that provider-specific input as a hard bootstrap dependency;
 - `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json
-  --stream` materialized gamma and submitted the OpenBao Nomad job;
+  --stream` materialized gamma and submitted the first post-root Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
   `sha256:857c4210c721bd9c2f87706897432cd595e5aa7be861ffa545d27c9048e35b0d`;
 - latest verified upload digest:
   `sha256:12b082d4c164a8b4d24089f42f5f5d2d1e84c896dff5f7a64308dd6d97b2d6b4`;
-- preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
-  validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
-  OpenBao during preflight;
-- Nomad reports `openbao` status `running`, deployment `successful`, one
-  healthy allocation, and no failed allocations;
-- allocation task states: `setup` and `recover` exited `0`; `server` remains
-  running;
+- preflight prepared `/etc/verself/openbao/ca.pem`, started OpenBao as a
+  systemd root service, started Nomad 1.11.3, and validated Cloudflare and
+  PostgreSQL Nomad jobs;
+- systemd reports `openbao.service` active and `bao status -format=json`
+  reports initialized and unsealed;
 - `/run/verself/recovery/openbao/report.json` reports
   `OpenBaoRecoveryComplete=True/Recovered`;
 - OpenBao evidence from the report: version `2.5.2`, Shamir seal, threshold
@@ -400,7 +397,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   the pgBackRest `--process-max` option to a command that does not accept it;
 - `postgresql-recovery` now only passes `--process-max` to pgBackRest backup
   and restore actions;
-- after re-boarding the rebuilt PostgreSQL runtime, the `postgresql` Nomad job
+- after re-running preflight the rebuilt PostgreSQL runtime, the `postgresql` Nomad job
   deployed successfully with one healthy allocation;
 - `/run/verself/recovery/postgresql/report.json` reports `status: healthy`,
   `backup_status: initial_full_backup_created`, port `5432`, socket dir
@@ -413,7 +410,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - service Unix accounts such as `object_storage_service` are intentionally
   component-owned, so direct peer-auth smoke tests must run after the owning
   service recovery task creates its local account;
-- SPIRE recovery converged from the boarded runtime and identity registry
+- SPIRE recovery converged from the materialized runtime and identity registry
   artifacts: Nomad deployment `795e0807` completed successfully, allocation
   `1b1890c9` is running, and `/run/verself/recovery/spire/report.json` reports
   `SPIRERecoveryComplete=True`;
@@ -421,9 +418,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `/run/spire-agent/sockets/agent.sock` is owned by `root:spire_workload` with
   mode `0770`;
 - the first nftables submission in the latest run failed before starting
-  because the boarded artifact set omitted the direct `nftables-apply` batch
+  because the preflight artifact manifest omitted the direct `nftables-apply` batch
   binary and `nftables-runtime.tar`;
-- after adding those artifacts to board upload and verify, `nftables`
+- after adding those artifacts to preflight artifact, `nftables`
   allocation `a6a5a315` completed with exit code `0`;
 - local and remote nftables artifact hashes matched:
   runtime `sha256:6c1c11dad7fa2e20a653501dd2c366f71d16c8029f83cc56cf59a05031d52506`
@@ -436,10 +433,10 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   Firecracker TAP allowances;
 - live `nft list table inet verself_nomad` blocks non-loopback access to Nomad
   port `4646`;
-- the first NATS submission failed before starting because the boarded artifact
+- the first NATS submission failed before starting because the preflight artifact
   set omitted the direct `nats-recover` prestart binary and
   `nats-runtime.tar`;
-- after adding those artifacts to board upload and verify, `nats` deployment
+- after adding those artifacts to preflight artifact, `nats` deployment
   `314aed26` completed successfully with allocation `6f5326d7` running and
   healthy;
 - `/run/verself/recovery/nats/report.json` reports
@@ -451,9 +448,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   NATS `2.12.7` with JetStream enabled, and the server is listening on
   `127.0.0.1:4222` and `127.0.0.1:8222`;
 - the first Nomad Observer submission in the latest run failed before starting
-  because the boarded artifact set omitted the direct `nomad-observer`
+  because the preflight artifact manifest omitted the direct `nomad-observer`
   prestart binary and `nomad-observer.tar`;
-- after adding those artifacts to board upload and verify, `nomad-observer`
+- after adding those artifacts to preflight artifact, `nomad-observer`
   deployment `925054c6` completed successfully with allocation `69c490b8`
   running and healthy;
 - `/run/verself/recovery/nomad-observer/report.json` reports
@@ -464,9 +461,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - ClickHouse `verself.fleet_nodes` contains live projection rows from Nomad
   Observer, with latest `observed_at` `2026-06-07 01:36:07.765`;
 - the first OTel Collector submission in the latest run failed before starting
-  because the boarded artifact set omitted the direct `otelcol-recover`
+  because the preflight artifact manifest omitted the direct `otelcol-recover`
   prestart binary plus `otelcol-runtime.tar` and `otelcol-config.tar`;
-- after adding those artifacts to board upload and verify, `otelcol`
+- after adding those artifacts to preflight artifact, `otelcol`
   deployment `94e7da8f` completed successfully with allocation `930deba3`
   running and healthy;
 - `/run/verself/recovery/otelcol/report.json` reports
@@ -491,9 +488,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `2026-06-07 01:46:43.793246253`, and `default.otel_traces` had `470` rows
   with max `Timestamp` `2026-06-07 01:46:44.806890316`;
 - the first Forgejo submission in the latest run failed before starting because
-  the boarded artifact set omitted the direct `forgejo-recover` prestart binary
+  the preflight artifact manifest omitted the direct `forgejo-recover` prestart binary
   and `forgejo-runtime.tar`;
-- after adding those artifacts to board upload and verify, `forgejo`
+- after adding those artifacts to preflight artifact, `forgejo`
   deployment `afc49cf6` completed successfully with allocation `eb35c7e8`
   running and healthy;
 - `/run/verself/recovery/forgejo/report.json` reports
@@ -509,9 +506,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Forgejo `recover` and `automation-token` tasks exited `0`, the `server` task
   remains running, and task stderr tails were empty;
 - the first Stalwart submission in the latest run failed before starting
-  because the boarded artifact set omitted the direct `stalwart-recover`
+  because the preflight artifact manifest omitted the direct `stalwart-recover`
   prestart binary and `stalwart-runtime.tar`;
-- after adding those artifacts to board upload and verify, `stalwart`
+- after adding those artifacts to preflight artifact, `stalwart`
   deployment `e219ed1d` completed successfully with allocation `0e966a50`
   running and healthy;
 - `/run/verself/recovery/stalwart/report.json` reports
@@ -525,9 +522,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   HTTP on `127.0.0.1:8090` returned `200 OK`, SMTP listens on
   `127.0.0.1:25`, and task stderr tails were empty;
 - the first Electric containerd submission in the latest run failed before
-  starting because the boarded artifact set omitted the direct
+  starting because the preflight artifact manifest omitted the direct
   `electric-recover` prestart binary and `electric-runtime.tar`;
-- after adding those artifacts to board upload and verify, and making the local
+- after adding those artifacts to preflight artifact, and making the local
   PostgreSQL connection string explicit with `sslmode=disable`, Electric
   containerd deployment `b8383ba9` completed successfully with allocation
   `65f25886` running and healthy;
@@ -547,9 +544,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `notifications`, and `iam` without the previous PostgreSQL SSL fallback
   errors;
 - the first Temporal submission in the latest run failed before starting
-  because the boarded artifact set omitted the direct `temporal-recover`
+  because the preflight artifact manifest omitted the direct `temporal-recover`
   prestart binary and `temporal-runtime.tar`;
-- after adding those artifacts to board upload and verify, `temporal`
+- after adding those artifacts to preflight artifact, `temporal`
   deployment `ac94c216` completed successfully with allocation `31b878b3`
   running and healthy;
 - `/run/verself/recovery/temporal/report.json` reports runtime digest
@@ -576,7 +573,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - after SPIRE recovery and the object-storage setup repair, object-storage
   setup exits `0` and repairs `object_storage_service` to uid `960`, primary
   group `object_storage_service`;
-- ClickHouse recovery converged from the boarded runtime artifact: Nomad
+- ClickHouse recovery converged from the materialized runtime artifact: Nomad
   deployment `82b331f1` completed successfully, allocation `70eec273` is
   running, and `/run/verself/recovery/clickhouse/report.json` reports
   `ClickHouseRecoveryComplete=True` and `ClickHouseMonitorHealthy=True`;
@@ -595,7 +592,7 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - OpenBao now supports generated `SecretPath` encoding `password`, validates
   existing generated values against the declared generator, and repairs stale
   invalid generated values;
-- after a one-shot OpenBao baseline reconcile with the newly boarded
+- after a one-shot OpenBao baseline reconcile with the newly materialized
   `openbao-recover` binary, the Zitadel admin password was repaired without
   printing or persisting the plaintext value outside OpenBao;
 - `zitadel` deployment `3d8272a9` completed successfully with allocation
@@ -609,23 +606,23 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - object-storage R2 readiness now checks the declared deployment-artifacts
   provider bucket with `HEAD` instead of requiring account-wide ListBuckets-like
   access;
-- after re-boarding the rebuilt object-storage artifact,
+- after re-running preflight the rebuilt object-storage artifact,
   `object-storage-service` deployment `4434cf34` completed successfully with
   admin allocation `c6ff8184` and S3 allocations `5e30ae93` and `fe399014`
   running and healthy;
 - HAProxy certificate material exists for `gamma.verself.sh` and
   `gamma.guardianintelligence.org`, but the first HAProxy retry failed because
-  the boarded artifact set omitted
+  the preflight artifact manifest omitted
   `bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar`;
-- after adding the HAProxy runtime tar to the board upload and verify lists,
+- after adding the HAProxy runtime tar to the preflight artifact lists,
   `haproxy-upstreams` deployment `57a009aa` completed successfully with
   allocation `bf6df579` running and healthy;
 - local HTTPS readiness checks through HAProxy returned `guardian haproxy ready`
   for both `gamma.verself.sh` and `gamma.guardianintelligence.org`;
-- the first TigerBeetle submission would have failed because the boarded
+- the first TigerBeetle submission would have failed because the materialized
   artifact set omitted `tigerbeetle-runtime.tar` and the direct
   `tigerbeetle-recover` binary used by the Nomad prestart task;
-- after adding those artifacts to board upload and verify, `tigerbeetle`
+- after adding those artifacts to preflight artifact, `tigerbeetle`
   deployment `f22030e4` completed successfully with allocation `7ac4b7e6`
   running and healthy;
 - `/run/verself/recovery/tigerbeetle/report.json` reports
@@ -635,9 +632,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `sha256:b2de1f8e1aca0d5b889ab08299faec57bcf5f4915c03f8f229bb521eacc2a47e`;
 - Nomad reports `tigerbeetle-client-tcp` as `success`, and the server is
   listening on `127.0.0.1:3320`;
-- the first Zot submission failed before starting because the boarded artifact
+- the first Zot submission failed before starting because the preflight artifact
   set omitted the direct `zot-recover` prestart binary and `zot-runtime.tar`;
-- after adding those artifacts to board upload and verify, `zot` deployment
+- after adding those artifacts to preflight artifact, `zot` deployment
   `681628a7` completed successfully with allocation `3cb064c4` running and
   healthy;
 - `/run/verself/recovery/zot/report.json` reports `ZotRuntimeInstalled=True`,
@@ -648,10 +645,10 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Nomad reports the `zot-registry-v2` check as `success`, `/v2/` returns
   `200 OK` with `Docker-Distribution-Api-Version: registry/2.0`, and the
   server is listening on `127.0.0.1:5080`;
-- the first Verdaccio submission failed before starting because the boarded
+- the first Verdaccio submission failed before starting because the materialized
   artifact set omitted the direct `verdaccio-recover` prestart binary and
   `verdaccio-runtime.tar`;
-- after adding those artifacts to board upload and verify, `verdaccio`
+- after adding those artifacts to preflight artifact, `verdaccio`
   deployment `5c66813a` completed successfully with allocation `773c8c89`
   running and healthy;
 - `/run/verself/recovery/verdaccio/report.json` reports
@@ -661,10 +658,10 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `sha256:3b513acb3b3eeb9fe0ddf3ee2967eae224b40e8e76c7628354637d53350cca8e`;
 - Nomad reports the `verdaccio-http-ping` check as `success`, `/-/ping`
   returns `200 OK`, and the server is listening on `127.0.0.1:4873`;
-- the first SpiceDB submission failed before starting because the boarded
+- the first SpiceDB submission failed before starting because the materialized
   artifact set omitted the direct `spicedb-recover` prestart binary and
   `spicedb-runtime.tar`;
-- after adding those artifacts to board upload and verify, `spicedb` deployment
+- after adding those artifacts to preflight artifact, `spicedb` deployment
   `8a3350ea` completed successfully with allocation `79d54723` running and
   healthy;
 - `/run/verself/recovery/spicedb/report.json` reports
@@ -675,10 +672,10 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Nomad reports `spicedb-grpc-tcp` and `spicedb-metrics-http` as `success`,
   the metrics endpoint responds on `127.0.0.1:21702`, and gRPC listens on
   `127.0.0.1:24640`;
-- the first Grafana submission failed before starting because the boarded
+- the first Grafana submission failed before starting because the materialized
   artifact set omitted the direct `grafana-recover` prestart binary and
   `grafana-runtime.tar`;
-- after adding those artifacts to board upload and verify, `grafana` deployment
+- after adding those artifacts to preflight artifact, `grafana` deployment
   `9b403dc4` completed successfully with allocation `7bacadac` running and
   healthy;
 - `/run/verself/recovery/grafana/report.json` reports
@@ -704,14 +701,14 @@ Previous observed results:
 - the materialized repo contains `.guardian/fly/document.json` with OpenBao,
   PostgreSQL, ClickHouse, nftables, NATS, Nomad Observer, OTel Collector,
   Cloudflare, HAProxy, object-storage, substrate, and public-origin resources;
-- remote Nomad validation succeeds for OpenBao, PostgreSQL, ClickHouse,
-  nftables, NATS, Nomad Observer, OTel Collector, HAProxy, Cloudflare, and
-  object-storage job files;
+- remote Nomad validation succeeds for PostgreSQL, ClickHouse, nftables, NATS,
+  Nomad Observer, OTel Collector, HAProxy, Cloudflare, and object-storage job
+  files;
 - Nomad is running and reachable on gamma;
 - current OpenBao live state is initialized, unsealed, and running the previous
   baseline;
-- updated OpenBao, Cloudflare, and PostgreSQL jobs pass remote Nomad planning
-  against gamma;
+- updated Cloudflare and PostgreSQL jobs pass remote Nomad planning against
+  gamma;
 - the next destructive OpenBao drill should wipe the Raft data directory before
   starting the control loop, initialize fresh, encrypt only unseal shares for
   operators, unseal from in-memory shares, reconcile baseline with the
@@ -898,10 +895,10 @@ Previous observed results:
 Evidence commands:
 
 ```sh
-ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default openbao'
+ssh -T ubuntu@206.223.228.87 'sudo systemctl status openbao --no-pager'
+ssh -T ubuntu@206.223.228.87 'BAO_ADDR=https://127.0.0.1:8200 BAO_CACERT=/etc/verself/openbao/ca.pem /var/lib/openbao/runtime/current/bin/bao status -format=json'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default cloudflare-integration-recovery'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default haproxy-upstreams'
-ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/haproxy/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nftables/nomad.hcl'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job validate -address=http://127.0.0.1:4646 -namespace=default /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/nats/nomad.hcl'

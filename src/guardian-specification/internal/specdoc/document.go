@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strings"
 )
 
@@ -46,14 +47,12 @@ type ResourceSpec map[string]any
 
 type FlyProcedureSpec struct {
 	SubstrateRef ObjectRef `json:"substrateRef,omitempty" yaml:"substrateRef,omitempty" toml:"substrateRef,omitempty" toon:"substrateRef,omitempty"`
+	Preflight    Preflight `json:"preflight,omitempty" yaml:"preflight,omitempty" toml:"preflight,omitempty" toon:"preflight,omitempty"`
 	Nomad        NomadRun  `json:"nomad,omitempty" yaml:"nomad,omitempty" toml:"nomad,omitempty" toon:"nomad,omitempty"`
 }
 
 type SubstrateSpec struct {
-	Access LifecycleHook `json:"access,omitempty" yaml:"access,omitempty" toml:"access,omitempty" toon:"access,omitempty"`
-	Upload Upload        `json:"upload,omitempty" yaml:"upload,omitempty" toml:"upload,omitempty" toon:"upload,omitempty"`
-	Kernel Kernel        `json:"kernel,omitempty" yaml:"kernel,omitempty" toml:"kernel,omitempty" toon:"kernel,omitempty"`
-	Remote Remote        `json:"remote,omitempty" yaml:"remote,omitempty" toml:"remote,omitempty" toon:"remote,omitempty"`
+	Remote Remote `json:"remote,omitempty" yaml:"remote,omitempty" toml:"remote,omitempty" toon:"remote,omitempty"`
 }
 
 type PublicOriginSpec struct {
@@ -64,20 +63,16 @@ type LifecycleHook struct {
 	Argv []string `json:"argv,omitempty" yaml:"argv,omitempty" toml:"argv,omitempty" toon:"argv,omitempty"`
 }
 
+type Preflight struct {
+	Ansible AnsiblePreflight `json:"ansible,omitempty" yaml:"ansible,omitempty" toml:"ansible,omitempty" toon:"ansible,omitempty"`
+}
+
+type AnsiblePreflight struct {
+	Playbook string `json:"playbook,omitempty" yaml:"playbook,omitempty" toml:"playbook,omitempty" toon:"playbook,omitempty"`
+}
+
 type NomadRun struct {
 	Run LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
-}
-
-type Kernel struct {
-	OpenBaoPrepare LifecycleHook `json:"openbaoPrepare,omitempty" yaml:"openbaoPrepare,omitempty" toml:"openbaoPrepare,omitempty" toon:"openbaoPrepare,omitempty"`
-	Nomad          LifecycleHook `json:"nomad,omitempty" yaml:"nomad,omitempty" toml:"nomad,omitempty" toon:"nomad,omitempty"`
-	Verify         LifecycleHook `json:"verify,omitempty" yaml:"verify,omitempty" toml:"verify,omitempty" toon:"verify,omitempty"`
-}
-
-type Upload struct {
-	Run     LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
-	Extract LifecycleHook `json:"extract,omitempty" yaml:"extract,omitempty" toml:"extract,omitempty" toon:"extract,omitempty"`
-	Verify  LifecycleHook `json:"verify,omitempty" yaml:"verify,omitempty" toml:"verify,omitempty" toon:"verify,omitempty"`
 }
 
 type Remote struct {
@@ -208,31 +203,13 @@ func validateResourceSpec(resource Resource) error {
 		if err := requireKindRef("spec.substrateRef", spec.SubstrateRef, APISubstrate, KindSubstrate); err != nil {
 			return err
 		}
+		if err := validatePreflight("spec.preflight", spec.Preflight); err != nil {
+			return err
+		}
 		return validateHook("spec.nomad.run", spec.Nomad.Run)
 	case APISubstrate + "/" + KindSubstrate:
 		spec, err := DecodeResourceSpec[SubstrateSpec](resource.Spec)
 		if err != nil {
-			return err
-		}
-		if err := validateHook("spec.access", spec.Access); err != nil {
-			return err
-		}
-		if err := validateHook("spec.upload.run", spec.Upload.Run); err != nil {
-			return err
-		}
-		if err := validateHook("spec.upload.extract", spec.Upload.Extract); err != nil {
-			return err
-		}
-		if err := validateHook("spec.upload.verify", spec.Upload.Verify); err != nil {
-			return err
-		}
-		if err := validateHook("spec.kernel.openbaoPrepare", spec.Kernel.OpenBaoPrepare); err != nil {
-			return err
-		}
-		if err := validateHook("spec.kernel.nomad", spec.Kernel.Nomad); err != nil {
-			return err
-		}
-		if err := validateHook("spec.kernel.verify", spec.Kernel.Verify); err != nil {
 			return err
 		}
 		return validateRemote("spec.remote", spec.Remote)
@@ -245,6 +222,20 @@ func validateResourceSpec(resource Resource) error {
 	default:
 		return nil
 	}
+}
+
+func validatePreflight(name string, preflight Preflight) error {
+	playbook := strings.TrimSpace(preflight.Ansible.Playbook)
+	if playbook == "" {
+		return fmt.Errorf("%s.ansible.playbook is required", name)
+	}
+	if filepath.IsAbs(playbook) {
+		return fmt.Errorf("%s.ansible.playbook must be workspace-relative", name)
+	}
+	if strings.Contains(playbook, "\x00") {
+		return fmt.Errorf("%s.ansible.playbook contains a NUL byte", name)
+	}
+	return nil
 }
 
 func ResourceSpecFrom(value any) (ResourceSpec, error) {

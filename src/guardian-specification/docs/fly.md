@@ -39,7 +39,7 @@ resources:
             - ssh
             - -T
             - ubuntu@206.223.228.87
-            - nomad job run -detach /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
+            - nomad job run -detach /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl
 
   - apiVersion: networking.guardianintelligence.org/v1alpha1
     kind: PublicOrigin
@@ -50,8 +50,9 @@ resources:
 ```
 
 The base graph describes shared inputs. Runtime execution details live in
-component-owned Nomad job files. OpenBao defines how to install, restore,
-unseal, and reconcile the root-of-trust store. Edge components define how
+preflight for root services and in component-owned Nomad job files for
+post-root services. OpenBao defines how to install, restore, unseal, and
+reconcile the root-of-trust store during preflight. Edge components define how
 public origins become listener, certificate, and backend state.
 
 The graph contains component CRDs. If a field describes an action such as
@@ -73,13 +74,12 @@ Nomad job. Owner job files use lifecycle tasks to install runtime artifacts,
 restore or initialize state, reconcile configuration, and block loudly when
 external authority is missing.
 
-On a wiped node, preflight prepares OpenBao before Nomad starts. The
+On a wiped node, preflight prepares and starts OpenBao before Nomad starts. The
 `openbao-recover prepare` hook installs the repo-built OpenBao runtime, writes
-host-local config, and creates the CA file Nomad needs for Vault integration
-without initializing or unsealing OpenBao. Nomad recovery then starts the
-single-node agent once with Vault integration already configured. After that,
-`fly` submits the OpenBao Nomad job and later Vault-backed jobs can validate
-against the same stable Nomad agent.
+host-local config, and creates the CA file Nomad needs for Vault integration.
+Preflight then starts OpenBao as a systemd root service, runs one bounded
+OpenBao recovery pass, starts the single-node Nomad agent, and verifies the
+Podman driver. After that, `fly` submits post-root Nomad jobs.
 
 OpenBao recovery reports concrete component blockers when it cannot continue.
 Examples include missing Shamir unseal quorum, unavailable auto-unseal backing

@@ -1,25 +1,18 @@
 # Nomad Recovery Contract
 
-Nomad is the executor boundary for recovery and deployment. Guardian boarding
-delivers the pinned `:runtime_artifact` and `nomad-recover` binary to the
-target through the boarded repo. `nomad-recover` installs the runtime, writes
-the host-local agent config, starts the systemd unit, and waits for the local
-agent API.
+Nomad is the executor boundary for recovery and deployment. The Nomad
+component owns the pinned Nomad binary and runtime artifact. Guardian preflight
+materializes that artifact on the target and starts the single-node agent
+before `guardian fly` submits component-owned jobs.
 
-On a wiped host, Guardian boarding prepares OpenBao before Nomad starts.
-`openbao-recover prepare` installs the OpenBao runtime, host directories,
-config, and `/etc/verself/openbao/ca.pem` without initializing or unsealing the
-store. `nomad-recover` then starts the local single-node agent once, with Vault
-integration already present in the generated config.
+On a wiped host, preflight prepares and starts OpenBao as a systemd root
+service before Nomad starts. Nomad is then configured with OpenBao integration
+inputs already present, and `guardian fly` submits component-owned Nomad jobs
+after both root services are healthy.
 
-OpenBao itself is then submitted as a component-owned Nomad job. Its recovery
-task initializes, restores, unseals, reconciles, or reports concrete blockers
-without forcing another Nomad agent restart.
-
-This component owns the Nomad binary pin and bootstrap defaults. The current
-alpha slice publishes no Guardian CRD for Nomad. Add a component CRD when
-Nomad has static configuration that no longer fits in `nomad-recover` defaults
-or the component job files.
+The current alpha slice publishes no Guardian CRD for Nomad. Add a component
+CRD only when Nomad has static configuration that no longer fits the preflight
+playbook and Nomad-owned job files.
 
 Product rollout ordering and service-specific bootstrap belong to deployable
 components through their Nomad jobs.

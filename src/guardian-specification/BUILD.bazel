@@ -35,3 +35,11 @@ filegroup(
     ]),
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "ansible",
+    srcs = glob([
+        "ansible/**/*.yml",
+    ]),
+    visibility = ["//visibility:public"],
+)

@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -48,6 +49,7 @@ const (
 
 	baselineReconcileRetryWindow = 60 * time.Second
 	baselineReconcileRetryDelay  = 1 * time.Second
+	baselineDigestEvidenceKey    = "baseline_digest"
 )
 
 type config struct {
@@ -347,7 +349,7 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		pgpKeyDir:    "/run/verself/recovery/openbao/pgp",
 	}
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.StringVar(&cfg.repoRoot, "repo-root", cfg.repoRoot, "boarded repo root")
+	fs.StringVar(&cfg.repoRoot, "repo-root", cfg.repoRoot, "materialized repo root")
 	fs.StringVar(&cfg.runtimeRoot, "runtime-root", cfg.runtimeRoot, "OpenBao runtime root")
 	fs.StringVar(&cfg.dataDir, "data-dir", cfg.dataDir, "OpenBao Raft data directory")
 	fs.StringVar(&cfg.configPath, "config", cfg.configPath, "OpenBao config path")
@@ -791,6 +793,20 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	switch classify(status) {
 	case "InitializedUnsealed":
 		if cfg.baseline.Reconcile && !baselineAuthorityConfigured(cfg) {
+			if digest, ok, err := previousBaselineEvidenceCurrent(cfg); err != nil {
+				rep.Conditions = append(rep.Conditions,
+					conditionFalse("OpenBaoBaselineReconciled", "BaselineEvidenceUnreadable", "openbao", err.Error()),
+					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+				)
+				return rep
+			} else if ok {
+				setEvidence(&rep, baselineDigestEvidenceKey, digest)
+				rep.Conditions = append(rep.Conditions,
+					conditionTrue("OpenBaoBaselineReconciled", "BaselineEvidenceCurrent", "openbao", "previous recovery evidence matches the current baseline"),
+					conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is initialized, unsealed, and baseline evidence is current"),
+				)
+				return rep
+			}
 			rep.Conditions = append(rep.Conditions,
 				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
 				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
@@ -870,6 +886,22 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		rep.Evidence = statusEvidence(status)
 		if cfg.baseline.Reconcile {
 			rep.Conditions = append(rep.Conditions, conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"))
+			if !baselineAuthorityConfigured(cfg) {
+				if digest, ok, err := previousBaselineEvidenceCurrent(cfg); err != nil {
+					rep.Conditions = append(rep.Conditions,
+						conditionFalse("OpenBaoBaselineReconciled", "BaselineEvidenceUnreadable", "openbao", err.Error()),
+						conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
+					)
+					return rep
+				} else if ok {
+					setEvidence(&rep, baselineDigestEvidenceKey, digest)
+					rep.Conditions = append(rep.Conditions,
+						conditionTrue("OpenBaoBaselineReconciled", "BaselineEvidenceCurrent", "openbao", "previous recovery evidence matches the current baseline"),
+						conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is initialized, unsealed, and baseline evidence is current"),
+					)
+					return rep
+				}
+			}
 			if cfg.breakglassGenerateRootStdin {
 				token, err := generateRootTokenFromShares(ctx, client, shares)
 				if err != nil {
@@ -943,6 +975,64 @@ func recoverLoop(ctx context.Context, cfg config, stdout io.Writer, stdin io.Rea
 
 func baselineAuthorityConfigured(cfg config) bool {
 	return cfg.tokenStdin || cfg.breakglassGenerateRootStdin || hasNomadWorkloadAuthority(cfg)
+}
+
+func previousBaselineEvidenceCurrent(cfg config) (string, bool, error) {
+	digest, err := baselineDigest(cfg.baseline)
+	if err != nil {
+		return "", false, err
+	}
+	if strings.TrimSpace(cfg.reportPath) == "" {
+		return digest, false, nil
+	}
+	body, err := os.ReadFile(cfg.reportPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return digest, false, nil
+	}
+	if err != nil {
+		return digest, false, fmt.Errorf("read OpenBao recovery report: %w", err)
+	}
+	var previous report
+	if err := json.Unmarshal(body, &previous); err != nil {
+		return digest, false, fmt.Errorf("decode OpenBao recovery report: %w", err)
+	}
+	complete, ok := findCondition(previous, "OpenBaoRecoveryComplete")
+	if !ok || complete.Status != "True" {
+		return digest, false, nil
+	}
+	return digest, previous.Evidence[baselineDigestEvidenceKey] == digest, nil
+}
+
+func addBaselineDigestEvidence(rep *report, baseline openBaoBaselineSpec) {
+	digest, err := baselineDigest(baseline)
+	if err != nil {
+		rep.Warnings = append(rep.Warnings, err.Error())
+		return
+	}
+	setEvidence(rep, baselineDigestEvidenceKey, digest)
+}
+
+func setEvidence(rep *report, key string, value string) {
+	if rep.Evidence == nil {
+		rep.Evidence = map[string]string{}
+	}
+	rep.Evidence[key] = value
+}
+
+func baselineDigest(baseline openBaoBaselineSpec) (string, error) {
+	canonical := baseline
+	canonical.SecretPaths = append([]openBaoSecretPathSpec(nil), baseline.SecretPaths...)
+	sort.Slice(canonical.SecretPaths, func(i int, j int) bool {
+		left := canonical.SecretPaths[i]
+		right := canonical.SecretPaths[j]
+		return strings.Join([]string{left.Name, left.Path, left.Key}, "\x00") < strings.Join([]string{right.Name, right.Path, right.Key}, "\x00")
+	})
+	body, err := json.Marshal(canonical)
+	if err != nil {
+		return "", fmt.Errorf("encode OpenBao baseline digest: %w", err)
+	}
+	sum := sha256.Sum256(body)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 func hasNomadWorkloadAuthority(cfg config) bool {
@@ -1032,6 +1122,7 @@ func reconcileBaselineWithToken(ctx context.Context, baseline openBaoBaselineSpe
 		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, token))
 		return rep
 	}
+	addBaselineDigestEvidence(&rep, baseline)
 	revokeCondition := revokePresentedToken(ctx, client, token)
 	if revokeCondition.Status != "True" {
 		rep.Conditions = append(rep.Conditions, extra...)
@@ -1355,6 +1446,7 @@ func reconcileFreshBaselineWithInitialRootToken(ctx context.Context, cfg config,
 		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
 		return rep
 	}
+	addBaselineDigestEvidence(&rep, cfg.baseline)
 	handoffs, err := createOperatorImportTokenHandoffs(ctx, cfg.baseline, client, rootToken)
 	if err != nil {
 		rep.Conditions = append(rep.Conditions, extra...)

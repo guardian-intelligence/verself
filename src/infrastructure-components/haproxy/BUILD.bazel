@@ -124,7 +124,6 @@ filegroup(
         "//src/infrastructure-components/verdaccio:deploy_declarations",
         "//src/services/analytics-service:deploy_declarations",
         "//src/services/deployment-service:deploy_declarations",
-        "//src/services/distribution-service:deploy_declarations",
         "//src/services/email-service:deploy_declarations",
         "//src/services/github-integration-service:deploy_declarations",
         "//src/services/governance-service:deploy_declarations",

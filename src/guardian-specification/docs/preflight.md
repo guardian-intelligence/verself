@@ -1,21 +1,18 @@
 # Preflight
 
-Preflight is the first stop point in the Guardian convergence state machine.
+`guardian preflight` resolves one Guardian CRD graph, writes the generated fly
+document into the workspace, verifies required local build artifacts are
+present, and runs the declared Ansible playbook.
 
 ```sh
 guardian preflight gamma -o yaml
-guardian preflight -f gamma.cue -o yaml
+guardian preflight -f gamma.cue -o json
 ```
 
-The command resolves a profile, loads a resource graph, verifies local build
-artifacts are present, runs the entrypoint's referenced `Substrate` access
-hook, runs the `Substrate` upload hooks, verifies the repo on the target,
-prepares the fixed kernel executor, and stops before fly submits a Nomad job.
-
-Before upload hooks run, Guardian writes `.guardian/fly/document.json` in the
-workspace. Upload hooks are expected to materialize that generated graph on the
-target so Nomad tasks can consume static configuration from the materialized
-repo.
+The Guardian CLI stays narrow. It parses CUE/YAML/JSON/TOML/TOON, derives an
+ephemeral Ansible inventory from `Substrate.spec.remote.ssh`, feeds the CRD
+graph to Ansible as private extra vars, and formats the command response. The
+playbook owns the remote procedure.
 
 ## Config Shape
 
@@ -26,69 +23,51 @@ entrypoint:
   name: gamma
 
 resources:
+  - apiVersion: guardian.guardianintelligence.org/v1alpha1
+    kind: FlyProcedure
+    metadata:
+      name: gamma
+    spec:
+      substrateRef:
+        apiVersion: substrate.guardianintelligence.org/v1alpha1
+        kind: Substrate
+        name: gamma-primary
+      preflight:
+        ansible:
+          playbook: src/guardian-specification/ansible/preflight.yml
+      nomad:
+        run:
+          argv: [ssh, -T, ubuntu@206.223.228.87, nomad, job, run, /path/to/job.hcl]
+
   - apiVersion: substrate.guardianintelligence.org/v1alpha1
     kind: Substrate
     metadata:
       name: gamma-primary
     spec:
-      access:
-        argv: [ssh, -T, ubuntu@206.223.228.87, true]
-      upload:
-        run:
-          argv: [bazel-bin/src/guardian-specification/tools/rsync, -a, --delete, ./, ubuntu@206.223.228.87:/tmp/repo-next/workspace/]
-        extract:
-          argv: [ssh, -T, ubuntu@206.223.228.87, mv -Tf /tmp/repo-next /tmp/repo]
-        verify:
-          argv: [ssh, -T, ubuntu@206.223.228.87, cd /tmp/repo && find workspace bazel-bin -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum]
-      kernel:
-        openbaoPrepare:
-          argv: [ssh, -T, ubuntu@206.223.228.87, sudo /tmp/repo/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover prepare]
-        nomad:
-          argv: [ssh, -T, ubuntu@206.223.228.87, sudo /tmp/repo/bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover]
-        verify:
-          argv: [ssh, -T, ubuntu@206.223.228.87, nomad job validate /tmp/repo/workspace/src/infrastructure-components/postgresql/nomad.hcl]
+      remote:
+        repoRoot: /home/ubuntu/.local/state/guardian/repo/current
+        guardian: /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
+        ssh: [ssh, -T, -o, BatchMode=yes, ubuntu@206.223.228.87]
 ```
 
-Lifecycle hooks are self-contained commands. `Substrate.spec.access` proves the
-target can be reached. Upload hooks can use SSH, WireGuard, rsync, AWS SSM, or
-another operator-provided mechanism. The upload phase leaves the prepared
-substrate with a materialized repo tree where component Nomad jobs can run
-repo-bundled artifacts.
+## Contract
 
-Kernel hooks recover the fixed host runtime prerequisites for this
-implementation: OpenBao host integration inputs and the Nomad agent. The
-sequence prepares OpenBao runtime and CA material, starts Nomad once with Vault
-integration available, and verifies the resulting executor can validate
-Vault-backed jobs. OpenBao initialization, unseal, baseline reconciliation, and
-health reporting are handled by the OpenBao component's owner-local recovery
-logic.
+The preflight playbook must fail loudly when the target is not ready for
+`guardian fly`. For gamma, the playbook:
 
-## Upload Contract
+- first runs a fast health probe and exits immediately when the previously
+  verified repo tree, OpenBao service, Nomad agent, and Podman driver are
+  already healthy,
+- uploads the workspace and required Bazel artifacts with the repo-pinned rsync
+  when repair or refresh is needed,
+- verifies workspace and artifact checksum deltas with rsync dry runs,
+- runs `openbao-recover prepare` to materialize OpenBao host integration inputs,
+- starts OpenBao as a systemd root service and runs one bounded
+  recovery-or-verification pass,
+- installs the pinned Nomad runtime artifact,
+- starts the Nomad agent and waits for the Podman driver,
+- validates the first post-root recovery Nomad jobs.
 
-Lifecycle hooks run from the workspace root. Guardian does not inject upload
-information through environment variables and does not package the repo. The
-site graph chooses the upload primitive. For gamma, the primitive is rsync: use
-the Bazel-pinned controller rsync at
-`bazel-bin/src/guardian-specification/tools/rsync`, copy the workspace, copy the
-explicit built artifacts needed by the current graph with symlinks dereferenced,
-atomically promote the uploaded tree, then use `rsync --dry-run --checksum` to
-prove the remote tree still matches the local tree. This first cut still
-requires remote rsync to be available on the substrate; absence is a preflight
-failure, not an implicit install step.
-
-`preflight.upload.verify` must verify the materialized tree and print a sha256
-digest. JSON output with a `digest`, `observed_digest`, `upload_digest`, or
-`sha256` field is accepted. Plain `sha256sum` output is also accepted.
-
-## Command Result
-
-`preflight` emits `ready_to_fly`, `resource_digest`, access status,
-`upload.digest`, kernel hook status, and stable conditions. Command results
-never contain secret values.
-
-`ready_to_fly: yes` means the repo tree is present on the target, the upload
-verify hook proved it matches the local tree, and Nomad can run component-owned
-recovery jobs with OpenBao integration inputs already present. It does not mean
+`ready_to_fly: yes` means the playbook completed successfully. It does not mean
 component runtime convergence has completed. `guardian fly` performs preflight
-again before component convergence, so it does not depend on a stored report
-from an earlier `guardian preflight` invocation.
+again before submitting or monitoring Nomad work.

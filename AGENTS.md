@@ -8,6 +8,12 @@ All service APIs are described with IDLs via Smithy
 All scripts are to be written as aspects executing typed binaries
 All dependencies, including development tools, are commit pinned and plugged into Bazel.
 
+This means:
+
+* Static configuration for a deployable component/service belongs in that component/service's Guardian CRD schema and site graph.
+* Runtime recovery, migrations, imports, restore, and health waiting belong in Nomad lifecycle tasks and typed component binaries.
+* Centralized deploy YAML or placeholder-env configuration is legacy drift to delete during component cutovers.
+
 Treat violations of the above as aberrations to be corrected, not examples to be emulated.
 
 Console: verself.sh
@@ -20,12 +26,12 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 The Guardian software specification specifies the procedure to convert compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code.
 
 ```sh
-guardian board src/guardian-specification/examples/gamma/gamma.cue
+guardian preflight src/guardian-specification/examples/gamma/gamma.cue
 guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run
 ```
 
-`board` establishes a connection with a remote and uploads the repo's built artifacts. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, executes the declared substrate access/upload hooks, and verifies the boarded repo tree.
-`fly` starts with the same boarding phase and then relies on repo-owned Nomad job conventions. Promoting a specific ref of the source code to gamma/prod/beta/dev is updating the declared desired state and running the component-owned control loops.
+`preflight` establishes a connection with a remote, uploads the repo's built artifacts, verifies the materialized repo tree, and prepares fixed host executor prerequisites. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, feeds CRD values into the declared Ansible preflight playbook, and reports whether the target is ready for `fly`.
+`fly` starts with the same preflight phase and then relies on repo-owned Nomad job conventions. Promoting a specific ref of the source code to gamma/prod/beta/dev is updating the declared desired state and running the component-owned control loops.
 
 # Disaster Recovery / `fly`
 
@@ -33,7 +39,7 @@ A foundational invariant of the system is that is able to execute a `fly` (disas
 
 IOW, disaster recovery is just like any other deployment, where the control loop spends additional time in the recovery process because the system was in a degraded state.
 
-The process is `guardian board` -> Guardian synchronous checks to make sure the boarded repo is verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
+The process is `guardian preflight` -> Guardian synchronous checks to make sure the materialized repo is verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
 
 We accomplish this through the following two core techniques:
 
@@ -49,7 +55,7 @@ The only ingredients necessary to recover the system, therefore, are:
 
 Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external provider authority and root-of-trust automation -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
 
-Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. For OpenBao, the problem is resolved by building openbao locally and, in the recovery reconciler, using either the system-present OpenBao or the one from the repo artifacts. The reconciler observes live state and converges — checking and bootstrapping when needed — on every tick of a level-triggered loop.
+Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. OpenBao and the Nomad agent are preflight root services: the preflight playbook installs their repo-built runtime artifacts, configures systemd ownership, starts them, and verifies they are healthy before `guardian fly` submits component-owned Nomad jobs.
 
 Note that components should still handle subtle nuances, e.g. for OpenBao consider:
 
@@ -61,7 +67,7 @@ OpenBao not present/absent — the situation could be any of the following
 
 Recovery frequently means "restore data from offsite backups on S3-compatible object storage" but even if no backups are provided, a clean version of the system can be bootstrapped.
 
-Every deployable unit declares a component-owned recovery reconciler that runs as a long-lived sidecar in its `nomad.hcl` file. The reconciler observes live state, classifies it, and runs the idempotent action that converges to desired, re-sampling on an interval so the converged state is a maintained invariant. `spire` and `postgresql` are the reference implementations.
+Every deployable unit after preflight declares component-owned recovery behavior in its `nomad.hcl` file. Long-lived sidecar reconcilers are appropriate for services whose health must be maintained continuously. Root services such as OpenBao and the Nomad agent are not modeled as Nomad jobs.
 
 ```
 task "reconcile" {

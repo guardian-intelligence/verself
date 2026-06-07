@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 
 const (
 	defaultFlyDocumentPath = ".guardian/fly/document.json"
+	hookOutputTailBytes    = 12000
 )
 
 type guardianDocument struct {
@@ -55,9 +57,8 @@ type preflightResult struct {
 	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
 	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
-	Access         hookResult        `json:"access" yaml:"access" toml:"access" toon:"access"`
+	Preflight      ansibleResult     `json:"preflight" yaml:"preflight" toml:"preflight" toon:"preflight"`
 	Upload         uploadResult      `json:"upload" yaml:"upload" toml:"upload" toon:"upload"`
-	Kernel         kernelResult      `json:"kernel" yaml:"kernel" toml:"kernel" toon:"kernel"`
 	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
 }
 
@@ -68,12 +69,9 @@ type resourceRefResult struct {
 }
 
 type uploadResult struct {
-	Digest  string     `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
-	Run     hookResult `json:"run" yaml:"run" toml:"run" toon:"run"`
-	Extract hookResult `json:"extract" yaml:"extract" toml:"extract" toon:"extract"`
-	Verify  hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
-	Status  string     `json:"status" yaml:"status" toml:"status" toon:"status"`
-	Reason  string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Digest string `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
+	Status string `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason string `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
 
 type hookResult struct {
@@ -83,12 +81,11 @@ type hookResult struct {
 	Message string   `json:"message,omitempty" yaml:"message,omitempty" toml:"message,omitempty" toon:"message,omitempty"`
 }
 
-type kernelResult struct {
-	OpenBaoPrepare hookResult `json:"openbao_prepare" yaml:"openbao_prepare" toml:"openbao_prepare" toon:"openbao_prepare"`
-	Nomad          hookResult `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
-	Verify         hookResult `json:"verify" yaml:"verify" toml:"verify" toon:"verify"`
-	Status         string     `json:"status" yaml:"status" toml:"status" toon:"status"`
-	Reason         string     `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+type ansibleResult struct {
+	Playbook string `json:"playbook" yaml:"playbook" toml:"playbook" toon:"playbook"`
+	Status   string `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason   string `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Message  string `json:"message,omitempty" yaml:"message,omitempty" toml:"message,omitempty" toon:"message,omitempty"`
 }
 
 type flyResult struct {
@@ -898,30 +895,25 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	if opts.DryRun {
 		mode = "dry_run"
 	}
-	substrateSpec := doc.Compiled.SubstrateSpec
+	resourceDigest := digestValue(doc.Source.Resources)
+	preflight := doc.Compiled.FlySpec.Preflight
 	result := preflightResult{
 		Profile:        opts.Profile,
 		Name:           doc.Compiled.Fly.Metadata.Name,
 		Status:         "blocked",
 		ReadyToFly:     "no",
 		ExecutionMode:  mode,
-		ResourceDigest: digestValue(doc.Source.Resources),
+		ResourceDigest: resourceDigest,
 		Entrypoint:     refResult(doc.Source.Entrypoint),
-		Access:         hookPending(substrateSpec.Access),
+		Preflight:      ansiblePending(preflight),
 		Upload: uploadResult{
-			Run:     hookPending(substrateSpec.Upload.Run),
-			Extract: hookPending(substrateSpec.Upload.Extract),
-			Verify:  hookPending(substrateSpec.Upload.Verify),
-			Status:  "pending",
-			Reason:  "NotStarted",
+			Status: "pending",
+			Reason: "NotStarted",
 		},
-		Kernel: kernelPending(substrateSpec.Kernel),
 	}
 	result.Conditions = append(result.Conditions, conditionTrue("ProfileLoaded", "ProfileResolved", "Guardian profile resolved to a resource graph", "profile."+opts.Profile))
 	result.Conditions = append(result.Conditions, conditionTrue("ResourceGraphResolved", "RefsResolved", "Guardian resource refs resolved", "resources"))
-	result.Conditions = append(result.Conditions, conditionTrue("AccessHookConfigured", "HookConfigured", "access lifecycle hook is configured", "preflight.access"))
-	result.Conditions = append(result.Conditions, conditionTrue("UploadHooksConfigured", "HooksConfigured", "upload lifecycle hooks are configured", "preflight.upload"))
-	result.Conditions = append(result.Conditions, conditionTrue("KernelHooksConfigured", "HooksConfigured", "Nomad executor kernel hooks are configured", "preflight.kernel"))
+	result.Conditions = append(result.Conditions, conditionTrue("PreflightConfigured", "AnsiblePlaybookConfigured", "preflight Ansible playbook is configured", "preflight"))
 	if err := writeFlyDocument(opts.WorkspaceRoot, doc.Source); err != nil {
 		result.Upload.Status = "blocked"
 		result.Upload.Reason = "ResourceGraphWriteFailed"
@@ -943,65 +935,23 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	}
 	if opts.DryRun {
 		result.Status = "ready"
-		result.Conditions = append(result.Conditions, conditionTrue("SubstrateConnected", "DryRun", "dry run did not execute the access hook", "preflight.access"))
-		result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeMaterialized", "DryRun", "dry run did not materialize the workspace on the target", "preflight.upload.extract"))
-		result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "DryRun", "dry run verified local preflight inputs without mutating the target", "preflight.upload.verify"))
-		result.Conditions = append(result.Conditions, conditionTrue("KernelReady", "DryRun", "dry run did not execute kernel recovery hooks", "preflight.kernel"))
+		result.Conditions = append(result.Conditions, conditionTrue("PreflightReady", "DryRun", "dry run verified local preflight inputs without mutating the target", "preflight"))
 		return result
 	}
-	accessResult, _ := runLifecycleHook("preflight.access", substrateSpec.Access, opts.WorkspaceRoot, emitter)
-	result.Access = accessResult
-	if accessResult.Status != "ready" {
-		result.Upload.Status = "blocked"
-		result.Upload.Reason = "AccessHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("SubstrateConnected", accessResult.Reason, hookFailureMessage("access hook failed", accessResult), "preflight.access"))
-		return result
-	}
-	result.Conditions = append(result.Conditions, conditionTrue("SubstrateConnected", "HookSucceeded", "access hook completed", "preflight.access"))
-	runResult, _ := runLifecycleHook("preflight.upload.run", substrateSpec.Upload.Run, opts.WorkspaceRoot, emitter)
-	result.Upload.Run = runResult
-	if runResult.Status != "ready" {
-		result.Upload.Status = "blocked"
-		result.Upload.Reason = "UploadHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeMaterialized", runResult.Reason, hookFailureMessage("upload run hook failed", runResult), "preflight.upload.run"))
-		return result
-	}
-	extractResult, _ := runLifecycleHook("preflight.upload.extract", substrateSpec.Upload.Extract, opts.WorkspaceRoot, emitter)
-	result.Upload.Extract = extractResult
-	if extractResult.Status != "ready" {
-		result.Upload.Status = "blocked"
-		result.Upload.Reason = "ExtractHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeMaterialized", extractResult.Reason, hookFailureMessage("upload extract hook failed", extractResult), "preflight.upload.extract"))
-		return result
-	}
-	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeMaterialized", "HookSucceeded", "remote repo tree was materialized", "preflight.upload.extract"))
-	verifyResult, verifyStdout := runLifecycleHook("preflight.upload.verify", substrateSpec.Upload.Verify, opts.WorkspaceRoot, emitter)
-	result.Upload.Verify = verifyResult
-	if verifyResult.Status != "ready" {
-		result.Upload.Status = "blocked"
-		result.Upload.Reason = "VerifyHookFailed"
-		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeVerified", verifyResult.Reason, hookFailureMessage("upload verify hook failed", verifyResult), "preflight.upload.verify"))
-		return result
-	}
-	observedDigest, err := extractObservedDigest(string(verifyStdout))
+	preflightRun, err := runPreflightPlaybook(doc, opts, resourceDigest, emitter)
+	result.Preflight = preflightRun
 	if err != nil {
 		result.Upload.Status = "blocked"
-		result.Upload.Reason = "DigestMissing"
-		result.Conditions = append(result.Conditions, conditionFalse("RemoteTreeVerified", "DigestMissing", err.Error(), "preflight.upload.verify"))
+		result.Upload.Reason = "PreflightFailed"
+		result.Conditions = append(result.Conditions, conditionFalse("PreflightReady", preflightRun.Reason, hookFailureMessage("preflight playbook failed", hookResult{Status: preflightRun.Status, Reason: preflightRun.Reason, Message: preflightRun.Message}), "preflight"))
 		return result
 	}
-	result.Upload.Digest = observedDigest
 	result.Upload.Status = "ready"
-	result.Upload.Reason = "TreeVerified"
-	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "TreeVerified", "verify hook proved the remote workspace tree and printed its digest", "preflight.upload.verify"))
-	result.Conditions = append(result.Conditions, conditionTrue("RemoteGuardianVerified", "TreeVerified", "remote Guardian artifacts were verified as part of the repo tree", "preflight.upload.verify"))
-	if !runKernelHooks(&result, substrateSpec.Kernel, opts.WorkspaceRoot, emitter) {
-		return result
-	}
-	result.Conditions = append(result.Conditions, conditionTrue("KernelVerified", "KernelBootstrapped", "Nomad is running with OpenBao integration inputs available", "preflight.kernel"))
-	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "KernelBootstrapped", "Nomad can run component-owned recovery jobs", "preflight.kernel"))
-	result.Status = "ready"
+	result.Upload.Reason = "AnsibleVerified"
 	result.ReadyToFly = "yes"
+	result.Status = "ready"
+	result.Conditions = append(result.Conditions, conditionTrue("RemoteTreeVerified", "AnsibleVerified", "preflight playbook verified the materialized repo tree", "preflight.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("ReadyToFly", "PreflightComplete", "preflight completed successfully", "preflight"))
 	return result
 }
 
@@ -1009,72 +959,309 @@ func hookPending(hook lifecycleHookSpec) hookResult {
 	return hookResult{Argv: hook.Argv, Status: "pending", Reason: "NotStarted"}
 }
 
-func kernelPending(kernel specdoc.Kernel) kernelResult {
-	return kernelResult{
-		OpenBaoPrepare: hookPending(kernel.OpenBaoPrepare),
-		Nomad:          hookPending(kernel.Nomad),
-		Verify:         hookPending(kernel.Verify),
-		Status:         "pending",
-		Reason:         "NotStarted",
-	}
+func ansiblePending(preflight specdoc.Preflight) ansibleResult {
+	return ansibleResult{Playbook: preflight.Ansible.Playbook, Status: "pending", Reason: "NotStarted"}
 }
 
-func runKernelHooks(result *preflightResult, kernel specdoc.Kernel, workspaceRoot string, emitter eventWriter) bool {
-	result.Kernel.Status = "running"
-	result.Kernel.Reason = "KernelRecoveryStarted"
-	steps := []struct {
-		name      string
-		resource  string
-		hook      lifecycleHookSpec
-		assign    func(hookResult)
-		condition string
-		message   string
-	}{
-		{
-			name:      "preflight.kernel.openbao_prepare",
-			resource:  "preflight.kernel.openbao_prepare",
-			hook:      kernel.OpenBaoPrepare,
-			assign:    func(h hookResult) { result.Kernel.OpenBaoPrepare = h },
-			condition: "OpenBaoInputsPrepared",
-			message:   "OpenBao runtime and CA are prepared before Nomad starts",
-		},
-		{
-			name:      "preflight.kernel.nomad",
-			resource:  "preflight.kernel.nomad",
-			hook:      kernel.Nomad,
-			assign:    func(h hookResult) { result.Kernel.Nomad = h },
-			condition: "NomadActive",
-			message:   "Nomad agent is running with OpenBao integration available",
-		},
-		{
-			name:      "preflight.kernel.verify",
-			resource:  "preflight.kernel.verify",
-			hook:      kernel.Verify,
-			assign:    func(h hookResult) { result.Kernel.Verify = h },
-			condition: "KernelVerified",
-			message:   "kernel recovery verification passed",
-		},
+type ansibleSSHTarget struct {
+	Host       string
+	User       string
+	Port       string
+	CommonArgs []string
+	Executable string
+	Target     string
+}
+
+func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDigest string, emitter eventWriter) (ansibleResult, error) {
+	preflight := doc.Compiled.FlySpec.Preflight
+	result := ansibleResult{Playbook: preflight.Ansible.Playbook, Status: "blocked", Reason: "AnsibleFailed"}
+	playbookPath, err := workspaceRelativePath(opts.WorkspaceRoot, preflight.Ansible.Playbook)
+	if err != nil {
+		result.Reason = "PlaybookPathInvalid"
+		result.Message = err.Error()
+		return result, err
 	}
-	for _, step := range steps {
-		hookResult, _ := runLifecycleHook(step.name, step.hook, workspaceRoot, emitter)
-		step.assign(hookResult)
-		if hookResult.Status != "ready" {
-			result.Kernel.Status = "blocked"
-			result.Kernel.Reason = hookResult.Reason
-			result.Conditions = append(result.Conditions, conditionFalse(step.condition, hookResult.Reason, hookFailureMessage("kernel hook failed", hookResult), step.resource))
-			return false
+	uvxPath := filepath.Join(opts.WorkspaceRoot, "bazel-bin/src/tools/dev/binaries/uvx")
+	if _, err := os.Stat(uvxPath); err != nil {
+		result.Reason = "AnsibleRunnerMissing"
+		result.Message = "bazel-bin/src/tools/dev/binaries/uvx is missing; build //src/tools/dev/binaries:uv_tools before preflight"
+		return result, fmt.Errorf("%s: %w", result.Message, err)
+	}
+	target, err := parseAnsibleSSHTarget(doc.Compiled.SubstrateSpec.Remote.SSH)
+	if err != nil {
+		result.Reason = "SubstrateSSHInvalid"
+		result.Message = err.Error()
+		return result, err
+	}
+	tmpDir, err := os.MkdirTemp("", "guardian-preflight-*")
+	if err != nil {
+		result.Reason = "TempDirFailed"
+		result.Message = err.Error()
+		return result, err
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	inventoryPath := filepath.Join(tmpDir, "inventory.ini")
+	if err := os.WriteFile(inventoryPath, []byte(ansibleInventory(doc.Compiled.Substrate.Metadata.Name, target)), 0o600); err != nil {
+		result.Reason = "InventoryWriteFailed"
+		result.Message = err.Error()
+		return result, err
+	}
+	varsPath := filepath.Join(tmpDir, "vars.json")
+	vars, err := ansibleVars(doc, opts, resourceDigest, target, tmpDir)
+	if err != nil {
+		result.Reason = "VarsBuildFailed"
+		result.Message = err.Error()
+		return result, err
+	}
+	varsData, err := json.MarshalIndent(vars, "", "  ")
+	if err != nil {
+		result.Reason = "VarsEncodeFailed"
+		result.Message = err.Error()
+		return result, err
+	}
+	varsData = append(varsData, '\n')
+	if err := os.WriteFile(varsPath, varsData, 0o600); err != nil {
+		result.Reason = "VarsWriteFailed"
+		result.Message = err.Error()
+		return result, err
+	}
+	argv := []string{
+		"--from", "ansible-core==2.20.3",
+		"ansible-playbook",
+		"-i", inventoryPath,
+		"--extra-vars", "@" + varsPath,
+		playbookPath,
+	}
+	emitter.emit("preflight.ansible", "start", preflight.Ansible.Playbook, "running preflight playbook")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, uvxPath, argv...)
+	cmd.Dir = opts.WorkspaceRoot
+	cmd.Env = append(os.Environ(), "ANSIBLE_RETRY_FILES_ENABLED=False")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		result.Message = commandFailureMessage(err, stdout.Bytes(), stderr.Bytes())
+		emitter.emit("preflight.ansible", "blocked", preflight.Ansible.Playbook, result.Message)
+		return result, err
+	}
+	result.Status = "ready"
+	result.Reason = "AnsibleSucceeded"
+	emitter.emit("preflight.ansible", "ok", preflight.Ansible.Playbook, "preflight playbook completed")
+	return result, nil
+}
+
+func workspaceRelativePath(workspaceRoot string, rel string) (string, error) {
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("%s must be workspace-relative", rel)
+	}
+	path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
+	inside, err := pathIsInside(workspaceRoot, path)
+	if err != nil {
+		return "", err
+	}
+	if !inside {
+		return "", fmt.Errorf("%s escapes workspace root", rel)
+	}
+	return path, nil
+}
+
+func parseAnsibleSSHTarget(ssh []string) (ansibleSSHTarget, error) {
+	if len(ssh) < 2 {
+		return ansibleSSHTarget{}, errors.New("substrate remote ssh argv must include ssh and a target")
+	}
+	target := ansibleSSHTarget{Executable: ssh[0]}
+	args := ssh[1:]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "-T", "-N":
+			continue
+		case "-o":
+			i++
+			if i >= len(args) {
+				return ansibleSSHTarget{}, errors.New("ssh -o requires a value")
+			}
+			target.CommonArgs = append(target.CommonArgs, "-o", args[i])
+		case "-p":
+			i++
+			if i >= len(args) {
+				return ansibleSSHTarget{}, errors.New("ssh -p requires a value")
+			}
+			target.Port = args[i]
+		case "-i", "-F", "-J":
+			i++
+			if i >= len(args) {
+				return ansibleSSHTarget{}, fmt.Errorf("ssh %s requires a value", arg)
+			}
+			target.CommonArgs = append(target.CommonArgs, arg, args[i])
+		case "-l":
+			i++
+			if i >= len(args) {
+				return ansibleSSHTarget{}, errors.New("ssh -l requires a value")
+			}
+			target.User = args[i]
+		default:
+			if strings.HasPrefix(arg, "-o") && len(arg) > 2 {
+				target.CommonArgs = append(target.CommonArgs, arg)
+				continue
+			}
+			if strings.HasPrefix(arg, "-") {
+				target.CommonArgs = append(target.CommonArgs, arg)
+				continue
+			}
+			if target.Target != "" {
+				return ansibleSSHTarget{}, fmt.Errorf("ssh argv includes more than one target: %s and %s", target.Target, arg)
+			}
+			target.Target = arg
 		}
-		result.Conditions = append(result.Conditions, conditionTrue(step.condition, "HookSucceeded", step.message, step.resource))
 	}
-	result.Kernel.Status = "ready"
-	result.Kernel.Reason = "KernelBootstrapped"
-	return true
+	if target.Target == "" {
+		return ansibleSSHTarget{}, errors.New("ssh argv target is required")
+	}
+	host := target.Target
+	if user, rest, ok := strings.Cut(host, "@"); ok {
+		if target.User == "" {
+			target.User = user
+		}
+		host = rest
+	}
+	if host == "" {
+		return ansibleSSHTarget{}, errors.New("ssh target host is empty")
+	}
+	target.Host = host
+	if target.User == "" {
+		target.User = "ubuntu"
+	}
+	return target, nil
+}
+
+func ansibleInventory(hostAlias string, target ansibleSSHTarget) string {
+	alias := sanitizeInventoryName(hostAlias)
+	fields := []string{
+		alias,
+		"ansible_host=" + inventoryValue(target.Host),
+		"ansible_user=" + inventoryValue(target.User),
+		"ansible_ssh_executable=" + inventoryValue(target.Executable),
+		"ansible_python_interpreter=/usr/bin/python3",
+	}
+	if target.Port != "" {
+		fields = append(fields, "ansible_port="+inventoryValue(target.Port))
+	}
+	if len(target.CommonArgs) > 0 {
+		fields = append(fields, "ansible_ssh_common_args="+inventoryValue(strings.Join(target.CommonArgs, " ")))
+	}
+	return strings.Join(fields, " ") + "\n"
+}
+
+func sanitizeInventoryName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "guardian-substrate"
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	return b.String()
+}
+
+func inventoryValue(value string) string {
+	if value == "" {
+		return "''"
+	}
+	if strings.ContainsAny(value, " \t\n'\"") {
+		return strconv.Quote(value)
+	}
+	return value
+}
+
+func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest string, target ansibleSSHTarget, tmpDir string) (map[string]any, error) {
+	remote := doc.Compiled.SubstrateSpec.Remote
+	repoBase, err := remoteRepoBase(remote.RepoRoot)
+	if err != nil {
+		return nil, err
+	}
+	workspaceState := gitWorkspaceState(opts.WorkspaceRoot)
+	return map[string]any{
+		"guardian_document":               doc.Source,
+		"guardian_entrypoint":             refResult(doc.Source.Entrypoint),
+		"guardian_profile":                opts.Profile,
+		"guardian_resource_digest":        resourceDigest,
+		"guardian_workspace_git_revision": workspaceState.Revision,
+		"guardian_workspace_git_clean":    workspaceState.Clean,
+		"guardian_workspace_root":         opts.WorkspaceRoot,
+		"guardian_fly_document_path":      filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultFlyDocumentPath)),
+		"guardian_preflight_work_dir":     tmpDir,
+		"guardian_remote_repo_base":       repoBase,
+		"guardian_remote_repo_current":    remote.RepoRoot,
+		"guardian_remote_guardian":        remote.Guardian,
+		"guardian_rsync_bin":              filepath.Join(opts.WorkspaceRoot, "bazel-bin/src/guardian-specification/tools/rsync"),
+		"guardian_rsync_target":           target.User + "@" + target.Host,
+		"guardian_rsync_ssh_command":      ansibleRsyncSSHCommand(target),
+		"guardian_substrate_resource":     doc.Compiled.Substrate,
+		"guardian_substrate_remote":       remote,
+		"guardian_ansible_inventory_host": sanitizeInventoryName(doc.Compiled.Substrate.Metadata.Name),
+	}, nil
+}
+
+type gitState struct {
+	Revision string
+	Clean    bool
+}
+
+func gitWorkspaceState(workspaceRoot string) gitState {
+	revisionOut, err := exec.Command("git", "-C", workspaceRoot, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return gitState{}
+	}
+	revision := strings.TrimSpace(string(revisionOut))
+	if revision == "" {
+		return gitState{}
+	}
+	statusOut, err := exec.Command("git", "-C", workspaceRoot, "status", "--porcelain", "--untracked-files=no").Output()
+	if err != nil {
+		return gitState{Revision: revision}
+	}
+	return gitState{Revision: revision, Clean: strings.TrimSpace(string(statusOut)) == ""}
+}
+
+func remoteRepoBase(repoRoot string) (string, error) {
+	repoRoot = strings.TrimRight(repoRoot, "/")
+	if repoRoot == "" || !strings.HasPrefix(repoRoot, "/") {
+		return "", fmt.Errorf("substrate remote repoRoot must be absolute: %q", repoRoot)
+	}
+	if filepath.Base(repoRoot) == "current" {
+		return filepath.Dir(repoRoot), nil
+	}
+	return repoRoot, nil
+}
+
+func ansibleRsyncSSHCommand(target ansibleSSHTarget) string {
+	argv := []string{target.Executable}
+	if target.Port != "" {
+		argv = append(argv, "-p", target.Port)
+	}
+	argv = append(argv, target.CommonArgs...)
+	parts := make([]string, 0, len(argv))
+	for _, arg := range argv {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
 }
 
 func preparePreflightWorkspace(workspaceRoot string) error {
 	for _, rel := range []string{
 		defaultFlyDocumentPath,
 		"bazel-bin",
+		"bazel-bin/src/tools/dev/binaries/uvx",
+		"bazel-bin/src/guardian-specification/tools/rsync",
 	} {
 		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {
@@ -1160,10 +1347,10 @@ func hookFailureMessage(prefix string, result hookResult) string {
 
 func commandFailureMessage(err error, stdout []byte, stderr []byte) string {
 	parts := []string{strings.TrimSpace(err.Error())}
-	if tail := outputTail(stderr, 1600); tail != "" {
+	if tail := outputTail(stderr, hookOutputTailBytes); tail != "" {
 		parts = append(parts, "stderr: "+tail)
 	}
-	if tail := outputTail(stdout, 1600); tail != "" {
+	if tail := outputTail(stdout, hookOutputTailBytes); tail != "" {
 		parts = append(parts, "stdout: "+tail)
 	}
 	return strings.Join(parts, "\n")
@@ -1175,40 +1362,6 @@ func outputTail(output []byte, limit int) string {
 		return trimmed
 	}
 	return "..." + trimmed[len(trimmed)-limit:]
-}
-
-func extractObservedDigest(output string) (string, error) {
-	var decoded map[string]any
-	if err := json.Unmarshal([]byte(output), &decoded); err == nil {
-		for _, key := range []string{"observed_digest", "digest", "upload_digest", "sha256"} {
-			if value, ok := decoded[key].(string); ok {
-				return normalizeDigest(value)
-			}
-		}
-	}
-	for _, token := range strings.Fields(output) {
-		if digest, err := normalizeDigest(token); err == nil {
-			return digest, nil
-		}
-	}
-	return "", errors.New("verify hook output did not contain a sha256 digest")
-}
-
-func normalizeDigest(value string) (string, error) {
-	digest := strings.TrimSpace(value)
-	digest = strings.Trim(digest, `"'`)
-	if len(digest) == 64 {
-		digest = "sha256:" + digest
-	}
-	if len(digest) != len("sha256:")+64 || !strings.HasPrefix(digest, "sha256:") {
-		return "", fmt.Errorf("not a sha256 digest: %q", value)
-	}
-	for _, r := range strings.TrimPrefix(digest, "sha256:") {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return "", fmt.Errorf("not a lowercase sha256 digest: %q", value)
-		}
-	}
-	return digest, nil
 }
 
 func refResult(ref specdoc.ObjectRef) resourceRefResult {
@@ -1287,7 +1440,7 @@ func writeFlyDocument(workspaceRoot string, doc specdoc.Document) error {
 
 func conditionFromPreflight(result preflightResult, dryRun bool) condition {
 	if result.ReadyToFly == "yes" {
-		return conditionTrue("PreflightReady", "ReadyToFly", "remote repo tree and kernel prerequisites are verified", "preflight")
+		return conditionTrue("PreflightReady", "ReadyToFly", "preflight verified the target is ready for fly", "preflight")
 	}
 	if dryRun && !hasFalseCondition(result.Conditions) {
 		return conditionTrue("PreflightReady", "DryRun", "dry run verified local preflight inputs without mutating the target", "preflight")
@@ -1379,13 +1532,13 @@ usage:
 func preflightUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `guardian preflight
 
-usage:
-  guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
+	usage:
+	  guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
 
-preflight resolves a Guardian profile, writes the generated fly document,
-verifies local build artifacts, runs the Substrate access, upload, and kernel
-lifecycle hooks, and reports whether the target is ready for Nomad-driven fly.
-`)
+	preflight resolves a Guardian profile, writes the generated fly document,
+	verifies local build artifacts, runs the configured preflight playbook, and
+	reports whether the target is ready for Nomad-driven fly.
+	`)
 }
 
 func flyUsage(w io.Writer) {

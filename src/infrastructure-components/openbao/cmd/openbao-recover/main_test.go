@@ -299,6 +299,9 @@ func TestFreshInitReconcilesBaselineWithInitialRootTokenAndRevokes(t *testing.T)
 	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineReady")
 	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if rep.Evidence[baselineDigestEvidenceKey] == "" {
+		t.Fatalf("baseline digest evidence was not recorded")
+	}
 	if len(client.baselineTokens) != 1 || client.baselineTokens[0] != rootToken {
 		t.Fatalf("baseline did not use initial root token")
 	}
@@ -422,6 +425,50 @@ func TestSealedOpenBaoReportsBaselineBlockedAfterUnsealWithoutRootAuthority(t *t
 	assertReportDoesNotContain(t, rep, share)
 }
 
+func TestSealedOpenBaoAcceptsCurrentBaselineEvidenceAfterUnseal(t *testing.T) {
+	share := randomSecret(t)
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: true, Sealed: true, Threshold: 1},
+		unsealShares: []string{share},
+	}
+	cfg := testConfig(t)
+	cfg.unsealStdin = true
+	cfg.reportPath = filepath.Join(t.TempDir(), "report.json")
+	cfg.baseline = openBaoBaselineSpec{
+		Reconcile: true,
+		Mounts: []openBaoMountSpec{
+			{Path: "kv-runtime", Type: "kv", Options: map[string]string{"version": "2"}},
+		},
+	}
+	digest, err := baselineDigest(cfg.baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeReportFixture(t, cfg.reportPath, report{
+		Action: "recover",
+		State:  "InitializedUnsealed",
+		Evidence: map[string]string{
+			baselineDigestEvidenceKey: digest,
+		},
+		Conditions: []condition{
+			conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
+		},
+	})
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(share+"\n"))
+
+	assertCondition(t, rep, "OpenBaoUnsealed", "True", "UnsealComplete")
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineEvidenceCurrent")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if rep.Evidence[baselineDigestEvidenceKey] != digest {
+		t.Fatalf("baseline digest evidence = %q, want %q", rep.Evidence[baselineDigestEvidenceKey], digest)
+	}
+	if len(client.baselineTokens) != 0 {
+		t.Fatalf("baseline reconciled despite current baseline evidence")
+	}
+	assertReportDoesNotContain(t, rep, share)
+}
+
 func TestSealedOpenBaoBreakglassGeneratesRootTokenAfterUnsealForBaseline(t *testing.T) {
 	token := randomSecret(t)
 	shareA := randomSecret(t)
@@ -486,6 +533,80 @@ func TestUnsealedOpenBaoReportsBaselineBlockedWithoutOperatorToken(t *testing.T)
 	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
 	if len(client.baselineTokens) != 0 {
 		t.Fatalf("baseline reconciled without an operator token")
+	}
+}
+
+func TestUnsealedOpenBaoAcceptsCurrentBaselineEvidenceWithoutOperatorToken(t *testing.T) {
+	client := &fakeOpenBaoClient{
+		status: baoStatus{Initialized: true, Sealed: false},
+	}
+	cfg := testConfig(t)
+	cfg.reportPath = filepath.Join(t.TempDir(), "report.json")
+	cfg.baseline = openBaoBaselineSpec{
+		Reconcile: true,
+		Mounts: []openBaoMountSpec{
+			{Path: "kv-runtime", Type: "kv", Options: map[string]string{"version": "2"}},
+		},
+	}
+	digest, err := baselineDigest(cfg.baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeReportFixture(t, cfg.reportPath, report{
+		Action: "recover",
+		State:  "InitializedUnsealed",
+		Evidence: map[string]string{
+			baselineDigestEvidenceKey: digest,
+		},
+		Conditions: []condition{
+			conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
+		},
+	})
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "True", "BaselineEvidenceCurrent")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "True", "Recovered")
+	if rep.Evidence[baselineDigestEvidenceKey] != digest {
+		t.Fatalf("baseline digest evidence = %q, want %q", rep.Evidence[baselineDigestEvidenceKey], digest)
+	}
+	if len(client.baselineTokens) != 0 {
+		t.Fatalf("baseline reconciled despite current baseline evidence")
+	}
+	if len(client.revokedTokens) != 0 {
+		t.Fatalf("token revoked despite no token being presented")
+	}
+}
+
+func TestUnsealedOpenBaoBlocksOnStaleBaselineEvidenceWithoutOperatorToken(t *testing.T) {
+	client := &fakeOpenBaoClient{
+		status: baoStatus{Initialized: true, Sealed: false},
+	}
+	cfg := testConfig(t)
+	cfg.reportPath = filepath.Join(t.TempDir(), "report.json")
+	cfg.baseline = openBaoBaselineSpec{
+		Reconcile: true,
+		Mounts: []openBaoMountSpec{
+			{Path: "kv-runtime", Type: "kv", Options: map[string]string{"version": "2"}},
+		},
+	}
+	writeReportFixture(t, cfg.reportPath, report{
+		Action: "recover",
+		State:  "InitializedUnsealed",
+		Evidence: map[string]string{
+			baselineDigestEvidenceKey: "sha256:stale",
+		},
+		Conditions: []condition{
+			conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
+		},
+	})
+
+	rep := recoverOnce(context.Background(), cfg, client, bytes.NewReader(nil))
+
+	assertCondition(t, rep, "OpenBaoBaselineReconciled", "False", "BaselineAuthorityRequired")
+	assertCondition(t, rep, "OpenBaoRecoveryComplete", "False", "BaselineBlocked")
+	if len(client.baselineTokens) != 0 {
+		t.Fatalf("baseline reconciled with stale baseline evidence")
 	}
 }
 
@@ -1417,6 +1538,20 @@ func testConfig(t *testing.T) config {
 		caCert:      "",
 		keyShares:   defaultKeyShares,
 		threshold:   defaultThreshold,
+	}
+}
+
+func writeReportFixture(t *testing.T, path string, rep report) {
+	t.Helper()
+	body, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

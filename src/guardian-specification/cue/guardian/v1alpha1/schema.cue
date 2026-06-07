@@ -49,6 +49,7 @@ package v1alpha1
 			apiVersion: "substrate.guardianintelligence.org/v1alpha1"
 			kind:       "Substrate"
 		}
+		preflight: #Preflight
 		nomad: run: #LifecycleHook
 	}
 }
@@ -58,17 +59,6 @@ package v1alpha1
 	kind:       "Substrate"
 	metadata:   #Metadata
 	spec: {
-		access: #LifecycleHook
-		upload: {
-			run:     #LifecycleHook
-			extract: #LifecycleHook
-			verify:  #LifecycleHook
-		}
-		kernel: {
-			openbaoPrepare: #LifecycleHook
-			nomad:          #LifecycleHook
-			verify:         #LifecycleHook
-		}
 		remote?: {
 			repoRoot: #AbsolutePath
 			guardian: #AbsolutePath
@@ -88,6 +78,12 @@ package v1alpha1
 
 #LifecycleHook: {
 	argv: [#NonEmptyString, ...#NonEmptyString]
+}
+
+#Preflight: {
+	ansible: {
+		playbook: string & !="" & !~"^/"
+	}
 }
 
 #AbsolutePath: string & =~"^/.+"

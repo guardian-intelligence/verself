@@ -25,6 +25,7 @@ resources: [
 				kind:       "Substrate"
 				name:       "gamma-primary"
 			}
+			preflight: ansible: playbook: "src/guardian-specification/ansible/preflight.yml"
 			nomad: run: argv: [
 				"sh",
 				"-c",
@@ -33,20 +34,45 @@ resources: [
 					ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
 					set -eu
 					nomad=/opt/verself/profile/bin/nomad
-					job=/home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
-					report=/run/verself/recovery/openbao/report.json
-					sudo rm -f "$report"
-					NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job run -detach "$job"
-					for _ in $(seq 1 240); do
-						NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job status openbao
-						if sudo test -f "$report"; then
-							sudo cat "$report"
-							if sudo python3 -c 'import json, sys; doc=json.load(open(sys.argv[1], encoding="utf-8")); conditions=doc.get("conditions", []); sys.exit(0 if any(c.get("type") == "OpenBaoRecoveryComplete" and c.get("status") == "True" for c in conditions) else 1)' "$report"; then
-								exit 0
+					job=/home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl
+					job_name=cloudflare-integration-recovery
+					export NOMAD_ADDR=http://127.0.0.1:4646
+					dump_job_debug() {
+						echo "===== $job_name job status =====" >&2
+						"$nomad" job status "$job_name" >&2 || true
+						alloc="$("$nomad" job allocs -json "$job_name" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ID", ""))' || true)"
+						if [ -z "$alloc" ]; then
+							echo "no $job_name allocation found" >&2
+							return
+						fi
+						echo "===== $job_name alloc status $alloc =====" >&2
+						"$nomad" alloc status "$alloc" >&2 || true
+						for task in setup recover; do
+							echo "===== $job_name $task stdout tail =====" >&2
+							"$nomad" alloc logs -tail -n=80 "$alloc" "$task" >&2 || true
+							echo "===== $job_name $task stderr tail =====" >&2
+							"$nomad" alloc logs -stderr -tail -n=80 "$alloc" "$task" >&2 || true
+						done
+					}
+					"$nomad" job run -detach "$job"
+					for second in $(seq 1 600); do
+						allocs="$("$nomad" job allocs -json "$job_name" || true)"
+						if printf '%s\n' "$allocs" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; status=latest.get("ClientStatus"); sys.exit(0 if status == "complete" else 2 if status in {"failed", "lost"} else 1)'; then
+							printf '%s\n' "$allocs"
+							exit 0
+						else
+							rc=$?
+							if [ "$rc" -eq 2 ]; then
+								dump_job_debug
+								exit 1
 							fi
+						fi
+						if [ $((second % 10)) -eq 0 ]; then
+							echo "waiting for $job_name recovery: ${second}s" >&2
 						fi
 						sleep 1
 					done
+					dump_job_debug
 					exit 1
 					REMOTE
 					""",
@@ -58,225 +84,7 @@ resources: [
 		kind:       "Substrate"
 		metadata: name: "gamma-primary"
 		spec: {
-			access: argv: [
-				"ssh",
-				"-T",
-				"-o", "BatchMode=yes",
-				"-o", "StrictHostKeyChecking=yes",
-				"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
-				"-o", "ConnectTimeout=10",
-				"ubuntu@206.223.228.87",
-				"true",
-			]
-			upload: {
-				run: argv: [
-					"sh",
-					"-c",
-					"""
-						set -eu
-						rsync_bin=./bazel-bin/src/guardian-specification/tools/rsync
-						test -x "$rsync_bin"
-						"$rsync_bin" --version >/dev/null
-						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
-						remote=ubuntu@206.223.228.87
-						remote_root=/home/ubuntu/.local/state/guardian/repo
-						artifact_paths='
-						bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
-						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
-						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
-						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar
-						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer_/nomad-observer
-						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
-						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
-						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
-						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
-						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
-						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
-						bazel-bin/src/infrastructure-components/electric/electric-runtime.tar
-						bazel-bin/src/infrastructure-components/electric/cmd/electric-recover/electric-recover_/electric-recover
-						bazel-bin/src/infrastructure-components/forgejo/forgejo-runtime.tar
-						bazel-bin/src/infrastructure-components/forgejo/cmd/forgejo-recover/forgejo-recover_/forgejo-recover
-						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
-						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
-						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
-						bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar
-						bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply
-						bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar
-						bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar
-						bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover
-						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
-						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
-						bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar
-						bazel-bin/src/infrastructure-components/spicedb/cmd/spicedb-recover/spicedb-recover_/spicedb-recover
-						bazel-bin/src/infrastructure-components/stalwart/stalwart-runtime.tar
-						bazel-bin/src/infrastructure-components/stalwart/cmd/stalwart-recover/stalwart-recover_/stalwart-recover
-						bazel-bin/src/infrastructure-components/temporal-platform/temporal-runtime.tar
-						bazel-bin/src/infrastructure-components/temporal-platform/cmd/temporal-recover/temporal-recover_/temporal-recover
-						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
-						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
-						bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar
-						bazel-bin/src/infrastructure-components/verdaccio/cmd/verdaccio-recover/verdaccio-recover_/verdaccio-recover
-						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
-						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
-						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
-						bazel-bin/src/infrastructure-components/zot/zot-runtime.tar
-						bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover
-						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
-						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
-							bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
-							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
-							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
-							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
-								bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
-								bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
-								bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
-								bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service
-								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
-								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
-								bazel-bin/src/services/governance-service/cmd/governance-service/governance-service_/governance-service
-								bazel-bin/src/services/billing-service/cmd/billing-service/billing-service_/billing-service
-								'
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
-						"$rsync_bin" -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
-						"$rsync_bin" -a --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/next/workspace/"
-						printf '%s\n' $artifact_paths | "$rsync_bin" -aL --mkpath --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/next/"
-						""",
-				]
-				extract: argv: [
-					"sh",
-					"-c",
-					"""
-						set -eu
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
-						set -eu
-						repo_root=/home/ubuntu/.local/state/guardian/repo
-						test -f "$repo_root/next/workspace/.guardian/fly/document.json"
-						test -d "$repo_root/next/bazel-bin"
-						if [ -e "$repo_root/current" ] || [ -L "$repo_root/current" ]; then
-							sudo rm -rf "$repo_root/previous"
-							sudo mv -Tf "$repo_root/current" "$repo_root/previous"
-						fi
-						sudo mv -Tf "$repo_root/next" "$repo_root/current"
-						REMOTE
-						""",
-				]
-				verify: argv: [
-					"sh",
-					"-c",
-					"""
-						set -eu
-						rsync_bin=./bazel-bin/src/guardian-specification/tools/rsync
-						test -x "$rsync_bin"
-						"$rsync_bin" --version >/dev/null
-						ssh_opts='ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10'
-						remote=ubuntu@206.223.228.87
-						remote_root=/home/ubuntu/.local/state/guardian/repo
-						artifact_paths='
-						bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
-						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
-						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
-						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar
-						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer_/nomad-observer
-						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
-						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
-						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
-						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
-						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
-						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
-						bazel-bin/src/infrastructure-components/electric/electric-runtime.tar
-						bazel-bin/src/infrastructure-components/electric/cmd/electric-recover/electric-recover_/electric-recover
-						bazel-bin/src/infrastructure-components/forgejo/forgejo-runtime.tar
-						bazel-bin/src/infrastructure-components/forgejo/cmd/forgejo-recover/forgejo-recover_/forgejo-recover
-						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
-						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
-						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
-						bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar
-						bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply
-						bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar
-						bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar
-						bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover
-						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
-						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
-						bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar
-						bazel-bin/src/infrastructure-components/spicedb/cmd/spicedb-recover/spicedb-recover_/spicedb-recover
-						bazel-bin/src/infrastructure-components/stalwart/stalwart-runtime.tar
-						bazel-bin/src/infrastructure-components/stalwart/cmd/stalwart-recover/stalwart-recover_/stalwart-recover
-						bazel-bin/src/infrastructure-components/temporal-platform/temporal-runtime.tar
-						bazel-bin/src/infrastructure-components/temporal-platform/cmd/temporal-recover/temporal-recover_/temporal-recover
-						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
-						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
-						bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar
-						bazel-bin/src/infrastructure-components/verdaccio/cmd/verdaccio-recover/verdaccio-recover_/verdaccio-recover
-						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
-						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
-						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
-						bazel-bin/src/infrastructure-components/zot/zot-runtime.tar
-						bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover
-						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
-						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
-							bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
-							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
-							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
-							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
-								bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
-								bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
-								bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
-								bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service
-								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
-								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
-								bazel-bin/src/services/governance-service/cmd/governance-service/governance-service_/governance-service
-								bazel-bin/src/services/billing-service/cmd/billing-service/billing-service_/billing-service
-								'
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
-						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
-						fly_delta="$("$rsync_bin" -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
-						artifact_delta="$(printf '%s\n' $artifact_paths | "$rsync_bin" -aL --mkpath --dry-run --checksum --itemize-changes --relative --files-from=- --timeout=60 -e "$ssh_opts" ./ "$remote:$remote_root/current/")"
-						test -z "$workspace_delta"
-						test -z "$fly_delta"
-						test -z "$artifact_delta"
-						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'cd /home/ubuntu/.local/state/guardian/repo/current && find workspace bazel-bin -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum'
-						""",
-				]
-			}
-			kernel: {
-				openbaoPrepare: argv: [
-					"ssh",
-					"-T",
-					"-o", "BatchMode=yes",
-					"-o", "StrictHostKeyChecking=yes",
-					"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
-					"-o", "ConnectTimeout=10",
-					"ubuntu@206.223.228.87",
-					"sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover prepare --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao",
-				]
-				nomad: argv: [
-					"ssh",
-					"-T",
-					"-o", "BatchMode=yes",
-					"-o", "StrictHostKeyChecking=yes",
-					"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
-					"-o", "ConnectTimeout=10",
-					"ubuntu@206.223.228.87",
-					"sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --address=http://127.0.0.1:4646",
-				]
-				verify: argv: [
-					"sh",
-					"-c",
-					"""
-							set -eu
-							ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
-							set -eu
-							nomad=/opt/verself/profile/bin/nomad
-							sudo test -f /etc/verself/openbao/ca.pem
-							sudo grep -q '^vault {' /etc/nomad/nomad.hcl
-							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/openbao/nomad.hcl
-							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl
-							NOMAD_ADDR=http://127.0.0.1:4646 "$nomad" job validate /home/ubuntu/.local/state/guardian/repo/current/workspace/src/infrastructure-components/postgresql/nomad.hcl
-							REMOTE
-						""",
-				]
-			}
+
 			remote: {
 				repoRoot: "/home/ubuntu/.local/state/guardian/repo/current"
 				guardian: "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian"
@@ -411,12 +219,6 @@ resources: [
 							  capabilities = ["create", "update", "read", "sudo"]
 							}
 							path "auth/jwt-nomad/role/*" {
-							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
-							}
-							path "auth/spiffe-jwt/config" {
-							  capabilities = ["create", "update", "read", "sudo"]
-							}
-							path "auth/spiffe-jwt/role/*" {
 							  capabilities = ["create", "update", "read", "delete", "list", "sudo"]
 							}
 							path "kv-runtime/data/secret/org/*" {
@@ -1034,40 +836,6 @@ resources: [
 							tokenExplicitMaxTTL: 0
 						},
 					]
-				}, {
-					path:        "spiffe-jwt"
-					description: "Verself SPIFFE workload JWT-SVID auth"
-					spireBundle: {
-						spireServerPath: "/var/lib/spire/runtime/current/bin/spire-server"
-						socketPath:      "/run/spire-server/private/api.sock"
-					}
-					supportedAlgs: ["ES256"]
-					roles: [
-						{
-							name:     "secrets-runtime-read"
-							roleType: "jwt"
-							boundAudiences: ["openbao"]
-							boundSubject:         "spiffe://gamma.verself.sh/svc/secrets-service"
-							userClaim:            "sub"
-							userClaimJSONPointer: false
-							tokenType:            "service"
-							tokenPolicies: ["secrets-runtime-read"]
-							tokenPeriod:         "30m"
-							tokenExplicitMaxTTL: 0
-						},
-						{
-							name:     "secrets-runtime-write"
-							roleType: "jwt"
-							boundAudiences: ["openbao"]
-							boundSubject:         "spiffe://gamma.verself.sh/svc/secrets-service"
-							userClaim:            "sub"
-							userClaimJSONPointer: false
-							tokenType:            "service"
-							tokenPolicies: ["secrets-runtime-write"]
-							tokenPeriod:         "30m"
-							tokenExplicitMaxTTL: 0
-						},
-					]
 				}]
 				operatorImportTokens: [
 					{
@@ -1277,6 +1045,10 @@ resources: [
 					owner: "deployment_service"
 				},
 				{
+					name:  "distribution_service"
+					owner: "distribution_service"
+				},
+				{
 					name:  "profile"
 					owner: "profile_service"
 				},
@@ -1340,6 +1112,10 @@ resources: [
 					login: true
 				},
 				{
+					name:  "distribution_service"
+					login: true
+				},
+				{
 					name:  "profile_service"
 					login: true
 				},
@@ -1400,6 +1176,10 @@ resources: [
 				{
 					systemUser:   "deployment_service"
 					postgresUser: "deployment_service"
+				},
+				{
+					systemUser:   "distribution_service"
+					postgresUser: "distribution_service"
 				},
 				{
 					systemUser:   "profile_service"
@@ -2026,7 +1806,9 @@ resources: [
 						"api.gamma.verself.sh",
 						"billing.api.gamma.verself.sh",
 						"deployments.api.gamma.verself.sh",
+						"distribution.api.gamma.verself.sh",
 						"iam.api.gamma.verself.sh",
+						"oci.gamma.verself.sh",
 						"profile.api.gamma.verself.sh",
 						"projects.api.gamma.verself.sh",
 						"source.api.gamma.verself.sh",
@@ -2099,6 +1881,26 @@ resources: [
 					}
 					hostname: "deployments.api.gamma.verself.sh"
 					backend:  "be_route_product_deployments_api_deployment_service_public_api"
+				},
+				{
+					name: "distribution-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "distribution.api.gamma.verself.sh"
+					backend:  "be_route_product_distribution_api_distribution_service_public_api"
+				},
+				{
+					name: "oci-registry"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "oci.gamma.verself.sh"
+					backend:  "be_route_product_distribution_api_distribution_service_public_api"
 				},
 				{
 					name: "iam-api"
@@ -2933,6 +2735,32 @@ resources: [
 				allowedRefs:         "refs/heads/main"
 				allowedWorkflowRefs: "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main"
 			}
+		}
+	},
+	{
+		apiVersion: "distribution.guardianintelligence.org/v1alpha1"
+		kind:       "DistributionService"
+		metadata: name: "distribution-service"
+		spec: {
+			installationID: "inst_gamma_01JZ0000000000000000000000"
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audience:  "376309723453988548"
+			}
+			postgres: {
+				dsn:      "postgres://distribution_service@/distribution_service?host=/var/run/postgresql&sslmode=disable"
+				maxConns: 8
+			}
+			clickhouse: {
+				address:    "127.0.0.1:9440"
+				user:       "distribution_service"
+				caCertPath: "/etc/verself/clickhouse/server-ca.pem"
+			}
+			attestation: {
+				trustedBuilders: ["spiffe://gamma.verself.sh/svc/release-builder"]
+				trustedSigners: ["https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"]
+			}
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
 		}
 	},
 	{

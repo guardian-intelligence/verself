@@ -1,4 +1,0 @@
-postgresql_service_databases:
-  - { name: distribution_service, owner: distribution_service }
-postgresql_peer_mappings:
-  - { system_user: distribution_service, pg_user: distribution_service }

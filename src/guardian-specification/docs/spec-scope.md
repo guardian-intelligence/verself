@@ -216,11 +216,10 @@ Use `prestart` lifecycle tasks for idempotent recovery work that must complete
 before the main task starts. Use a long-running task only when the component
 needs continuous reconciliation after startup.
 
-Nomad agent recovery is kernel machinery for the current alpha slice. The
-pinned Nomad runtime and `nomad-recover` binary are shipped in the
-materialized repo and use component-owned defaults. Add a Nomad component CRD
-when static Nomad configuration no longer fits in the owner-local binary or job
-file defaults.
+Nomad agent recovery is preflight machinery for the current alpha slice. The
+pinned Nomad runtime is shipped in the materialized repo and installed by the
+declared preflight playbook. Add a Nomad component CRD when static Nomad
+configuration no longer fits in the playbook and Nomad-owned job file defaults.
 
 ## Evidence
 
