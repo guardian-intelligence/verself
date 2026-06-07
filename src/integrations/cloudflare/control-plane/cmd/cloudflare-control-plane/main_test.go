@@ -165,7 +165,7 @@ func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t 
 		"CloudflareRecoveryAuthorityAvailable=False",
 		"RootTrustMaterialRequired",
 		"--action=import-account-admin --operator-import-stdin",
-		"encrypted OpenBao operator import token",
+		"scoped OpenBao token",
 		"gitignored source such as secret.env",
 	} {
 		if !strings.Contains(msg, want) {
@@ -356,6 +356,34 @@ func TestApplyRecoveryConfigMapsMinimalCloudflareControlPlane(t *testing.T) {
 	}
 }
 
+func TestLoadCloudflareControlPlaneSelectsFromGuardianDocument(t *testing.T) {
+	t.Setenv("NOMAD_SECRETS_DIR", "/alloc/secrets")
+	path := filepath.Join(t.TempDir(), "document.yml")
+	writeTestFile(t, path, minimalGuardianRecoveryDocumentYAML())
+
+	doc, err := loadCloudflareControlPlane(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.APIVersion != cloudflareControlPlaneAPIVersion || doc.Kind != kindCloudflareControlPlane {
+		t.Fatalf("selected resource = %s/%s", doc.APIVersion, doc.Kind)
+	}
+	if doc.Spec.Site != "gamma" || doc.Spec.AccountID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("site/account = %s/%s", doc.Spec.Site, doc.Spec.AccountID)
+	}
+}
+
+func TestLoadCloudflareControlPlaneRejectsUnknownSelectedSpecField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "document.yml")
+	body := strings.Replace(minimalGuardianRecoveryDocumentYAML(), "      site: gamma", "      site: gamma\n      unsupported: value", 1)
+	writeTestFile(t, path, body)
+
+	_, err := loadCloudflareControlPlane(path)
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("load error = %v", err)
+	}
+}
+
 func TestDNSDesiredStateFromRecoveryUsesHostedZones(t *testing.T) {
 	doc := CloudflareControlPlane{
 		Spec: CloudflareControlPlaneSpec{
@@ -495,4 +523,25 @@ spec:
       proxyAccessKeyID: object-storage-service.r2.proxy_access_key_id
       proxySecretAccessKey: object-storage-service.r2.proxy_secret_access_key
 `
+}
+
+func minimalGuardianRecoveryDocumentYAML() string {
+	lines := strings.Split(strings.TrimSpace(minimalRecoveryConfigYAML()), "\n")
+	var b strings.Builder
+	b.WriteString("entrypoint: {}\n")
+	b.WriteString("resources:\n")
+	b.WriteString("  - apiVersion: example.guardianintelligence.org/v1alpha1\n")
+	b.WriteString("    kind: Ignored\n")
+	b.WriteString("    metadata:\n")
+	b.WriteString("      name: ignored\n")
+	b.WriteString("    spec: {}\n")
+	b.WriteString("  - ")
+	b.WriteString(lines[0])
+	b.WriteByte('\n')
+	for _, line := range lines[1:] {
+		b.WriteString("    ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

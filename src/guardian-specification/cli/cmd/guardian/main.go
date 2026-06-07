@@ -1262,6 +1262,7 @@ func preparePreflightWorkspace(workspaceRoot string) error {
 		"bazel-bin",
 		"bazel-bin/src/tools/dev/binaries/uvx",
 		"bazel-bin/src/guardian-specification/tools/rsync",
+		"bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar",
 		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service",
 		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar",
 	} {

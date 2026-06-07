@@ -183,7 +183,7 @@ func verifyRecoveryCredential(ctx context.Context, cfg config, out *report) erro
 
 func cloudflareRecoveryAuthorityUnavailableError(accountAdminPath string, accountAdminErr error, recoveryCredentialPath string, recoveryCredentialErr error) error {
 	return fmt.Errorf(
-		"CloudflareRecoveryAuthorityAvailable=False: %s: no deployed Cloudflare account-admin authority exists at %s (%v), and no bucket-scoped R2 recovery credential exists at %s (%v). Provide root trust material only through the operator import path: cloudflare-control-plane --action=import-account-admin --operator-import-stdin. Use the encrypted OpenBao operator import token from init-material.json and keep account-admin material in an operator-local, gitignored source such as secret.env until it is imported into OpenBao.",
+		"CloudflareRecoveryAuthorityAvailable=False: %s: no deployed Cloudflare account-admin authority exists at %s (%v), and no bucket-scoped R2 recovery credential exists at %s (%v). Provide root trust material only through the operator import path: cloudflare-control-plane --action=import-account-admin --operator-import-stdin. The stdin payload must contain a scoped OpenBao token that can write the Cloudflare account-admin path and the Cloudflare account-admin API token; keep this material in an operator-local, gitignored source such as secret.env until it is imported into OpenBao.",
 		rootTrustMaterialRequiredReason,
 		accountAdminPath,
 		accountAdminErr,

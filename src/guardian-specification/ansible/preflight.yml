@@ -23,7 +23,7 @@
       - bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
       - bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
       - bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
-      - bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
+      - bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar
       - bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 
   tasks:

@@ -590,6 +590,7 @@ printf 'ansible ran\n' > ansible-ran
 		t.Fatalf("write fake rsync: %v", err)
 	}
 	for _, rel := range []string{
+		"bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar",
 		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service",
 		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar",
 	} {

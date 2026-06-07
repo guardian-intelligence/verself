@@ -36,6 +36,7 @@ resources: [
 					nomad=/opt/verself/profile/bin/nomad
 					job=/home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl
 					job_name=cloudflare-integration-recovery
+					image=/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar
 					export NOMAD_ADDR=http://127.0.0.1:4646
 					dump_job_debug() {
 						echo "===== $job_name job status =====" >&2
@@ -47,14 +48,16 @@ resources: [
 						fi
 						echo "===== $job_name alloc status $alloc =====" >&2
 						"$nomad" alloc status "$alloc" >&2 || true
-						for task in setup recover; do
+						for task in recover; do
 							echo "===== $job_name $task stdout tail =====" >&2
 							"$nomad" alloc logs -tail -n=80 "$alloc" "$task" >&2 || true
 							echo "===== $job_name $task stderr tail =====" >&2
 							"$nomad" alloc logs -stderr -tail -n=80 "$alloc" "$task" >&2 || true
 						done
 					}
-					"$nomad" job run -detach "$job"
+					set -- $(sha256sum "$image")
+					image_digest="sha256:$1"
+					"$nomad" job run -detach -var "cloudflare_control_plane_image_digest=$image_digest" "$job"
 					for second in $(seq 1 600); do
 						allocs="$("$nomad" job allocs -json "$job_name" || true)"
 						if printf '%s\n' "$allocs" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; status=latest.get("ClientStatus"); sys.exit(0 if status == "complete" else 2 if status in {"failed", "lost"} else 1)'; then

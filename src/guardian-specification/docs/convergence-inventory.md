@@ -8,7 +8,8 @@ historical incident log.
 | Guardian preflight | Guardian CLI + Ansible preflight playbook | Uploads the repo/workspace graph and prepares root services | `guardian preflight gamma` on a wiped host |
 | OpenBao | Preflight root service via `openbao-recover` and systemd | Installs, starts, initializes/restores, unseals, and revokes fresh init root token | Fresh wiped-host recovery and sealed restart recovery |
 | Nomad | Preflight root service via systemd | Starts the agent and validates the Podman driver | `guardian fly gamma` submits and monitors jobs |
-| Podman | Preflight root prerequisite | Required by Nomad Podman driver | First service job runs from a repo-local image archive |
+| Podman | Preflight root prerequisite | Nomad loads repo-local image archives through the Podman driver | More services run from repo-local image archives |
+| Cloudflare Control Plane | Component-owned Nomad recovery job | Runs from a repo-local static OCI image archive and blocks on `RootTrustMaterialRequired` | Operator import makes account-admin or recovery R2 authority available |
 | Profile Service | Component-owned Nomad job | First service cutover to OCI/Podman; static auth audience is in the CRD | Nomad alloc runs migration and service from `docker-archive:` |
 
 ## Current Rules
@@ -17,6 +18,10 @@ historical incident log.
 - OpenBao recovery does not reconcile service-specific mounts, policies, auth,
   or runtime secret paths.
 - Services run as OCI images through the Nomad Podman driver.
+- OCI-bound Go binaries are built static so scratch-style image layers do not
+  depend on host distro libraries.
+- Image archive digests must be part of the submitted Nomad job metadata/vars,
+  so changed bytes produce a new Nomad evaluation.
 - The repo upload is the golden image; Bazel-built artifacts are uploaded
   explicitly when they live under `bazel-bin`.
 - No fixed host ports for services. Nomad allocates dynamic ports.

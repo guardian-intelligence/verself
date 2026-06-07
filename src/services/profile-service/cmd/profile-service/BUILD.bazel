@@ -28,6 +28,8 @@ go_library(
 go_binary(
     name = "profile-service",
     embed = [":profile-service_lib"],
+    pure = "on",
+    static = "on",
     visibility = ["//visibility:public"],
 )
 

@@ -38,6 +38,18 @@ type CloudflareControlPlane struct {
 	Spec       CloudflareControlPlaneSpec `yaml:"spec" json:"spec"`
 }
 
+type guardianDocument struct {
+	Entrypoint yaml.Node          `yaml:"entrypoint" json:"entrypoint"`
+	Resources  []guardianResource `yaml:"resources" json:"resources"`
+}
+
+type guardianResource struct {
+	APIVersion string           `yaml:"apiVersion" json:"apiVersion"`
+	Kind       string           `yaml:"kind" json:"kind"`
+	Metadata   resourceMetadata `yaml:"metadata" json:"metadata"`
+	Spec       yaml.Node        `yaml:"spec" json:"spec"`
+}
+
 type CloudflareControlPlaneSpec struct {
 	Site                    string          `yaml:"site" json:"site"`
 	AccountID               string          `yaml:"accountID" json:"accountID"`
@@ -110,16 +122,65 @@ func loadCloudflareControlPlane(path string) (CloudflareControlPlane, error) {
 	if err != nil {
 		return CloudflareControlPlane{}, fmt.Errorf("read CloudflareControlPlane %s: %w", path, err)
 	}
+	doc, directErr := decodeCloudflareControlPlane(body)
+	if directErr == nil {
+		return doc, nil
+	}
+	graphDoc, graphErr := decodeCloudflareControlPlaneFromGuardianDocument(body)
+	if graphErr == nil {
+		return graphDoc, nil
+	}
+	return CloudflareControlPlane{}, fmt.Errorf("decode CloudflareControlPlane %s: direct CRD: %w; Guardian document: %v", path, directErr, graphErr)
+}
+
+func decodeCloudflareControlPlane(body []byte) (CloudflareControlPlane, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(body))
 	decoder.KnownFields(true)
 	var doc CloudflareControlPlane
 	if err := decoder.Decode(&doc); err != nil {
-		return CloudflareControlPlane{}, fmt.Errorf("decode CloudflareControlPlane %s: %w", path, err)
+		return CloudflareControlPlane{}, err
 	}
 	if err := doc.validate(); err != nil {
-		return CloudflareControlPlane{}, fmt.Errorf("%s: %w", path, err)
+		return CloudflareControlPlane{}, err
 	}
 	return doc, nil
+}
+
+func decodeCloudflareControlPlaneFromGuardianDocument(body []byte) (CloudflareControlPlane, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	decoder.KnownFields(true)
+	var doc guardianDocument
+	if err := decoder.Decode(&doc); err != nil {
+		return CloudflareControlPlane{}, err
+	}
+	var matches []guardianResource
+	for _, resource := range doc.Resources {
+		if strings.TrimSpace(resource.APIVersion) == cloudflareControlPlaneAPIVersion &&
+			strings.TrimSpace(resource.Kind) == kindCloudflareControlPlane {
+			matches = append(matches, resource)
+		}
+	}
+	if len(matches) != 1 {
+		return CloudflareControlPlane{}, fmt.Errorf("expected exactly one %s/%s resource, found %d", cloudflareControlPlaneAPIVersion, kindCloudflareControlPlane, len(matches))
+	}
+	specBody, err := yaml.Marshal(&matches[0].Spec)
+	if err != nil {
+		return CloudflareControlPlane{}, fmt.Errorf("encode selected CloudflareControlPlane spec: %w", err)
+	}
+	specDecoder := yaml.NewDecoder(bytes.NewReader(specBody))
+	specDecoder.KnownFields(true)
+	selected := CloudflareControlPlane{
+		APIVersion: matches[0].APIVersion,
+		Kind:       matches[0].Kind,
+		Metadata:   matches[0].Metadata,
+	}
+	if err := specDecoder.Decode(&selected.Spec); err != nil {
+		return CloudflareControlPlane{}, fmt.Errorf("decode selected CloudflareControlPlane spec: %w", err)
+	}
+	if err := selected.validate(); err != nil {
+		return CloudflareControlPlane{}, err
+	}
+	return selected, nil
 }
 
 func (d CloudflareControlPlane) validate() error {

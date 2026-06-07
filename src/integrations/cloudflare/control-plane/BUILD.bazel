@@ -1,6 +1,5 @@
 # gazelle:prefix github.com/verself/integrations/cloudflare/control-plane
 
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
@@ -16,22 +15,10 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-pkg_tar(
-    name = "runtime_artifact",
-    out = "cloudflare-control-plane-runtime.tar",
-    files = {
-        "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane": "bin/cloudflare-control-plane",
-    },
-    modes = {
-        "bin/cloudflare-control-plane": "0755",
-    },
-    visibility = ["//visibility:public"],
-)
-
 nomad_component(
     name = "recovery_nomad_component",
     artifacts = {
-        ":runtime_artifact": "cloudflare-control-plane-runtime",
+        "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane_image_archive": "cloudflare-control-plane_image_archive",
     },
     component = "cloudflare_integration_recovery",
     deploy_phase = "platform",
