@@ -48,49 +48,6 @@ package v1alpha1
 				destinationRef?: #ObjectRef
 			}
 		}
-		baseline?: {
-			reconcile: bool
-			mounts?: [...{
-				path:         #NonEmptyString
-				type:         #NonEmptyString
-				description?: #NonEmptyString
-				options?: [#NonEmptyString]: #NonEmptyString
-			}]
-			policies?: [...{
-				name: #NonEmptyString
-				hcl:  #NonEmptyString
-			}]
-			jwtAuths?: [...{
-				path:         #NonEmptyString
-				description?: #NonEmptyString
-				jwksURL?:     #HTTPURL
-				spireBundle?: {
-					spireServerPath: #AbsolutePath
-					socketPath:      #AbsolutePath
-				}
-				supportedAlgs: [#NonEmptyString, ...#NonEmptyString]
-				roles: [...{
-					name:     #NonEmptyString
-					roleType: "jwt"
-					boundAudiences: [#NonEmptyString, ...#NonEmptyString]
-					boundSubject?: #NonEmptyString
-					boundClaims?: [#NonEmptyString]: #NonEmptyString
-					userClaim:            #NonEmptyString
-					userClaimJSONPointer: bool
-					claimMappings?: [#NonEmptyString]: #NonEmptyString
-					tokenType: #NonEmptyString
-					tokenPolicies: [#NonEmptyString, ...#NonEmptyString]
-					tokenPeriod:         #NonEmptyString
-					tokenExplicitMaxTTL: int & >=0
-				}]
-			}]
-			operatorImportTokens?: [...{
-				name:   #NonEmptyString
-				policy: #NonEmptyString
-				ttl:    #NonEmptyString
-				uses?:  int & >=0
-			}]
-		}
 	}
 }
 

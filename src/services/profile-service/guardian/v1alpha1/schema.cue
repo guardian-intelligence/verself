@@ -3,19 +3,8 @@ package v1alpha1
 #NonEmptyString: string & !=""
 #HTTPSURL:       =~"^https://[^\\s]+$"
 
-#ObjectRef: {
-	apiVersion: #NonEmptyString
-	kind:       #NonEmptyString
-	name:       #NonEmptyString
-}
-
 #Metadata: {
 	name: #NonEmptyString
-}
-
-#CredentialRef: #ObjectRef & {
-	apiVersion: "openbao.guardianintelligence.org/v1alpha1"
-	kind:       "SecretPath"
 }
 
 #ProfileService: {
@@ -24,8 +13,8 @@ package v1alpha1
 	metadata:   #Metadata
 	spec: {
 		auth: {
-			issuerURL:   #HTTPSURL
-			audienceRef: #CredentialRef
+			issuerURL: #HTTPSURL
+			audience:  #NonEmptyString
 		}
 		postgres: {
 			dsn:      #NonEmptyString

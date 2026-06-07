@@ -20,7 +20,6 @@ import (
 	"github.com/verself/profile-service/internal/profile"
 	"github.com/verself/profile-service/migrations"
 	auth "github.com/verself/service-runtime/auth"
-	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
@@ -93,12 +92,6 @@ func run(args []string) error {
 	}()
 	slog.SetDefault(logger)
 
-	cfg := envconfig.New()
-	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
-	if err := cfg.Err(); err != nil {
-		return err
-	}
-
 	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("profile spiffe workload source: %w", err)
@@ -155,7 +148,7 @@ func run(args []string) error {
 	profileapi.NewAPI(privateMux, profileapi.Config{Version: serviceVersion, ListenAddr: opts.ListenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
 	authenticated := auth.Middleware(auth.Config{
 		IssuerURL: runtimeCfg.AuthIssuerURL,
-		Audience:  authAudience,
+		Audience:  runtimeCfg.AuthAudience,
 	})(privateMux)
 	rootMux.Handle("/", profileapi.CaptureRawBearerToken(authenticated))
 

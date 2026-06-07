@@ -163,11 +163,11 @@ names, nonsecret provider identifiers, backup object names, and references to
 other graph resources. A static field may describe where a component should find
 authority; it does not contain the secret authority value.
 
-Component schemas may include desired baseline state such as OpenBao mounts,
-Nomad workload roles, PostgreSQL roles, HAProxy routes, object storage buckets,
-backup object names, or provider account identifiers. The owning Nomad task
-derives operations such as restore, unseal, migrate, and no-op from observed
-component state.
+Component schemas may include desired static state such as PostgreSQL roles,
+HAProxy routes, object storage buckets, backup object names, provider account
+identifiers, or service auth audiences. The owning Nomad task derives
+operations such as restore, unseal, migrate, and no-op from observed component
+state.
 
 Secret values stay out of component CRDs. A component that needs root or
 provider authority declares the nonsecret authority location or recipient

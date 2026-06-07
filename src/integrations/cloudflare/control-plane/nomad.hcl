@@ -100,17 +100,6 @@ PY
       driver = "raw_exec"
       user = "root"
 
-      vault {
-        env  = false
-        role = "cloudflare-integration-recovery-runtime"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
       config {
         command = "/var/lib/cloudflare-control-plane/runtime/current/bin/cloudflare-control-plane"
         args = [
@@ -136,11 +125,15 @@ PY
       }
 
       restart {
-        attempts = 20
+        attempts = 0
         delay = "15s"
         interval = "10m"
         mode = "fail"
       }
+    }
+
+    reschedule {
+      attempts = 0
     }
   }
 }

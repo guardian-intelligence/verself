@@ -31,7 +31,7 @@ type migrationOptions struct {
 
 type profileRuntimeConfig struct {
 	AuthIssuerURL        string
-	AuthAudienceName     string
+	AuthAudience         string
 	PostgresDSN          string
 	PostgresMaxConns     int
 	SPIFFEEndpointSocket string
@@ -105,7 +105,9 @@ func loadProfileRuntimeConfig(path string, name string) (profileRuntimeConfig, e
 		return profileRuntimeConfig{}, fmt.Errorf("expected exactly one ProfileService resource named %q, found %d", name, len(matches))
 	}
 	var spec profileServiceSpec
-	if err := json.Unmarshal(matches[0].Spec, &spec); err != nil {
+	specDecoder := json.NewDecoder(strings.NewReader(string(matches[0].Spec)))
+	specDecoder.DisallowUnknownFields()
+	if err := specDecoder.Decode(&spec); err != nil {
 		return profileRuntimeConfig{}, fmt.Errorf("decode ProfileService spec: %w", err)
 	}
 	return profileConfigFromSpec(spec)
@@ -127,16 +129,10 @@ type profileMeta struct {
 	Name string `json:"name"`
 }
 
-type objectRef struct {
-	APIVersion string `json:"apiVersion"`
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-}
-
 type profileServiceSpec struct {
 	Auth struct {
-		IssuerURL   string    `json:"issuerURL"`
-		AudienceRef objectRef `json:"audienceRef"`
+		IssuerURL string `json:"issuerURL"`
+		Audience  string `json:"audience"`
 	} `json:"auth"`
 	Postgres struct {
 		DSN      string `json:"dsn"`
@@ -150,14 +146,14 @@ type profileServiceSpec struct {
 func profileConfigFromSpec(spec profileServiceSpec) (profileRuntimeConfig, error) {
 	cfg := profileRuntimeConfig{
 		AuthIssuerURL:        strings.TrimSpace(spec.Auth.IssuerURL),
-		AuthAudienceName:     strings.TrimSpace(spec.Auth.AudienceRef.Name),
+		AuthAudience:         strings.TrimSpace(spec.Auth.Audience),
 		PostgresDSN:          strings.TrimSpace(spec.Postgres.DSN),
 		PostgresMaxConns:     spec.Postgres.MaxConns,
 		SPIFFEEndpointSocket: strings.TrimSpace(spec.SPIFFE.EndpointSocket),
 	}
 	required := map[string]string{
 		"auth.issuerURL":        cfg.AuthIssuerURL,
-		"auth.audienceRef.name": cfg.AuthAudienceName,
+		"auth.audience":         cfg.AuthAudience,
 		"postgres.dsn":          cfg.PostgresDSN,
 		"spiffe.endpointSocket": cfg.SPIFFEEndpointSocket,
 	}

@@ -18,10 +18,28 @@ variable "profile_service_projected_graph" {
   default = "/run/verself/recovery/profile-service/document.json"
 }
 
+variable "profile_service_image_archive" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar"
+}
+
+variable "profile_service_projected_image" {
+  type    = string
+  default = "/var/lib/profile-service/runtime/image.tar"
+}
+
+variable "profile_service_image_digest" {
+  type    = string
+  default = "sha256:local"
+}
+
 job "profile-service" {
   name        = "profile-service"
   datacenters = ["*"]
   type        = "service"
+  meta {
+    image_digest = "${var.profile_service_image_digest}"
+  }
 
   group "profile-service" {
     count = 2
@@ -51,12 +69,11 @@ job "profile-service" {
         command = "${var.guardian_repo_root}/bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service"
         args = [
           "recover",
-          "--repo-root=${var.guardian_repo_root}",
           "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
-          "--resource-name=${var.profile_service_resource_name}",
           "--runtime-root=${var.profile_service_runtime_root}",
           "--projected-graph=${var.profile_service_projected_graph}",
-          "--migrate",
+          "--image-archive=${var.profile_service_image_archive}",
+          "--projected-image=${var.profile_service_projected_image}",
         ]
       }
 
@@ -66,27 +83,62 @@ job "profile-service" {
       }
     }
 
+    task "migrate" {
+      driver = "podman"
+      user   = "profile_service"
+
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
+      }
+
+      config {
+        image        = "docker-archive:${var.profile_service_projected_image}"
+        network_mode = "host"
+        readonly_rootfs = true
+        volumes = [
+          "${var.profile_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "/var/run/postgresql:/var/run/postgresql",
+        ]
+        tmpfs = ["/tmp"]
+        args = [
+          "migrate",
+          "--resource-graph=/guardian/document.json",
+          "--resource-name=${var.profile_service_resource_name}",
+          "up",
+        ]
+      }
+
+      env {
+        HOME   = "/tmp"
+        TMPDIR = "/tmp"
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+
     task "profile-service" {
-      driver         = "raw_exec"
+      driver         = "podman"
       user           = "profile_service"
       kill_signal    = "SIGTERM"
       kill_timeout   = "30s"
       shutdown_delay = "5s"
 
-      vault {
-        role = "profile-service-runtime"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
       config {
-        command = "${var.profile_service_runtime_root}/current/bin/profile-service"
+        image        = "docker-archive:${var.profile_service_projected_image}"
+        network_mode = "host"
+        readonly_rootfs = true
+        volumes = [
+          "${var.profile_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "/run/spire-agent/sockets:/run/spire-agent/sockets:ro",
+          "/var/run/postgresql:/var/run/postgresql",
+        ]
+        tmpfs = ["/tmp"]
         args = [
-          "--resource-graph=${var.profile_service_projected_graph}",
+          "--resource-graph=/guardian/document.json",
           "--resource-name=${var.profile_service_resource_name}",
           "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
           "--internal-listen-addr=127.0.0.1:$${NOMAD_PORT_internal_https}",
@@ -94,24 +146,12 @@ job "profile-service" {
       }
 
       env {
-        CREDENTIALS_DIRECTORY        = "$${NOMAD_SECRETS_DIR}"
-        HOME                         = "/var/lib/profile-service/home"
+        HOME                         = "/tmp"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES     = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME            = "profile-service"
-        TMPDIR                       = "/var/lib/profile-service/home/tmp"
+        TMPDIR                       = "/tmp"
         VERSELF_SUPERVISOR           = "nomad"
-      }
-
-      template {
-        change_mode = "restart"
-        destination = "secrets/iam-service.zitadel.auth_audience"
-        perms       = "0600"
-        uid         = "978"
-        gid         = "971"
-        data        = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
 
       resources {

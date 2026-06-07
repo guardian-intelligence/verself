@@ -57,4 +57,4 @@ Secret values are never embedded in resource graphs, environment variables,
 argv, command output, telemetry, or durable host files. Component recovery
 binaries request operator-held authority through component-owned paths and
 report concrete component blockers such as unseal, snapshot restore, provider
-import, or baseline reconciliation.
+import, or service reconciliation.

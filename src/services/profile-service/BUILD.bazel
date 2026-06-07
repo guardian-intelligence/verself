@@ -50,7 +50,7 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     artifacts = {
-        "//src/services/profile-service/cmd/profile-service:profile-service_nomad_artifact": "profile-service",
+        "//src/services/profile-service/cmd/profile-service:profile-service_image_archive": "profile-service_image_archive",
     },
     component = "profile_service",
     digest_inputs = [":deploy_declarations"],

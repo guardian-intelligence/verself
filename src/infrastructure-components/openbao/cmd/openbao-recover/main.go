@@ -26,7 +26,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -46,40 +45,32 @@ const (
 	defaultReportPath  = "/run/verself/recovery/openbao/report.json"
 	defaultKeyShares   = 3
 	defaultThreshold   = 2
-
-	baselineReconcileRetryWindow = 60 * time.Second
-	baselineReconcileRetryDelay  = 1 * time.Second
-	baselineDigestEvidenceKey    = "baseline_digest"
 )
 
 type config struct {
-	repoRoot                    string
-	runtimeRoot                 string
-	dataDir                     string
-	configPath                  string
-	reportPath                  string
-	addr                        string
-	caCert                      string
-	bao                         string
-	keyShares                   int
-	threshold                   int
-	pgpKeys                     stringList
-	initOutputPath              string
-	snapshotPath                string
-	snapshotManifest            string
-	snapshotOut                 string
-	manifestOut                 string
-	tokenStdin                  bool
-	unsealStdin                 bool
-	breakglassGenerateRootStdin bool
-	loop                        bool
-	loopInterval                time.Duration
-	nomadWorkloadJWTFile        string
-	nomadWorkloadRole           string
-	resourceGraph               string
-	resourceName                string
-	pgpKeyDir                   string
-	baseline                    openBaoBaselineSpec
+	repoRoot         string
+	runtimeRoot      string
+	dataDir          string
+	configPath       string
+	reportPath       string
+	addr             string
+	caCert           string
+	bao              string
+	keyShares        int
+	threshold        int
+	pgpKeys          stringList
+	initOutputPath   string
+	snapshotPath     string
+	snapshotManifest string
+	snapshotOut      string
+	manifestOut      string
+	tokenStdin       bool
+	unsealStdin      bool
+	loop             bool
+	loopInterval     time.Duration
+	resourceGraph    string
+	resourceName     string
+	pgpKeyDir        string
 }
 
 type stringList []string
@@ -160,19 +151,6 @@ type initResponse struct {
 	RecoveryKeysB64 []string `json:"recovery_keys_b64"`
 }
 
-type generateRootAttempt struct {
-	Started          bool   `json:"started"`
-	Nonce            string `json:"nonce"`
-	Progress         int    `json:"progress"`
-	Required         int    `json:"required"`
-	Complete         bool   `json:"complete"`
-	EncodedToken     string `json:"encoded_token"`
-	EncodedRootToken string `json:"encoded_root_token"`
-	PGPFingerprint   string `json:"pgp_fingerprint"`
-	OTP              string `json:"otp"`
-	OTPLength        int    `json:"otp_length"`
-}
-
 type encryptedInitMaterial struct {
 	APIVersion string                    `json:"apiVersion"`
 	Kind       string                    `json:"kind"`
@@ -185,29 +163,12 @@ type encryptedInitMaterialMeta struct {
 }
 
 type encryptedInitMaterialSpec struct {
-	CreatedAt                  string                                 `json:"createdAt"`
-	KeyShares                  int                                    `json:"keyShares"`
-	KeyThreshold               int                                    `json:"keyThreshold"`
-	PGPRecipientCount          int                                    `json:"pgpRecipientCount"`
-	EncryptedUnsealSharesB64   []string                               `json:"encryptedUnsealSharesB64"`
-	EncryptedRecoverySharesB64 []string                               `json:"encryptedRecoverySharesB64,omitempty"`
-	OperatorImportTokens       []encryptedOperatorImportTokenMaterial `json:"operatorImportTokens,omitempty"`
-}
-
-type encryptedOperatorImportTokenMaterial struct {
-	Name               string   `json:"name"`
-	Policy             string   `json:"policy"`
-	TTL                string   `json:"ttl"`
-	Uses               int      `json:"uses,omitempty"`
-	EncryptedTokensB64 []string `json:"encryptedTokensB64"`
-}
-
-type operatorImportTokenHandoff struct {
-	Name   string
-	Policy string
-	TTL    string
-	Uses   int
-	Token  string
+	CreatedAt                  string   `json:"createdAt"`
+	KeyShares                  int      `json:"keyShares"`
+	KeyThreshold               int      `json:"keyThreshold"`
+	PGPRecipientCount          int      `json:"pgpRecipientCount"`
+	EncryptedUnsealSharesB64   []string `json:"encryptedUnsealSharesB64"`
+	EncryptedRecoverySharesB64 []string `json:"encryptedRecoverySharesB64,omitempty"`
 }
 
 type openBaoClient interface {
@@ -216,14 +177,7 @@ type openBaoClient interface {
 	Unseal(context.Context, string) (baoStatus, error)
 	RestoreSnapshot(context.Context, string, string) error
 	SaveSnapshot(context.Context, string) ([]byte, error)
-	ReconcileBaseline(context.Context, string, openBaoBaselineSpec) error
 	RevokeSelf(context.Context, string) error
-	LoginJWT(context.Context, string, string, string) (string, error)
-	CreateToken(context.Context, string, openBaoOperatorImportTokenSpec) (string, error)
-	GenerateRootInit(context.Context) (generateRootAttempt, error)
-	GenerateRootUpdate(context.Context, string, string) (generateRootAttempt, error)
-	GenerateRootCancel(context.Context) error
-	DecodeGeneratedRootToken(context.Context, string, string) (string, error)
 }
 
 func main() {
@@ -369,11 +323,8 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		fs.StringVar(&cfg.snapshotManifest, "snapshot-manifest", "", "snapshot manifest path")
 		fs.BoolVar(&cfg.unsealStdin, "unseal-stdin", false, "read unseal shares from stdin, one per line")
 		fs.BoolVar(&cfg.tokenStdin, "operator-token-stdin", false, "read an operator token from stdin")
-		fs.BoolVar(&cfg.breakglassGenerateRootStdin, "breakglass-generate-root-token-stdin", false, "BREAKGLASS: use deprecated OpenBao generate-root endpoints with stdin unseal shares")
 		fs.BoolVar(&cfg.loop, "loop", false, "run recover as a level-triggered controller")
 		fs.DurationVar(&cfg.loopInterval, "loop-interval", cfg.loopInterval, "recover controller observation interval")
-		fs.StringVar(&cfg.nomadWorkloadJWTFile, "nomad-workload-jwt-file", "", "Nomad workload identity JWT file used for baseline reconciliation")
-		fs.StringVar(&cfg.nomadWorkloadRole, "nomad-workload-role", "", "OpenBao JWT role used for baseline reconciliation")
 	}
 	if snapshotFlags {
 		fs.StringVar(&cfg.snapshotPath, "snapshot", "", "snapshot path to verify")
@@ -402,14 +353,8 @@ func parseConfig(name string, args []string, recoveryFlags bool, snapshotFlags b
 		}
 		cfg = normalizeConfig(next)
 	}
-	if cfg.tokenStdin && cfg.breakglassGenerateRootStdin {
-		return config{}, errors.New("--operator-token-stdin and --breakglass-generate-root-token-stdin are mutually exclusive")
-	}
-	if cfg.loop && (cfg.tokenStdin || cfg.unsealStdin || cfg.breakglassGenerateRootStdin) {
+	if cfg.loop && (cfg.tokenStdin || cfg.unsealStdin) {
 		return config{}, errors.New("--loop cannot read operator material from stdin")
-	}
-	if (cfg.nomadWorkloadJWTFile == "") != (cfg.nomadWorkloadRole == "") {
-		return config{}, errors.New("--nomad-workload-jwt-file and --nomad-workload-role must be provided together")
 	}
 	if cfg.loopInterval <= 0 {
 		return config{}, errors.New("--loop-interval must be positive")
@@ -442,8 +387,6 @@ func normalizeConfig(cfg config) config {
 	cfg.snapshotOut = strings.TrimSpace(cfg.snapshotOut)
 	cfg.manifestOut = strings.TrimSpace(cfg.manifestOut)
 	cfg.initOutputPath = strings.TrimSpace(cfg.initOutputPath)
-	cfg.nomadWorkloadJWTFile = strings.TrimSpace(cfg.nomadWorkloadJWTFile)
-	cfg.nomadWorkloadRole = strings.TrimSpace(cfg.nomadWorkloadRole)
 	cfg.resourceGraph = strings.TrimSpace(cfg.resourceGraph)
 	cfg.resourceName = strings.TrimSpace(cfg.resourceName)
 	cfg.pgpKeyDir = strings.TrimSpace(cfg.pgpKeyDir)
@@ -485,7 +428,6 @@ type openBaoClusterSpec struct {
 	InitMaterialPath string              `json:"initMaterialPath"`
 	Seal             openBaoSealSpec     `json:"seal"`
 	Snapshots        openBaoSnapshotSpec `json:"snapshots"`
-	Baseline         openBaoBaselineSpec `json:"baseline"`
 }
 
 type openBaoSealSpec struct {
@@ -513,77 +455,6 @@ type openBaoSnapshotSaveSpec struct {
 	ManifestPath   string    `json:"manifestPath"`
 	SnapshotPath   string    `json:"snapshotPath"`
 	DestinationRef objectRef `json:"destinationRef"`
-}
-
-type openBaoBaselineSpec struct {
-	Reconcile            bool                             `json:"reconcile"`
-	Mounts               []openBaoMountSpec               `json:"mounts"`
-	Policies             []openBaoPolicySpec              `json:"policies"`
-	JWTAuths             []openBaoJWTAuthSpec             `json:"jwtAuths"`
-	OperatorImportTokens []openBaoOperatorImportTokenSpec `json:"operatorImportTokens"`
-	SecretPaths          []openBaoSecretPathSpec          `json:"-"`
-}
-
-type openBaoMountSpec struct {
-	Path        string            `json:"path"`
-	Type        string            `json:"type"`
-	Description string            `json:"description"`
-	Options     map[string]string `json:"options"`
-}
-
-type openBaoPolicySpec struct {
-	Name string `json:"name"`
-	HCL  string `json:"hcl"`
-}
-
-type openBaoOperatorImportTokenSpec struct {
-	Name   string `json:"name"`
-	Policy string `json:"policy"`
-	TTL    string `json:"ttl"`
-	Uses   int    `json:"uses"`
-}
-
-type openBaoJWTAuthSpec struct {
-	Path          string                  `json:"path"`
-	Description   string                  `json:"description"`
-	JWKSURL       string                  `json:"jwksURL"`
-	SPIREBundle   *openBaoSPIREBundleSpec `json:"spireBundle"`
-	SupportedAlgs []string                `json:"supportedAlgs"`
-	Roles         []openBaoJWTRoleSpec    `json:"roles"`
-}
-
-type openBaoSPIREBundleSpec struct {
-	SPIREServerPath string `json:"spireServerPath"`
-	SocketPath      string `json:"socketPath"`
-}
-
-type openBaoJWTRoleSpec struct {
-	Name                 string            `json:"name"`
-	RoleType             string            `json:"roleType"`
-	BoundAudiences       []string          `json:"boundAudiences"`
-	BoundSubject         string            `json:"boundSubject"`
-	BoundClaims          map[string]string `json:"boundClaims"`
-	UserClaim            string            `json:"userClaim"`
-	UserClaimJSONPointer bool              `json:"userClaimJSONPointer"`
-	ClaimMappings        map[string]string `json:"claimMappings"`
-	TokenType            string            `json:"tokenType"`
-	TokenPolicies        []string          `json:"tokenPolicies"`
-	TokenPeriod          string            `json:"tokenPeriod"`
-	TokenExplicitMaxTTL  int               `json:"tokenExplicitMaxTTL"`
-}
-
-type openBaoSecretPathSpec struct {
-	Name        string
-	Path        string               `json:"path"`
-	Key         string               `json:"key"`
-	Source      string               `json:"source"`
-	Generate    *openBaoGenerateSpec `json:"generate"`
-	ProducerRef *objectRef           `json:"producerRef"`
-}
-
-type openBaoGenerateSpec struct {
-	Bytes    int    `json:"bytes"`
-	Encoding string `json:"encoding"`
 }
 
 type pgpRecipientSpec struct {
@@ -629,12 +500,6 @@ func applyResourceGraphConfig(cfg config) (config, error) {
 	cfg.initOutputPath = spec.InitMaterialPath
 	cfg.keyShares = spec.Seal.Shamir.KeyShares
 	cfg.threshold = spec.Seal.Shamir.KeyThreshold
-	cfg.baseline = spec.Baseline
-	secretPaths, err := loadOpenBaoSecretPaths(resources)
-	if err != nil {
-		return config{}, err
-	}
-	cfg.baseline.SecretPaths = secretPaths
 	if spec.Snapshots.Restore != nil {
 		cfg.snapshotPath = spec.Snapshots.Restore.SnapshotPath
 		cfg.snapshotManifest = spec.Snapshots.Restore.ManifestPath
@@ -685,55 +550,6 @@ func materializePGPRecipients(cfg config, resources map[string]guardianResource,
 	return out, nil
 }
 
-func loadOpenBaoSecretPaths(resources map[string]guardianResource) ([]openBaoSecretPathSpec, error) {
-	var paths []openBaoSecretPathSpec
-	for _, resource := range resources {
-		if resource.APIVersion != "openbao.guardianintelligence.org/v1alpha1" || resource.Kind != "SecretPath" {
-			continue
-		}
-		var spec openBaoSecretPathSpec
-		decoder := json.NewDecoder(bytes.NewReader(resource.Spec))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&spec); err != nil {
-			return nil, fmt.Errorf("decode SecretPath %q: %w", resource.Metadata.Name, err)
-		}
-		spec.Name = resource.Metadata.Name
-		if err := validateSecretPath(spec); err != nil {
-			return nil, fmt.Errorf("SecretPath %q: %w", resource.Metadata.Name, err)
-		}
-		paths = append(paths, spec)
-	}
-	return paths, nil
-}
-
-func validateSecretPath(spec openBaoSecretPathSpec) error {
-	if strings.TrimSpace(spec.Name) == "" || strings.Trim(strings.TrimSpace(spec.Path), "/") == "" || strings.TrimSpace(spec.Key) == "" {
-		return errors.New("metadata.name, spec.path, and spec.key are required")
-	}
-	switch spec.Source {
-	case "generated":
-		if spec.Generate == nil {
-			return errors.New("spec.generate is required when spec.source is generated")
-		}
-		if spec.Generate.Bytes <= 0 {
-			return errors.New("spec.generate.bytes must be positive")
-		}
-		switch spec.Generate.Encoding {
-		case "hex", "base64url", "alphanumeric", "password":
-		default:
-			return errors.New("spec.generate.encoding must be hex, base64url, alphanumeric, or password")
-		}
-	case "producedBy":
-		if spec.ProducerRef == nil {
-			return errors.New("spec.producerRef is required when spec.source is producedBy")
-		}
-	case "operatorImport":
-	default:
-		return errors.New("spec.source must be generated, producedBy, or operatorImport")
-	}
-	return nil
-}
-
 func resourceKey(apiVersion string, kind string, name string) string {
 	return apiVersion + "/" + kind + "/" + name
 }
@@ -757,10 +573,8 @@ usage:
 
 Recovery reports contain conditions and fingerprints only. Unseal shares,
 recovery shares, and operator tokens must be provided through ephemeral operator
-paths, not host files. Generate-root support is breakglass-only; autonomous
-recovery should use auto-unseal and scoped workload identity. Nomad-managed
-reconciliation should run recover --loop with --nomad-workload-jwt-file and
---nomad-workload-role.
+paths, not host files. Service-specific mounts, policies, auth methods, and
+runtime secrets belong to component-owned control loops.
 `)
 }
 
@@ -792,69 +606,12 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 	switch classify(status) {
 	case "InitializedUnsealed":
-		if cfg.baseline.Reconcile && !baselineAuthorityConfigured(cfg) {
-			if digest, ok, err := previousBaselineEvidenceCurrent(cfg); err != nil {
-				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoBaselineReconciled", "BaselineEvidenceUnreadable", "openbao", err.Error()),
-					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-				)
-				return rep
-			} else if ok {
-				setEvidence(&rep, baselineDigestEvidenceKey, digest)
-				rep.Conditions = append(rep.Conditions,
-					conditionTrue("OpenBaoBaselineReconciled", "BaselineEvidenceCurrent", "openbao", "previous recovery evidence matches the current baseline"),
-					conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is initialized, unsealed, and baseline evidence is current"),
-				)
-				return rep
-			}
-			rep.Conditions = append(rep.Conditions,
-				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-			)
-			return rep
-		}
-		if !baselineAuthorityConfigured(cfg) {
-			rep.Conditions = append(rep.Conditions,
-				conditionTrue("OpenBaoRecoveryComplete", "Available", "openbao", "OpenBao is initialized, unsealed, and available"),
-			)
-			return rep
-		}
-		if cfg.breakglassGenerateRootStdin {
-			shares, err := readUnsealShares(stdin, true)
-			if err != nil {
-				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoBreakglassRootToken", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required to generate a transient root token"),
-					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-				)
-				return rep
-			}
-			token, err := generateRootTokenFromShares(ctx, client, shares)
-			if err != nil {
-				rep.Conditions = append(rep.Conditions,
-					conditionFalse("OpenBaoBreakglassRootToken", "BreakglassGenerateRootFailed", "openbao", err.Error()),
-					conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-					conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-				)
-				return rep
-			}
-			extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
-			return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
-		}
-		if hasNomadWorkloadAuthority(cfg) {
-			return reconcileBaselineWithNomadWorkload(ctx, cfg, client, rep, nil)
-		}
-		token, err := readToken(stdin, true)
-		if err != nil {
-			rep.Conditions = append(rep.Conditions,
-				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires an operator token"),
-				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-			)
-			return rep
-		}
-		return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, nil)
+		rep.Conditions = append(rep.Conditions,
+			conditionTrue("OpenBaoRecoveryComplete", "Available", "openbao", "OpenBao is initialized, unsealed, and available"),
+		)
+		return rep
 	case "InitializedSealed":
-		shares, err := readUnsealShares(stdin, cfg.unsealStdin || cfg.breakglassGenerateRootStdin)
+		shares, err := readUnsealShares(stdin, cfg.unsealStdin)
 		if err != nil {
 			rep.Conditions = append(rep.Conditions,
 				conditionFalse("OpenBaoUnsealed", "UnsealQuorumIncomplete", "openbao", "threshold unseal material is required"),
@@ -884,46 +641,6 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 		}
 		rep.State = "InitializedUnsealed"
 		rep.Evidence = statusEvidence(status)
-		if cfg.baseline.Reconcile {
-			rep.Conditions = append(rep.Conditions, conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"))
-			if !baselineAuthorityConfigured(cfg) {
-				if digest, ok, err := previousBaselineEvidenceCurrent(cfg); err != nil {
-					rep.Conditions = append(rep.Conditions,
-						conditionFalse("OpenBaoBaselineReconciled", "BaselineEvidenceUnreadable", "openbao", err.Error()),
-						conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-					)
-					return rep
-				} else if ok {
-					setEvidence(&rep, baselineDigestEvidenceKey, digest)
-					rep.Conditions = append(rep.Conditions,
-						conditionTrue("OpenBaoBaselineReconciled", "BaselineEvidenceCurrent", "openbao", "previous recovery evidence matches the current baseline"),
-						conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is initialized, unsealed, and baseline evidence is current"),
-					)
-					return rep
-				}
-			}
-			if cfg.breakglassGenerateRootStdin {
-				token, err := generateRootTokenFromShares(ctx, client, shares)
-				if err != nil {
-					rep.Conditions = append(rep.Conditions,
-						conditionFalse("OpenBaoBreakglassRootToken", "BreakglassGenerateRootFailed", "openbao", err.Error()),
-						conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-						conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-					)
-					return rep
-				}
-				extra := []condition{conditionTrue("OpenBaoBreakglassRootToken", "BreakglassGenerated", "openbao", "breakglass transient root token was generated from threshold unseal material")}
-				return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
-			}
-			if hasNomadWorkloadAuthority(cfg) {
-				return reconcileBaselineWithNomadWorkload(ctx, cfg, client, rep, nil)
-			}
-			rep.Conditions = append(rep.Conditions,
-				conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires operator authority"),
-				conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-			)
-			return rep
-		}
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed"),
 			conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is initialized, unsealed, and available"),
@@ -973,279 +690,11 @@ func recoverLoop(ctx context.Context, cfg config, stdout io.Writer, stdin io.Rea
 	}
 }
 
-func baselineAuthorityConfigured(cfg config) bool {
-	return cfg.tokenStdin || cfg.breakglassGenerateRootStdin || hasNomadWorkloadAuthority(cfg)
-}
-
-func previousBaselineEvidenceCurrent(cfg config) (string, bool, error) {
-	digest, err := baselineDigest(cfg.baseline)
-	if err != nil {
-		return "", false, err
-	}
-	if strings.TrimSpace(cfg.reportPath) == "" {
-		return digest, false, nil
-	}
-	body, err := os.ReadFile(cfg.reportPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return digest, false, nil
-	}
-	if err != nil {
-		return digest, false, fmt.Errorf("read OpenBao recovery report: %w", err)
-	}
-	var previous report
-	if err := json.Unmarshal(body, &previous); err != nil {
-		return digest, false, fmt.Errorf("decode OpenBao recovery report: %w", err)
-	}
-	complete, ok := findCondition(previous, "OpenBaoRecoveryComplete")
-	if !ok || complete.Status != "True" {
-		return digest, false, nil
-	}
-	return digest, previous.Evidence[baselineDigestEvidenceKey] == digest, nil
-}
-
-func addBaselineDigestEvidence(rep *report, baseline openBaoBaselineSpec) {
-	digest, err := baselineDigest(baseline)
-	if err != nil {
-		rep.Warnings = append(rep.Warnings, err.Error())
-		return
-	}
-	setEvidence(rep, baselineDigestEvidenceKey, digest)
-}
-
-func setEvidence(rep *report, key string, value string) {
-	if rep.Evidence == nil {
-		rep.Evidence = map[string]string{}
-	}
-	rep.Evidence[key] = value
-}
-
-func baselineDigest(baseline openBaoBaselineSpec) (string, error) {
-	canonical := baseline
-	canonical.SecretPaths = append([]openBaoSecretPathSpec(nil), baseline.SecretPaths...)
-	sort.Slice(canonical.SecretPaths, func(i int, j int) bool {
-		left := canonical.SecretPaths[i]
-		right := canonical.SecretPaths[j]
-		return strings.Join([]string{left.Name, left.Path, left.Key}, "\x00") < strings.Join([]string{right.Name, right.Path, right.Key}, "\x00")
-	})
-	body, err := json.Marshal(canonical)
-	if err != nil {
-		return "", fmt.Errorf("encode OpenBao baseline digest: %w", err)
-	}
-	sum := sha256.Sum256(body)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
-}
-
-func hasNomadWorkloadAuthority(cfg config) bool {
-	return cfg.nomadWorkloadJWTFile != "" && cfg.nomadWorkloadRole != ""
-}
-
-func reconcileBaselineWithNomadWorkload(ctx context.Context, cfg config, client openBaoClient, rep report, extra []condition) report {
-	authPath, err := jwtAuthPathForRole(cfg.baseline.JWTAuths, cfg.nomadWorkloadRole)
-	if err != nil {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionFalse("OpenBaoWorkloadToken", "JWTAuthUnavailable", "openbao", err.Error()),
-			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
-			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-		)
-		return rep
-	}
-	jwt, err := readNomadWorkloadJWT(cfg.nomadWorkloadJWTFile)
-	if err != nil {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionFalse("OpenBaoWorkloadToken", "JWTUnavailable", "openbao", err.Error()),
-			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
-			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-		)
-		return rep
-	}
-	token, err := client.LoginJWT(ctx, authPath, cfg.nomadWorkloadRole, jwt)
-	if err != nil {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionFalse("OpenBaoWorkloadToken", "JWTLoginFailed", "openbao", err.Error()),
-			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityRequired", "openbao", "baseline reconciliation requires workload authority"),
-			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-		)
-		return rep
-	}
-	extra = append(extra, conditionTrue("OpenBaoWorkloadToken", "JWTAccepted", "openbao", "Nomad workload identity issued a scoped OpenBao token"))
-	if handoffCondition, ok := operatorImportTokenObservedCondition(cfg); ok {
-		extra = append(extra, handoffCondition)
-	}
-	return reconcileBaselineWithToken(ctx, cfg.baseline, client, rep, token, extra)
-}
-
-func jwtAuthPathForRole(auths []openBaoJWTAuthSpec, role string) (string, error) {
-	role = strings.TrimSpace(role)
-	if role == "" {
-		return "", errors.New("Nomad workload JWT role is required")
-	}
-	var matches []string
-	for _, auth := range auths {
-		for _, candidate := range auth.Roles {
-			if strings.TrimSpace(candidate.Name) == role {
-				matches = append(matches, strings.Trim(strings.TrimSpace(auth.Path), "/"))
-			}
-		}
-	}
-	switch len(matches) {
-	case 0:
-		return "", fmt.Errorf("OpenBao JWT auth role %q is not configured", role)
-	case 1:
-		if matches[0] == "" {
-			return "", fmt.Errorf("OpenBao JWT auth role %q has an empty auth path", role)
-		}
-		return matches[0], nil
-	default:
-		return "", fmt.Errorf("OpenBao JWT auth role %q is configured on multiple auth paths", role)
-	}
-}
-
-func readNomadWorkloadJWT(path string) (string, error) {
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("read Nomad workload JWT: %w", err)
-	}
-	jwt := strings.TrimSpace(string(body))
-	if jwt == "" {
-		return "", errors.New("Nomad workload JWT file is empty")
-	}
-	return jwt, nil
-}
-
-func reconcileBaselineWithToken(ctx context.Context, baseline openBaoBaselineSpec, client openBaoClient, rep report, token string, extra []condition) report {
-	if err := reconcileBaselineWithRetry(ctx, baseline, client, token); err != nil {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions, baselineReconcileFailureConditions(err)...)
-		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, token))
-		return rep
-	}
-	addBaselineDigestEvidence(&rep, baseline)
-	revokeCondition := revokePresentedToken(ctx, client, token)
-	if revokeCondition.Status != "True" {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-			revokeCondition,
-			conditionFalse("OpenBaoRecoveryComplete", "TransientTokenRevocationFailed", "openbao", "baseline was reconciled but the transient token could not be revoked"),
-		)
-		return rep
-	}
-	rep.Conditions = append(rep.Conditions, extra...)
-	rep.Conditions = append(rep.Conditions,
-		conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-		revokeCondition,
-		conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
-	)
-	return rep
-}
-
-func reconcileBaselineWithRetry(ctx context.Context, baseline openBaoBaselineSpec, client openBaoClient, token string) error {
-	deadline := time.Now().Add(baselineReconcileRetryWindow)
-	var lastErr error
-	for {
-		err := client.ReconcileBaseline(ctx, token, baseline)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		if !isOpenBaoTransient(err) || time.Now().After(deadline) {
-			return lastErr
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(baselineReconcileRetryDelay):
-		}
-	}
-}
-
-func baselineReconcileFailureConditions(err error) []condition {
-	if isOpenBaoPermissionDenied(err) {
-		return []condition{
-			conditionFalse("OpenBaoBaselineReconciled", "BaselineAuthorityInsufficient", "openbao", err.Error()),
-			conditionFalse("OpenBaoRecoveryComplete", "BaselineBlocked", "openbao", "OpenBao is unsealed but baseline reconciliation is blocked"),
-		}
-	}
-	return []condition{
-		conditionFalse("OpenBaoBaselineReconciled", "ReconcileFailed", "openbao", err.Error()),
-		conditionFalse("OpenBaoRecoveryComplete", "BaselineFailed", "openbao", "baseline reconciliation failed"),
-	}
-}
-
 func revokePresentedToken(ctx context.Context, client openBaoClient, token string) condition {
 	if err := client.RevokeSelf(ctx, token); err != nil {
-		reason := "RevokeSelfFailed"
-		if isOpenBaoPermissionDenied(err) {
-			reason = "RevokeSelfPermissionDenied"
-		}
-		return conditionFalse("OpenBaoTransientTokenRevoked", reason, "openbao", err.Error())
+		return conditionFalse("OpenBaoTransientTokenRevoked", "RevokeSelfFailed", "openbao", err.Error())
 	}
 	return conditionTrue("OpenBaoTransientTokenRevoked", "Revoked", "openbao", "transient recovery token was revoked")
-}
-
-func generateRootTokenFromShares(ctx context.Context, client openBaoClient, shares []string) (string, error) {
-	if len(shares) == 0 {
-		return "", errors.New("at least one unseal share is required to generate a root token")
-	}
-	init, err := client.GenerateRootInit(ctx)
-	if err != nil {
-		return "", err
-	}
-	complete := false
-	defer func() {
-		if !complete {
-			_ = client.GenerateRootCancel(context.Background())
-		}
-	}()
-	if !init.Started || init.Nonce == "" || init.OTP == "" {
-		return "", errors.New("OpenBao generate-root did not start with a nonce and OTP")
-	}
-	attempt := init
-	for _, share := range shares {
-		attempt, err = client.GenerateRootUpdate(ctx, share, init.Nonce)
-		if err != nil {
-			return "", err
-		}
-		if attempt.Complete {
-			complete = true
-			break
-		}
-	}
-	if !complete {
-		return "", fmt.Errorf("OpenBao generate-root incomplete after %d shares; required %d", attempt.Progress, attempt.Required)
-	}
-	encoded := strings.TrimSpace(attempt.EncodedToken)
-	if encoded == "" {
-		encoded = strings.TrimSpace(attempt.EncodedRootToken)
-	}
-	if encoded == "" {
-		return "", errors.New("OpenBao generate-root completed without an encoded token")
-	}
-	return client.DecodeGeneratedRootToken(ctx, encoded, init.OTP)
-}
-
-func isOpenBaoPermissionDenied(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "status 403") || strings.Contains(message, "permission denied")
-}
-
-func isOpenBaoTransient(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	for _, status := range []string{"status 500", "status 502", "status 503", "status 504"} {
-		if strings.Contains(message, status) {
-			return true
-		}
-	}
-	return strings.Contains(message, "connection refused") || strings.Contains(message, "connection reset")
 }
 
 func restoreSnapshot(ctx context.Context, cfg config, client openBaoClient, rep report) report {
@@ -1385,7 +834,7 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		)
 		return rep
 	}
-	if err := writeEncryptedInitMaterial(cfg, init, nil); err != nil {
+	if err := writeEncryptedInitMaterial(cfg, init); err != nil {
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized"),
 			conditionFalse("OpenBaoInitMaterialDelivered", "InitMaterialDeliveryFailed", "openbao", err.Error()),
@@ -1419,9 +868,6 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		conditionTrue("OpenBaoInitMaterialDelivered", "InitOutputWritten", "openbao", "encrypted init material was written to the configured handoff path"),
 		conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed with in-memory init shares"),
 	}
-	if cfg.baseline.Reconcile {
-		return reconcileFreshBaselineWithInitialRootToken(ctx, cfg, client, rep, rootToken, init, extra)
-	}
 	revokeCondition := revokePresentedToken(ctx, client, rootToken)
 	if revokeCondition.Status != "True" {
 		rep.Conditions = append(rep.Conditions, extra...)
@@ -1439,122 +885,7 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 	return rep
 }
 
-func reconcileFreshBaselineWithInitialRootToken(ctx context.Context, cfg config, client openBaoClient, rep report, rootToken string, init initResponse, extra []condition) report {
-	if err := reconcileBaselineWithRetry(ctx, cfg.baseline, client, rootToken); err != nil {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions, baselineReconcileFailureConditions(err)...)
-		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
-		return rep
-	}
-	addBaselineDigestEvidence(&rep, cfg.baseline)
-	handoffs, err := createOperatorImportTokenHandoffs(ctx, cfg.baseline, client, rootToken)
-	if err != nil {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-			conditionFalse("OpenBaoOperatorImportTokenDelivered", "TokenCreateFailed", "openbao", err.Error()),
-			conditionFalse("OpenBaoRecoveryComplete", "OperatorImportTokenDeliveryFailed", "openbao", "fresh OpenBao could not deliver scoped operator import tokens"),
-		)
-		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
-		return rep
-	}
-	if err := writeEncryptedInitMaterial(cfg, init, handoffs); err != nil {
-		revokeOperatorImportTokens(ctx, client, handoffs)
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-			conditionFalse("OpenBaoOperatorImportTokenDelivered", "InitMaterialRewriteFailed", "openbao", err.Error()),
-			conditionFalse("OpenBaoRecoveryComplete", "OperatorImportTokenDeliveryFailed", "openbao", "fresh OpenBao could not deliver scoped operator import tokens"),
-		)
-		rep.Conditions = append(rep.Conditions, revokePresentedToken(ctx, client, rootToken))
-		return rep
-	}
-	revokeCondition := revokePresentedToken(ctx, client, rootToken)
-	if revokeCondition.Status != "True" {
-		rep.Conditions = append(rep.Conditions, extra...)
-		rep.Conditions = append(rep.Conditions,
-			conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-			operatorImportTokenDeliveredCondition(handoffs),
-			revokeCondition,
-			conditionFalse("OpenBaoRecoveryComplete", "TransientTokenRevocationFailed", "openbao", "baseline was reconciled but the transient token could not be revoked"),
-		)
-		return rep
-	}
-	rep.Conditions = append(rep.Conditions, extra...)
-	rep.Conditions = append(rep.Conditions,
-		conditionTrue("OpenBaoBaselineReconciled", "BaselineReady", "openbao", "baseline mounts, auth, and policies are reconciled"),
-		operatorImportTokenDeliveredCondition(handoffs),
-		revokeCondition,
-		conditionTrue("OpenBaoRecoveryComplete", "Recovered", "openbao", "OpenBao is unsealed and baseline is reconciled"),
-	)
-	return rep
-}
-
-func createOperatorImportTokenHandoffs(ctx context.Context, baseline openBaoBaselineSpec, client openBaoClient, rootToken string) ([]operatorImportTokenHandoff, error) {
-	handoffs := make([]operatorImportTokenHandoff, 0, len(baseline.OperatorImportTokens))
-	for _, spec := range baseline.OperatorImportTokens {
-		token, err := client.CreateToken(ctx, rootToken, spec)
-		if err != nil {
-			revokeOperatorImportTokens(ctx, client, handoffs)
-			return nil, err
-		}
-		handoffs = append(handoffs, operatorImportTokenHandoff{
-			Name:   strings.TrimSpace(spec.Name),
-			Policy: strings.TrimSpace(spec.Policy),
-			TTL:    strings.TrimSpace(spec.TTL),
-			Uses:   spec.Uses,
-			Token:  token,
-		})
-	}
-	return handoffs, nil
-}
-
-func revokeOperatorImportTokens(ctx context.Context, client openBaoClient, handoffs []operatorImportTokenHandoff) {
-	for _, handoff := range handoffs {
-		_ = client.RevokeSelf(ctx, handoff.Token)
-	}
-}
-
-func operatorImportTokenDeliveredCondition(handoffs []operatorImportTokenHandoff) condition {
-	if len(handoffs) == 0 {
-		return conditionTrue("OpenBaoOperatorImportTokenDelivered", "NoOperatorImportsConfigured", "openbao", "no scoped operator import tokens are configured")
-	}
-	return conditionTrue("OpenBaoOperatorImportTokenDelivered", "EncryptedImportTokensWritten", "openbao", fmt.Sprintf("%d scoped operator import token(s) were encrypted into init material", len(handoffs)))
-}
-
-func operatorImportTokenObservedCondition(cfg config) (condition, bool) {
-	if len(cfg.baseline.OperatorImportTokens) == 0 {
-		return condition{}, false
-	}
-	body, err := os.ReadFile(cfg.initOutputPath)
-	if err != nil {
-		return conditionFalse("OpenBaoOperatorImportTokenDelivered", "InitMaterialUnreadable", "openbao", err.Error()), true
-	}
-	var material encryptedInitMaterial
-	if err := json.Unmarshal(body, &material); err != nil {
-		return conditionFalse("OpenBaoOperatorImportTokenDelivered", "InitMaterialInvalid", "openbao", err.Error()), true
-	}
-	expected := map[string]struct{}{}
-	for _, spec := range cfg.baseline.OperatorImportTokens {
-		expected[strings.TrimSpace(spec.Name)] = struct{}{}
-	}
-	seen := map[string]struct{}{}
-	for _, item := range material.Spec.OperatorImportTokens {
-		name := strings.TrimSpace(item.Name)
-		if _, ok := expected[name]; !ok || len(item.EncryptedTokensB64) == 0 {
-			continue
-		}
-		seen[name] = struct{}{}
-	}
-	for name := range expected {
-		if _, ok := seen[name]; !ok {
-			return conditionFalse("OpenBaoOperatorImportTokenDelivered", "EncryptedImportTokensMissing", "openbao", fmt.Sprintf("init material is missing encrypted operator import token %q", name)), true
-		}
-	}
-	return conditionTrue("OpenBaoOperatorImportTokenDelivered", "EncryptedImportTokensPresent", "openbao", fmt.Sprintf("%d scoped operator import token handoff(s) are present in init material", len(expected))), true
-}
-
-func writeEncryptedInitMaterial(cfg config, init initResponse, operatorImportTokens []operatorImportTokenHandoff) error {
+func writeEncryptedInitMaterial(cfg config, init initResponse) error {
 	shares := initUnsealShares(init)
 	if len(shares) != cfg.keyShares {
 		return fmt.Errorf("unseal share count %d does not match configured key shares %d", len(shares), cfg.keyShares)
@@ -1582,37 +913,12 @@ func writeEncryptedInitMaterial(cfg config, init initResponse, operatorImportTok
 		}
 		material.Spec.EncryptedRecoverySharesB64 = encryptedRecoveryKeys
 	}
-	for _, handoff := range operatorImportTokens {
-		encryptedTokens, err := encryptStringToEachPGPRecipient(handoff.Token, []string(cfg.pgpKeys))
-		if err != nil {
-			return err
-		}
-		material.Spec.OperatorImportTokens = append(material.Spec.OperatorImportTokens, encryptedOperatorImportTokenMaterial{
-			Name:               handoff.Name,
-			Policy:             handoff.Policy,
-			TTL:                handoff.TTL,
-			Uses:               handoff.Uses,
-			EncryptedTokensB64: encryptedTokens,
-		})
-	}
 	body, err := json.MarshalIndent(material, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode encrypted init material: %w", err)
 	}
 	body = append(body, '\n')
 	return writePrivateFile(cfg.initOutputPath, body, 0o600)
-}
-
-func encryptStringToEachPGPRecipient(value string, recipientPaths []string) ([]string, error) {
-	out := make([]string, 0, len(recipientPaths))
-	for _, recipientPath := range recipientPaths {
-		encrypted, err := encryptStringToPGPRecipient(value, recipientPath)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, encrypted)
-	}
-	return out, nil
 }
 
 func encryptSharesToPGPRecipients(shares []string, recipientPaths []string) ([]string, error) {
@@ -2325,511 +1631,8 @@ func (c *realOpenBaoClient) SaveSnapshot(ctx context.Context, token string) ([]b
 	return out.Bytes(), nil
 }
 
-func (c *realOpenBaoClient) ReconcileBaseline(ctx context.Context, rootToken string, baseline openBaoBaselineSpec) error {
-	if !baseline.Reconcile {
-		return nil
-	}
-	for _, mount := range baseline.Mounts {
-		options := map[string]any{}
-		for key, value := range mount.Options {
-			options[key] = value
-		}
-		if len(options) == 0 {
-			options = nil
-		}
-		if err := c.ensureMount(ctx, rootToken, mount.Path, mount.Type, mount.Description, options); err != nil {
-			return err
-		}
-	}
-	for _, policy := range baseline.Policies {
-		if err := c.writePolicy(ctx, rootToken, policy); err != nil {
-			return err
-		}
-	}
-	for _, secretPath := range baseline.SecretPaths {
-		if secretPath.Source != "generated" {
-			continue
-		}
-		if err := c.ensureGeneratedSecret(ctx, rootToken, secretPath); err != nil {
-			return err
-		}
-	}
-	for _, auth := range baseline.JWTAuths {
-		if err := c.ensureAuth(ctx, rootToken, auth.Path, "jwt", auth.Description); err != nil {
-			return err
-		}
-		if err := c.configureJWTAuth(ctx, rootToken, auth); err != nil {
-			return err
-		}
-		for _, role := range auth.Roles {
-			if err := c.writeJWTRole(ctx, rootToken, auth.Path, role); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 func (c *realOpenBaoClient) RevokeSelf(ctx context.Context, token string) error {
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/token/revoke-self", map[string]any{}, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func (c *realOpenBaoClient) LoginJWT(ctx context.Context, authPath string, role string, jwt string) (string, error) {
-	authPath = strings.Trim(strings.TrimSpace(authPath), "/")
-	role = strings.TrimSpace(role)
-	jwt = strings.TrimSpace(jwt)
-	if authPath == "" || role == "" || jwt == "" {
-		return "", errors.New("OpenBao JWT auth path, role, and JWT are required")
-	}
-	var response struct {
-		Auth struct {
-			ClientToken string `json:"client_token"`
-		} `json:"auth"`
-	}
-	if err := c.apiJSON(ctx, "", http.MethodPost, "auth/"+authPath+"/login", map[string]string{
-		"role": role,
-		"jwt":  jwt,
-	}, &response, http.StatusOK); err != nil {
-		return "", err
-	}
-	token := strings.TrimSpace(response.Auth.ClientToken)
-	if token == "" {
-		return "", errors.New("OpenBao JWT login returned an empty token")
-	}
-	return token, nil
-}
-
-func (c *realOpenBaoClient) CreateToken(ctx context.Context, rootToken string, spec openBaoOperatorImportTokenSpec) (string, error) {
-	name := strings.TrimSpace(spec.Name)
-	policy := strings.TrimSpace(spec.Policy)
-	ttl := strings.TrimSpace(spec.TTL)
-	if name == "" || policy == "" || ttl == "" {
-		return "", errors.New("OpenBao operator import token name, policy, and ttl are required")
-	}
-	body := map[string]any{
-		"display_name": name,
-		"policies":     []string{policy},
-		"ttl":          ttl,
-		"renewable":    false,
-		// The handoff must survive revocation of the initial root token.
-		"no_parent": true,
-	}
-	if spec.Uses > 0 {
-		body["num_uses"] = spec.Uses
-	}
-	var response struct {
-		Auth struct {
-			ClientToken string `json:"client_token"`
-		} `json:"auth"`
-	}
-	if err := c.apiJSON(ctx, rootToken, http.MethodPost, "auth/token/create", body, &response, http.StatusOK); err != nil {
-		return "", err
-	}
-	token := strings.TrimSpace(response.Auth.ClientToken)
-	if token == "" {
-		return "", errors.New("OpenBao token create returned an empty token")
-	}
-	return token, nil
-}
-
-func (c *realOpenBaoClient) GenerateRootInit(ctx context.Context) (generateRootAttempt, error) {
-	var attempt generateRootAttempt
-	if err := c.apiJSON(ctx, "", http.MethodPost, "sys/generate-root/attempt", map[string]any{}, &attempt, http.StatusOK); err != nil {
-		return generateRootAttempt{}, err
-	}
-	return attempt, nil
-}
-
-func (c *realOpenBaoClient) GenerateRootUpdate(ctx context.Context, share string, nonce string) (generateRootAttempt, error) {
-	var attempt generateRootAttempt
-	if err := c.apiJSON(ctx, "", http.MethodPost, "sys/generate-root/update", map[string]string{
-		"key":   share,
-		"nonce": nonce,
-	}, &attempt, http.StatusOK); err != nil {
-		return generateRootAttempt{}, err
-	}
-	return attempt, nil
-}
-
-func (c *realOpenBaoClient) GenerateRootCancel(ctx context.Context) error {
-	return c.apiJSON(ctx, "", http.MethodDelete, "sys/generate-root/attempt", nil, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func (c *realOpenBaoClient) DecodeGeneratedRootToken(ctx context.Context, encoded string, otp string) (string, error) {
-	var response struct {
-		Data struct {
-			Token string `json:"token"`
-		} `json:"data"`
-	}
-	if err := c.apiJSON(ctx, "", http.MethodPost, "sys/decode-token", map[string]string{
-		"encoded_token": strings.TrimSpace(encoded),
-		"otp":           strings.TrimSpace(otp),
-	}, &response, http.StatusOK); err != nil {
-		return "", err
-	}
-	token := strings.TrimSpace(response.Data.Token)
-	if token == "" {
-		return "", errors.New("OpenBao decode-token returned an empty token")
-	}
-	return token, nil
-}
-
-func (c *realOpenBaoClient) ensureMount(ctx context.Context, token string, path string, mountType string, description string, options map[string]any) error {
-	path = strings.Trim(strings.TrimSpace(path), "/")
-	mountType = strings.TrimSpace(mountType)
-	if path == "" || mountType == "" {
-		return errors.New("OpenBao baseline mount path and type are required")
-	}
-	var response map[string]any
-	if err := c.apiJSON(ctx, token, http.MethodGet, "sys/mounts", nil, &response, http.StatusOK); err != nil {
-		return err
-	}
-	if _, ok := dataMap(response)[path+"/"]; ok {
-		return nil
-	}
-	body := map[string]any{"type": mountType}
-	if strings.TrimSpace(description) != "" {
-		body["description"] = strings.TrimSpace(description)
-	}
-	if options != nil {
-		body["options"] = options
-	}
-	return c.apiJSON(ctx, token, http.MethodPost, "sys/mounts/"+path, body, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func (c *realOpenBaoClient) ensureAuth(ctx context.Context, token string, path string, authType string, description string) error {
-	path = strings.Trim(strings.TrimSpace(path), "/")
-	authType = strings.TrimSpace(authType)
-	if path == "" || authType == "" {
-		return errors.New("OpenBao baseline auth path and type are required")
-	}
-	var response map[string]any
-	if err := c.apiJSON(ctx, token, http.MethodGet, "sys/auth", nil, &response, http.StatusOK); err != nil {
-		return err
-	}
-	if _, ok := dataMap(response)[path+"/"]; ok {
-		return nil
-	}
-	return c.apiJSON(ctx, token, http.MethodPost, "sys/auth/"+path, map[string]any{
-		"type":        authType,
-		"description": description,
-	}, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func (c *realOpenBaoClient) writePolicy(ctx context.Context, token string, policy openBaoPolicySpec) error {
-	name := strings.TrimSpace(policy.Name)
-	hcl := strings.TrimSpace(policy.HCL)
-	if name == "" || hcl == "" {
-		return errors.New("OpenBao baseline policy name and hcl are required")
-	}
-	return c.apiJSON(ctx, token, http.MethodPost, "sys/policies/acl/"+name, map[string]any{
-		"policy": hcl,
-	}, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func (c *realOpenBaoClient) ensureGeneratedSecret(ctx context.Context, token string, secretPath openBaoSecretPathSpec) error {
-	path := strings.Trim(strings.TrimSpace(secretPath.Path), "/")
-	key := strings.TrimSpace(secretPath.Key)
-	if path == "" || key == "" || secretPath.Generate == nil {
-		return errors.New("OpenBao generated secret path, key, and generation config are required")
-	}
-	exists, current, err := c.generatedSecretExists(ctx, token, path, key)
-	if err != nil {
-		return err
-	}
-	if exists {
-		valid, err := generatedSecretMatches(*secretPath.Generate, current)
-		if err != nil {
-			return err
-		}
-		if valid {
-			return nil
-		}
-	}
-	value, err := generatedSecretValue(*secretPath.Generate)
-	if err != nil {
-		return err
-	}
-	return c.apiJSON(ctx, token, http.MethodPost, path, map[string]any{
-		"data": map[string]string{key: value},
-	}, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func (c *realOpenBaoClient) generatedSecretExists(ctx context.Context, token string, path string, key string) (bool, string, error) {
-	status, raw, err := c.apiRawStatus(ctx, token, http.MethodGet, path, nil, "", http.StatusOK, http.StatusNotFound)
-	if err != nil {
-		return false, "", err
-	}
-	if status == http.StatusNotFound {
-		return false, "", nil
-	}
-	var response struct {
-		Data map[string]any `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &response); err != nil {
-		return false, "", fmt.Errorf("decode OpenBao generated secret %s: %w", path, err)
-	}
-	data, _ := response.Data["data"].(map[string]any)
-	return true, strings.TrimSpace(fmt.Sprint(data[key])), nil
-}
-
-func generatedSecretValue(spec openBaoGenerateSpec) (string, error) {
-	if spec.Bytes <= 0 {
-		return "", errors.New("OpenBao generated secret bytes must be positive")
-	}
-	raw := make([]byte, spec.Bytes)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("generate OpenBao secret material: %w", err)
-	}
-	switch spec.Encoding {
-	case "hex":
-		return hex.EncodeToString(raw), nil
-	case "base64url":
-		return base64.RawURLEncoding.EncodeToString(raw), nil
-	case "alphanumeric":
-		return randomAlphanumeric(spec.Bytes)
-	case "password":
-		return randomPassword(spec.Bytes)
-	default:
-		return "", fmt.Errorf("unsupported OpenBao generated secret encoding %q", spec.Encoding)
-	}
-}
-
-func generatedSecretMatches(spec openBaoGenerateSpec, value string) (bool, error) {
-	value = strings.TrimSpace(value)
-	switch spec.Encoding {
-	case "hex":
-		if len(value) != spec.Bytes*2 {
-			return false, nil
-		}
-		_, err := hex.DecodeString(value)
-		return err == nil, nil
-	case "base64url":
-		if strings.ContainsAny(value, "+/=") {
-			return false, nil
-		}
-		decoded, err := base64.RawURLEncoding.DecodeString(value)
-		return err == nil && len(decoded) == spec.Bytes, nil
-	case "alphanumeric":
-		if len(value) != spec.Bytes {
-			return false, nil
-		}
-		return allRunesIn(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"), nil
-	case "password":
-		return passwordMeetsBootstrapPolicy(value, spec.Bytes), nil
-	default:
-		return false, fmt.Errorf("unsupported OpenBao generated secret encoding %q", spec.Encoding)
-	}
-}
-
-func randomAlphanumeric(length int) (string, error) {
-	if length <= 0 {
-		return "", errors.New("OpenBao generated alphanumeric secret length must be positive")
-	}
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	out := make([]byte, length)
-	max := big.NewInt(int64(len(alphabet)))
-	for i := range out {
-		n, err := rand.Int(rand.Reader, max)
-		if err != nil {
-			return "", fmt.Errorf("generate OpenBao alphanumeric secret material: %w", err)
-		}
-		out[i] = alphabet[n.Int64()]
-	}
-	return string(out), nil
-}
-
-func randomPassword(length int) (string, error) {
-	if length < 4 {
-		return "", errors.New("OpenBao generated password secret length must be at least 4")
-	}
-	const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	const lower = "abcdefghijklmnopqrstuvwxyz"
-	const digits = "0123456789"
-	const symbols = "!#$%&*+-=?@^_"
-	const alphabet = upper + lower + digits + symbols
-	out := make([]byte, length)
-	required := []string{upper, lower, digits, symbols}
-	for i, chars := range required {
-		char, err := randomAlphabetByte(chars)
-		if err != nil {
-			return "", err
-		}
-		out[i] = char
-	}
-	for i := len(required); i < len(out); i++ {
-		char, err := randomAlphabetByte(alphabet)
-		if err != nil {
-			return "", err
-		}
-		out[i] = char
-	}
-	for i := len(out) - 1; i > 0; i-- {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
-		if err != nil {
-			return "", fmt.Errorf("shuffle OpenBao generated password secret: %w", err)
-		}
-		j := int(n.Int64())
-		out[i], out[j] = out[j], out[i]
-	}
-	return string(out), nil
-}
-
-func randomAlphabetByte(alphabet string) (byte, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
-	if err != nil {
-		return 0, fmt.Errorf("generate OpenBao password secret material: %w", err)
-	}
-	return alphabet[n.Int64()], nil
-}
-
-func passwordMeetsBootstrapPolicy(value string, length int) bool {
-	if len(value) != length {
-		return false
-	}
-	return containsRuneFrom(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&
-		containsRuneFrom(value, "abcdefghijklmnopqrstuvwxyz") &&
-		containsRuneFrom(value, "0123456789") &&
-		containsRuneFrom(value, "!#$%&*+-=?@^_")
-}
-
-func allRunesIn(value string, alphabet string) bool {
-	for _, char := range value {
-		if !strings.ContainsRune(alphabet, char) {
-			return false
-		}
-	}
-	return true
-}
-
-func containsRuneFrom(value string, alphabet string) bool {
-	for _, char := range value {
-		if strings.ContainsRune(alphabet, char) {
-			return true
-		}
-	}
-	return false
-}
-
-func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoJWTAuthSpec) error {
-	path := strings.Trim(strings.TrimSpace(auth.Path), "/")
-	jwksURL := strings.TrimSpace(auth.JWKSURL)
-	if path == "" || len(auth.SupportedAlgs) == 0 {
-		return errors.New("OpenBao JWT auth path and supportedAlgs are required")
-	}
-	body := map[string]any{
-		"jwt_supported_algs": auth.SupportedAlgs,
-	}
-	switch {
-	case jwksURL != "" && auth.SPIREBundle == nil:
-		body["jwks_url"] = jwksURL
-	case jwksURL == "" && auth.SPIREBundle != nil:
-		pubkeys, err := spireJWTValidationPubkeys(ctx, *auth.SPIREBundle)
-		if err != nil {
-			return err
-		}
-		body["jwt_validation_pubkeys"] = pubkeys
-	default:
-		return errors.New("OpenBao JWT auth requires exactly one validation source")
-	}
-	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+path+"/config", body, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func spireJWTValidationPubkeys(ctx context.Context, spec openBaoSPIREBundleSpec) ([]string, error) {
-	spireServer := strings.TrimSpace(spec.SPIREServerPath)
-	socketPath := strings.TrimSpace(spec.SocketPath)
-	if spireServer == "" || socketPath == "" {
-		return nil, errors.New("OpenBao SPIRE bundle source requires spireServerPath and socketPath")
-	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, spireServer, "bundle", "show", "-socketPath", socketPath, "-format", "spiffe", "-output", "json").CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("read SPIRE JWT bundle: %w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return spireJWTValidationPubkeysFromBundle(out)
-}
-
-func spireJWTValidationPubkeysFromBundle(raw []byte) ([]string, error) {
-	var bundle struct {
-		JWTAuthorities []struct {
-			PublicKey string `json:"public_key"`
-			Tainted   bool   `json:"tainted"`
-		} `json:"jwt_authorities"`
-	}
-	if err := json.Unmarshal(raw, &bundle); err != nil {
-		return nil, fmt.Errorf("decode SPIRE JWT bundle: %w", err)
-	}
-	pubkeys := make([]string, 0, len(bundle.JWTAuthorities))
-	for _, authority := range bundle.JWTAuthorities {
-		if authority.Tainted {
-			continue
-		}
-		der, err := base64.StdEncoding.DecodeString(strings.TrimSpace(authority.PublicKey))
-		if err != nil {
-			return nil, fmt.Errorf("decode SPIRE JWT public key: %w", err)
-		}
-		if _, err := x509.ParsePKIXPublicKey(der); err != nil {
-			return nil, fmt.Errorf("parse SPIRE JWT public key: %w", err)
-		}
-		pemBlock := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-		if len(pemBlock) == 0 {
-			return nil, errors.New("encode SPIRE JWT public key")
-		}
-		pubkeys = append(pubkeys, string(pemBlock))
-	}
-	if len(pubkeys) == 0 {
-		return nil, errors.New("SPIRE bundle contains no active JWT authorities")
-	}
-	return pubkeys, nil
-}
-
-func (c *realOpenBaoClient) writeJWTRole(ctx context.Context, token string, authPath string, role openBaoJWTRoleSpec) error {
-	authPath = strings.Trim(strings.TrimSpace(authPath), "/")
-	name := strings.TrimSpace(role.Name)
-	if authPath == "" || name == "" {
-		return errors.New("OpenBao JWT auth path and role name are required")
-	}
-	body := map[string]any{
-		"role_type":               role.RoleType,
-		"bound_audiences":         role.BoundAudiences,
-		"user_claim":              role.UserClaim,
-		"user_claim_json_pointer": role.UserClaimJSONPointer,
-		"claim_mappings":          role.ClaimMappings,
-		"token_type":              role.TokenType,
-		"token_policies":          role.TokenPolicies,
-		"token_period":            role.TokenPeriod,
-		"token_explicit_max_ttl":  role.TokenExplicitMaxTTL,
-	}
-	if len(role.BoundClaims) > 0 {
-		body["bound_claims"] = role.BoundClaims
-	}
-	if strings.TrimSpace(role.BoundSubject) != "" {
-		body["bound_subject"] = strings.TrimSpace(role.BoundSubject)
-	}
-	if err := requireJWTString("roleType", role.RoleType); err != nil {
-		return err
-	}
-	if err := requireJWTString("userClaim", role.UserClaim); err != nil {
-		return err
-	}
-	if err := requireJWTString("tokenType", role.TokenType); err != nil {
-		return err
-	}
-	if err := requireJWTString("tokenPeriod", role.TokenPeriod); err != nil {
-		return err
-	}
-	if len(role.BoundAudiences) == 0 || len(role.TokenPolicies) == 0 {
-		return errors.New("OpenBao JWT role boundAudiences and tokenPolicies are required")
-	}
-	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+authPath+"/role/"+name, body, nil, http.StatusNoContent, http.StatusOK)
-}
-
-func requireJWTString(field string, value string) error {
-	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("OpenBao JWT role %s is required", field)
-	}
-	return nil
 }
 
 func (c *realOpenBaoClient) apiJSON(ctx context.Context, token string, method string, path string, body any, out any, expected ...int) error {

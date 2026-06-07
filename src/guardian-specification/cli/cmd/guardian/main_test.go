@@ -589,6 +589,18 @@ printf 'ansible ran\n' > ansible-ran
 	if err := os.WriteFile(rsyncPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatalf("write fake rsync: %v", err)
 	}
+	for _, rel := range []string{
+		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service",
+		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar",
+	} {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s dir: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte("profile artifact\n"), 0o755); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
 	if err := os.WriteFile(filepath.Join(dir, "preflight.yml"), []byte("---\n- hosts: all\n"), 0o644); err != nil {
 		t.Fatalf("write preflight playbook: %v", err)
 	}

@@ -1262,6 +1262,8 @@ func preparePreflightWorkspace(workspaceRoot string) error {
 		"bazel-bin",
 		"bazel-bin/src/tools/dev/binaries/uvx",
 		"bazel-bin/src/guardian-specification/tools/rsync",
+		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service",
+		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar",
 	} {
 		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {
