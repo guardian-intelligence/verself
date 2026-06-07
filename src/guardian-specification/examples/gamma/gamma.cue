@@ -110,6 +110,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/spicedb/cmd/spicedb-recover/spicedb-recover_/spicedb-recover
 						bazel-bin/src/infrastructure-components/stalwart/stalwart-runtime.tar
 						bazel-bin/src/infrastructure-components/stalwart/cmd/stalwart-recover/stalwart-recover_/stalwart-recover
+						bazel-bin/src/infrastructure-components/temporal-platform/temporal-runtime.tar
+						bazel-bin/src/infrastructure-components/temporal-platform/cmd/temporal-recover/temporal-recover_/temporal-recover
 						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
 						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
 						bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar
@@ -191,6 +193,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/spicedb/cmd/spicedb-recover/spicedb-recover_/spicedb-recover
 						bazel-bin/src/infrastructure-components/stalwart/stalwart-runtime.tar
 						bazel-bin/src/infrastructure-components/stalwart/cmd/stalwart-recover/stalwart-recover_/stalwart-recover
+						bazel-bin/src/infrastructure-components/temporal-platform/temporal-runtime.tar
+						bazel-bin/src/infrastructure-components/temporal-platform/cmd/temporal-recover/temporal-recover_/temporal-recover
 						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
 						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
 						bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar

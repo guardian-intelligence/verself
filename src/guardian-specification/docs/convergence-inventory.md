@@ -31,6 +31,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Forgejo | `forgejo.guardianintelligence.org/v1alpha1/ForgejoInstance/forgejo` | Converged on latest gamma run | None in current gamma state | Materialized Forgejo runtime artifact, direct `forgejo-recover` prestart binary, OpenBao generated Forgejo secrets, PostgreSQL `forgejo` database, Nomad OpenBao workload token |
 | Stalwart | `stalwart.guardianintelligence.org/v1alpha1/StalwartMailServer/stalwart` | Converged on latest gamma run | None in current gamma state | Materialized Stalwart runtime artifact, direct `stalwart-recover` prestart binary, OpenBao generated admin secret, PostgreSQL `stalwart` database, Nomad OpenBao workload token |
 | Electric | `electric.guardianintelligence.org/v1alpha1/ElectricDeployment/electric` | Converged on latest gamma run | None in current gamma state | Materialized Electric runtime artifact, direct `electric-recover` prestart binary, Electric containerd socket, OpenBao generated PostgreSQL/API secrets, PostgreSQL `electric`, `electric_notifications`, and `electric_iam` databases, Nomad OpenBao workload token |
+| Temporal | `temporal.guardianintelligence.org/v1alpha1/TemporalPlatform/temporal` | Converged on latest gamma run | None in current gamma state | Materialized Temporal runtime artifact, direct `temporal-recover` prestart binary, PostgreSQL `temporal` and `temporal_visibility` databases, SPIFFE mTLS identity, Temporal namespace bootstrap |
 
 ## Latest Gamma Evidence
 
@@ -46,9 +47,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:35e8d64149ad35a1fcff385ae962e7d7d7ae469a6b47c65072468fadc3ca5e41`;
+  `sha256:857c4210c721bd9c2f87706897432cd595e5aa7be861ffa545d27c9048e35b0d`;
 - latest verified upload digest:
-  `sha256:1e9b926144f8ceac848beabefb68cd87a9a971ce7ace3ebb7d79064a8ac73564`;
+  `sha256:12b082d4c164a8b4d24089f42f5f5d2d1e84c896dff5f7a64308dd6d97b2d6b4`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -228,6 +229,28 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   admin/snapshot connection pools, and verified publications for `default`,
   `notifications`, and `iam` without the previous PostgreSQL SSL fallback
   errors;
+- the first Temporal submission in the latest run failed before starting
+  because the boarded artifact set omitted the direct `temporal-recover`
+  prestart binary and `temporal-runtime.tar`;
+- after adding those artifacts to board upload and verify, `temporal`
+  deployment `ac94c216` completed successfully with allocation `31b878b3`
+  running and healthy;
+- `/run/verself/recovery/temporal/report.json` reports runtime digest
+  `sha256:06e421b513a91c5bac79f01ac3b1da307261335d2624cde6af11783ed0be931d`,
+  databases `temporal` and `temporal_visibility`, and bootstrapped namespaces
+  `sandbox-rental-service`, `billing-service`, and `distribution-service`;
+- local and remote Temporal artifact hashes matched:
+  runtime `sha256:06e421b513a91c5bac79f01ac3b1da307261335d2624cde6af11783ed0be931d`
+  and direct recovery binary
+  `sha256:cb196e38c8ef3e9a4bd39d08d8c1c631c2951327521a897365a8138cf3874b91`;
+- Nomad reports `temporal-frontend-grpc-tcp` and `temporal-metrics-http` as
+  `success`; the `recover` prestart and `temporal-bootstrap` poststart tasks
+  exited `0`, while `temporal-server` remains running;
+- `temporal-bootstrap` uses the repo Temporal SDK client over SPIFFE mTLS and
+  registered the declared namespaces; plain unauthenticated `tdbg` is expected
+  to fail against the frontend because the server requires client certificates;
+- Temporal task log scans found no `error`, `fatal`, `panic`, `failed`,
+  `denied`, or `unavailable` entries after convergence;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after
