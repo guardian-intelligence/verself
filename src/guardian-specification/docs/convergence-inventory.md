@@ -25,6 +25,7 @@ consecutive submissions do not create unexpected allocation churn.
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Converged on latest gamma run | None in current gamma state | OpenBao baseline reconciliation, Cloudflare-produced bucket-scoped R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 | Zot | `zot.guardianintelligence.org/v1alpha1/ZotRegistry/zot` | Converged on latest gamma run | None in current gamma state | Materialized Zot runtime artifact, `zot-recover`, local storage directory, htpasswd publisher entry |
+| Verdaccio | `verdaccio.guardianintelligence.org/v1alpha1/VerdaccioRegistry/verdaccio` | Converged on latest gamma run | None in current gamma state | Materialized Verdaccio runtime artifact, `verdaccio-recover`, local storage directory, generated htpasswd file, npm uplink network egress |
 
 ## Latest Gamma Evidence
 
@@ -40,9 +41,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:9cf8c841cdeb82e09bafc28a12612007a89b20c542b9902880aa96c730be2790`;
+  `sha256:71ca3eae3ad439508d11ee6b932e55b88a6dcbf020e821f2afcc449bee6cdebc`;
 - latest verified upload digest:
-  `sha256:ad3fd7b62f522bbc6bf4188ef5048c84f18f2c0b44d4700a8bc5557090849fa4`;
+  `sha256:8cca5084d1af493af5cd76648a63aac7d7c2e7233a555d5fb778b4c1c9c62d91`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -190,6 +191,19 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Nomad reports the `zot-registry-v2` check as `success`, `/v2/` returns
   `200 OK` with `Docker-Distribution-Api-Version: registry/2.0`, and the
   server is listening on `127.0.0.1:5080`;
+- the first Verdaccio submission failed before starting because the boarded
+  artifact set omitted the direct `verdaccio-recover` prestart binary and
+  `verdaccio-runtime.tar`;
+- after adding those artifacts to board upload and verify, `verdaccio`
+  deployment `5c66813a` completed successfully with allocation `773c8c89`
+  running and healthy;
+- `/run/verself/recovery/verdaccio/report.json` reports
+  `VerdaccioRuntimeInstalled=True`, `VerdaccioConfigWritten=True`, and
+  `VerdaccioRecoveryComplete=True`;
+- Verdaccio runtime artifact digest:
+  `sha256:3b513acb3b3eeb9fe0ddf3ee2967eae224b40e8e76c7628354637d53350cca8e`;
+- Nomad reports the `verdaccio-http-ping` check as `success`, `/-/ping`
+  returns `200 OK`, and the server is listening on `127.0.0.1:4873`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails

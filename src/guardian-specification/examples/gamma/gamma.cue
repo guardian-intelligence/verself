@@ -95,6 +95,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
 						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
 						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
+						bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar
+						bazel-bin/src/infrastructure-components/verdaccio/cmd/verdaccio-recover/verdaccio-recover_/verdaccio-recover
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
 						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
@@ -157,6 +159,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
 						bazel-bin/src/infrastructure-components/tigerbeetle/tigerbeetle-runtime.tar
 						bazel-bin/src/infrastructure-components/tigerbeetle/cmd/tigerbeetle-recover/tigerbeetle-recover_/tigerbeetle-recover
+						bazel-bin/src/infrastructure-components/verdaccio/verdaccio-runtime.tar
+						bazel-bin/src/infrastructure-components/verdaccio/cmd/verdaccio-recover/verdaccio-recover_/verdaccio-recover
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
 						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
