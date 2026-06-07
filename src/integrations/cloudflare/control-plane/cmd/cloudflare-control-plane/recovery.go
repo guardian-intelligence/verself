@@ -92,6 +92,13 @@ func recoverCloudflare(ctx context.Context, cfg config) error {
 		if err := preflightOpenBaoPersistence(recoveryCfg.parentCredentialConfig(), "recovery capability credential persistence"); err != nil {
 			return err
 		}
+		existed, created, err := ensureR2BucketWithAccountAdmin(ctx, recoveryCfg, apiClient)
+		if err != nil {
+			return err
+		}
+		out.BucketExisted = existed
+		out.BucketCreated = created
+		out.RecoveryConditions = append(out.RecoveryConditions, "RecoveryBucketReady")
 		if err := provisionRecoveryCredential(ctx, recoveryCfg, accountAdmin, &out); err != nil {
 			return err
 		}

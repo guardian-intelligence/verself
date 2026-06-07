@@ -12,7 +12,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Substrate preflight | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad runtime | component bootstrap machinery | Converged | None | Materialized repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
 | OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
-| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Previous recovery completed; not yet re-submitted after latest wipe | Provider parent credential still requires operator import if no restored OpenBao snapshot provides it | Operator imports Cloudflare account-admin credential into `kv-controller/data/integrations/cloudflare/account-admin`; OpenBao recovery creates the Cloudflare runtime role |
+| Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to preflight-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Materialized NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
@@ -28,18 +28,18 @@ consecutive submissions do not create unexpected allocation churn.
 Live command:
 
 ```sh
-guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json --stream
+guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --stream
 ```
 
-Observed results from the latest destructive gamma run on June 6, 2026:
+Observed results from the latest gamma run on June 6, 2026:
 
-- `guardian fly src/guardian-specification/examples/gamma/gamma.cue -o json
+- `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:d9d8f38e10375ffbedb3a070e7dfa969e25cf25b990478e2b01d9454b0615f8b`;
+  `sha256:40a23eeede55d2f47e0afaa25d0f99c84a9f411c95e3530fc423ff550e77036c`;
 - latest verified upload digest:
-  `sha256:7d6786e99b9bfc44b210b2854bbfc8a0801cfcdf592998099ee8bc5aec0e6ba2`;
+  `sha256:fcf8fe8d160d0a1119399ae933ca66ceaac857fbd03d291ef3258807729cd92c`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -50,11 +50,24 @@ Observed results from the latest destructive gamma run on June 6, 2026:
 - `/run/verself/recovery/openbao/report.json` reports
   `OpenBaoRecoveryComplete=True/Recovered`;
 - OpenBao evidence from the report: version `2.5.2`, Shamir seal, threshold
-  `2`, cluster id `5c5790b0-199e-aab8-529d-34d6c5f3206c`;
+  `2`, cluster id `335df66b-5d2b-e6ae-c91a-740563a736a3`;
 - the fresh-init path delivered encrypted init material to
   `/run/verself/recovery/openbao/init-material.json`, unsealed using in-memory
   init shares, reconciled baseline mounts/auth/policies, and revoked the
   transient initial root token;
+- Cloudflare account-admin authority was imported through the encrypted
+  OpenBao operator import handoff and `--operator-import-stdin`;
+- the first Cloudflare recovery attempt after import reached R2 verification
+  and failed on `put verification object returned status 404`, identifying the
+  missing recovery bucket as the root cause;
+- Cloudflare recovery now ensures the recovery bucket before minting the
+  bucket-scoped recovery credential;
+- the latest Cloudflare recovery allocation reported
+  `RecoveryBucketReady`, `RecoveryCredentialsPersisted`, `DNSConverged`,
+  `CertificatesReady`, and `ObjectStorageCredentialsPersisted`;
+- the latest Cloudflare recovery report showed `bucket: verself-recovery`,
+  `bucket_created: true`, `verification_object_get_status: 200`, and
+  `verified_with: object-storage-proxy`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
