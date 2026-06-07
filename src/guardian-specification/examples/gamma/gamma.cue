@@ -130,6 +130,7 @@ resources: [
 								bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
 								bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
 								bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
+								bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service
 								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
 								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
 								'
@@ -219,6 +220,7 @@ resources: [
 								bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
 								bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
 								bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
+								bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service
 								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
 								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
 								'
@@ -510,6 +512,14 @@ resources: [
 								"""
 					},
 					{
+						name: "profile-service-runtime"
+						hcl: """
+								path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+								  capabilities = ["read"]
+								}
+								"""
+					},
+					{
 						name: "projects-service-runtime"
 						hcl: """
 								path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
@@ -768,6 +778,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["secrets-service-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "profile-service-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "profile-service"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["profile-service-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -1134,6 +1161,10 @@ resources: [
 					owner: "deployment_service"
 				},
 				{
+					name:  "profile"
+					owner: "profile_service"
+				},
+				{
 					name:  "projects_service"
 					owner: "projects_service"
 				},
@@ -1181,6 +1212,10 @@ resources: [
 					login: true
 				},
 				{
+					name:  "profile_service"
+					login: true
+				},
+				{
 					name:  "projects_service"
 					login: true
 				},
@@ -1225,6 +1260,10 @@ resources: [
 				{
 					systemUser:   "deployment_service"
 					postgresUser: "deployment_service"
+				},
+				{
+					systemUser:   "profile_service"
+					postgresUser: "profile_service"
 				},
 				{
 					systemUser:   "projects_service"
@@ -1827,6 +1866,7 @@ resources: [
 						"api.gamma.verself.sh",
 						"deployments.api.gamma.verself.sh",
 						"iam.api.gamma.verself.sh",
+						"profile.api.gamma.verself.sh",
 						"projects.api.gamma.verself.sh",
 						"source.api.gamma.verself.sh",
 					]
@@ -1897,6 +1937,16 @@ resources: [
 					}
 					hostname: "iam.api.gamma.verself.sh"
 					backend:  "be_route_product_iam_api_iam_service_public_api"
+				},
+				{
+					name: "profile-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "profile.api.gamma.verself.sh"
+					backend:  "be_route_product_profile_api_profile_service_public_api"
 				},
 				{
 					name: "projects-api"
@@ -2694,6 +2744,26 @@ resources: [
 				workloadAudience: "openbao"
 			}
 			runtimeSecretNamespace: "runtime"
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+	{
+		apiVersion: "profile.guardianintelligence.org/v1alpha1"
+		kind:       "ProfileService"
+		metadata: name: "profile-service"
+		spec: {
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.auth_audience"
+				}
+			}
+			postgres: {
+				dsn:      "postgres://profile_service@/profile?host=/var/run/postgresql&sslmode=disable"
+				maxConns: 8
+			}
 			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
 		}
 	},

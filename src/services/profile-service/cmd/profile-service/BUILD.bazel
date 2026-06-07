@@ -3,7 +3,11 @@ load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "profile-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+        "recover.go",
+    ],
     importpath = "github.com/verself/profile-service/cmd/profile-service",
     visibility = ["//visibility:private"],
     deps = [

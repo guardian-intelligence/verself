@@ -761,7 +761,7 @@ backend be_route_product_profile_api_profile_service_public_api
   http-request deny deny_status 413 if { req.body_size gt 16384 }
 [[ with nomadService "profile-service-public-http" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_profile_api_profile_service_public_api_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_profile_api_profile_service_public_api_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"

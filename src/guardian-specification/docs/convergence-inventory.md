@@ -23,6 +23,7 @@ consecutive submissions do not create unexpected allocation churn.
 | IAM Service | `iam.guardianintelligence.org/v1alpha1/IAMService/iam-service` | Converged on latest gamma run | None in current gamma state | Materialized IAM binary, IAM CRD static config, PostgreSQL `iam_service` database/peer role, OpenBao-generated/runtime Zitadel credentials, SpiceDB, ClickHouse, Zitadel OIDC issuer reachable through HAProxy |
 | Deployment Service | `deployment.guardianintelligence.org/v1alpha1/DeploymentService/deployment-service` | Converged on latest gamma run | None in current gamma state | Materialized deployment-service binary, Bazel-pinned Git runtime tools, PostgreSQL `deployment_service` database/peer role, SPIRE workload identity, object-storage admin API, Nomad API, HAProxy public route |
 | Secrets Service | `secrets.guardianintelligence.org/v1alpha1/SecretsService/secrets-service` | Converged on latest gamma run | None in current gamma state | Materialized secrets-service binary, SecretsService CRD static config, OpenBao Nomad JWT role `secrets-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy public route |
+| Profile Service | `profile.guardianintelligence.org/v1alpha1/ProfileService/profile-service` | Converged on latest gamma run | None in current gamma state | Materialized profile-service binary, ProfileService CRD static config, PostgreSQL `profile` database/`profile_service` peer role, OpenBao Nomad JWT role `profile-service-runtime`, Zitadel auth audience secret, IAM internal API, Governance internal API activity sink, SPIRE workload identity, HAProxy profile API route |
 | Projects Service | `projects.guardianintelligence.org/v1alpha1/ProjectsService/projects-service` | Converged on latest gamma run | None in current gamma state | Materialized projects-service binary, ProjectsService CRD static config, PostgreSQL `projects_service` database/peer role, OpenBao Nomad JWT role `projects-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy projects API route |
 | Source Code Hosting Service | `source.guardianintelligence.org/v1alpha1/SourceCodeHostingService/source-code-hosting-service` | Converged on latest gamma run | None in current gamma state | Materialized source-code-hosting-service binary, SourceCodeHostingService CRD static config, PostgreSQL `source_code_hosting` database/peer role, Forgejo runtime and automation token, generated webhook secret, OpenBao Nomad JWT role `source-code-hosting-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy source API route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
@@ -48,6 +49,41 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the profile-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:cb085bf005d6cab0c298446015c4a1b33f436425be83238a439ab6a401eeb7ec`,
+  and verified upload digest
+  `sha256:74047e9de96c685656159642e4130a9220cafa476c31af2d15c0866d6051dfc1`;
+- profile-service deployment `8c2bd968` is successful with allocations
+  `2ce76c7c` and `72a14acd` running and healthy;
+- Nomad reports `profile-service-public-http` on `127.0.0.1:27646` and
+  `127.0.0.1:30483`; both direct `/readyz` checks return `ready`, and direct
+  `/api/v1/profile` returns the expected `401` problem response without a
+  bearer token;
+- PostgreSQL reconciled the declared `profile` database, `profile_service`
+  login role, and peer mapping from the updated graph before profile-service
+  migrations ran;
+- OpenBao baseline reconciliation applied the `profile-service-runtime` policy
+  and Nomad JWT role, allowing the task template to render
+  `iam-service.zitadel.auth_audience` for the fixed `profile_service` runtime
+  identity `978:971`;
+- HAProxy deployment `b3fe8de2`, allocation `35971eec`, is successful after
+  regenerating the gateway config from the updated `HAProxyGateway` CRD. The
+  generated frontend routes `profile.api.gamma.verself.sh` to
+  `be_route_product_profile_api_profile_service_public_api`, and the generated
+  backend points at `127.0.0.1:27646` and `127.0.0.1:30483` with plain HTTP
+  server entries and no `proto h2`;
+- `https://profile.api.gamma.verself.sh/.well-known/guardian/ready` through
+  HAProxy returns `HTTP/2 200`, and
+  `https://profile.api.gamma.verself.sh/api/v1/profile` reaches
+  profile-service and returns the expected `HTTP/2 401` problem response for
+  an unauthenticated request;
+- profile-service previously had no CRD/runtime recovery path and still used
+  `verself-artifact://profile-service` plus `__VERSELF_*`/PG env injection.
+  The service now loads static config from the `ProfileService` CRD, installs
+  its boarded binary through a hidden `recover` command, projects the Guardian
+  graph into `/run/verself/recovery/profile-service/document.json`, and runs
+  migrations from the CRD Postgres DSN;
 - current preflight after the projects-service slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:fe4ac356f0ddf4beb21a6cb9bb45f48c06a5ed294e3e4437bf98fccf463a0215`,

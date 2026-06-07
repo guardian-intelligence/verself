@@ -31,6 +31,12 @@ install_route_catalog "$(location //src/services/profile-service/internal/routec
 """,
 )
 
+filegroup(
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//src/guardian-specification:__pkg__"],
+)
+
 spire_identity(
     name = "spiffe_identity",
     component = "profile_service",

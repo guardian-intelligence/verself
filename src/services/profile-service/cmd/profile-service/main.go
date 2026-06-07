@@ -32,30 +32,56 @@ const (
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, fmt.Errorf("usage: migrate [--resource-graph path] [--resource-name name] up")
+	}
+	runtimeCfg, err := loadProfileRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	opts, err := parseRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadProfileRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -68,18 +94,12 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4258")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4259")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
 	if err := cfg.Err(); err != nil {
 		return err
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("profile spiffe workload source: %w", err)
 	}
@@ -92,7 +112,7 @@ func run() error {
 		return err
 	}
 
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open profile postgres: %w", err)
 	}
@@ -132,9 +152,9 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	profileapi.NewAPI(privateMux, profileapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
+	profileapi.NewAPI(privateMux, profileapi.Config{Version: serviceVersion, ListenAddr: opts.ListenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient)})
 	authenticated := auth.Middleware(auth.Config{
-		IssuerURL: authIssuerURL,
+		IssuerURL: runtimeCfg.AuthIssuerURL,
 		Audience:  authAudience,
 	})(privateMux)
 	rootMux.Handle("/", profileapi.CaptureRawBearerToken(authenticated))
@@ -148,14 +168,14 @@ func run() error {
 		return fmt.Errorf("profile spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	profileapi.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, svc)
+	profileapi.NewInternalAPI(internalMux, serviceVersion, "https://"+opts.InternalListenAddr, svc)
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(internalPeerIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("profile internal allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, public, internal)
 }
