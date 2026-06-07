@@ -90,6 +90,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
+						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
 						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
 						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
@@ -156,6 +158,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
+						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
 						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
 						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover

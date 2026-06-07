@@ -27,6 +27,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Zot | `zot.guardianintelligence.org/v1alpha1/ZotRegistry/zot` | Converged on latest gamma run | None in current gamma state | Materialized Zot runtime artifact, `zot-recover`, local storage directory, htpasswd publisher entry |
 | Verdaccio | `verdaccio.guardianintelligence.org/v1alpha1/VerdaccioRegistry/verdaccio` | Converged on latest gamma run | None in current gamma state | Materialized Verdaccio runtime artifact, `verdaccio-recover`, local storage directory, generated htpasswd file, npm uplink network egress |
 | SpiceDB | `spicedb.guardianintelligence.org/v1alpha1/SpiceDBCluster/spicedb` | Converged on latest gamma run | None in current gamma state | Materialized SpiceDB runtime artifact, `spicedb-recover`, OpenBao generated gRPC preshared key, PostgreSQL `spicedb` database, Nomad OpenBao workload token |
+| Grafana | `grafana.guardianintelligence.org/v1alpha1/GrafanaInstance/grafana` | Converged on latest gamma run | None in current gamma state | Materialized Grafana runtime artifact, `grafana-recover`, OpenBao generated admin password and secret key, PostgreSQL `grafana` database |
 
 ## Latest Gamma Evidence
 
@@ -42,9 +43,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:8b98a4af14ac95e06210f9ddd8d8943d5bc58dcefdefae6f207ab62c4e03ab70`;
+  `sha256:a91bf0d582b37cc710c1d5cb839cd84430cd57fa014a579be678de96bf7d8907`;
 - latest verified upload digest:
-  `sha256:fabd231fece8868311f5cdade7f9c667d1aa293e605106c69d4b0cabf6a5b912`;
+  `sha256:71cc3c0163b9f4071029b7ad258528d897ffcc32066cd343e706d59eb819390e`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -219,6 +220,20 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Nomad reports `spicedb-grpc-tcp` and `spicedb-metrics-http` as `success`,
   the metrics endpoint responds on `127.0.0.1:21702`, and gRPC listens on
   `127.0.0.1:24640`;
+- the first Grafana submission failed before starting because the boarded
+  artifact set omitted the direct `grafana-recover` prestart binary and
+  `grafana-runtime.tar`;
+- after adding those artifacts to board upload and verify, `grafana` deployment
+  `9b403dc4` completed successfully with allocation `7bacadac` running and
+  healthy;
+- `/run/verself/recovery/grafana/report.json` reports
+  `GrafanaRuntimeInstalled=True`, `GrafanaSecretsReady=True`,
+  `GrafanaConfigWritten=True`, and `GrafanaRecoveryComplete=True`;
+- Grafana runtime artifact digest:
+  `sha256:ef82754690e5b042098eb6b4749d351827029c823f66dc14ad2088687a110062`;
+- Nomad reports `grafana-http-health` as `success`, `/api/health` reports
+  database `ok` on Grafana `12.4.2`, and the server is listening on
+  `127.0.0.1:4300`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
