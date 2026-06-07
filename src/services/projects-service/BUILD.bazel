@@ -9,6 +9,12 @@ deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
+filegroup(
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//src/guardian-specification:__pkg__"],
+)
+
 spire_identity(
     name = "spiffe_identity",
     component = "projects_service",

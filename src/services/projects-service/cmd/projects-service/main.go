@@ -32,30 +32,56 @@ const (
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, fmt.Errorf("usage: migrate [--resource-graph path] [--resource-name name] up")
+	}
+	runtimeCfg, err := loadProjectsRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	opts, err := parseRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadProjectsRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -68,19 +94,12 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4264")
-	serviceListenAddr := cfg.String("VERSELF_SERVICE_LISTEN_ADDR", "127.0.0.1:4265")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
 	if err := cfg.Err(); err != nil {
 		return err
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("projects spiffe workload source: %w", err)
 	}
@@ -101,7 +120,7 @@ func run() error {
 		return fmt.Errorf("projects iam client: %w", err)
 	}
 
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open projects postgres: %w", err)
 	}
@@ -129,9 +148,9 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	projectsapi.NewAPI(privateMux, projectsapi.Config{Version: serviceVersion, ListenAddr: listenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient), InstallationID: installationID})
+	projectsapi.NewAPI(privateMux, projectsapi.Config{Version: serviceVersion, ListenAddr: opts.ListenAddr, Service: svc, Authorizer: iamclient.NewAuthorizer(iamClient), InstallationID: runtimeCfg.InstallationID})
 	authenticated := auth.Middleware(auth.Config{
-		IssuerURL: authIssuerURL,
+		IssuerURL: runtimeCfg.AuthIssuerURL,
 		Audience:  authAudience,
 	})(privateMux)
 	rootMux.Handle("/", authenticated)
@@ -150,14 +169,14 @@ func run() error {
 		return fmt.Errorf("projects spiffe service tls: %w", err)
 	}
 	serviceMux := http.NewServeMux()
-	projectsapi.NewInternalAPI(serviceMux, serviceVersion, "https://"+serviceListenAddr, svc, installationID)
+	projectsapi.NewInternalAPI(serviceMux, serviceVersion, "https://"+opts.InternalListenAddr, svc, runtimeCfg.InstallationID)
 	serviceAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(servicePeerIDs, serviceMux)
 	if err != nil {
 		return fmt.Errorf("projects service allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	serviceServer := httpserver.New(serviceListenAddr, otelhttp.NewHandler(limitRequestBodies(serviceAllowlist, requestBodyLimit), serviceName+"-service"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	serviceServer := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(limitRequestBodies(serviceAllowlist, requestBodyLimit), serviceName+"-service"))
 	serviceServer.TLSConfig = serviceTLSConfig
 	return httpserver.RunPair(ctx, logger, public, serviceServer)
 }

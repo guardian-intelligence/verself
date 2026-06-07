@@ -14,7 +14,7 @@ consecutive submissions do not create unexpected allocation churn.
 | OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
 | SPIRE | `spire.guardianintelligence.org/v1alpha1/SPIRECluster/spire` | Converged on latest gamma run | None in current gamma state | Materialized SPIRE runtime artifact, identity registry artifact, server/agent sockets, join-token attestation, `spire_workload` socket group |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
-| HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | None in current gamma state | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
+| HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | Day-2 graph-only route changes currently require an allocation restart because the route graph is rendered in the setup prestart task; fresh recovery from a wiped host converges | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged on latest gamma run | None in current gamma state | Materialized nftables runtime artifact, direct `nftables-apply` batch binary, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged on latest gamma run | None in current gamma state | Materialized NATS runtime artifact, `nats-recover`, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged on latest gamma run | None in current gamma state | Materialized Nomad Observer runtime artifact, direct `nomad-observer` prestart binary, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
@@ -23,6 +23,7 @@ consecutive submissions do not create unexpected allocation churn.
 | IAM Service | `iam.guardianintelligence.org/v1alpha1/IAMService/iam-service` | Converged on latest gamma run | None in current gamma state | Materialized IAM binary, IAM CRD static config, PostgreSQL `iam_service` database/peer role, OpenBao-generated/runtime Zitadel credentials, SpiceDB, ClickHouse, Zitadel OIDC issuer reachable through HAProxy |
 | Deployment Service | `deployment.guardianintelligence.org/v1alpha1/DeploymentService/deployment-service` | Converged on latest gamma run | None in current gamma state | Materialized deployment-service binary, Bazel-pinned Git runtime tools, PostgreSQL `deployment_service` database/peer role, SPIRE workload identity, object-storage admin API, Nomad API, HAProxy public route |
 | Secrets Service | `secrets.guardianintelligence.org/v1alpha1/SecretsService/secrets-service` | Converged on latest gamma run | None in current gamma state | Materialized secrets-service binary, SecretsService CRD static config, OpenBao Nomad JWT role `secrets-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy public route |
+| Projects Service | `projects.guardianintelligence.org/v1alpha1/ProjectsService/projects-service` | Converged on latest gamma run | None in current gamma state | Materialized projects-service binary, ProjectsService CRD static config, PostgreSQL `projects_service` database/peer role, OpenBao Nomad JWT role `projects-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy projects API route |
 | Source Code Hosting Service | `source.guardianintelligence.org/v1alpha1/SourceCodeHostingService/source-code-hosting-service` | Converged on latest gamma run | None in current gamma state | Materialized source-code-hosting-service binary, SourceCodeHostingService CRD static config, PostgreSQL `source_code_hosting` database/peer role, Forgejo runtime and automation token, generated webhook secret, OpenBao Nomad JWT role `source-code-hosting-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy source API route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations, sustained operator query monitor |
@@ -47,6 +48,49 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the projects-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:fe4ac356f0ddf4beb21a6cb9bb45f48c06a5ed294e3e4437bf98fccf463a0215`,
+  and verified upload digest
+  `sha256:b9ea4a2c40d3afa194d645f43341f5343c305eeb25efad3b2497eff91048bd0a`;
+- projects-service deployment `340b5ff9` is successful with allocations
+  `43568674` and `bdef31a2` running and healthy;
+- Nomad reports `projects-service-public-http` on `127.0.0.1:27527` and
+  `127.0.0.1:20237`; both direct `/readyz` checks return `ready`, and direct
+  `/api/v1/projects` returns the expected `401` problem response without a
+  bearer token;
+- PostgreSQL already reconciled the declared `projects_service` database,
+  login role, and peer mapping before the projects-service migration prestart
+  ran;
+- OpenBao baseline reconciliation applied the `projects-service-runtime`
+  policy and Nomad JWT role, allowing the task template to render
+  `iam-service.zitadel.auth_audience` for the fixed `projects_service`
+  runtime identity `977:970`;
+- HAProxy deployment `5676e423`, allocation `96b34b8e`, is successful after
+  regenerating the gateway config from the updated `HAProxyGateway` CRD. The
+  generated frontend routes `projects.api.gamma.verself.sh` to
+  `be_route_product_projects_api_projects_service_public_api`, and the
+  generated backend points at `127.0.0.1:27527` and `127.0.0.1:20237` with
+  plain HTTP server entries and no `proto h2`;
+- `https://projects.api.gamma.verself.sh/.well-known/guardian/ready` through
+  HAProxy returns `HTTP/2 200`, and
+  `https://projects.api.gamma.verself.sh/api/v1/projects` reaches
+  projects-service and returns the expected `HTTP/2 401` problem response for
+  an unauthenticated request;
+- projects-service initially had no CRD/runtime recovery path and still used
+  `verself-artifact://projects-service` plus `__VERSELF_*`/PG env injection.
+  The service now loads static config from the `ProjectsService` CRD, installs
+  its boarded binary through a hidden `recover` command, projects the Guardian
+  graph into `/run/verself/recovery/projects-service/document.json`, and runs
+  migrations from the CRD Postgres DSN;
+- HAProxy initially returned a proxy `404` for
+  `projects.api.gamma.verself.sh` because the `HAProxyGateway` CRD did not
+  declare the projects route, even though legacy deploy route YAML did. After
+  adding the route to the CRD graph, submitting the same HAProxy HCL did not
+  create a new Nomad deployment because graph changes are external to the job
+  spec. A fresh HAProxy allocation start applied the graph correctly; the next
+  HAProxy recovery cleanup should make graph changes part of the component's
+  continuous reconcile loop instead of a prestart-only render;
 - current preflight after the ClickHouse monitor slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:0a1e9cd149b9d5511774aeeb18141716c29a177e291865eba83a4acb7603e23d`,

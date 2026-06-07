@@ -3,7 +3,11 @@ load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
 
 go_library(
     name = "projects-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+        "recover.go",
+    ],
     importpath = "github.com/verself/projects-service/cmd/projects-service",
     visibility = ["//visibility:private"],
     deps = [

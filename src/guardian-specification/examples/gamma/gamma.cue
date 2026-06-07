@@ -127,11 +127,12 @@ resources: [
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
 							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
-							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
-							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
-							bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
-							bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
-							'
+								bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
+								bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
+								bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
+								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
+								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
+								'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
 						"$rsync_bin" -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
@@ -215,11 +216,12 @@ resources: [
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
 							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
-							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
-							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
-							bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
-							bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
-							'
+								bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
+								bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
+								bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
+								bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service
+								bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service
+								'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
 						fly_delta="$("$rsync_bin" -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
@@ -502,10 +504,18 @@ resources: [
 					{
 						name: "secrets-service-runtime"
 						hcl: """
-							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
-							  capabilities = ["read"]
-							}
-							"""
+								path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+								  capabilities = ["read"]
+								}
+								"""
+					},
+					{
+						name: "projects-service-runtime"
+						hcl: """
+								path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+								  capabilities = ["read"]
+								}
+								"""
 					},
 					{
 						name: "source-code-hosting-service-runtime"
@@ -758,6 +768,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["secrets-service-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "projects-service-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "projects-service"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["projects-service-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -1107,6 +1134,10 @@ resources: [
 					owner: "deployment_service"
 				},
 				{
+					name:  "projects_service"
+					owner: "projects_service"
+				},
+				{
 					name:  "source_code_hosting"
 					owner: "source_code_hosting_service"
 				},
@@ -1150,6 +1181,10 @@ resources: [
 					login: true
 				},
 				{
+					name:  "projects_service"
+					login: true
+				},
+				{
 					name:  "source_code_hosting_service"
 					login: true
 				},
@@ -1190,6 +1225,10 @@ resources: [
 				{
 					systemUser:   "deployment_service"
 					postgresUser: "deployment_service"
+				},
+				{
+					systemUser:   "projects_service"
+					postgresUser: "projects_service"
 				},
 				{
 					systemUser:   "source_code_hosting_service"
@@ -1788,6 +1827,7 @@ resources: [
 						"api.gamma.verself.sh",
 						"deployments.api.gamma.verself.sh",
 						"iam.api.gamma.verself.sh",
+						"projects.api.gamma.verself.sh",
 						"source.api.gamma.verself.sh",
 					]
 					pemPath: "/etc/haproxy/certs/gamma.verself.sh.pem"
@@ -1857,6 +1897,16 @@ resources: [
 					}
 					hostname: "iam.api.gamma.verself.sh"
 					backend:  "be_route_product_iam_api_iam_service_public_api"
+				},
+				{
+					name: "projects-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "projects.api.gamma.verself.sh"
+					backend:  "be_route_product_projects_api_projects_service_public_api"
 				},
 				{
 					name: "source-api"
@@ -2644,6 +2694,27 @@ resources: [
 				workloadAudience: "openbao"
 			}
 			runtimeSecretNamespace: "runtime"
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+		}
+	},
+	{
+		apiVersion: "projects.guardianintelligence.org/v1alpha1"
+		kind:       "ProjectsService"
+		metadata: name: "projects-service"
+		spec: {
+			installationID: "inst_gamma_01JZ0000000000000000000000"
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.auth_audience"
+				}
+			}
+			postgres: {
+				dsn:      "postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable"
+				maxConns: 8
+			}
 			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
 		}
 	},
