@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -26,32 +25,63 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
+const (
+	serviceName    = "governance-service"
+	serviceVersion = "1.0.0"
+)
+
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], "governance-service")
+	opts, remaining, err := parseMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, fmt.Errorf("usage: migrate [--resource-graph path] [--resource-name name] up")
+	}
+	runtimeCfg, err := loadGovernanceRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: "governance-service", ServiceVersion: "1.0.0"})
+	opts, err := parseRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadGovernanceRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
+	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
 	}
@@ -59,35 +89,13 @@ func run() error {
 	slog.SetDefault(logger)
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	identityPGDSN := cfg.RequireString("GOVERNANCE_IAM_PG_DSN")
-	billingPGDSN := cfg.RequireString("GOVERNANCE_BILLING_PG_DSN")
-	sandboxPGDSN := cfg.RequireString("GOVERNANCE_SANDBOX_PG_DSN")
-	apiActivityHMACKey := cfg.RequireCredential("api-activity-hmac-key")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4250")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4254")
-	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "governance_service")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	exportDir := cfg.String("GOVERNANCE_EXPORT_DIR", "/var/lib/governance-service/exports")
-	publicBaseURL := cfg.String("GOVERNANCE_PUBLIC_BASE_URL", "")
-	writerInstanceID := cfg.String("GOVERNANCE_WRITER_INSTANCE_ID", hostname())
-	hmacKeyID := cfg.String("GOVERNANCE_API_ACTIVITY_HMAC_KEY_ID", "governance-service.v1")
-	exportTTLHours := cfg.Int("GOVERNANCE_EXPORT_TTL_HOURS", 168)
-	environment := cfg.String("GOVERNANCE_ENVIRONMENT", "single-node")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	identityPGMaxConns := cfg.Int("GOVERNANCE_IAM_PG_MAX_CONNS", 4)
-	billingPGMaxConns := cfg.Int("GOVERNANCE_BILLING_PG_MAX_CONNS", 4)
-	sandboxPGMaxConns := cfg.Int("GOVERNANCE_SANDBOX_PG_MAX_CONNS", 4)
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
-	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
+	apiActivityHMACKey := cfg.RequireCredential(runtimeCfg.APIActivityHMACKeyName)
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
 	if err := cfg.Err(); err != nil {
 		return err
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("governance spiffe workload source: %w", err)
 	}
@@ -104,36 +112,36 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("governance iam client: %w", err)
 	}
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open governance postgres: %w", err)
 	}
 	defer pg.Close()
-	identityPG, err := openPool(ctx, identityPGDSN, identityPGMaxConns)
+	identityPG, err := openPool(ctx, runtimeCfg.IdentityPostgresDSN, runtimeCfg.IdentityPostgresMaxConn)
 	if err != nil {
 		return fmt.Errorf("open identity postgres: %w", err)
 	}
 	defer identityPG.Close()
-	billingPG, err := openPool(ctx, billingPGDSN, billingPGMaxConns)
+	billingPG, err := openPool(ctx, runtimeCfg.BillingPostgresDSN, runtimeCfg.BillingPostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open billing postgres: %w", err)
 	}
 	defer billingPG.Close()
-	sandboxPG, err := openPool(ctx, sandboxPGDSN, sandboxPGMaxConns)
+	sandboxPG, err := openPool(ctx, runtimeCfg.SandboxPostgresDSN, runtimeCfg.SandboxPostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open sandbox postgres: %w", err)
 	}
 	defer sandboxPG.Close()
 
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, runtimeCfg.ClickHouseCACertPath)
 	if err != nil {
 		return fmt.Errorf("governance clickhouse tls: %w", err)
 	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{chAddress},
+		Addr: []string{runtimeCfg.ClickHouseAddress},
 		Auth: clickhouse.Auth{
 			Database: "verself",
-			Username: chUser,
+			Username: runtimeCfg.ClickHouseUser,
 		},
 		TLS: chTLSConfig,
 	})
@@ -150,14 +158,14 @@ func run() error {
 		CH:               chConn,
 		Logger:           logger,
 		HMACKey:          []byte(apiActivityHMACKey),
-		HMACKeyID:        hmacKeyID,
-		ExportDir:        exportDir,
-		ExportTTL:        time.Duration(exportTTLHours) * time.Hour,
-		PublicBaseURL:    publicBaseURL,
-		Environment:      environment,
-		ServiceVersion:   "1.0.0",
-		WriterInstanceID: writerInstanceID,
-		InstallationID:   installationID,
+		HMACKeyID:        runtimeCfg.APIActivityHMACKeyID,
+		ExportDir:        runtimeCfg.ExportDir,
+		ExportTTL:        time.Duration(runtimeCfg.ExportTTLHours) * time.Hour,
+		PublicBaseURL:    runtimeCfg.PublicBaseURL,
+		Environment:      runtimeCfg.Environment,
+		ServiceVersion:   serviceVersion,
+		WriterInstanceID: runtimeCfg.WriterInstanceID,
+		InstallationID:   runtimeCfg.InstallationID,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("governance readiness: %w", err)
@@ -197,22 +205,22 @@ func run() error {
 	})
 
 	privateMux := http.NewServeMux()
-	governanceapi.NewAPI(privateMux, "1.0.0", "http://"+listenAddr, svc, iamclient.NewAuthorizer(iamClient))
+	governanceapi.NewAPI(privateMux, serviceVersion, "http://"+opts.ListenAddr, svc, iamclient.NewAuthorizer(iamClient))
 	authHandler := auth.Middleware(auth.Config{
-		IssuerURL: authIssuerURL,
+		IssuerURL: runtimeCfg.AuthIssuerURL,
 		Audience:  authAudience,
 	})(privateMux)
 	rootMux.Handle("/", authHandler)
 
 	internalMux := http.NewServeMux()
-	governanceapi.NewInternalAPI(internalMux, "1.0.0", "https://"+internalListenAddr, svc)
+	governanceapi.NewInternalAPI(internalMux, serviceVersion, "https://"+opts.InternalListenAddr, svc)
 	internalAllowlist, err := workloadauth.ServerPeerAllowlistMiddleware(apiActivityClientIDs, internalMux)
 	if err != nil {
 		return fmt.Errorf("governance internal allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(maxBody(rootMux, 1<<20), "governance-service"))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(maxBody(internalAllowlist, 1<<20), "governance-service-internal"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(maxBody(rootMux, 1<<20), serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(maxBody(internalAllowlist, 1<<20), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 
 	return httpserver.RunPair(ctx, logger, public, internal)
@@ -258,7 +266,7 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 	if err != nil {
 		return nil, err
 	}
-	config.MaxConns = int32FromInt(maxConns, "GOVERNANCE_PG_MAX_CONNS")
+	config.MaxConns = int32FromInt(maxConns, "postgres.maxConns")
 	config.MinConns = 1
 	config.MaxConnLifetime = 30 * time.Minute
 	config.MaxConnIdleTime = 5 * time.Minute
@@ -293,16 +301,4 @@ func maxBody(next http.Handler, limit int64) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func hostname() string {
-	name, err := os.Hostname()
-	if err != nil {
-		return "unknown"
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "unknown"
-	}
-	return name
 }

@@ -26,6 +26,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Profile Service | `profile.guardianintelligence.org/v1alpha1/ProfileService/profile-service` | Converged on latest gamma run | None in current gamma state | Materialized profile-service binary, ProfileService CRD static config, PostgreSQL `profile` database/`profile_service` peer role, OpenBao Nomad JWT role `profile-service-runtime`, Zitadel auth audience secret, IAM internal API, Governance internal API activity sink, SPIRE workload identity, HAProxy profile API route |
 | Projects Service | `projects.guardianintelligence.org/v1alpha1/ProjectsService/projects-service` | Converged on latest gamma run | None in current gamma state | Materialized projects-service binary, ProjectsService CRD static config, PostgreSQL `projects_service` database/peer role, OpenBao Nomad JWT role `projects-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy projects API route |
 | Source Code Hosting Service | `source.guardianintelligence.org/v1alpha1/SourceCodeHostingService/source-code-hosting-service` | Converged on latest gamma run | None in current gamma state | Materialized source-code-hosting-service binary, SourceCodeHostingService CRD static config, PostgreSQL `source_code_hosting` database/peer role, Forgejo runtime and automation token, generated webhook secret, OpenBao Nomad JWT role `source-code-hosting-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy source API route |
+| Governance Service | `governance.guardianintelligence.org/v1alpha1/GovernanceService/governance-service` | Converged on latest gamma run | None in current gamma state | Materialized governance-service binary, GovernanceService CRD static config, PostgreSQL `governance_service`, `billing`, and `sandbox_rental` databases/peer roles, OpenBao Nomad JWT role `governance-service-runtime`, generated API activity HMAC key, Zitadel auth audience secret, IAM internal API, ClickHouse `governance_service` user, SPIRE workload identity, HAProxy governance API route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations, sustained operator query monitor |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
@@ -127,6 +128,41 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   spec. A fresh HAProxy allocation start applied the graph correctly; the next
   HAProxy recovery cleanup should make graph changes part of the component's
   continuous reconcile loop instead of a prestart-only render;
+- current preflight after the governance-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:111260fdbb41ba7e010ed1ceb2a61604d716f03cb2fb51c92ded94d7ac5a61b4`,
+  and verified upload digest
+  `sha256:21ca562bb7a6dab3493e36c46800dda76bb6919a01820f68cc820914df74d4bf`;
+- `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue --stream`
+  completed the OpenBao hook after the governance-service CRD changes.
+  OpenBao reported `OpenBaoRecoveryComplete=True` with baseline mounts,
+  policies, auth, and generated secrets reconciled;
+- PostgreSQL reported the new `governance_service`, `billing`, and
+  `sandbox_rental` databases and login roles before governance-service was
+  submitted;
+- governance-service deployment `1fd4d888` is successful with allocations
+  `2e8aae0c` and `77f93fe6` running and healthy;
+- Nomad reports `governance-service-public-http` on `127.0.0.1:20469` and
+  `127.0.0.1:25099`; both direct `/readyz` checks return `ready`, and direct
+  `/api/v1/governance/ocsf/api-activities` returns the expected `401` problem
+  response without a bearer token;
+- HAProxy deployment `0a527a03`, allocation `c2ba62b3`, is successful after
+  regenerating the gateway config from the updated `HAProxyGateway` CRD. The
+  generated route sends `governance.api.gamma.verself.sh` to
+  `be_route_product_governance_api_governance_service_public_api` using plain
+  HTTP server entries and no `proto h2`;
+- `https://governance.api.gamma.verself.sh/.well-known/guardian/ready`
+  through HAProxy returns `HTTP/2 200`, and
+  `https://governance.api.gamma.verself.sh/api/v1/governance/ocsf/api-activities`
+  reaches governance-service and returns the expected `HTTP/2 401` problem
+  response for an unauthenticated request;
+- governance-service previously had no CRD/runtime recovery path and still used
+  `verself-artifact://governance-service` plus `__VERSELF_*`/PG env injection.
+  The service now loads static config from the `GovernanceService` CRD,
+  installs its boarded binary through a hidden `recover` command, projects the
+  Guardian graph into
+  `/run/verself/recovery/governance-service/document.json`, and runs migrations
+  from the CRD Postgres DSN;
 - current preflight after the ClickHouse monitor slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:0a1e9cd149b9d5511774aeeb18141716c29a177e291865eba83a4acb7603e23d`,
