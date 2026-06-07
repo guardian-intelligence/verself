@@ -94,11 +94,11 @@ supposed to enforce.
 Guardian must expose this command surface:
 
 ```text
+guardian run --list
+guardian run --install-shims --bin-dir <dir>
+guardian run <tool> --which
+guardian run <tool> --verify
 guardian run <tool> -- <args...>
-guardian tool list
-guardian tool which <tool>
-guardian tool verify <tool>
-guardian tool install-shims --bin-dir <dir>
 guardian profiles list
 guardian profiles show [profile]
 guardian preflight [-f <config>] [profile]
@@ -149,17 +149,15 @@ Example:
 guardian run bazel -- test //src/guardian-specification/...
 ```
 
-### `guardian tool`
+`guardian run --list` lists catalog tools available for the current platform.
 
-`guardian tool list` lists catalog tools available for the current platform.
-
-`guardian tool which <tool>` prints the verified cached executable path after
+`guardian run <tool> --which` prints the verified cached executable path after
 resolving and verifying the tool.
 
-`guardian tool verify <tool>` verifies that the catalog entry, digest,
+`guardian run <tool> --verify` verifies that the catalog entry, digest,
 admission status, cache artifact, and executable are usable.
 
-`guardian tool install-shims --bin-dir <dir>` installs explicit user-local
+`guardian run --install-shims --bin-dir <dir>` installs explicit user-local
 shims. The command must require `--bin-dir`; it must not write to a global
 directory by default. Shims point back to the Guardian binary and dispatch to
 `guardian run <shim-name> -- <args...>`.
@@ -491,7 +489,7 @@ must be explicitly modeled as the command prefix for invoking the remote
 Guardian binary. The remote command itself must be Guardian-mediated:
 
 ```text
-<remote-transport> <guardian> tool verify <tool>
+<remote-transport> <guardian> run <tool> --verify
 <remote-transport> <guardian> run <tool> -- <args...>
 ```
 
@@ -595,19 +593,19 @@ Deliverables:
 - Add `internal/toolcatalog`.
 - Add `internal/toolrun`.
 - Add `.config/guardian/tools.cue`.
-- Add `guardian tool list`.
-- Add `guardian tool which <tool>`.
-- Add `guardian tool verify <tool>`.
-- Add `guardian tool install-shims --bin-dir <dir>`.
+- Add `guardian run --list`.
+- Add `guardian run <tool> --which`.
+- Add `guardian run <tool> --verify`.
+- Add `guardian run --install-shims --bin-dir <dir>`.
 - Add `guardian run <tool> -- <args...>`.
 - Add a Bazel catalog entry for the controller platform.
 
 Acceptance:
 
-- `guardian tool list -o json` includes `bazel`.
-- `guardian tool which bazel -o json` resolves a content-addressed cached
+- `guardian run --list -o json` includes `bazel`.
+- `guardian run bazel --which -o json` resolves a content-addressed cached
   executable.
-- `guardian tool verify bazel -o json` verifies digest, admission, and
+- `guardian run bazel --verify -o json` verifies digest, admission, and
   executable availability.
 - `guardian run bazel -- test //src/guardian-specification/...` exits 0.
 - Tests prove no PATH lookup is used for catalog execution.
@@ -641,7 +639,7 @@ Acceptance:
 Deliverables:
 
 - Update README and developer docs from host-managed Bazel operational commands to
-  Guardian tool commands after stage-zero Guardian is available.
+  `guardian run` tool commands after stage-zero Guardian is available.
 - Remove Aspect helper call sites that invoke host-managed Bazel for ordinary
   repo tool execution.
 - Delete host version-file authority.
@@ -664,8 +662,8 @@ Run these commands before merging PR #135:
 bazel build //src/guardian-specification/cli/cmd/guardian:guardian
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian profiles list -o json
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian profiles show gamma -o json
-./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian tool list -o json
-./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian tool verify bazel -o json
+./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian run --list -o json
+./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian run bazel --verify -o json
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian run bazel -- test //src/guardian-specification/...
 ./bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian preflight gamma --dry-run -o json
 ```

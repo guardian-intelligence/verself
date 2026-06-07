@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -110,6 +111,7 @@ type commandOptions struct {
 	WorkspaceRoot string
 	Stream        bool
 	DryRun        bool
+	Help          bool
 }
 
 type eventWriter struct {
@@ -141,8 +143,6 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case "run":
 		return runTool(args[1:], stdout, stderr)
-	case "tool":
-		return runToolCommand(args[1:], stdout, stderr)
 	case "preflight":
 		return runPreflight(args[1:], stdout, stderr)
 	case "profiles":
@@ -153,9 +153,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		usage(stderr)
 		return 0
 	default:
-		_, _ = fmt.Fprintf(stderr, "guardian: unknown command: %s\n", args[0])
-		usage(stderr)
-		return 2
+		return commandUsageError(stderr, "guardian", fmt.Sprintf("unknown command: %s", args[0]), rootCommandSuggestions(args))
 	}
 }
 
@@ -169,15 +167,56 @@ func invokedToolName(arg0 string) string {
 }
 
 func runTool(args []string, stdout io.Writer, stderr io.Writer) int {
-	if len(args) < 1 {
-		_, _ = fmt.Fprintln(stderr, "guardian run: tool name is required")
+	opts, operands, toolArgs, execute, ok := parseRunFlags(args, stderr)
+	if !ok {
 		return 2
 	}
-	toolName := args[0]
-	toolArgs, ok := splitToolInvocationArgs(args[1:])
-	if !ok {
-		_, _ = fmt.Fprintln(stderr, "guardian run: expected -- before tool arguments")
-		return 2
+	if opts.Help {
+		runUsage(stderr)
+		return 0
+	}
+	modeCount := 0
+	for _, enabled := range []bool{opts.List, opts.Which, opts.Verify, opts.InstallShims} {
+		if enabled {
+			modeCount++
+		}
+	}
+	if modeCount > 1 {
+		return commandUsageError(stderr, "guardian run", "choose only one of --list, --which, --verify, or --install-shims", nil)
+	}
+	if opts.List {
+		if execute || len(operands) != 0 {
+			return commandUsageError(stderr, "guardian run", "--list does not accept a tool or tool arguments", nil)
+		}
+		return runToolList(opts, stdout, stderr)
+	}
+	if opts.InstallShims {
+		if execute || len(operands) != 0 {
+			return commandUsageError(stderr, "guardian run", "--install-shims does not accept a tool or tool arguments", nil)
+		}
+		return runToolInstallShims(opts, stdout, stderr)
+	}
+	if len(operands) == 0 {
+		return commandUsageError(stderr, "guardian run", "tool name is required", nil)
+	}
+	if len(operands) != 1 {
+		return commandUsageError(stderr, "guardian run", fmt.Sprintf("expected one tool, got %d", len(operands)), runOperandSuggestions(operands))
+	}
+	toolName := operands[0]
+	if opts.Which {
+		if execute {
+			return commandUsageError(stderr, "guardian run", "--which cannot be combined with -- tool arguments", nil)
+		}
+		return runToolWhich(opts, toolName, stdout, stderr)
+	}
+	if opts.Verify {
+		if execute {
+			return commandUsageError(stderr, "guardian run", "--verify cannot be combined with -- tool arguments", nil)
+		}
+		return runToolVerify(opts, toolName, stdout, stderr)
+	}
+	if !execute {
+		return commandUsageError(stderr, "guardian run", "expected -- before tool arguments", runOperandSuggestions(operands))
 	}
 	workspaceRoot, ok := commandWorkspaceRoot("guardian run", stderr)
 	if !ok {
@@ -195,92 +234,43 @@ func runTool(args []string, stdout io.Writer, stderr io.Writer) int {
 	})
 }
 
-func splitToolInvocationArgs(args []string) ([]string, bool) {
-	for i, arg := range args {
-		if arg == "--" {
-			return append([]string(nil), args[i+1:]...), true
-		}
-	}
-	return nil, false
-}
-
-func runToolCommand(args []string, stdout io.Writer, stderr io.Writer) int {
-	if len(args) < 1 {
-		_, _ = fmt.Fprintln(stderr, "guardian tool: expected list, which, verify, or install-shims")
-		return 2
-	}
-	switch args[0] {
-	case "list":
-		return runToolList(args[1:], stdout, stderr)
-	case "which":
-		return runToolWhich(args[1:], stdout, stderr)
-	case "verify":
-		return runToolVerify(args[1:], stdout, stderr)
-	case "install-shims":
-		return runToolInstallShims(args[1:], stdout, stderr)
-	default:
-		_, _ = fmt.Fprintf(stderr, "guardian tool: unknown command: %s\n", args[0])
-		return 2
-	}
-}
-
-func runToolList(args []string, stdout io.Writer, stderr io.Writer) int {
-	opts, ok := parseToolInfoFlags("guardian tool list", args, stderr)
-	if !ok {
-		return 2
-	}
-	workspaceRoot, ok := commandWorkspaceRoot("guardian tool list", stderr)
+func runToolList(opts runOptions, stdout io.Writer, stderr io.Writer) int {
+	workspaceRoot, ok := commandWorkspaceRoot("guardian run", stderr)
 	if !ok {
 		return 1
 	}
 	names, err := toolcatalog.ToolNames(workspaceRoot)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool list: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 1
 	}
 	if err := writeOutput(stdout, opts.Output, toolListResult{Tools: names}); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool list: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 2
 	}
 	return 0
 }
 
-func runToolWhich(args []string, stdout io.Writer, stderr io.Writer) int {
-	opts, operands, ok := parseToolOperandFlags("guardian tool which", args, stderr)
-	if !ok {
-		return 2
-	}
-	if len(operands) != 1 {
-		_, _ = fmt.Fprintf(stderr, "guardian tool which: expected one tool, got %d\n", len(operands))
-		return 2
-	}
-	result, code := resolveAndEnsureTool("guardian tool which", operands[0], stderr)
+func runToolWhich(opts runOptions, toolName string, stdout io.Writer, stderr io.Writer) int {
+	result, code := resolveAndEnsureTool("guardian run", toolName, stderr)
 	if code != 0 {
 		return code
 	}
 	if err := writeOutput(stdout, opts.Output, result); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool which: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 2
 	}
 	return 0
 }
 
-func runToolVerify(args []string, stdout io.Writer, stderr io.Writer) int {
-	opts, operands, ok := parseToolOperandFlags("guardian tool verify", args, stderr)
-	if !ok {
-		return 2
-	}
-	if len(operands) != 1 {
-		_, _ = fmt.Fprintf(stderr, "guardian tool verify: expected one tool, got %d\n", len(operands))
-		return 2
-	}
-	result, code := resolveAndEnsureTool("guardian tool verify", operands[0], stderr)
+func runToolVerify(opts runOptions, toolName string, stdout io.Writer, stderr io.Writer) int {
+	result, code := resolveAndEnsureTool("guardian run", toolName, stderr)
 	if code != 0 {
 		return code
 	}
 	result.Status = "ready"
 	if err := writeOutput(stdout, opts.Output, result); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool verify: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 2
 	}
 	return 0
@@ -312,54 +302,39 @@ func resolveAndEnsureTool(commandName string, toolName string, stderr io.Writer)
 	}, 0
 }
 
-func runToolInstallShims(args []string, stdout io.Writer, stderr io.Writer) int {
-	fs := flag.NewFlagSet("guardian tool install-shims", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	var binDir string
-	var output string
-	fs.StringVar(&binDir, "bin-dir", "", "directory for Guardian tool shims")
-	fs.StringVar(&output, "o", "yaml", "output format: yaml | json | toml | toon")
-	fs.StringVar(&output, "output", "yaml", "output format: yaml | json | toml | toon")
-	if err := fs.Parse(args); err != nil {
-		return 2
+func runToolInstallShims(opts runOptions, stdout io.Writer, stderr io.Writer) int {
+	if strings.TrimSpace(opts.BinDir) == "" {
+		return commandUsageError(stderr, "guardian run", "--bin-dir is required for --install-shims", nil)
 	}
-	if strings.TrimSpace(binDir) == "" {
-		_, _ = fmt.Fprintln(stderr, "guardian tool install-shims: --bin-dir is required")
-		return 2
-	}
-	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: unexpected operands: %s\n", strings.Join(fs.Args(), " "))
-		return 2
-	}
-	workspaceRoot, ok := commandWorkspaceRoot("guardian tool install-shims", stderr)
+	workspaceRoot, ok := commandWorkspaceRoot("guardian run", stderr)
 	if !ok {
 		return 1
 	}
 	tools, err := toolcatalog.ResolveAll(workspaceRoot)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 1
 	}
 	executable, err := os.Executable()
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: resolve guardian executable: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "guardian run: resolve guardian executable: %v\n", err)
 		return 1
 	}
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: create %s: %v\n", binDir, err)
+	if err := os.MkdirAll(opts.BinDir, 0o755); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian run: create %s: %v\n", opts.BinDir, err)
 		return 1
 	}
 	var installed []string
 	for _, tool := range tools {
-		path := filepath.Join(binDir, tool.Name)
+		path := filepath.Join(opts.BinDir, tool.Name)
 		if err := installShim(path, executable); err != nil {
-			_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 			return 1
 		}
 		installed = append(installed, path)
 	}
-	if err := writeOutput(stdout, output, toolShimResult{Installed: installed}); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian tool install-shims: %v\n", err)
+	if err := writeOutput(stdout, opts.Output, toolShimResult{Installed: installed}); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 2
 	}
 	return 0
@@ -385,10 +360,6 @@ func installShim(path string, target string) error {
 	return nil
 }
 
-type toolInfoOptions struct {
-	Output string
-}
-
 type toolListResult struct {
 	Tools []string `json:"tools" yaml:"tools" toml:"tools" toon:"tools"`
 }
@@ -407,34 +378,51 @@ type toolShimResult struct {
 	Installed []string `json:"installed" yaml:"installed" toml:"installed" toon:"installed"`
 }
 
-func parseToolInfoFlags(name string, args []string, stderr io.Writer) (toolInfoOptions, bool) {
-	opts, operands, ok := parseToolOperandFlags(name, args, stderr)
-	if !ok {
-		return toolInfoOptions{}, false
-	}
-	if len(operands) != 0 {
-		_, _ = fmt.Fprintf(stderr, "%s: unexpected operands: %s\n", name, strings.Join(operands, " "))
-		return toolInfoOptions{}, false
-	}
-	return opts, true
+type runOptions struct {
+	Output       string
+	BinDir       string
+	List         bool
+	Which        bool
+	Verify       bool
+	InstallShims bool
+	Help         bool
 }
 
-func parseToolOperandFlags(name string, args []string, stderr io.Writer) (toolInfoOptions, []string, bool) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	opts := toolInfoOptions{Output: "yaml"}
+func parseRunFlags(args []string, stderr io.Writer) (runOptions, []string, []string, bool, bool) {
+	before, toolArgs, execute := splitRunInvocationArgs(args)
+	fs := flag.NewFlagSet("guardian run", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	opts := runOptions{Output: "yaml"}
 	fs.StringVar(&opts.Output, "o", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
-	flagArgs, operands, err := splitCommandArgs(args)
+	fs.StringVar(&opts.BinDir, "bin-dir", "", "directory for Guardian tool shims")
+	fs.BoolVar(&opts.List, "list", false, "list catalog tools available on the current platform")
+	fs.BoolVar(&opts.Which, "which", false, "print the verified cached executable path for the tool")
+	fs.BoolVar(&opts.Verify, "verify", false, "verify digest, admission, and executable availability for the tool")
+	fs.BoolVar(&opts.InstallShims, "install-shims", false, "install Guardian tool shims into --bin-dir")
+	fs.BoolVar(&opts.Help, "h", false, "show help for guardian run")
+	fs.BoolVar(&opts.Help, "help", false, "show help for guardian run")
+	flagArgs, operands, err := splitCommandArgs(before)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%s: %v\n", name, err)
-		return toolInfoOptions{}, nil, false
+		_ = commandUsageError(stderr, "guardian run", err.Error(), nil)
+		return runOptions{}, nil, nil, false, false
 	}
 	if err := fs.Parse(flagArgs); err != nil {
-		return toolInfoOptions{}, nil, false
+		_ = commandUsageError(stderr, "guardian run", err.Error(), similarRunFlags(err))
+		return runOptions{}, nil, nil, false, false
 	}
 	operands = append(operands, fs.Args()...)
-	return opts, operands, true
+	opts.Output = strings.TrimSpace(opts.Output)
+	return opts, operands, toolArgs, execute, true
+}
+
+func splitRunInvocationArgs(args []string) ([]string, []string, bool) {
+	for i, arg := range args {
+		if arg == "--" {
+			return append([]string(nil), args[:i]...), append([]string(nil), args[i+1:]...), true
+		}
+	}
+	return append([]string(nil), args...), nil, false
 }
 
 func commandWorkspaceRoot(commandName string, stderr io.Writer) (string, bool) {
@@ -456,6 +444,10 @@ func runPreflight(args []string, stdout io.Writer, stderr io.Writer) int {
 	if !ok {
 		return 2
 	}
+	if opts.Help {
+		preflightUsage(stderr)
+		return 0
+	}
 	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
 	doc, ok := resolveDocument("guardian preflight", &opts, stderr)
 	if !ok {
@@ -473,6 +465,10 @@ func runPreflight(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runFlyCommand(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		flyUsage(stderr)
+		return 0
+	}
 	if len(args) > 0 && args[0] == "run" {
 		return runFlyRun(args[1:], stdout, stderr)
 	}
@@ -483,6 +479,10 @@ func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
 	opts, ok := parseProfileFlags("guardian fly", args, stderr)
 	if !ok {
 		return 2
+	}
+	if opts.Help {
+		flyUsage(stderr)
+		return 0
 	}
 	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
 	doc, ok := resolveDocument("guardian fly", &opts, stderr)
@@ -501,18 +501,24 @@ func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func runFlyRun(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		flyRunUsage(stderr)
+		return 0
+	}
 	before, remoteArgs, ok := splitFlyRunArgs(args)
 	if !ok {
-		_, _ = fmt.Fprintln(stderr, "guardian fly run: expected -- before remote tool")
-		return 2
+		return commandUsageError(stderr, "guardian fly run", "expected -- before remote tool", nil)
 	}
 	if len(remoteArgs) == 0 {
-		_, _ = fmt.Fprintln(stderr, "guardian fly run: remote tool is required")
-		return 2
+		return commandUsageError(stderr, "guardian fly run", "remote tool is required", nil)
 	}
 	opts, ok := parseProfileFlags("guardian fly run", before, stderr)
 	if !ok {
 		return 2
+	}
+	if opts.Help {
+		flyRunUsage(stderr)
+		return 0
 	}
 	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
 	doc, ok := resolveDocument("guardian fly run", &opts, stderr)
@@ -546,7 +552,7 @@ func runRemoteGuardianTool(remote specdoc.Remote, toolName string, toolArgs []st
 		_, _ = fmt.Fprintln(stderr, "guardian fly run: substrate remote guardian is not configured")
 		return 1
 	}
-	verify := remoteGuardianCommand(remote, []string{"tool", "verify", toolName, "-o", "json"})
+	verify := remoteGuardianCommand(remote, []string{"run", toolName, "--verify", "-o", "json"})
 	if output, err := execRemoteCommand(context.Background(), remote.SSH, verify, nil, nil); err != nil {
 		_, _ = fmt.Fprintf(stderr, "guardian fly run: remote tool verification failed: %v\n%s", err, outputTail(output, 1600))
 		return 1
@@ -601,17 +607,18 @@ func shellQuote(value string) string {
 
 func runProfiles(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) < 1 {
-		_, _ = fmt.Fprintln(stderr, "guardian profiles: expected list or show")
-		return 2
+		return commandUsageError(stderr, "guardian profiles", "expected list or show", nil)
 	}
 	switch args[0] {
 	case "list":
 		return runProfilesList(args[1:], stdout, stderr)
 	case "show":
 		return runProfilesShow(args[1:], stdout, stderr)
+	case "-h", "--help", "help":
+		profilesUsage(stderr)
+		return 0
 	default:
-		_, _ = fmt.Fprintf(stderr, "guardian profiles: unknown command: %s\n", args[0])
-		return 2
+		return commandUsageError(stderr, "guardian profiles", fmt.Sprintf("unknown command: %s", args[0]), prefixedSuggestions("guardian profiles", args[0], []string{"list", "show"}))
 	}
 }
 
@@ -619,6 +626,10 @@ func runProfilesList(args []string, stdout io.Writer, stderr io.Writer) int {
 	opts, ok := parseProfileFlags("guardian profiles list", args, stderr)
 	if !ok {
 		return 2
+	}
+	if opts.Help {
+		profilesUsage(stderr)
+		return 0
 	}
 	resolution, err := guardianconfig.ResolveProfile(guardianconfig.ResolveOptions{
 		ConfigPath: opts.Config,
@@ -644,6 +655,10 @@ func runProfilesShow(args []string, stdout io.Writer, stderr io.Writer) int {
 	opts, ok := parseProfileFlags("guardian profiles show", args, stderr)
 	if !ok {
 		return 2
+	}
+	if opts.Help {
+		profilesUsage(stderr)
+		return 0
 	}
 	resolution, err := guardianconfig.ResolveProfile(guardianconfig.ResolveOptions{
 		ConfigPath: opts.Config,
@@ -683,23 +698,24 @@ type profileShowResult struct {
 
 func parseProfileFlags(name string, args []string, stderr io.Writer) (commandOptions, bool) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	fs.SetOutput(io.Discard)
 	opts := commandOptions{}
 	bindCommonFlags(fs, &opts)
 	flagArgs, operands, err := splitCommandArgs(args)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		_ = commandUsageError(stderr, name, err.Error(), nil)
 		return commandOptions{}, false
 	}
 	if err := fs.Parse(flagArgs); err != nil {
+		_ = commandUsageError(stderr, name, err.Error(), similarCommonFlags(err))
 		return commandOptions{}, false
 	}
 	if err := setPositionalProfile(&opts, operands); err != nil {
-		_, _ = fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		_ = commandUsageError(stderr, name, err.Error(), nil)
 		return commandOptions{}, false
 	}
 	if err := normalizeCommonOptions(&opts); err != nil {
-		_, _ = fmt.Fprintf(stderr, "%s: %v\n", name, err)
+		_ = commandUsageError(stderr, name, err.Error(), nil)
 		return commandOptions{}, false
 	}
 	return opts, true
@@ -714,6 +730,8 @@ func bindCommonFlags(fs *flag.FlagSet, opts *commandOptions) {
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "plan without mutating remote state")
 	fs.BoolVar(&opts.DryRun, "plan", false, "alias for --dry-run")
 	fs.BoolVar(&opts.Stream, "stream", false, "write newline-delimited JSON progress events to stderr")
+	fs.BoolVar(&opts.Help, "h", false, "show help")
+	fs.BoolVar(&opts.Help, "help", false, "show help")
 }
 
 func splitCommandArgs(args []string) ([]string, []string, error) {
@@ -747,7 +765,7 @@ func flagRequiresValue(arg string) bool {
 		name = before
 	}
 	switch name {
-	case "f", "config", "format", "o", "output":
+	case "f", "config", "format", "o", "output", "bin-dir":
 		return true
 	default:
 		return false
@@ -1313,28 +1331,289 @@ func (w eventWriter) emit(phase string, status string, resource string, message 
 }
 
 func usage(w io.Writer) {
+	rootUsage(w)
+}
+
+func rootUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `guardian
 
 usage:
+  guardian run --list [-o yaml|json|toml|toon]
+  guardian run --install-shims --bin-dir <dir> [-o yaml|json|toml|toon]
+  guardian run <tool> --which [-o yaml|json|toml|toon]
+  guardian run <tool> --verify [-o yaml|json|toml|toon]
   guardian run <tool> -- <args...>
-  guardian tool list [-o yaml|json|toml|toon]
-  guardian tool which <tool> [-o yaml|json|toml|toon]
-  guardian tool verify <tool> [-o yaml|json|toml|toon]
-  guardian tool install-shims --bin-dir <dir>
   guardian profiles list [-o yaml|json|toml|toon]
   guardian profiles show [profile] [-o yaml|json|toml|toon]
   guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
   guardian fly [-f <config>] [profile] [--dry-run] [-o yaml|json|toml|toon] [--stream]
   guardian fly run [-f <config>] [profile] -- <tool> <args...>
+`)
+}
+
+func runUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `guardian run
+
+usage:
+  guardian run --list [-o yaml|json|toml|toon]
+  guardian run --install-shims --bin-dir <dir> [-o yaml|json|toml|toon]
+  guardian run <tool> --which [-o yaml|json|toml|toon]
+  guardian run <tool> --verify [-o yaml|json|toml|toon]
+  guardian run <tool> -- <args...>
+
+run resolves repo-declared catalog tools. Management flags inspect or install
+verified Guardian shims; execution requires -- before tool arguments so
+Guardian flags and tool flags cannot be confused.
+`)
+}
+
+func profilesUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `guardian profiles
+
+usage:
+  guardian profiles list [-f <config>] [-o yaml|json|toml|toon]
+  guardian profiles show [profile] [-f <config>] [-o yaml|json|toml|toon]
+`)
+}
+
+func preflightUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `guardian preflight
+
+usage:
+  guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
 
 preflight resolves a Guardian profile, writes the generated fly document,
 verifies local build artifacts, runs the Substrate access, upload, and kernel
 lifecycle hooks, and reports whether the target is ready for Nomad-driven fly.
+`)
+}
+
+func flyUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `guardian fly
+
+usage:
+  guardian fly [-f <config>] [profile] [--dry-run] [-o yaml|json|toml|toon] [--stream]
+  guardian fly run [-f <config>] [profile] -- <tool> <args...>
 
 fly runs the same preflight phase and then runs the FlyProcedure Nomad job hook
 from the materialized workspace.
+`)
+}
 
-run resolves a repo-declared catalog tool, verifies its digest and admission,
-and executes it locally without consulting PATH.
-	`)
+func flyRunUsage(w io.Writer) {
+	_, _ = fmt.Fprint(w, `guardian fly run
+
+usage:
+  guardian fly run [-f <config>] [profile] -- <tool> <args...>
+
+fly run converges the profile first, verifies the remote Guardian catalog tool,
+and then executes that catalog tool on the remote host.
+`)
+}
+
+func commandUsageError(w io.Writer, command string, message string, suggestions []string) int {
+	_, _ = fmt.Fprintf(w, "%s: %s\n", command, message)
+	if len(suggestions) > 0 {
+		_, _ = fmt.Fprintln(w, "\nDid you mean?")
+		for _, suggestion := range suggestions {
+			_, _ = fmt.Fprintf(w, "  %s\n", suggestion)
+		}
+	}
+	_, _ = fmt.Fprintln(w)
+	printCommandUsage(w, command)
+	return 2
+}
+
+func printCommandUsage(w io.Writer, command string) {
+	if strings.HasPrefix(command, "guardian profiles") {
+		profilesUsage(w)
+		return
+	}
+	switch command {
+	case "guardian run":
+		runUsage(w)
+	case "guardian preflight":
+		preflightUsage(w)
+	case "guardian fly", "guardian fly run":
+		if command == "guardian fly run" {
+			flyRunUsage(w)
+			return
+		}
+		flyUsage(w)
+	default:
+		rootUsage(w)
+	}
+}
+
+func rootCommands() []string {
+	return []string{"run", "profiles", "preflight", "fly", "help"}
+}
+
+func rootCommandSuggestions(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	input := args[0]
+	if input == "tool" {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "list":
+				return []string{"guardian run --list"}
+			case "which":
+				if len(args) >= 3 {
+					return []string{"guardian run " + args[2] + " --which"}
+				}
+				return []string{"guardian run <tool> --which"}
+			case "verify":
+				if len(args) >= 3 {
+					return []string{"guardian run " + args[2] + " --verify"}
+				}
+				return []string{"guardian run <tool> --verify"}
+			case "install-shims":
+				return []string{"guardian run --install-shims --bin-dir <dir>"}
+			}
+		}
+		return []string{
+			"guardian run --list",
+			"guardian run <tool> --which",
+			"guardian run <tool> --verify",
+			"guardian run --install-shims --bin-dir <dir>",
+		}
+	}
+	return prefixedSuggestions("guardian", input, rootCommands())
+}
+
+func runOperandSuggestions(operands []string) []string {
+	if len(operands) == 0 {
+		return nil
+	}
+	switch operands[0] {
+	case "list":
+		return []string{"guardian run --list"}
+	case "install-shims":
+		return []string{"guardian run --install-shims --bin-dir <dir>"}
+	case "which":
+		if len(operands) >= 2 {
+			return []string{"guardian run " + operands[1] + " --which"}
+		}
+		return []string{"guardian run <tool> --which"}
+	case "verify":
+		if len(operands) >= 2 {
+			return []string{"guardian run " + operands[1] + " --verify"}
+		}
+		return []string{"guardian run <tool> --verify"}
+	default:
+		return nil
+	}
+}
+
+func prefixedSuggestions(prefix string, input string, candidates []string) []string {
+	matches := similarTerms(input, candidates)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, prefix+" "+match)
+	}
+	return out
+}
+
+func similarRunFlags(err error) []string {
+	name, ok := unknownFlag(err)
+	if !ok {
+		return nil
+	}
+	return similarFlags(name, []string{"list", "which", "verify", "install-shims", "bin-dir", "output", "o", "help", "h"})
+}
+
+func similarCommonFlags(err error) []string {
+	name, ok := unknownFlag(err)
+	if !ok {
+		return nil
+	}
+	return similarFlags(name, []string{"f", "config", "output", "o", "format", "dry-run", "plan", "stream", "help", "h"})
+}
+
+func unknownFlag(err error) (string, bool) {
+	const prefix = "flag provided but not defined: -"
+	if err == nil || !strings.HasPrefix(err.Error(), prefix) {
+		return "", false
+	}
+	return strings.TrimLeft(strings.TrimPrefix(err.Error(), prefix), "-"), true
+}
+
+func similarFlags(input string, candidates []string) []string {
+	matches := similarTerms(input, candidates)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		prefix := "--"
+		if len(match) == 1 {
+			prefix = "-"
+		}
+		out = append(out, prefix+match)
+	}
+	return out
+}
+
+func similarTerms(input string, candidates []string) []string {
+	input = strings.ToLower(strings.TrimSpace(input))
+	type match struct {
+		value    string
+		distance int
+	}
+	var matches []match
+	for _, candidate := range candidates {
+		distance := levenshtein(input, strings.ToLower(candidate))
+		if distance <= 2 {
+			matches = append(matches, match{value: candidate, distance: distance})
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].distance != matches[j].distance {
+			return matches[i].distance < matches[j].distance
+		}
+		return matches[i].value < matches[j].value
+	})
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, match.value)
+	}
+	return out
+}
+
+func levenshtein(a string, b string) int {
+	if a == b {
+		return 0
+	}
+	if a == "" {
+		return len(b)
+	}
+	if b == "" {
+		return len(a)
+	}
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i, ar := range a {
+		curr[0] = i + 1
+		for j, br := range b {
+			cost := 1
+			if ar == br {
+				cost = 0
+			}
+			curr[j+1] = minInt(curr[j]+1, prev[j+1]+1, prev[j]+cost)
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(b)]
+}
+
+func minInt(values ...int) int {
+	best := values[0]
+	for _, value := range values[1:] {
+		if value < best {
+			best = value
+		}
+	}
+	return best
 }

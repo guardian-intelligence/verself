@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -260,7 +263,7 @@ func TestFlyRunExecutesVerifiedRemoteCatalogTool(t *testing.T) {
 	remoteGuardian := filepath.Join(dir, "remote-guardian")
 	if err := os.WriteFile(remoteGuardian, []byte(`#!/bin/sh
 set -eu
-if [ "$1" = "tool" ] && [ "$2" = "verify" ] && [ "$3" = "bazel" ]; then
+if [ "$1" = "run" ] && [ "$2" = "bazel" ] && [ "$3" = "--verify" ]; then
   printf '{"status":"ready"}\n'
   exit 0
 fi
@@ -285,6 +288,153 @@ exit 64
 	}
 	if !strings.Contains(stdout.String(), "remote bazel: test //src/guardian-specification/...") {
 		t.Fatalf("stdout omitted remote bazel invocation:\n%s", stdout.String())
+	}
+}
+
+func TestRunListUsesCatalog(t *testing.T) {
+	dir, _ := writeTestCUEDocument(t)
+	writeTestToolCatalog(t, dir)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var code int
+	withWorkingDir(t, dir, func() {
+		code = run([]string{"run", "--list", "-o", "json"}, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+	}
+	var result toolListResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode tool list: %v\n%s", err, stdout.String())
+	}
+	if len(result.Tools) != 1 || result.Tools[0] != "bazel" {
+		t.Fatalf("tools = %#v, want [bazel]", result.Tools)
+	}
+}
+
+func TestRunInstallShimsUsesRunFlag(t *testing.T) {
+	dir, _ := writeTestCUEDocument(t)
+	writeTestToolCatalog(t, dir)
+	binDir := filepath.Join(dir, "bin")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var code int
+	withWorkingDir(t, dir, func() {
+		code = run([]string{"run", "--install-shims", "--bin-dir", binDir, "-o", "json"}, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+	}
+	var result toolShimResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode shim install: %v\n%s", err, stdout.String())
+	}
+	wantShim := filepath.Join(binDir, "bazel")
+	if len(result.Installed) != 1 || result.Installed[0] != wantShim {
+		t.Fatalf("installed = %#v, want [%s]", result.Installed, wantShim)
+	}
+	if target, err := os.Readlink(wantShim); err != nil {
+		t.Fatalf("shim missing: %v", err)
+	} else if target == "" {
+		t.Fatalf("shim target is empty")
+	}
+}
+
+func TestRunVerifyUsesToolFlag(t *testing.T) {
+	dir, _ := writeTestCUEDocument(t)
+	writeExecutableTestToolCatalog(t, dir)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "xdg-cache"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var code int
+	withWorkingDir(t, dir, func() {
+		code = run([]string{"run", "bazel", "--verify", "-o", "json"}, &stdout, &stderr)
+	})
+	if code != 0 {
+		t.Fatalf("run exited %d, stderr:\n%s", code, stderr.String())
+	}
+	var result toolWhichResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode tool verify: %v\n%s", err, stdout.String())
+	}
+	if result.Tool != "bazel" || result.Status != "ready" {
+		t.Fatalf("verify result = %#v, want bazel ready", result)
+	}
+	if _, err := os.Stat(result.Executable); err != nil {
+		t.Fatalf("verified executable missing: %v", err)
+	}
+}
+
+func TestToolCommandRemovedSuggestsRun(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"tool", "verify", "bazel"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run exited %d, want 2; stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"guardian: unknown command: tool",
+		"Did you mean?",
+		"guardian run bazel --verify",
+		"usage:",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr omitted %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestUnknownCommandSuggestsSiblingAndPrintsHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"prefligth"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run exited %d, want 2; stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"unknown command: prefligth",
+		"guardian preflight",
+		"usage:",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr omitted %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestRunUnknownFlagSuggestsVerifyAndPrintsHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"run", "bazel", "--verfy"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run exited %d, want 2; stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"flag provided but not defined: -verfy",
+		"--verify",
+		"guardian run",
+		"usage:",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr omitted %q:\n%s", want, stderr.String())
+		}
+	}
+}
+
+func TestRunLegacyOperandShapeSuggestsRunFlag(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run([]string{"run", "verify", "bazel"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("run exited %d, want 2; stdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "guardian run bazel --verify") {
+		t.Fatalf("stderr omitted run verify suggestion:\n%s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "usage:") {
+		t.Fatalf("stderr omitted help text:\n%s", stderr.String())
 	}
 }
 
@@ -328,6 +478,33 @@ func writeTestToolCatalog(t *testing.T, dir string) {
 }
 `), 0o644); err != nil {
 		t.Fatalf("write tool catalog: %v", err)
+	}
+}
+
+func writeExecutableTestToolCatalog(t *testing.T, dir string) {
+	t.Helper()
+	toolPath := filepath.Join(dir, "mirror-bazel")
+	body := []byte("#!/bin/sh\nprintf 'fake bazel: %s\\n' \"$*\"\n")
+	if err := os.WriteFile(toolPath, body, 0o755); err != nil {
+		t.Fatalf("write mirror tool: %v", err)
+	}
+	sum := sha256.Sum256(body)
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	configDir := filepath.Join(dir, ".config", "guardian")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir guardian config: %v", err)
+	}
+	ref := "oci.verself.sh/tools/bazel@" + digest
+	mirror := "file://" + filepath.ToSlash(toolPath)
+	catalog := fmt.Sprintf(`tools: bazel: platforms: %q: {
+	ref: %q
+	executable: "bazel"
+	admission: "admitted"
+	mirrors: [%q]
+}
+`, runtime.GOOS+"/"+runtime.GOARCH, ref, mirror)
+	if err := os.WriteFile(filepath.Join(configDir, "tools.cue"), []byte(catalog), 0o644); err != nil {
+		t.Fatalf("write executable tool catalog: %v", err)
 	}
 }
 

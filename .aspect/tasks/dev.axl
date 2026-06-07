@@ -27,9 +27,9 @@ def _install_impl(ctx):
             rc = checked_spawn(
                 ctx,
                 bin_dir + "/guardian",
-                ["tool", "install-shims", "--bin-dir", bin_dir],
+                ["run", "--install-shims", "--bin-dir", bin_dir],
                 cwd = ws_path(ctx),
-                label = "guardian tool install-shims --bin-dir " + bin_dir,
+                label = "guardian run --install-shims --bin-dir " + bin_dir,
             )
             if rc != 0:
                 return rc

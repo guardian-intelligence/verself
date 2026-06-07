@@ -40,6 +40,15 @@ config files or standalone Guardian documents.
 verifies its admitted digest, materializes it in the Guardian cache, and
 executes it without consulting `PATH`.
 
+Tool inspection and shim installation stay under `run`:
+
+```sh
+guardian run --list
+guardian run bazel --which
+guardian run bazel --verify
+guardian run --install-shims --bin-dir "$HOME/.local/bin"
+```
+
 ## Profiles
 
 `guardian profiles list` shows available profiles and the repo default.
