@@ -1,3 +1,8 @@
+variable "analytics_service_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "analytics-service" {
   name = "analytics-service"
   datacenters = ["*"]
@@ -27,7 +32,7 @@ job "analytics-service" {
       }
 
       artifact {
-        source = "verself-artifact://analytics-service"
+        source = var.analytics_service_artifact_source
         destination = "local"
         chown = true
       }

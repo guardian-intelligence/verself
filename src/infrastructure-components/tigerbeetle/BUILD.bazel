@@ -1,5 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 exports_files(["tools.lock.json"])
 
@@ -21,16 +20,4 @@ pkg_tar(
         "bin/tigerbeetle-recover": "0755",
     },
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "tigerbeetle",
-    deploy_phase = "platform",
-    job_id = "tigerbeetle",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "tigerbeetle-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

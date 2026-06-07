@@ -1,7 +1,6 @@
 # gazelle:prefix github.com/verself/infrastructure-components/nomad-observer
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 go_module_checks()
@@ -20,16 +19,4 @@ spire_identity(
     path = "/svc/nomad-observer",
     user = "nomad_observer",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "nomad-observer",
-    deploy_phase = "platform",
-    job_id = "nomad-observer",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        "//src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer_nomad_artifact": "nomad-observer",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

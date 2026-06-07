@@ -1,3 +1,13 @@
+variable "sandbox_rental_service_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "sandbox_rental_recurring_worker_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "sandbox-rental" {
   name = "sandbox-rental"
   datacenters = ["*"]
@@ -31,7 +41,7 @@ job "sandbox-rental" {
         sidecar = false
       }
       artifact {
-        source = "verself-artifact://sandbox-rental-service"
+        source = var.sandbox_rental_service_artifact_source
         destination = "local"
         chown = true
       }
@@ -104,7 +114,7 @@ EOT
       }
 
       artifact {
-        source = "verself-artifact://sandbox-rental-service"
+        source = var.sandbox_rental_service_artifact_source
         destination = "local"
         chown = true
       }
@@ -222,7 +232,7 @@ EOT
       kill_timeout = "30s"
       shutdown_delay = "5s"
       artifact {
-        source = "verself-artifact://sandbox-rental-recurring-worker"
+        source = var.sandbox_rental_recurring_worker_artifact_source
         destination = "local"
         chown = true
       }

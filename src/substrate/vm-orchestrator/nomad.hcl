@@ -1,3 +1,28 @@
+variable "vm_orchestrator_cli_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "vm_orchestrator_substrate_inputs_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "vm_orchestrator_toolchain_images_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "vm_orchestrator_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "vm_orchestrator_firecracker_runtime_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "vm-orchestrator" {
   name = "vm-orchestrator"
   datacenters = ["*"]
@@ -95,19 +120,19 @@ PY
       }
 
       artifact {
-        source = "verself-artifact://vm-orchestrator-cli"
+        source = var.vm_orchestrator_cli_artifact_source
         destination = "local"
         chown = true
       }
 
       artifact {
-        source = "verself-artifact://vm-orchestrator-substrate-inputs"
+        source = var.vm_orchestrator_substrate_inputs_artifact_source
         destination = "local/substrate-inputs"
         chown = true
       }
 
       artifact {
-        source = "verself-artifact://vm-orchestrator-toolchain-images"
+        source = var.vm_orchestrator_toolchain_images_artifact_source
         destination = "local/toolchain-images"
         chown = true
       }
@@ -143,13 +168,13 @@ PY
       kill_timeout = "75m"
 
       artifact {
-        source = "verself-artifact://vm-orchestrator"
+        source = var.vm_orchestrator_artifact_source
         destination = "local"
         chown = true
       }
 
       artifact {
-        source = "verself-artifact://vm-orchestrator-firecracker-runtime"
+        source = var.vm_orchestrator_firecracker_runtime_artifact_source
         destination = "local/firecracker"
         chown = true
       }
@@ -212,7 +237,7 @@ PY
       }
 
       artifact {
-        source = "verself-artifact://vm-orchestrator-cli"
+        source = var.vm_orchestrator_cli_artifact_source
         destination = "local"
         chown = true
       }

@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"github.com/verself/deployment-service/deployengine"
-	"github.com/verself/deployment-service/deployengine/artifactpublish"
-	objectstorageclient "github.com/verself/object-storage-service/client"
 )
 
 var gitSHARegex = regexp.MustCompile(`^[0-9a-f]{40}$`)
@@ -33,9 +31,9 @@ type Config struct {
 	RepoRoot          string
 	ObjectStorageAddr string
 	NomadAddr         string
+	NomadJobPaths     []string
 	NomadAllocID      string
 	RecoverySSHReady  string
-	BazelJobs         int
 }
 
 type Service struct {
@@ -189,39 +187,12 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 		})
 		return
 	}
-	labels, err := deployengine.QueryNomadComponentLabels(ctx, s.Config.RepoRoot)
-	if err != nil {
-		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
-			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
-		})
-		return
-	}
-	descriptors, err := deployengine.BuildNomadComponentDescriptors(ctx, s.Config.RepoRoot, labels, bazelBuildFlags(s.Config.BazelJobs)...)
-	if err != nil {
-		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
-			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
-		})
-		return
-	}
-	clientOptions := []objectstorageclient.ClientOption{}
-	if s.ObjectStorageHTTPClient != nil {
-		clientOptions = append(clientOptions, objectstorageclient.WithHTTPClient(s.ObjectStorageHTTPClient))
-	}
-	objectStorageClient, err := objectstorageclient.NewClient(s.Config.ObjectStorageAddr, clientOptions...)
-	if err != nil {
-		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
-			return s.Store.MarkFailed(attemptCtx, record.DeploymentID, err)
-		})
-		return
-	}
 	result, err := deployengine.Submit(ctx, deployengine.Options{
-		Site:                      record.Site,
-		ArtifactNamespace:         record.SHA,
-		DeployRunKey:              record.DeployRunKey,
-		RepoRoot:                  s.Config.RepoRoot,
-		NomadComponentDescriptors: descriptors,
-		ArtifactPublisher:         artifactpublish.Publisher{Client: objectStorageClient},
-		NomadAddr:                 s.Config.NomadAddr,
+		Site:          record.Site,
+		DeployRunKey:  record.DeployRunKey,
+		RepoRoot:      s.Config.RepoRoot,
+		NomadJobPaths: s.Config.NomadJobPaths,
+		NomadAddr:     s.Config.NomadAddr,
 	})
 	if err != nil {
 		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {
@@ -324,10 +295,6 @@ func sourceHasIdempotencyKey(source Source) bool {
 		strings.TrimSpace(source.Repository) != "" &&
 		strings.TrimSpace(source.RunID) != "" &&
 		source.RunAttempt != 0
-}
-
-func bazelBuildFlags(jobs int) []string {
-	return []string{fmt.Sprintf("--jobs=%d", jobs)}
 }
 
 func (s *Service) acquire() bool {

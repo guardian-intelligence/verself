@@ -1,6 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
 
 package(default_visibility = ["//visibility:public"])
@@ -97,17 +96,4 @@ spire_identity_registry(
         "//src/services/source-code-hosting-service:spiffe_identity",
         "//src/tools/operator/cmd/agent-mail:spiffe_identity",
     ],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":identity_registry": "spire-identity-registry",
-        ":runtime_artifact": "spire-runtime",
-    },
-    component = "spire",
-    deploy_phase = "platform",
-    job_id = "spire",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

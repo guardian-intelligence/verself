@@ -253,7 +253,7 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 	if len(client.createdTokens) != 1 {
 		t.Fatalf("created tokens = %#v", client.createdTokens)
 	}
-	if got := client.createdTokens[0]; len(got.Policies) != 1 || got.Policies[0] != "guardian-operator-import" || got.TTL != operatorImportTokenTTL || got.NumUses != operatorImportTokenUses {
+	if got := client.createdTokens[0]; len(got.Policies) != 1 || got.Policies[0] != "guardian-operator-import" || got.TTL != operatorImportTokenTTL || got.NumUses != operatorImportTokenUses || !got.Orphan {
 		t.Fatalf("created token spec = %#v", got)
 	}
 	body, err := os.ReadFile(cfg.initOutputPath)

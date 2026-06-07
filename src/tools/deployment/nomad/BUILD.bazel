@@ -1,4 +1,3 @@
 exports_files([
     "artifact.bzl",
-    "component.bzl",
 ])

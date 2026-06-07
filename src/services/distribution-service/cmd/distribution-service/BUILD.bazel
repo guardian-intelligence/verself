@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "guardian_config.go",
         "main.go",
-        "recover.go",
     ],
     importpath = "github.com/verself/distribution-service/cmd/distribution-service",
     visibility = ["//visibility:private"],
@@ -38,7 +37,6 @@ go_test(
     name = "distribution-service_test",
     srcs = [
         "guardian_config_test.go",
-        "recover_test.go",
     ],
     embed = [":distribution-service_lib"],
 )

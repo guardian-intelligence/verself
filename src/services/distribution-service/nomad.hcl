@@ -8,24 +8,9 @@ variable "distribution_service_resource_name" {
   default = "distribution-service"
 }
 
-variable "distribution_service_runtime_root" {
-  type    = string
-  default = "/var/lib/distribution-service/runtime"
-}
-
-variable "distribution_service_projected_graph" {
-  type    = string
-  default = "/run/verself/recovery/distribution-service/document.json"
-}
-
 variable "distribution_service_image_archive" {
   type    = string
-  default = "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_image_load/tarball.tar"
-}
-
-variable "distribution_service_projected_image" {
-  type    = string
-  default = "/var/lib/distribution-service/runtime/image.tar"
+  default = ""
 }
 
 variable "distribution_service_image_digest" {
@@ -56,33 +41,6 @@ job "distribution-service" {
       }
     }
 
-    task "setup" {
-      driver = "raw_exec"
-      user   = "root"
-
-      lifecycle {
-        hook    = "prestart"
-        sidecar = false
-      }
-
-      config {
-        command = "${var.guardian_repo_root}/bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_/distribution-service"
-        args = [
-          "recover",
-          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
-          "--runtime-root=${var.distribution_service_runtime_root}",
-          "--projected-graph=${var.distribution_service_projected_graph}",
-          "--image-archive=${var.distribution_service_image_archive}",
-          "--projected-image=${var.distribution_service_projected_image}",
-        ]
-      }
-
-      resources {
-        cpu    = 100
-        memory = 128
-      }
-    }
-
     task "migrate" {
       driver = "podman"
       user   = "distribution_service"
@@ -93,11 +51,14 @@ job "distribution-service" {
       }
 
       config {
-        image        = "docker-archive:${var.distribution_service_projected_image}"
+        image        = "docker-archive:${var.distribution_service_image_archive}"
+        init         = true
         network_mode = "host"
         readonly_rootfs = true
+        cap_drop = ["all"]
+        security_opt = ["no-new-privileges"]
         volumes = [
-          "${var.distribution_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "${var.guardian_repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
           "/var/run/postgresql:/var/run/postgresql",
         ]
         tmpfs = ["/tmp"]
@@ -128,11 +89,14 @@ job "distribution-service" {
       shutdown_delay = "5s"
 
       config {
-        image        = "docker-archive:${var.distribution_service_projected_image}"
+        image        = "docker-archive:${var.distribution_service_image_archive}"
+        init         = true
         network_mode = "host"
         readonly_rootfs = true
+        cap_drop = ["all"]
+        security_opt = ["no-new-privileges"]
         volumes = [
-          "${var.distribution_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "${var.guardian_repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
           "/etc/verself/clickhouse:/etc/verself/clickhouse:ro,noexec",
           "/run/spire-agent/sockets:/run/spire-agent/sockets:ro",
           "/var/run/postgresql:/var/run/postgresql",

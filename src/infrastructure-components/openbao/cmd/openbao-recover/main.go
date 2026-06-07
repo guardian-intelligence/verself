@@ -518,6 +518,7 @@ type openBaoTokenSpec struct {
 	Policies []string `json:"policies"`
 	TTL      string   `json:"ttl"`
 	NumUses  int      `json:"num_uses,omitempty"`
+	Orphan   bool     `json:"-"`
 }
 
 type openBaoJWTAuthConfig struct {
@@ -1126,6 +1127,7 @@ func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBao
 		Policies: []string{policyName},
 		TTL:      operatorImportTokenTTL,
 		NumUses:  operatorImportTokenUses,
+		Orphan:   true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create %s token: %w", policyName, err)
@@ -2099,7 +2101,11 @@ func (c *realOpenBaoClient) CreateToken(ctx context.Context, token string, spec 
 			ClientToken string `json:"client_token"`
 		} `json:"auth"`
 	}
-	if err := c.apiJSON(ctx, token, http.MethodPost, "auth/token/create", spec, &out, http.StatusOK); err != nil {
+	path := "auth/token/create"
+	if spec.Orphan {
+		path = "auth/token/create-orphan"
+	}
+	if err := c.apiJSON(ctx, token, http.MethodPost, path, spec, &out, http.StatusOK); err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(out.Auth.ClientToken) == "" {

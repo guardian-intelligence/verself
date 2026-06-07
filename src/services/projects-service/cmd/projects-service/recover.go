@@ -447,9 +447,12 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
 	sum := sha256.New()
 	if _, err := io.Copy(sum, file); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil

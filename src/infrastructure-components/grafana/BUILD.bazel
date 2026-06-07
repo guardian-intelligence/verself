@@ -1,5 +1,4 @@
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 deploy_declarations(visibility = ["//visibility:public"])
 
@@ -42,19 +41,4 @@ filegroup(
     name = "guardian_crd",
     srcs = glob(["guardian/**/*.cue"]),
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "grafana",
-    deploy_phase = "platform",
-    digest_inputs = [
-        ":deploy_declarations",
-    ],
-    job_id = "grafana",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "grafana-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -2,7 +2,6 @@
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 deploy_declarations(visibility = ["//visibility:public"])
@@ -17,16 +16,4 @@ spire_identity(
     path = "/svc/notifications-service",
     user = "notifications_service",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/services/notifications-service/cmd/notifications-service:notifications-service_nomad_artifact": "notifications-service",
-    },
-    component = "notifications_service",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "notifications-service",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

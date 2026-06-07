@@ -1,5 +1,3 @@
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
 POSTGRESQL_RUNTIME_ROOT = "opt/verself/postgresql"
 
 POSTGRESQL_MAJOR_VERSION = "16"
@@ -68,16 +66,4 @@ alias(
     name = "runtime_artifact",
     actual = ":postgresql_runtime",
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "postgresql",
-    deploy_phase = "pre_artifact",
-    job_id = "postgresql",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":postgresql_runtime": "postgresql-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

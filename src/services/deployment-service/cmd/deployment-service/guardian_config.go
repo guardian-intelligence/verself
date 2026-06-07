@@ -37,11 +37,11 @@ type deploymentRuntimeConfig struct {
 	SourceRepoURL         string
 	SourceRepoInitTimeout time.Duration
 	NomadAddress          string
+	NomadJobPaths         []string
 	ObjectStorageAddress  string
 	PostgresDSN           string
 	PostgresMaxConns      int
 	SPIFFEEndpointSocket  string
-	BazelJobs             int
 	AdmissionConcurrency  int
 	RecoverySSHReady      bool
 	GitHubRepositories    string
@@ -147,7 +147,8 @@ type deploymentServiceSpec struct {
 		InitTimeout string `json:"initTimeout"`
 	} `json:"sourceRepo"`
 	Nomad struct {
-		Address string `json:"address"`
+		Address  string   `json:"address"`
+		JobPaths []string `json:"jobPaths"`
 	} `json:"nomad"`
 	ObjectStorage struct {
 		Address string `json:"address"`
@@ -159,9 +160,6 @@ type deploymentServiceSpec struct {
 	SPIFFE struct {
 		EndpointSocket string `json:"endpointSocket"`
 	} `json:"spiffe"`
-	Bazel struct {
-		Jobs int `json:"jobs"`
-	} `json:"bazel"`
 	AdmissionConcurrency int  `json:"admissionConcurrency"`
 	RecoverySSHReady     bool `json:"recoverySSHReady"`
 	GitHubOIDC           *struct {
@@ -187,11 +185,11 @@ func deploymentConfigFromSpec(spec deploymentServiceSpec) (deploymentRuntimeConf
 		SourceRepoURL:         strings.TrimSpace(spec.SourceRepo.URL),
 		SourceRepoInitTimeout: initTimeout,
 		NomadAddress:          strings.TrimSpace(spec.Nomad.Address),
+		NomadJobPaths:         cleanConfigList(spec.Nomad.JobPaths),
 		ObjectStorageAddress:  strings.TrimSpace(spec.ObjectStorage.Address),
 		PostgresDSN:           strings.TrimSpace(spec.Postgres.DSN),
 		PostgresMaxConns:      spec.Postgres.MaxConns,
 		SPIFFEEndpointSocket:  strings.TrimSpace(spec.SPIFFE.EndpointSocket),
-		BazelJobs:             spec.Bazel.Jobs,
 		AdmissionConcurrency:  spec.AdmissionConcurrency,
 		RecoverySSHReady:      spec.RecoverySSHReady,
 	}
@@ -222,8 +220,8 @@ func deploymentConfigFromSpec(spec deploymentServiceSpec) (deploymentRuntimeConf
 	if !filepath.IsAbs(cfg.SourceRepoRoot) {
 		return deploymentRuntimeConfig{}, errors.New("DeploymentService.spec.sourceRepo.root must be absolute")
 	}
-	if cfg.BazelJobs <= 0 {
-		return deploymentRuntimeConfig{}, errors.New("DeploymentService.spec.bazel.jobs must be positive")
+	if len(cfg.NomadJobPaths) == 0 {
+		return deploymentRuntimeConfig{}, errors.New("DeploymentService.spec.nomad.jobPaths must not be empty")
 	}
 	if cfg.AdmissionConcurrency <= 0 {
 		return deploymentRuntimeConfig{}, errors.New("DeploymentService.spec.admissionConcurrency must be positive")
@@ -232,6 +230,20 @@ func deploymentConfigFromSpec(spec deploymentServiceSpec) (deploymentRuntimeConf
 		return deploymentRuntimeConfig{}, errors.New("DeploymentService.spec.githubOIDC requires allowedRepositories, allowedRefs, and allowedWorkflowRefs")
 	}
 	return cfg, nil
+}
+
+func cleanConfigList(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func boolString(value bool) string {

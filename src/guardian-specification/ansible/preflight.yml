@@ -18,15 +18,11 @@
     guardian_preflight_artifact_manifest: "{{ guardian_preflight_work_dir }}/artifacts.txt"
     guardian_preflight_artifact_paths:
       - bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
-      - bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_/distribution-service
-      - bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_image_load/tarball.tar
-      - bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service
-      - bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar
+      - bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar
+      - bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
       - bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
       - bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
       - bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
-      - bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar
-      - bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 
   tasks:
     - name: Probe already healthy preflight target

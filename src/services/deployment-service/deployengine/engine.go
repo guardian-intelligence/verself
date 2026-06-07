@@ -15,16 +15,14 @@ import (
 const tracerName = "github.com/verself/deployment-service/deployengine"
 
 type Options struct {
-	Site                      string
-	ArtifactNamespace         string
-	DeployRunKey              string
-	RepoRoot                  string
-	NomadComponentDescriptors []string
-	ArtifactPublisher         ArtifactPublisher
-	NomadAddr                 string
-	TaskUserResolver          TaskUserResolver
-	Tracer                    trace.Tracer
-	Stdout                    io.Writer
+	Site             string
+	DeployRunKey     string
+	RepoRoot         string
+	NomadJobPaths    []string
+	NomadAddr        string
+	TaskUserResolver TaskUserResolver
+	Tracer           trace.Tracer
+	Stdout           io.Writer
 }
 
 type Result struct {
@@ -32,30 +30,6 @@ type Result struct {
 	DeployRunKey       string
 	NomadJobs          []NomadRegisterResult
 	NomadSubmittedJobs uint32
-}
-
-type ArtifactPublisher interface {
-	PublishDeploymentArtifacts(context.Context, ArtifactPublishRequest) (ArtifactPublishResult, error)
-}
-
-type ArtifactPublishRequest struct {
-	Site              string
-	ArtifactNamespace string
-	DeployRunKey      string
-	Artifacts         []ArtifactPublishCandidate
-}
-
-type ArtifactPublishCandidate struct {
-	Output    string
-	SHA256    string
-	LocalPath string
-	Body      []byte
-	SizeBytes int64
-	Label     string
-}
-
-type ArtifactPublishResult struct {
-	GetterSources map[string]string
 }
 
 type execution struct {
@@ -85,14 +59,10 @@ func Submit(ctx context.Context, opts Options) (Result, error) {
 
 func newExecution(opts Options) (execution, error) {
 	opts.Site = strings.TrimSpace(opts.Site)
-	opts.ArtifactNamespace = strings.TrimSpace(opts.ArtifactNamespace)
 	opts.DeployRunKey = strings.TrimSpace(opts.DeployRunKey)
 	opts.RepoRoot = strings.TrimSpace(opts.RepoRoot)
 	if opts.Site == "" {
 		return execution{}, errors.New("site is required")
-	}
-	if opts.ArtifactNamespace == "" {
-		return execution{}, errors.New("artifact namespace is required")
 	}
 	if opts.DeployRunKey == "" {
 		return execution{}, errors.New("deploy run key is required")
@@ -104,11 +74,8 @@ func newExecution(opts Options) (execution, error) {
 		}
 		opts.RepoRoot = cwd
 	}
-	if len(opts.NomadComponentDescriptors) == 0 {
-		return execution{}, errors.New("at least one Nomad component descriptor is required")
-	}
-	if opts.ArtifactPublisher == nil {
-		return execution{}, errors.New("artifact publisher is required")
+	if len(opts.NomadJobPaths) == 0 {
+		return execution{}, errors.New("at least one Nomad job path is required")
 	}
 	if opts.Tracer == nil {
 		opts.Tracer = otel.Tracer(tracerName)

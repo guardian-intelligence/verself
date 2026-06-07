@@ -1,3 +1,8 @@
+variable "github_integration_service_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "github-integration" {
   name = "github-integration"
   datacenters = ["*"]
@@ -18,7 +23,7 @@ job "github-integration" {
         sidecar = false
       }
       artifact {
-        source = "verself-artifact://github-integration-service"
+        source = var.github_integration_service_artifact_source
         destination = "local"
         chown = true
       }
@@ -63,7 +68,7 @@ job "github-integration" {
         ttl  = "1h"
       }
       artifact {
-        source = "verself-artifact://github-integration-service"
+        source = var.github_integration_service_artifact_source
         destination = "local"
         chown = true
       }

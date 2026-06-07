@@ -1,3 +1,13 @@
+variable "verself_web_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "nodejs_runtime_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "verself-web" {
   name = "verself-web"
   datacenters = ["*"]
@@ -24,12 +34,12 @@ job "verself-web" {
         ttl  = "1h"
       }
       artifact {
-        source = "verself-artifact://verself-web"
+        source = var.verself_web_artifact_source
         destination = "local"
         chown = true
       }
       artifact {
-        source = "verself-artifact://nodejs-runtime"
+        source = var.nodejs_runtime_artifact_source
         destination = "local"
         chown = true
       }

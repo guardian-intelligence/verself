@@ -4,9 +4,9 @@ import guardian "guardianintelligence.org/guardian-specification/cue/guardian/v1
 
 guardian.#Document
 
-let openbaoOperatorAPublicKeyBase64 = "mDMEaiRhIxYJKwYBBAHaRw8BAQdA8GOif2dDXBWOBg/GHP6LO8LwNw2MfZx5W/oI0Z/gtYG0VUdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYSA8b3BlcmF0b3ItYS5nYW1tYS1vcGVuYmFvLTIwMjYwNjA2QGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6ImQQTFgoAQRYhBGNW1vGxjQtSegmSQ20xt8fxFYl3BQJqJGEjAhsBBQkB4TOABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEG0xt8fxFYl35VUBAOixZYI/dNDzn9VyzHO7bFN0GNArLEcLq6BFEGQ7IjXaAQD/gDiRo3hCwkwZFd8xDhcwmjAueFbz/EE+7nUZBRHwArg4BGokYSMSCisGAQQBl1UBBQEBB0DLYp659TibCfBxFLfSkIhF/xXEQ7W1wp598YBbYSkEJwMBCAeIfgQYFgoAJhYhBGNW1vGxjQtSegmSQ20xt8fxFYl3BQJqJGEjAhsMBQkB4TOAAAoJEG0xt8fxFYl36KkBAPPHsGHCl7iMKj1mv6pOiq3IpmUHiKQuPcxaQJosOywhAP0SClTwfkanxQCoqRQ25xwDgXl0T5G+CTAFTaa4prXVCQ=="
-let openbaoOperatorBPublicKeyBase64 = "mDMEaiRhIxYJKwYBBAHaRw8BAQdAjfu3dNTLPT+QgJhV7iGb7JDb3+YeefJudUIQJtjo6Ya0VUdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYiA8b3BlcmF0b3ItYi5nYW1tYS1vcGVuYmFvLTIwMjYwNjA2QGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6ImQQTFgoAQRYhBGz35jGr25/6zSNxaqcfyZRqEfguBQJqJGEjAhsBBQkB4TOABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEKcfyZRqEfguSNgA/R+3WOoRCTGMsd9Xa1OoB020KL2aacC2YIKuaxSzpoj0AQCUWTuBBFajVkoVNoiVuF6Xqamil4n35/SJkCI9axIhDbg4BGokYSMSCisGAQQBl1UBBQEBB0D1I/QMcqzJsawZTvYQi7dXDaDekRHSEoOUNn+Ma4kcKQMBCAeIfgQYFgoAJhYhBGz35jGr25/6zSNxaqcfyZRqEfguBQJqJGEjAhsMBQkB4TOAAAoJEKcfyZRqEfguPKYBAPOJPFkx4dgU4ikm2G5cHp3dK8zUVkvVnkmWwl2mkXGqAQCj2InQlPCc3b7Vo/N3nTv3y77NhQ+nTvgbomBw4xddDQ=="
-let openbaoOperatorCPublicKeyBase64 = "mDMEaiRhIxYJKwYBBAHaRw8BAQdAUMZkn5+mJ5B/rStGFsRXl4mO4JnWvMbbAvFv+Vf1K160VUdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYyA8b3BlcmF0b3ItYy5nYW1tYS1vcGVuYmFvLTIwMjYwNjA2QGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6ImQQTFgoAQRYhBA8rlTrW1GIuHSCz4J4Q3PJiM5yyBQJqJGEjAhsBBQkB4TOABQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEJ4Q3PJiM5yym6ABAN779R1z6W9XrvGj4QOro0F3ip1FgNbs4mzJmY+dhlNSAQCkzOWEj7Gk1XjZOoy08vuDobAZKnJcDF2DzcG1VtThCbg4BGokYSMSCisGAQQBl1UBBQEBB0B2JyTNSo6Q1ib5/5gZWwxE14reUtgPPW7RuMCQUDwyKwMBCAeIfgQYFgoAJhYhBA8rlTrW1GIuHSCz4J4Q3PJiM5yyBQJqJGEjAhsMBQkB4TOAAAoJEJ4Q3PJiM5yyqMYBAN3ZvGO53CfMZottjtIiKmfJnX3coPpE9oty2zu2dBBaAQCvhc/5+WiIxyeaTZFvoQ2F3PIALUXUXM16Q8FmhRRqBQ=="
+let openbaoOperatorAPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAAYbADEfH17sDLX0SI7iAC9bcdPH8aotQRTtD8Zsmyf60TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYSA8b3BlcmF0b3ItYS5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEJb5vLYzeQToxU4BAPkVtbeOQmuDizUjl/gJO5SHezdDHWfyzoyUtackFBm5AP9TVpFLbOb0aFgw1LQxjdYLAZQkh0NlizTtFU1fGKgkDbg4BGojifkSCisGAQQBl1UBBQEBB0BuQaidG8ObtxFzAEwIrKZAChiP7TTpV1Xx/UJIDsZ6NwMBCAeIeAQYFgoAIBYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsMAAoJEJb5vLYzeQTo3JoA/0v35/RUCPblBuwSC7sdSnpUHBzfjyYr0roc+eJHHSltAQDXnVUtg/O/B2mibJt87LtT1hijA/Oiox4/D5fj/XdABA=="
+let openbaoOperatorBPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdA6bubGkccdirSzvgIIgVVpt4Fj3NcYhs/9wqeCPmfqz20TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYiA8b3BlcmF0b3ItYi5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJECsvVrVb81xIdjUBAMmkwKz1aZ6M6p/hy8VCERUaifleNguTvL0MoFOMt9KLAQDS4geMPEWp7Ot7m5vMZN9jMIDnLE7LE9ExT725kJXIArg4BGojifkSCisGAQQBl1UBBQEBB0BBzz6cUUJWeUMbPmL8AjY9bqGX+s6/NMwpisBbXXnvCwMBCAeIeAQYFgoAIBYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsMAAoJECsvVrVb81xIP6ABAKa68/nvx5mGA6Ukz05sJhQqcLMNMUzfFu50NfJS6DrvAPwMAkX/AKJKJv0kn/YLG/WS3PTjNNRhwZtef9lTQc9kDA=="
+let openbaoOperatorCPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAk8b33//YRFh+tnQTHdF8YBoRbdQlK0f9GTjc8uK3dcC0TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYyA8b3BlcmF0b3ItYy5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEOT897zG400NCVkA/iGDVuMteClIXDhC75Z5mQdD9xS3/k0g1zt1DihRPK2uAP0bmmC8TZObdVBNn7mQ8TxzMwisK0CDmtwJHp8yQ/H+A7g4BGojifkSCisGAQQBl1UBBQEBB0C8tq2q7d+EeFOMdkpP4c9xyGukm9M6FlFLV59zgiD0UQMBCAeIeAQYFgoAIBYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsMAAoJEOT897zG400NydsA/0oeRRJ3ZAoy7bMXsBXd3wgaUA4w8R+JgSH5RwbErvfXAQC8Ckpse31YZ3CF6d+PgXOiLeafNr8+B1hQU3+5ATGdAQ=="
 
 entrypoint: {
 	apiVersion: "guardian.guardianintelligence.org/v1alpha1"
@@ -34,9 +34,10 @@ resources: [
 					ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
 					set -eu
 					nomad=/opt/verself/profile/bin/nomad
-					job=/home/ubuntu/.local/state/guardian/repo/current/workspace/src/integrations/cloudflare/control-plane/nomad.hcl
+					repo=/home/ubuntu/.local/state/guardian/repo/current
+					job="$repo/workspace/src/integrations/cloudflare/control-plane/nomad.hcl"
 					job_name=cloudflare-integration-recovery
-					image=/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar
+					image="$repo/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
 					export NOMAD_ADDR=http://127.0.0.1:4646
 					dump_job_debug() {
 						echo "===== $job_name job status =====" >&2
@@ -87,7 +88,7 @@ resources: [
 							fi
 						fi
 					fi
-					"$nomad" job run -detach -var "cloudflare_control_plane_image_digest=$image_digest" "$job"
+					"$nomad" job run -detach -var "cloudflare_control_plane_image_archive=$image" -var "cloudflare_control_plane_image_digest=$image_digest" "$job"
 					for second in $(seq 1 600); do
 						allocs="$("$nomad" job allocs -json "$job_name" || true)"
 						if printf '%s\n' "$allocs" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; status=latest.get("ClientStatus"); sys.exit(0 if status == "complete" else 2 if status in {"failed", "lost"} else 1)'; then
@@ -2114,14 +2115,18 @@ resources: [
 				url:         "https://github.com/guardian-intelligence/verself.git"
 				initTimeout: "2m"
 			}
-			nomad: address:         "http://127.0.0.1:4646"
+			nomad: {
+				address: "http://127.0.0.1:4646"
+				jobPaths: [
+					"src/integrations/cloudflare/control-plane/nomad.hcl",
+				]
+			}
 			objectStorage: address: "https://object-storage-admin-internal-https"
 			postgres: {
 				dsn:      "postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable"
 				maxConns: 4
 			}
 			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
-			bazel: jobs:            4
 			admissionConcurrency: 4
 			recoverySSHReady:     true
 			githubOIDC: {

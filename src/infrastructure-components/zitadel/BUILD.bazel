@@ -1,5 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 exports_files(["tools.lock.json"])
 
@@ -19,29 +18,4 @@ filegroup(
     name = "guardian_crd",
     srcs = ["guardian/v1alpha1/schema.cue"],
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "zitadel",
-    deploy_phase = "platform",
-    job_id = "zitadel",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "zitadel-runtime",
-        "//src/infrastructure-components/zitadel/cmd/zitadel-setup-apply:zitadel-setup-apply_nomad_artifact": "zitadel-setup-apply",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-nomad_component(
-    name = "auth_control_plane_nomad_component",
-    artifacts = {
-        "//src/infrastructure-components/zitadel/cmd/auth-control-plane-apply:auth-control-plane-apply_nomad_artifact": "auth-control-plane-apply",
-    },
-    component = "auth_control_plane",
-    deploy_phase = "platform",
-    job_id = "auth-control-plane",
-    job_spec = "auth-control-plane.nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

@@ -225,15 +225,23 @@ func validateResourceSpec(resource Resource) error {
 }
 
 func validatePreflight(name string, preflight Preflight) error {
-	playbook := strings.TrimSpace(preflight.Ansible.Playbook)
-	if playbook == "" {
-		return fmt.Errorf("%s.ansible.playbook is required", name)
+	return validateWorkspacePath(name+".ansible.playbook", preflight.Ansible.Playbook)
+}
+
+func validateWorkspacePath(name string, path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("%s is required", name)
 	}
-	if filepath.IsAbs(playbook) {
-		return fmt.Errorf("%s.ansible.playbook must be workspace-relative", name)
+	if filepath.IsAbs(path) {
+		return fmt.Errorf("%s must be workspace-relative", name)
 	}
-	if strings.Contains(playbook, "\x00") {
-		return fmt.Errorf("%s.ansible.playbook contains a NUL byte", name)
+	if strings.Contains(path, "\x00") {
+		return fmt.Errorf("%s contains a NUL byte", name)
+	}
+	cleaned := filepath.Clean(filepath.FromSlash(path))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%s must not escape the workspace", name)
 	}
 	return nil
 }

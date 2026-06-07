@@ -82,8 +82,9 @@ package v1alpha1
 
 #Preflight: {
 	ansible: {
-		playbook: string & !="" & !~"^/"
+		playbook: #WorkspaceRelativePath
 	}
 }
 
+#WorkspaceRelativePath: string & !="" & !~"^/" & !~"(^|/)\\.\\.(/|$)"
 #AbsolutePath: string & =~"^/.+"

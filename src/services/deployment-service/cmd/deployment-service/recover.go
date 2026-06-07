@@ -387,28 +387,34 @@ func extractDeploymentRuntimeArchive(releaseDir string, archive deploymentRuntim
 	if err != nil {
 		return fmt.Errorf("open %s archive: %w", archive.label, err)
 	}
-	defer f.Close()
 
 	tr := tar.NewReader(f)
 	for {
 		header, err := tr.Next()
 		if errors.Is(err, io.EOF) {
+			if err := f.Close(); err != nil {
+				return fmt.Errorf("close %s archive: %w", archive.label, err)
+			}
 			return nil
 		}
 		if err != nil {
+			_ = f.Close()
 			return fmt.Errorf("read %s archive: %w", archive.label, err)
 		}
 		target, err := deploymentRuntimeArchiveTarget(releaseDir, header.Name)
 		if err != nil {
+			_ = f.Close()
 			return fmt.Errorf("%s archive path %q: %w", archive.label, header.Name, err)
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := ensureDeploymentOwnedDir(target, 0, serviceGID, 0o750); err != nil {
+				_ = f.Close()
 				return err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := ensureDeploymentOwnedDir(filepath.Dir(target), 0, serviceGID, 0o750); err != nil {
+				_ = f.Close()
 				return err
 			}
 			mode := os.FileMode(0o440)
@@ -416,13 +422,16 @@ func extractDeploymentRuntimeArchive(releaseDir string, archive deploymentRuntim
 				mode = 0o550
 			}
 			if err := extractDeploymentRuntimeFile(tr, target, mode, serviceGID); err != nil {
+				_ = f.Close()
 				return fmt.Errorf("extract %s: %w", target, err)
 			}
 		case tar.TypeSymlink:
 			if err := extractDeploymentRuntimeSymlink(header.Linkname, target, serviceGID); err != nil {
+				_ = f.Close()
 				return fmt.Errorf("extract %s symlink: %w", target, err)
 			}
 		default:
+			_ = f.Close()
 			return fmt.Errorf("%s archive contains unsupported entry %q type %d", archive.label, header.Name, header.Typeflag)
 		}
 	}
@@ -570,9 +579,12 @@ func deploymentFileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

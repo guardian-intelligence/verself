@@ -132,9 +132,9 @@ func run(args []string) error {
 			RepoRoot:          runtimeCfg.SourceRepoRoot,
 			ObjectStorageAddr: runtimeCfg.ObjectStorageAddress,
 			NomadAddr:         runtimeCfg.NomadAddress,
+			NomadJobPaths:     runtimeCfg.NomadJobPaths,
 			NomadAllocID:      nomadAllocID,
 			RecoverySSHReady:  boolString(runtimeCfg.RecoverySSHReady),
-			BazelJobs:         runtimeCfg.BazelJobs,
 		},
 		ObjectStorageHTTPClient: objectStorageHTTPClient,
 	}

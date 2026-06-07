@@ -1,7 +1,6 @@
 # gazelle:prefix github.com/verself/integrations/cloudflare/control-plane
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 go_module_checks()
 
@@ -13,17 +12,4 @@ filegroup(
     name = "guardian_crd",
     srcs = glob(["guardian/**/*.cue"]),
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "recovery_nomad_component",
-    artifacts = {
-        "//src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane:cloudflare-control-plane_image_archive": "cloudflare-control-plane_image_archive",
-    },
-    component = "cloudflare_integration_recovery",
-    deploy_phase = "platform",
-    job_id = "cloudflare-integration-recovery",
-    job_spec = "nomad.hcl",
-    sites = ["gamma"],
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

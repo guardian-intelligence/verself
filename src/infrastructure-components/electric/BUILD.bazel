@@ -2,7 +2,6 @@
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 exports_files(["tools.lock.json"])
 
@@ -33,34 +32,4 @@ filegroup(
     name = "guardian_crd",
     srcs = glob(["guardian/**/*.cue"]),
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "containerd_nomad_component",
-    component = "electric",
-    deploy_phase = "platform",
-    job_id = "electric-containerd",
-    job_spec = "containerd.nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "electric-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "electric",
-    deploy_phase = "projection",
-    digest_inputs = [
-        ":deploy_declarations",
-        "//src/services/iam-service:deploy_declarations",
-        "//src/services/notifications-service:deploy_declarations",
-        "//src/services/sandbox-rental-service:deploy_declarations",
-    ],
-    job_id = "electric",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "electric-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

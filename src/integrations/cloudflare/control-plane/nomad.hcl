@@ -5,7 +5,7 @@ variable "guardian_repo_root" {
 
 variable "cloudflare_control_plane_image_archive" {
   type    = string
-  default = "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
+  default = ""
 }
 
 variable "cloudflare_control_plane_image_digest" {
@@ -24,6 +24,31 @@ job "cloudflare-integration-recovery" {
   group "cloudflare-integration-recovery" {
     count = 1
 
+    task "prepare-certificate-output" {
+      driver = "raw_exec"
+      user   = "root"
+
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/usr/bin/install"
+        args = [
+          "-d",
+          "-m",
+          "0700",
+          "/etc/haproxy/certs",
+        ]
+      }
+
+      resources {
+        cpu    = 25
+        memory = 16
+      }
+    }
+
     task "recover" {
       driver = "podman"
 
@@ -34,10 +59,15 @@ job "cloudflare-integration-recovery" {
 
       config {
         image           = "docker-archive:${var.cloudflare_control_plane_image_archive}"
+        init            = true
         network_mode    = "host"
         readonly_rootfs = true
+        cap_drop        = ["all"]
+        security_opt    = ["no-new-privileges"]
         volumes = [
           "${var.guardian_repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
+          "/etc/haproxy:/etc/haproxy:rw,noexec",
+          "/etc/ssl/certs:/etc/ssl/certs:ro,noexec",
           "/etc/verself/openbao/ca.pem:/etc/verself/openbao/ca.pem:ro",
         ]
         tmpfs = ["/tmp"]

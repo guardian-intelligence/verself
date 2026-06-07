@@ -70,8 +70,11 @@ func TestLoadDeploymentRuntimeConfig(t *testing.T) {
 	if cfg.PublicBaseURL != "https://deployments.api.gamma.verself.sh" {
 		t.Fatalf("PublicBaseURL = %q", cfg.PublicBaseURL)
 	}
-	if cfg.BazelJobs != 4 || cfg.AdmissionConcurrency != 4 {
+	if cfg.AdmissionConcurrency != 4 {
 		t.Fatalf("cfg = %#v", cfg)
+	}
+	if len(cfg.NomadJobPaths) != 1 || cfg.NomadJobPaths[0] != "src/integrations/cloudflare/control-plane/nomad.hcl" {
+		t.Fatalf("NomadJobPaths = %#v", cfg.NomadJobPaths)
 	}
 	if !cfg.GitHubOIDCConfigured {
 		t.Fatal("GitHubOIDCConfigured = false")
@@ -122,11 +125,10 @@ func validDeploymentDocument() string {
         "site":"gamma",
         "publicBaseURL":"https://deployments.api.gamma.verself.sh",
         "sourceRepo":{"root":"/var/lib/deployment-service/repo","url":"https://github.com/guardian-intelligence/verself.git","initTimeout":"2m"},
-        "nomad":{"address":"http://127.0.0.1:4646"},
+        "nomad":{"address":"http://127.0.0.1:4646","jobPaths":["src/integrations/cloudflare/control-plane/nomad.hcl"]},
         "objectStorage":{"address":"https://object-storage-admin-internal-https"},
         "postgres":{"dsn":"postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable","maxConns":4},
         "spiffe":{"endpointSocket":"unix:///run/spire-agent/sockets/agent.sock"},
-        "bazel":{"jobs":4},
         "admissionConcurrency":4,
         "recoverySSHReady":true,
         "githubOIDC":{

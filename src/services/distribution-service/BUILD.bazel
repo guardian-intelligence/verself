@@ -1,7 +1,6 @@
 # gazelle:prefix github.com/verself/distribution-service
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 go_module_checks()
@@ -20,15 +19,4 @@ spire_identity(
     path = "/svc/distribution-service",
     user = "distribution_service",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/services/distribution-service/cmd/distribution-service:distribution-service_image_archive": "distribution-service_image_archive",
-    },
-    component = "distribution_service",
-    job_id = "distribution-service",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

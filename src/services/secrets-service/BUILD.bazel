@@ -2,7 +2,6 @@
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 deploy_declarations(visibility = ["//visibility:public"])
@@ -23,16 +22,4 @@ spire_identity(
     path = "/svc/secrets-service",
     user = "secrets_service",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/services/secrets-service/cmd/secrets-service:secrets-service_nomad_artifact": "secrets-service",
-    },
-    component = "secrets_service",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "secrets-service",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

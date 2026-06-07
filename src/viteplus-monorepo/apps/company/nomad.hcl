@@ -1,3 +1,13 @@
+variable "company_artifact_source" {
+  type    = string
+  default = ""
+}
+
+variable "nodejs_runtime_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "company" {
   name = "company"
   datacenters = ["*"]
@@ -16,12 +26,12 @@ job "company" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       artifact {
-        source = "verself-artifact://company"
+        source = var.company_artifact_source
         destination = "local"
         chown = true
       }
       artifact {
-        source = "verself-artifact://nodejs-runtime"
+        source = var.nodejs_runtime_artifact_source
         destination = "local"
         chown = true
       }

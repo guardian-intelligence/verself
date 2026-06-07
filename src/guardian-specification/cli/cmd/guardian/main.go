@@ -69,7 +69,6 @@ type resourceRefResult struct {
 }
 
 type uploadResult struct {
-	Digest string `json:"digest,omitempty" yaml:"digest,omitempty" toml:"digest,omitempty" toon:"digest,omitempty"`
 	Status string `json:"status" yaml:"status" toml:"status" toon:"status"`
 	Reason string `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
 }
@@ -95,7 +94,6 @@ type flyResult struct {
 	ReadyToFly     string            `json:"ready_to_fly" yaml:"ready_to_fly" toml:"ready_to_fly" toon:"ready_to_fly"`
 	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
-	UploadDigest   string            `json:"upload_digest,omitempty" yaml:"upload_digest,omitempty" toml:"upload_digest,omitempty" toon:"upload_digest,omitempty"`
 	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
 	Nomad          hookResult        `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
 	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
@@ -929,7 +927,7 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	}
 	result.Upload.Status = "prepared"
 	result.Upload.Reason = "WorkspaceReady"
-	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and build artifacts are present locally", "preflight.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and artifact directory are present locally", "preflight.upload"))
 	if hasFalseCondition(result.Conditions) {
 		return result
 	}
@@ -1262,9 +1260,6 @@ func preparePreflightWorkspace(workspaceRoot string) error {
 		"bazel-bin",
 		"bazel-bin/src/tools/dev/binaries/uvx",
 		"bazel-bin/src/guardian-specification/tools/rsync",
-		"bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar",
-		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service",
-		"bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar",
 	} {
 		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {
@@ -1397,7 +1392,6 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		ReadyToFly:     "no",
 		ExecutionMode:  mode,
 		ResourceDigest: preflightResult.ResourceDigest,
-		UploadDigest:   preflightResult.Upload.Digest,
 		Entrypoint:     preflightResult.Entrypoint,
 		Nomad:          hookPending(doc.Compiled.FlySpec.Nomad.Run),
 	}

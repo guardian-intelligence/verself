@@ -8,24 +8,9 @@ variable "profile_service_resource_name" {
   default = "profile-service"
 }
 
-variable "profile_service_runtime_root" {
-  type    = string
-  default = "/var/lib/profile-service/runtime"
-}
-
-variable "profile_service_projected_graph" {
-  type    = string
-  default = "/run/verself/recovery/profile-service/document.json"
-}
-
 variable "profile_service_image_archive" {
   type    = string
-  default = "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar"
-}
-
-variable "profile_service_projected_image" {
-  type    = string
-  default = "/var/lib/profile-service/runtime/image.tar"
+  default = ""
 }
 
 variable "profile_service_image_digest" {
@@ -56,33 +41,6 @@ job "profile-service" {
       }
     }
 
-    task "setup" {
-      driver = "raw_exec"
-      user   = "root"
-
-      lifecycle {
-        hook    = "prestart"
-        sidecar = false
-      }
-
-      config {
-        command = "${var.guardian_repo_root}/bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service"
-        args = [
-          "recover",
-          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
-          "--runtime-root=${var.profile_service_runtime_root}",
-          "--projected-graph=${var.profile_service_projected_graph}",
-          "--image-archive=${var.profile_service_image_archive}",
-          "--projected-image=${var.profile_service_projected_image}",
-        ]
-      }
-
-      resources {
-        cpu    = 100
-        memory = 128
-      }
-    }
-
     task "migrate" {
       driver = "podman"
       user   = "profile_service"
@@ -93,11 +51,14 @@ job "profile-service" {
       }
 
       config {
-        image        = "docker-archive:${var.profile_service_projected_image}"
+        image        = "docker-archive:${var.profile_service_image_archive}"
+        init         = true
         network_mode = "host"
         readonly_rootfs = true
+        cap_drop = ["all"]
+        security_opt = ["no-new-privileges"]
         volumes = [
-          "${var.profile_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "${var.guardian_repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
           "/var/run/postgresql:/var/run/postgresql",
         ]
         tmpfs = ["/tmp"]
@@ -128,11 +89,14 @@ job "profile-service" {
       shutdown_delay = "5s"
 
       config {
-        image        = "docker-archive:${var.profile_service_projected_image}"
+        image        = "docker-archive:${var.profile_service_image_archive}"
+        init         = true
         network_mode = "host"
         readonly_rootfs = true
+        cap_drop = ["all"]
+        security_opt = ["no-new-privileges"]
         volumes = [
-          "${var.profile_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "${var.guardian_repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
           "/run/spire-agent/sockets:/run/spire-agent/sockets:ro",
           "/var/run/postgresql:/var/run/postgresql",
         ]

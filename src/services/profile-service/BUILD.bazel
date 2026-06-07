@@ -2,7 +2,6 @@
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 deploy_declarations(visibility = ["//visibility:public"])
@@ -45,16 +44,4 @@ spire_identity(
     path = "/svc/profile-service",
     user = "profile_service",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/services/profile-service/cmd/profile-service:profile-service_image_archive": "profile-service_image_archive",
-    },
-    component = "profile_service",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "profile-service",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

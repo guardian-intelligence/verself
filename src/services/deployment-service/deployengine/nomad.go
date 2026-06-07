@@ -28,10 +28,7 @@ func registerNomadJobs(ctx context.Context, exec execution, inputs *deployInputs
 	if err != nil {
 		return nomadApplyResult{}, err
 	}
-	if err := publishArtifacts(ctx, exec, inputs); err != nil {
-		return nomadApplyResult{}, err
-	}
-	jobs, err := prepareNomadJobsForSite(ctx, client, exec.RepoRoot, inputs.SiteModel, inputs.Bindings, inputs.Components, exec.TaskUserResolver)
+	jobs, err := prepareNomadJobsForSite(ctx, client, exec.RepoRoot, inputs.SiteModel, inputs.JobPaths, exec.TaskUserResolver)
 	if err != nil {
 		return nomadApplyResult{}, err
 	}

@@ -22,7 +22,8 @@ package v1alpha1
 			initTimeout: #NonEmptyString
 		}
 		nomad: {
-			address: #HTTPURL
+			address:  #HTTPURL
+			jobPaths: [#NonEmptyString, ...#NonEmptyString]
 		}
 		objectStorage: {
 			address: #HTTPSURL
@@ -33,9 +34,6 @@ package v1alpha1
 		}
 		spiffe: {
 			endpointSocket: #NonEmptyString
-		}
-		bazel: {
-			jobs: int & >0
 		}
 		admissionConcurrency: int & >0
 		recoverySSHReady:     bool

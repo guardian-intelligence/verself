@@ -218,7 +218,7 @@ needs continuous reconciliation after startup.
 
 Nomad agent recovery is preflight machinery for the current alpha slice. The
 pinned Nomad runtime is shipped in the materialized repo and installed by the
-declared preflight playbook. Add a Nomad component CRD when static Nomad
+declared preflight playbook. Add owner-local component CRDs when static
 configuration no longer fits in the playbook and Nomad-owned job file defaults.
 
 ## Evidence

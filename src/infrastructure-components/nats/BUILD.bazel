@@ -1,5 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
 
 exports_files(["tools.lock.json"])
@@ -35,16 +34,4 @@ spire_identity(
     restart_units = [],
     user = "nats",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "nats",
-    deploy_phase = "platform",
-    job_id = "nats",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "nats-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

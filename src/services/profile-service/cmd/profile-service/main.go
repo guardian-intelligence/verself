@@ -31,13 +31,6 @@ const (
 )
 
 func main() {
-	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
 	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

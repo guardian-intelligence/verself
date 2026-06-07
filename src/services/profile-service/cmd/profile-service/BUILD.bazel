@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "guardian_config.go",
         "main.go",
-        "recover.go",
     ],
     importpath = "github.com/verself/profile-service/cmd/profile-service",
     visibility = ["//visibility:private"],

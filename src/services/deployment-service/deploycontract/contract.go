@@ -437,7 +437,6 @@ func (v *Validator) validateNoToolLayerDeployEngine() {
 		"src/tools/deployment/internal/bazelbuild",
 		"src/tools/deployment/internal/bep",
 		"src/tools/deployment/internal/deploycontract",
-		"src/tools/deployment/internal/deploymodel",
 		"src/tools/deployment/internal/nomadclient",
 		"src/tools/deployment/internal/runtime",
 		"src/tools/deployment/internal/siteconfig",
