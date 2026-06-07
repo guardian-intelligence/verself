@@ -25,7 +25,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Secrets Service | `secrets.guardianintelligence.org/v1alpha1/SecretsService/secrets-service` | Converged on latest gamma run | None in current gamma state | Materialized secrets-service binary, SecretsService CRD static config, OpenBao Nomad JWT role `secrets-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy public route |
 | Source Code Hosting Service | `source.guardianintelligence.org/v1alpha1/SourceCodeHostingService/source-code-hosting-service` | Converged on latest gamma run | None in current gamma state | Materialized source-code-hosting-service binary, SourceCodeHostingService CRD static config, PostgreSQL `source_code_hosting` database/peer role, Forgejo runtime and automation token, generated webhook secret, OpenBao Nomad JWT role `source-code-hosting-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy source API route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
-| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
+| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations, sustained operator query monitor |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Converged on latest gamma run | None in current gamma state | OpenBao baseline reconciliation, Cloudflare-produced bucket-scoped R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 | Zot | `zot.guardianintelligence.org/v1alpha1/ZotRegistry/zot` | Converged on latest gamma run | None in current gamma state | Materialized Zot runtime artifact, `zot-recover`, local storage directory, htpasswd publisher entry |
@@ -47,6 +47,30 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the ClickHouse monitor slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:0a1e9cd149b9d5511774aeeb18141716c29a177e291865eba83a4acb7603e23d`,
+  and verified upload digest
+  `sha256:2f79b62b4604d77593b7e8acb6f0faae2f4e7cc493fe25801ad1c55d23e22c36`;
+- `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue --stream`
+  currently runs preflight and the OpenBao Nomad hook only. ClickHouse was
+  verified by submitting its component-owned Nomad job directly after preflight;
+- ClickHouse originally stalled because allocation `4c0f7962` had a dead
+  `monitor` task. The underlying dependency was operator SPIFFE SVID
+  availability during helper certificate rotation: one ClickHouse client probe
+  read `svid.pem` while it was not a complete PEM file and exited with
+  `NETWORK_ERROR`;
+- ClickHouse deployment `82b331f1` is now successful after purging the old
+  terminal allocation and re-running the component job. Allocation `70eec273`
+  is running, the `monitor` task is running, and Nomad reports one desired,
+  placed, and healthy ClickHouse allocation;
+- `/run/verself/recovery/clickhouse/report.json` now includes
+  `ClickHouseRecoveryComplete=True` and `ClickHouseMonitorHealthy=True` with
+  reason `ProbeSucceeded`. A direct operator query through
+  `/etc/clickhouse-client/operator.xml` returns `1`;
+- ClickHouse monitor recovery now retries sustained probe windows and updates
+  the component report instead of terminating the Nomad allocation on a single
+  transient SPIFFE/client-certificate read failure;
 - current preflight after the source-code-hosting-service slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:0a1e9cd149b9d5511774aeeb18141716c29a177e291865eba83a4acb7603e23d`,
@@ -396,11 +420,11 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   setup exits `0` and repairs `object_storage_service` to uid `960`, primary
   group `object_storage_service`;
 - ClickHouse recovery converged from the boarded runtime artifact: Nomad
-  deployment `0950fc70` completed successfully, allocation `4c0f7962` is
+  deployment `82b331f1` completed successfully, allocation `70eec273` is
   running, and `/run/verself/recovery/clickhouse/report.json` reports
-  `ClickHouseRecoveryComplete=True`;
+  `ClickHouseRecoveryComplete=True` and `ClickHouseMonitorHealthy=True`;
 - ClickHouse recovery installed runtime artifact
-  `sha256:5a18ad18185812f6dc421819ab48d08a46b0776ea1b946baf595b6f6c69fde75`,
+  `sha256:acea876a19deda7b3e62a61997adf915f057c66287231a7377a585494b064058`,
   prepared host users/directories/TLS/SPIFFE helpers/systemd units, accepted
   an operator query, and applied migrations through
   `009_recovery_events.up.sql`;

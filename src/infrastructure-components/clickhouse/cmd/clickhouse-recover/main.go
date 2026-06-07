@@ -33,6 +33,10 @@ const (
 	kind            = "ClickHouseCluster"
 	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
 	defaultResource = "clickhouse"
+
+	monitorProbeTimeout  = 45 * time.Second
+	monitorProbeInterval = time.Second
+	monitorLoopInterval  = 10 * time.Second
 )
 
 type options struct {
@@ -255,10 +259,50 @@ func monitor(opts options) error {
 		return err
 	}
 	for {
-		if _, err := clickhouseQuery(cfg, "SELECT 1"); err != nil {
-			return err
+		if err := waitForMonitorProbe(monitorProbeTimeout, monitorProbeInterval, func() error {
+			return clickhouseMonitorProbe(cfg)
+		}); err != nil {
+			cond := conditionFalse("ClickHouseMonitorHealthy", "ProbeFailed", err.Error(), opts.resourceName)
+			if writeErr := updateMonitorReport(cfg.ReportPath, opts.resourceName, cond, conditionFalse("ClickHouseRecoveryComplete", "MonitorUnhealthy", "ClickHouse monitor probe failed", opts.resourceName)); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "clickhouse monitor report update failed: %v\n", writeErr)
+			}
+			fmt.Fprintf(os.Stderr, "clickhouse monitor probe failed: %v\n", err)
+		} else {
+			cond := conditionTrue("ClickHouseMonitorHealthy", "ProbeSucceeded", "ClickHouse accepted an operator query from the monitor", opts.resourceName)
+			if writeErr := updateMonitorReport(cfg.ReportPath, opts.resourceName, cond, conditionTrue("ClickHouseRecoveryComplete", "Recovered", "ClickHouse is ready", opts.resourceName)); writeErr != nil {
+				fmt.Fprintf(os.Stderr, "clickhouse monitor report update failed: %v\n", writeErr)
+			}
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(monitorLoopInterval)
+	}
+}
+
+func clickhouseMonitorProbe(cfg config) error {
+	operatorSVID := filepath.Join(cfg.SPIFFE.OperatorDir, "svid.pem")
+	// SPIFFE helper rotations can briefly expose an incomplete PEM.
+	valid, err := certificateValidBeyond(operatorSVID, time.Now().Add(5*time.Minute))
+	if !valid {
+		return fmt.Errorf("operator SVID unavailable: %w", err)
+	}
+	if _, err := clickhouseQuery(cfg, "SELECT 1"); err != nil {
+		return fmt.Errorf("operator query failed: %w", err)
+	}
+	return nil
+}
+
+func waitForMonitorProbe(timeout, interval time.Duration, probe func() error) error {
+	deadline := time.Now().Add(timeout)
+	var last error
+	for {
+		if err := probe(); err == nil {
+			return nil
+		} else {
+			last = err
+		}
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("timed out waiting for ClickHouse monitor probe: %w", last)
+		}
+		time.Sleep(interval)
 	}
 }
 
@@ -1309,6 +1353,40 @@ func writeReport(stdout io.Writer, path string, rep report) error {
 		return err
 	}
 	return writeAtomic(path, body, 0o644, 0, 0)
+}
+
+func updateMonitorReport(path, resourceName string, conditions ...condition) error {
+	rep := report{
+		Component:    "clickhouse",
+		ResourceName: resourceName,
+	}
+	if body, err := os.ReadFile(path); err == nil {
+		var existing report
+		if err := json.Unmarshal(body, &existing); err == nil {
+			rep = existing
+			rep.Component = "clickhouse"
+			rep.ResourceName = resourceName
+		}
+	}
+	rep.CheckedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	rep.Conditions = upsertConditions(rep.Conditions, conditions...)
+	return writeReport(io.Discard, path, rep)
+}
+
+func upsertConditions(existing []condition, updates ...condition) []condition {
+	positions := make(map[string]int, len(existing))
+	for i, cond := range existing {
+		positions[cond.Type] = i
+	}
+	for _, update := range updates {
+		if i, ok := positions[update.Type]; ok {
+			existing[i] = update
+			continue
+		}
+		positions[update.Type] = len(existing)
+		existing = append(existing, update)
+	}
+	return existing
 }
 
 func parseMode(mode string) (os.FileMode, error) {

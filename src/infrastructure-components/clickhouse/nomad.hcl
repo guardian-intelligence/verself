@@ -66,8 +66,10 @@ job "clickhouse" {
       user   = "root"
 
       restart {
-        attempts = 0
-        mode     = "fail"
+        attempts = 5
+        interval = "5m"
+        delay    = "5s"
+        mode     = "delay"
       }
 
       config {
@@ -90,6 +92,14 @@ job "clickhouse" {
         port         = "native_tls"
         provider     = "nomad"
         address_mode = "auto"
+
+        check {
+          name     = "native-tls-listener"
+          type     = "tcp"
+          port     = "native_tls"
+          interval = "10s"
+          timeout  = "2s"
+        }
       }
     }
   }
