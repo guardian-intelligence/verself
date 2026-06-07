@@ -6,13 +6,6 @@ All configuration is defined as CRDs authored in CUE.
 The Guardian specification encompases: CRDs for each deployable component/service
 All service APIs are described with IDLs via Smithy
 All scripts are to be written as aspects executing typed binaries
-All dependencies, including development tools, are commit pinned and plugged into Bazel.
-
-This means:
-
-* Static configuration for a deployable component/service belongs in that component/service's Guardian CRD schema and site graph.
-* Runtime recovery, migrations, imports, restore, and health waiting belong in Nomad lifecycle tasks and typed component binaries.
-* Centralized deploy YAML or placeholder-env configuration is legacy drift to delete during component cutovers.
 
 Treat violations of the above as aberrations to be corrected, not examples to be emulated.
 
@@ -55,19 +48,7 @@ The only ingredients necessary to recover the system, therefore, are:
 
 Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external provider authority and root-of-trust automation -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
 
-Chicken-and-egg problems are solved by declaring every dependency via a pinned commit so Bazel can exactly reproduce the binary locally. OpenBao and the Nomad agent are preflight root services: the preflight playbook installs their repo-built runtime artifacts, configures systemd ownership, starts them, and verifies they are healthy before `guardian fly` submits component-owned Nomad jobs.
-
-Note that components should still handle subtle nuances, e.g. for OpenBao consider:
-
-OpenBao not present/absent — the situation could be any of the following
-  - storage empty → init (fresh bootstrap) or restore-from-snapshot if a
-  backup exists,
-  - storage present + sealed → unseal only (must not init),
-  - storage present + unsealed → no-op.
-
-Recovery frequently means "restore data from offsite backups on S3-compatible object storage" but even if no backups are provided, a clean version of the system can be bootstrapped.
-
-Every deployable unit after preflight declares component-owned recovery behavior in its `nomad.hcl` file. Long-lived sidecar reconcilers are appropriate for services whose health must be maintained continuously. Root services such as OpenBao and the Nomad agent are not modeled as Nomad jobs.
+Every deployable unit declares a component-owned recovery reconciler that runs as a long-lived sidecar in its `nomad.hcl` file. The reconciler observes live state, classifies it, and runs the idempotent action that converges to desired, re-sampling on an interval so the converged state is a maintained invariant. `spire` and `postgresql` are the reference implementations.
 
 ```
 task "reconcile" {
@@ -197,7 +178,6 @@ Single region (ASH)
 three sites (prod, gamma, dev)
 No cells
 1 node per site
-Single global writer for TigerBeetle, ClickHouse, and PG
 
 <critical>Make architecture decisions that design for the target</critical>
 
@@ -241,7 +221,7 @@ Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, diff
 
 OpenBao is the runtime secret source of truth; Nomad is the runtime secret delivery mechanism; SPIRE is workload mTLS identity, not the normal secret-delivery path.
 
-Per environment, autonomous OpenBao restart requires a configured external seal or equivalent root-of-trust mechanism; Shamir material is breakglass authority, not the normal restart path. Fresh initialization may generate operator recovery material, but the initial root token is process-local, revoked before recovery completes, and never used as a standing service-configuration authority. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
+Per environment, autonomous OpenBao restart requires a configured external seal or equivalent root-of-trust mechanism; Shamir material is breakglass authority, not the normal restart path. Fresh initialization may generate operator recovery material, but the initial root token is process-local, used only to reconcile baseline state, and revoked before recovery completes. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
@@ -310,7 +290,7 @@ Top-level landmarks:
 
 - `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or `guardian run bazel -- ...`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
-- Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` with `guardian run bazel -- build ...` and run the repo-local binary as `.guardian/build/bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
+- Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
 
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
 

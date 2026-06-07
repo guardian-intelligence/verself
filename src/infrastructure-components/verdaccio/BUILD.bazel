@@ -1,7 +1,3 @@
-load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
-
-deploy_declarations(visibility = ["//visibility:public"])
-
 filegroup(
     name = "guardian_crd",
     srcs = glob(["guardian/**/*.cue"]),

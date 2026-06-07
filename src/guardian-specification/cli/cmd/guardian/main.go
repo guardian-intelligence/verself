@@ -131,7 +131,6 @@ type remoteArtifact struct {
 	TargetPath string `json:"target_path"`
 	SourcePath string `json:"source_path"`
 	Digest     string `json:"digest"`
-	Length     string `json:"length,omitempty"`
 	RemotePath string `json:"remote_path"`
 }
 
@@ -996,7 +995,7 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 		return result, err
 	}
 	varsPath := filepath.Join(tmpDir, "vars.json")
-	vars, err := ansibleVars(doc, opts, resourceDigest, target, tmpDir)
+	vars, err := ansibleVars(doc, opts, resourceDigest, target)
 	if err != nil {
 		result.Reason = "VarsBuildFailed"
 		result.Message = err.Error()
@@ -1171,7 +1170,7 @@ func inventoryValue(value string) string {
 	return value
 }
 
-func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest string, target ansibleSSHTarget, tmpDir string) (map[string]any, error) {
+func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest string, target ansibleSSHTarget) (map[string]any, error) {
 	remote := doc.Compiled.SubstrateSpec.Remote
 	workspaceState := gitWorkspaceState(opts.WorkspaceRoot)
 	artifacts, artifactsByTargetPath, err := remoteArtifactsFromBuildManifest(opts.WorkspaceRoot, remote.RepoRoot)
@@ -1191,8 +1190,6 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		return nil, err
 	}
 	return map[string]any{
-		"guardian_document":               doc.Source,
-		"guardian_entrypoint":             refResult(doc.Source.Entrypoint),
 		"guardian_profile":                opts.Profile,
 		"guardian_resource_digest":        resourceDigest,
 		"guardian_workspace_git_revision": workspaceState.Revision,
@@ -1205,16 +1202,11 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		"guardian_openbao_runtime":        openBaoRuntime,
 		"guardian_nomad_runtime":          nomadRuntime,
 		"guardian_nomad_jobs":             nomadInputs,
-		"guardian_nomad_common_vars":      nomadCommonVars(remote.RepoRoot, doc.Compiled.Fly.Metadata.Name),
 		"guardian_nomad_common_var_args":  nomadCommonVarArgs(remote.RepoRoot, doc.Compiled.Fly.Metadata.Name),
-		"guardian_preflight_work_dir":     tmpDir,
 		"guardian_remote_repo_root":       remote.RepoRoot,
 		"guardian_rsync_bin":              filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultBazelBuildRoot+"/bazel-bin/src/guardian-specification/tools/rsync")),
 		"guardian_rsync_target":           target.User + "@" + target.Host,
 		"guardian_rsync_ssh_command":      ansibleRsyncSSHCommand(target),
-		"guardian_substrate_resource":     doc.Compiled.Substrate,
-		"guardian_substrate_remote":       remote,
-		"guardian_ansible_inventory_host": sanitizeInventoryName(doc.Compiled.Substrate.Metadata.Name),
 	}, nil
 }
 
@@ -1252,7 +1244,6 @@ func remoteArtifactsFromBuildManifest(workspaceRoot string, repoRoot string) ([]
 			TargetPath: targetPath,
 			SourcePath: sourcePath,
 			Digest:     digest,
-			Length:     output.Length,
 			RemotePath: remoteArtifactPath(repoRoot, digest),
 		}
 		artifacts = append(artifacts, artifact)
@@ -1345,16 +1336,12 @@ func remoteArtifactPath(repoRoot string, digest string) string {
 	return remoteArtifactRoot(repoRoot) + "/sha256/" + digest
 }
 
-func nomadCommonVars(repoRoot string, site string) []string {
-	return []string{
+func nomadCommonVarArgs(repoRoot string, site string) []string {
+	vars := []string{
 		"repo_root=" + strings.TrimRight(repoRoot, "/"),
 		"artifact_root=" + remoteArtifactRoot(repoRoot),
 		"site=" + site,
 	}
-}
-
-func nomadCommonVarArgs(repoRoot string, site string) []string {
-	vars := nomadCommonVars(repoRoot, site)
 	args := make([]string, 0, len(vars))
 	for _, variable := range vars {
 		args = append(args, "-var="+variable)
@@ -1428,10 +1415,8 @@ type bazelBuildManifest struct {
 }
 
 type bazelBuildOutput struct {
-	Path       string `json:"path"`
 	SourceURI  string `json:"source_uri"`
 	Digest     string `json:"digest,omitempty"`
-	Length     string `json:"length,omitempty"`
 	TargetPath string `json:"target_path"`
 }
 
@@ -1467,7 +1452,6 @@ type bazelOutputFile struct {
 	URI        string   `json:"uri"`
 	PathPrefix []string `json:"pathPrefix"`
 	Digest     string   `json:"digest"`
-	Length     string   `json:"length"`
 }
 
 func materializeBazelBuildOutputs(workspaceRoot string, bepPath string) error {
@@ -1537,10 +1521,8 @@ func materializeBazelBuildOutputs(workspaceRoot string, bepPath string) error {
 				return err
 			}
 			manifest.Outputs = append(manifest.Outputs, bazelBuildOutput{
-				Path:       strings.Join(append(append([]string(nil), output.PathPrefix...), output.Name), "/"),
 				SourceURI:  output.URI,
 				Digest:     output.Digest,
-				Length:     output.Length,
 				TargetPath: targetPath,
 			})
 		}

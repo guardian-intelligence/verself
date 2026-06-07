@@ -1,8 +1,0 @@
-postgresql_service_databases:
-  - name: deployment_service
-    owner: deployment_service
-postgresql_peer_mappings:
-  - system_user: deployment_service
-    pg_user: deployment_service
-    purpose: owner_local
-    justification: deployment-service owns deployment state

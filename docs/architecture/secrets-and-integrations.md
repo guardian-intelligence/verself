@@ -139,8 +139,8 @@ instead of plaintext files.
 - Runtime declarations with `generated` source request entropy from OpenBao
   transit/random and then store the resulting value in OpenBao KV. Workload
   reconcilers do not use process-local RNG for runtime secret material.
-- Owner-local deployment declarations define every runtime secret, provider
-  credential, host credential projection, and consumer.
+- Component Guardian CRDs and site graph entries define every runtime secret,
+  provider credential, host credential projection, and consumer.
 - Missing product-provider external OpenBao secrets do not block substrate reconciliation.
   The consuming workload or promotion gate reports the absent runtime secret.
 - The successful transition to `S9 deployed` requires provider-specific canary
@@ -319,7 +319,7 @@ integrations:
         target: runtime_secret
         target_store: site_openbao
         openbao_name: billing-service.stripe.secret_key
-        consumer: src/services/billing-service/deploy/runtime-secrets.yml
+        consumer: billing-service Guardian CRD/site graph
         rotation: provider_dashboard_roll_key
       - key: billing-service.stripe.webhook_secret
         kind: webhook_secret
@@ -328,7 +328,7 @@ integrations:
         target: runtime_secret
         target_store: site_openbao
         openbao_name: billing-service.stripe.webhook_secret
-        consumer: src/services/billing-service/deploy/runtime-secrets.yml
+        consumer: billing-service Guardian CRD/site graph
     variables:
       - key: billing-service.stripe.publishable_key
         sensitivity: public
@@ -386,11 +386,11 @@ variable exported by `stripe projects env --pull`:
 
 4. Add the consumer declaration.
 
-   Runtime service credentials use owner-local `deploy/runtime-secrets.yml`.
-   Public provider variables belong in site vars or generated service config,
-   never in ad hoc Nomad literals when they vary by environment. Bootstrap and
-   operator-access host files are named bootstrap/access-plane state, not
-   runtime credential declarations.
+   Runtime service credentials belong in the owning component CRD and site
+   graph. Public provider variables belong in site vars or generated service
+   config, never in ad hoc Nomad literals when they vary by environment.
+   Bootstrap and operator-access host files are named bootstrap/access-plane
+   state, not runtime credential declarations.
 
 5. Populate the environment value.
 

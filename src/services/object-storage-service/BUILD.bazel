@@ -1,10 +1,7 @@
 # gazelle:prefix github.com/verself/object-storage-service
 
 load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
-load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 

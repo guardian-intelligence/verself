@@ -146,7 +146,9 @@ for a step is not yet available it emits a descriptive `False` condition
 (`BaselineDeferred`, `WaitingForOpenBao`) and retries on the next tick, rather
 than splitting the work across separate one-shot tasks. Authentication uses a
 scoped Nomad workload identity; a transient operator token used during fresh
-bootstrap is revoked before recovery reports complete.
+bootstrap is revoked before recovery reports complete. How that transient token
+is obtained, scoped, and audited is defined in
+`disaster-recovery-bootstrap-trust.md`.
 
 ### Restore versus fresh-init is decided by observed storage
 

@@ -553,10 +553,8 @@ func writeTestBuildManifest(t *testing.T, dir string, outputs map[string]string)
 		}
 		sum := sha256.Sum256(data)
 		manifest.Outputs = append(manifest.Outputs, bazelBuildOutput{
-			Path:       strings.TrimPrefix(targetPath, "bazel-bin/"),
 			SourceURI:  "file://" + filepath.ToSlash(sourcePath),
 			Digest:     hex.EncodeToString(sum[:]),
-			Length:     fmt.Sprint(len(data)),
 			TargetPath: targetPath,
 		})
 	}

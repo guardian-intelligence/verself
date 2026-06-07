@@ -4,12 +4,9 @@ load(
     "@npm//src/viteplus-monorepo/apps/verself-web:@hey-api/openapi-ts/package_json.bzl",
     openapi_ts_bin = "bin",
 )
-load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
 load("//src/viteplus-monorepo:viteplus_rules.bzl", "viteplus_app", "viteplus_node_app_artifact", "viteplus_openapi_clients", "viteplus_openapi_spec_copies", "viteplus_route_tree", "viteplus_server_plugin_bundles")
 
 package(default_visibility = ["//visibility:public"])
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 DOT_MATRIX_SHADER_SRC_MAP = [
     ("dot-matrix.vert", "src/features/landing/dot-matrix/shader-src/dot-matrix.vert"),

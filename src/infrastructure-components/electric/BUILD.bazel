@@ -1,11 +1,8 @@
 # gazelle:prefix github.com/verself/infrastructure-components/electric
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/services/deployment-service:declarations.bzl", "deploy_declarations")
 
 exports_files(["tools.lock.json"])
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 pkg_tar(
     name = "runtime_artifact",

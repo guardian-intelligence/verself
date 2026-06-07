@@ -5,7 +5,6 @@ filegroup(
     srcs = glob(
         [
             "*/defaults/**",
-            "*/deploy/**",
             "*/files/**",
             "*/handlers/**",
             "*/meta/**",

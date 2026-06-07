@@ -1,5 +1,0 @@
-postgresql_service_databases:
-  - { name: object_storage_service, owner: object_storage_service }
-postgresql_peer_mappings:
-  - { system_user: object_storage_service, pg_user: object_storage_service }
-  - { system_user: object_storage_admin, pg_user: object_storage_service }

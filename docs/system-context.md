@@ -43,8 +43,8 @@ point.
 
 Recovery and operator-access secrets enter through catalog-approved local
 handoff files and controller OpenBao. Site OpenBao initializes fresh state with
-operator-provided recovery authority. Runtime secrets are owner-local
-`deploy/runtime-secrets.yml` declarations applied by the owning recovery or
+operator-provided recovery authority. Runtime secrets are declared in the
+owning component CRD and site graph, then reconciled by the owning recovery or
 deployment job. Nomad jobs consume them through Nomad workload identity and
 OpenBao templates. The remaining host-local files are named non-runtime state:
 OpenBao Shamir unseal material under `/var/lib/verself/recovery/openbao` and

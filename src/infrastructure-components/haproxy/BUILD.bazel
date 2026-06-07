@@ -112,28 +112,3 @@ go_test(
         "nomad.hcl",
     ],
 )
-
-filegroup(
-    name = "public_route_declarations",
-    srcs = [
-        "//src/infrastructure-components/forgejo:deploy_declarations",
-        "//src/infrastructure-components/grafana:deploy_declarations",
-        "//src/infrastructure-components/pomerium:deploy_declarations",
-        "//src/infrastructure-components/stalwart:deploy_declarations",
-        "//src/infrastructure-components/verdaccio:deploy_declarations",
-        "//src/services/analytics-service:deploy_declarations",
-        "//src/services/deployment-service:deploy_declarations",
-        "//src/services/email-service:deploy_declarations",
-        "//src/services/github-integration-service:deploy_declarations",
-        "//src/services/governance-service:deploy_declarations",
-        "//src/services/iam-service:deploy_declarations",
-        "//src/services/notifications-service:deploy_declarations",
-        "//src/services/profile-service:deploy_declarations",
-        "//src/services/projects-service:deploy_declarations",
-        "//src/services/sandbox-rental-service:deploy_declarations",
-        "//src/services/secrets-service:deploy_declarations",
-        "//src/services/source-code-hosting-service:deploy_declarations",
-        "//src/viteplus-monorepo/apps/company:deploy_declarations",
-        "//src/viteplus-monorepo/apps/verself-web:deploy_declarations",
-    ],
-)
