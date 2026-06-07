@@ -151,14 +151,21 @@ func ensureGroup(name string) error {
 	}
 	cmd := exec.Command("/usr/sbin/groupadd", "--system", name)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if _, lookupErr := lookupGroup(name); lookupErr == nil {
+			return nil
+		}
 		return fmt.Errorf("create group %s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
 func ensureUser(name string, uid int, group string) error {
-	if _, err := lookupUser(name); err == nil {
-		return nil
+	groupGID, err := lookupGroup(group)
+	if err != nil {
+		return err
+	}
+	if entry, err := lookupUser(name); err == nil {
+		return reconcileUserEntry(name, entry, uid, group, groupGID)
 	}
 	cmd := exec.Command(
 		"/usr/sbin/useradd",
@@ -171,7 +178,38 @@ func ensureUser(name string, uid int, group string) error {
 		name,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if entry, lookupErr := lookupUser(name); lookupErr == nil {
+			return reconcileUserEntry(name, entry, uid, group, groupGID)
+		}
 		return fmt.Errorf("create user %s: %w: %s", name, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func reconcileUserEntry(name string, entry passwdEntry, wantUID int, group string, wantGID int) error {
+	if entry.uid != wantUID {
+		return fmt.Errorf("user %s has uid %d, want %d", name, entry.uid, wantUID)
+	}
+	if entry.gid == wantGID {
+		return nil
+	}
+	cmd := exec.Command("/usr/sbin/usermod", "--gid", group, name)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("repair user %s primary group: %w: %s", name, err, strings.TrimSpace(string(out)))
+	}
+	repaired, err := lookupUser(name)
+	if err != nil {
+		return err
+	}
+	return verifyUserEntry(name, repaired, wantUID, group, wantGID)
+}
+
+func verifyUserEntry(name string, entry passwdEntry, wantUID int, group string, wantGID int) error {
+	if entry.uid != wantUID {
+		return fmt.Errorf("user %s has uid %d, want %d", name, entry.uid, wantUID)
+	}
+	if entry.gid != wantGID {
+		return fmt.Errorf("user %s has primary gid %d, want group %s gid %d", name, entry.gid, group, wantGID)
 	}
 	return nil
 }

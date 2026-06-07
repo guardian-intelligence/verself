@@ -69,6 +69,27 @@ func TestModeOrDefaultRejectsOutOfRangeMode(t *testing.T) {
 	}
 }
 
+func TestVerifyUserEntryAcceptsExpectedUIDAndGroup(t *testing.T) {
+	err := verifyUserEntry("object_storage_service", passwdEntry{uid: 960, gid: 960}, 960, "object_storage_service", 960)
+	if err != nil {
+		t.Fatalf("verifyUserEntry: %v", err)
+	}
+}
+
+func TestVerifyUserEntryRejectsUnexpectedUID(t *testing.T) {
+	err := verifyUserEntry("object_storage_service", passwdEntry{uid: 961, gid: 960}, 960, "object_storage_service", 960)
+	if err == nil {
+		t.Fatal("verifyUserEntry accepted unexpected uid")
+	}
+}
+
+func TestVerifyUserEntryRejectsUnexpectedGroup(t *testing.T) {
+	err := verifyUserEntry("object_storage_service", passwdEntry{uid: 960, gid: 961}, 960, "object_storage_service", 960)
+	if err == nil {
+		t.Fatal("verifyUserEntry accepted unexpected primary group")
+	}
+}
+
 func writeGuardianDocument(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "document.json")

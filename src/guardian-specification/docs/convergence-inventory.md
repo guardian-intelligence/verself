@@ -12,6 +12,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Substrate preflight | `substrate.guardianintelligence.org/v1alpha1/Substrate/gamma-primary` | Converged | None | SSH access, local build artifacts, upload/extract/verify hooks |
 | Nomad runtime | component bootstrap machinery | Converged | None | Materialized repo, pinned Nomad runtime artifact, `nomad-recover`, root access for systemd and host config |
 | OpenBao | `openbao.guardianintelligence.org/v1alpha1/OpenBaoCluster/openbao` | Fresh destructive bootstrap converged with single-task recovery | Initialized Shamir-sealed restart still needs a configured auto-unseal mechanism for fully autonomous host reboot | Materialized OpenBao runtime artifact, operator PGP recipients for encrypted recovery handoff, in-memory fresh-init shares, transient initial root token revoked after baseline reconcile |
+| SPIRE | `spire.guardianintelligence.org/v1alpha1/SPIRECluster/spire` | Converged on latest gamma run | None in current gamma state | Materialized SPIRE runtime artifact, identity registry artifact, server/agent sockets, join-token attestation, `spire_workload` socket group |
 | Cloudflare Control Plane | `cloudflare.guardianintelligence.org/v1alpha1/CloudflareControlPlane/gamma-cloudflare` | Converged in latest live recovery run; batch job purged after evidence capture | None in current gamma state | OpenBao recovered with `cloudflare-integration-recovery-runtime`, operator-imported Cloudflare account-admin credential when no restored OpenBao snapshot exists, Cloudflare API authority for DNS/TLS/R2, recovery R2 bucket |
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Auto-reverted to preflight-only allocation | `PublicTLSCertificateMaterialAvailable=False` | Public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org` |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
@@ -20,8 +21,8 @@ consecutive submissions do not create unexpected allocation churn.
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | Runtime jobs still need artifact/config CRD cutover and live verification against the latest bootstrapped graph | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
-| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged | None | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Last rehearsal setup/migrations passed; not yet re-submitted after latest wipe | Cloudflare-produced R2 credentials and Zitadel-produced auth audience are not yet available on this host | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, and Zitadel-produced auth audience |
+| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Not submitted on current wiped gamma host | Object-storage depends on `/etc/verself/clickhouse/server-ca.pem`, which is absent until ClickHouse recovers | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Setup passes and repairs bad local user state; runtime remains blocked | S3 runtime needs ClickHouse recovery to provide `/etc/verself/clickhouse/server-ca.pem`; admin runtime needs Zitadel/auth-control-plane to produce `iam-service.zitadel.auth_audience` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
 
@@ -37,9 +38,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:4f42f68f126355ddbf3fb68f54c61efa0cca309df1b170cf49d05f004715027e`;
+  `sha256:cdc8c3ca3d5589edd0de73ee24ce31d8dc6948f4e740f50b64095127c4af6fc8`;
 - latest verified upload digest:
-  `sha256:36b944d3cecba73532f51914c7b5d2665957c828306b0a52b9cca15f602ac6a1`;
+  `sha256:b3871c6ce7b50736119f9a5eeca51ab94f8601cbb0b97715d826835605b1dafa`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -86,6 +87,28 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - service Unix accounts such as `object_storage_service` are intentionally
   component-owned, so direct peer-auth smoke tests must run after the owning
   service recovery task creates its local account;
+- SPIRE recovery converged from the boarded runtime and identity registry
+  artifacts: Nomad deployment `795e0807` completed successfully, allocation
+  `1b1890c9` is running, and `/run/verself/recovery/spire/report.json` reports
+  `SPIRERecoveryComplete=True`;
+- SPIRE registered `23` identities and the workload socket
+  `/run/spire-agent/sockets/agent.sock` is owned by `root:spire_workload` with
+  mode `0770`;
+- object-storage-service initially exposed a concurrent setup race where
+  parallel prestart tasks could create fixed system users with stale or wrong
+  primary group state; the recovery binary now re-reads host state after
+  `useradd`/`groupadd` races and repairs a wrong primary group when the fixed
+  UID is correct;
+- after SPIRE recovery and the object-storage setup repair, object-storage
+  setup exits `0` and repairs `object_storage_service` to uid `960`, primary
+  group `object_storage_service`;
+- object-storage S3 runtime now reaches ClickHouse initialization and fails
+  explicitly on missing `/etc/verself/clickhouse/server-ca.pem`;
+- object-storage admin remains pending on the missing OpenBao secret
+  `kv-runtime/data/secret/org/iam-service.zitadel.auth_audience`;
+- the current gamma host has no `clickhouse` Nomad job after the wipe, so the
+  next convergence target should be ClickHouse before retrying object-storage
+  S3;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
@@ -317,11 +340,17 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/openbao/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --operator-token-stdin' < <operator-token-file>
 ssh -T ubuntu@206.223.228.87 'sudo /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover recover --repo-root=/home/ubuntu/.local/state/guardian/repo/current --resource-graph=/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json --resource-name=openbao --breakglass-generate-root-token-stdin' < <unseal-shares-file>
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default spire'
+ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/spire/report.json'
+ssh -T ubuntu@206.223.228.87 'sudo ls -l /run/spire-agent/sockets/agent.sock'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default postgresql'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/postgresql/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo -u postgres env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d postgres -A -t -c "select rolname from pg_roles where rolname in ('\''object_storage_service'\'', '\''otelcol'\'') order by rolname;"'
 ssh -T ubuntu@206.223.228.87 'sudo -u postgres env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d postgres -A -t -c "select datname from pg_database where datname in ('\''object_storage_service'\'', '\''zitadel'\'') order by datname;"'
 ssh -T ubuntu@206.223.228.87 'sudo -u postgres env LD_LIBRARY_PATH=/var/lib/postgresql/runtime/current/usr/lib/x86_64-linux-gnu:/var/lib/postgresql/runtime/current/usr/lib/postgresql/16/lib /var/lib/postgresql/runtime/current/usr/lib/postgresql/16/bin/psql -h /var/run/postgresql -p 5432 -d postgres -A -t -c "select pg_has_role('\''otelcol'\'', '\''pg_monitor'\'', '\''member'\'');"'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default object-storage-service'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -stderr -task object-storage-service <object-storage-service-allocation-id>'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default <object-storage-admin-allocation-id>'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default clickhouse'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/clickhouse/report.json'
 ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count() FROM system.tables WHERE database = '\''verself'\''"'
