@@ -20,6 +20,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged on latest gamma run | None in current gamma state | Materialized Nomad Observer runtime artifact, direct `nomad-observer` prestart binary, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged on latest gamma run | None in current gamma state | Materialized OTel Collector runtime/config artifacts, direct `otelcol-recover` prestart binary, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
+| IAM Service | `iam.guardianintelligence.org/v1alpha1/IAMService/iam-service` | Converged on latest gamma run | None in current gamma state | Materialized IAM binary, IAM CRD static config, PostgreSQL `iam_service` database/peer role, OpenBao-generated/runtime Zitadel credentials, SpiceDB, ClickHouse, Zitadel OIDC issuer reachable through HAProxy |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
@@ -43,6 +44,40 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the IAM/HAProxy slice reported `ready_to_fly: yes`,
+  resource graph digest
+  `sha256:096e2129fd26d529d229fc83a51c2c11cb50410aca9c12bbff037f3a9ff828e8`,
+  and verified upload digest
+  `sha256:c86703aa8d9a80cb9b1270df818a9425bb8f212c0a5b1887ec4ff0f9cefe47d8`;
+- `guardian fly` still runs the OpenBao hook only; HAProxy/IAM convergence in
+  this slice was completed by submitting/restarting the repo-owned Nomad jobs
+  from the boarded tree after preflight verified the graph;
+- HAProxy deployment `3ff78b7f` is successful, allocation `13b16d9d` is
+  running, and generated route ACLs now route
+  `/.well-known/openid-configuration`, `/oauth/v2/`, `/oidc/v1/`, `/ui/`, and
+  `/assets/` on `gamma.verself.sh` to
+  `be_route_product_auth_zitadel_oidc` before the product apex fallback;
+- `https://gamma.verself.sh/.well-known/openid-configuration` through HAProxy
+  returns `HTTP/2 200` with issuer `https://gamma.verself.sh`; before the route
+  fix it returned `HTTP/2 503` because host-only routing selected the product
+  frontend backend;
+- IAM deployment `a022d423` is successful with allocations `ba5ce519` and
+  `fb7698dd` running and healthy;
+- IAM public `/readyz` returns `200` on both dynamic loopback ports, and Nomad
+  reports both `iam-service-internal-https` and `iam-service-public-http`
+  service checks as `success`;
+- `https://iam.api.gamma.verself.sh/api/v1/organizations` through HAProxy
+  reaches IAM and returns the expected `401` problem response for a request
+  without a bearer token;
+- IAM initially blocked on `identity browser auth oidc discovery: 503 Service
+  Unavailable` until HAProxy gained path-scoped routing for the Zitadel OIDC
+  issuer paths;
+- IAM then blocked on PostgreSQL `permission denied for schema public`; the
+  PostgreSQL reconciler now repairs existing database ownership and `public`
+  schema ownership/grants for declared service databases;
+- IAM GitHub login configuration is optional in the CRD. Gamma currently omits
+  the GitHub IDP secret, so IAM starts without GitHub login enabled instead of
+  treating that provider-specific input as a hard bootstrap dependency;
 - `guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;

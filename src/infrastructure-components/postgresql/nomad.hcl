@@ -833,6 +833,18 @@ def psql(spec, *args, input_text=None):
     command.extend(args)
     return subprocess.run(command, check=True, text=True, input=input_text, capture_output=True, env=command_env(spec))
 
+def psql_database(spec, database, *args, input_text=None):
+    runtime_root = pathlib.Path(spec["runtimeRoot"])
+    command = [
+        str(runtime_root / "current/usr/lib/postgresql" / postgres_major / "bin/psql"),
+        "-h", spec["socketDir"],
+        "-p", str(spec["port"]),
+        "-d", database,
+        "-v", "ON_ERROR_STOP=1",
+    ]
+    command.extend(args)
+    return subprocess.run(command, check=True, text=True, input=input_text, capture_output=True, env=command_env(spec))
+
 def wait_for_ready(spec):
     deadline = time.monotonic() + 60
     last_error = None
@@ -870,6 +882,15 @@ def database_exists(spec, name):
     result = psql(spec, "-A", "-t", "-c", "select 1 from pg_database where datname = " + "'" + name.replace("'", "''") + "';")
     return result.stdout.strip() == "1"
 
+def reconcile_database(spec, name, owner):
+    if not database_exists(spec, name):
+        psql(spec, "-c", "create database " + quote_ident(name) + " owner " + quote_ident(owner) + ";")
+    else:
+        psql(spec, "-c", "alter database " + quote_ident(name) + " owner to " + quote_ident(owner) + ";")
+    # Restored databases may predate the CRD; migrations require public schema CREATE.
+    psql_database(spec, name, "-c", "alter schema public owner to " + quote_ident(owner) + ";")
+    psql_database(spec, name, "-c", "grant usage, create on schema public to " + quote_ident(owner) + ";")
+
 def reconcile_role(spec, role):
     name = check_identifier(role["name"], "PostgreSQLCluster.spec.roles[].name")
     login = bool(role.get("login", True))
@@ -899,8 +920,7 @@ def reconcile_once():
     for database in spec.get("databases") or []:
         name = check_identifier(database["name"], "PostgreSQLCluster.spec.databases[].name")
         owner = check_identifier(database["owner"], "PostgreSQLCluster.spec.databases[].owner")
-        if not database_exists(spec, name):
-            psql(spec, "-c", "create database " + quote_ident(name) + " owner " + quote_ident(owner) + ";")
+        reconcile_database(spec, name, owner)
     backup_status = ensure_backup_discipline(spec)
     report = {
         "component": "postgresql",

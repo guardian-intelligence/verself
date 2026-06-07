@@ -1,3 +1,23 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current"
+}
+
+variable "iam_service_resource_name" {
+  type    = string
+  default = "iam-service"
+}
+
+variable "iam_service_runtime_root" {
+  type    = string
+  default = "/var/lib/iam-service/runtime"
+}
+
+variable "iam_service_projected_graph" {
+  type    = string
+  default = "/run/verself/recovery/iam-service/document.json"
+}
+
 job "iam-service" {
   name = "iam-service"
   datacenters = ["*"]
@@ -13,57 +33,34 @@ job "iam-service" {
         host_network = "loopback"
       }
     }
-    task "iam-service-migrate" {
+    task "recover" {
       driver = "raw_exec"
-      user = "iam_service"
+      user = "root"
       lifecycle {
         hook = "prestart"
         sidecar = false
       }
-      artifact {
-        source = "verself-artifact://iam-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        args = ["migrate", "up"]
-        command = "local/bin/iam-service"
+        command = "${var.guardian_repo_root}/bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.iam_service_resource_name}",
+          "--runtime-root=${var.iam_service_runtime_root}",
+          "--projected-graph=${var.iam_service_projected_graph}",
+          "--migrate",
+        ]
       }
       env {
-        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
-        IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT = "https://api.pwnedpasswords.com"
-        IAM_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "iam-service-migration"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
-        VERSELF_CLICKHOUSE_USER = "iam_service"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
-        VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
-        VERSELF_PG_DSN = "postgres://iam_service@/iam_service?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "8"
-        VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
         cpu = 100
         memory = 128
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/zitadel.env"
-        perms = "0600"
-        data = <<-EOT
-IAM_ZITADEL_BASE_URL=http://{{- with nomadService "zitadel-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
       }
     }
     task "iam-service" {
@@ -73,6 +70,7 @@ EOT
       kill_timeout = "30s"
       shutdown_delay = "5s"
       vault {
+        env = false
         role = "iam-service-runtime"
       }
       identity {
@@ -80,35 +78,20 @@ EOT
         aud  = ["vault.io"]
         ttl  = "1h"
       }
-      artifact {
-        source = "verself-artifact://iam-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        command = "local/bin/iam-service"
+        command = "${var.iam_service_runtime_root}/current/bin/iam-service"
+        args = [
+          "--resource-graph=${var.iam_service_projected_graph}",
+          "--resource-name=${var.iam_service_resource_name}",
+          "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
+          "--internal-listen-addr=127.0.0.1:$${NOMAD_PORT_internal_https}",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        IAM_BROWSER_AUTH_PUBLIC_BASE_URL = "__VERSELF_PRODUCT_BASE_URL__"
-        IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT = "https://api.pwnedpasswords.com"
-        IAM_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "iam-service"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
-        VERSELF_CLICKHOUSE_USER = "iam_service"
-        VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
-        VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
-        VERSELF_PG_DSN = "postgres://iam_service@/iam_service?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "8"
-        VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
       }
       resources {
@@ -150,64 +133,70 @@ EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/email-identity-hmac-key"
+        destination = "secrets/iam-service.email_identity.hmac_key"
         perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/spicedb-grpc-preshared-key"
+        destination = "secrets/iam-service.spicedb.grpc_preshared_key"
         perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/zitadel-admin-token"
+        destination = "secrets/iam-service.zitadel.admin_token"
         perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience"
+        destination = "secrets/iam-service.zitadel.auth_audience"
         perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/github-login-idp-id"
+        destination = "secrets/iam-service.zitadel.oidc_client_id"
         perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/oidc-client-id"
-        perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/oidc-client-secret"
+        destination = "secrets/iam-service.zitadel.oidc_client_secret"
         perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/zitadel-action-signing-key"
+        destination = "secrets/iam-service.zitadel.action_signing_key"
         perms = "0600"
+        uid = "983"
+        gid = "976"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" }}{{ .Data.data.value }}{{ end }}
 EOT

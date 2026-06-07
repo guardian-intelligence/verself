@@ -211,6 +211,8 @@ for gateway in resources.values():
             "name": route.get("name", ""),
             "hostname": hostname,
             "backend": backend,
+            "paths": route.get("paths", []),
+            "pathPrefixes": route.get("pathPrefixes", []),
         })
     gateway_payload["gateways"].append(projected)
 
@@ -238,9 +240,9 @@ for gateway in gateway_payload.get("gateways", []):
         backend = route.get("backend", "")
         if not hostname or not backend:
             raise SystemExit(f"invalid gateway route: {route!r}")
-        routes.append((hostname, backend))
+        routes.append((hostname, backend, route.get("paths", []), route.get("pathPrefixes", [])))
 
-public_hosts = sorted(set(origins + [hostname for hostname, _ in routes]))
+public_hosts = sorted(set(origins + [hostname for hostname, _, _, _ in routes]))
 if not public_hosts:
     raise SystemExit("Guardian HAProxyGateway did not declare any public origins or routes")
 if not certificates:
@@ -260,10 +262,18 @@ def haproxy_string(value):
 
 ready_hosts = " ".join(haproxy_string(host) for host in public_hosts)
 route_lines = []
-for index, (hostname, backend) in enumerate(routes, start=1):
+for index, (hostname, backend, paths, path_prefixes) in enumerate(routes, start=1):
     host_acl = f"route_{index}_host"
     route_lines.append(f"  acl {host_acl} var(txn.host) -m str {haproxy_string(hostname)}")
-    route_lines.append(f"  use_backend {haproxy_string(backend)} if {host_acl}")
+    if paths or path_prefixes:
+        path_acl = f"route_{index}_path"
+        if paths:
+            route_lines.append(f"  acl {path_acl} path -i {' '.join(haproxy_string(path) for path in paths)}")
+        if path_prefixes:
+            route_lines.append(f"  acl {path_acl} path_beg {' '.join(haproxy_string(path) for path in path_prefixes)}")
+        route_lines.append(f"  use_backend {haproxy_string(backend)} if {host_acl} {path_acl}")
+    else:
+        route_lines.append(f"  use_backend {haproxy_string(backend)} if {host_acl}")
 
 base.write_text("""global
   maxconn 1024

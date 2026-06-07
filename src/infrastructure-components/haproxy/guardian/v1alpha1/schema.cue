@@ -38,8 +38,10 @@ package v1alpha1
 				apiVersion: "networking.guardianintelligence.org/v1alpha1"
 				kind:       "PublicOrigin"
 			}
-			hostname: #DNSName
-			backend:  #NonEmptyString
+			hostname:      #DNSName
+			backend:       #NonEmptyString
+			paths?:        [...#AbsolutePath]
+			pathPrefixes?: [...#AbsolutePath]
 		}]
 		cloudflare?: {
 			trustedCIDRs: [...#CIDR]

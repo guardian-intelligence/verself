@@ -123,10 +123,11 @@ resources: [
 						bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
-						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
-						bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
-						bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
-						'
+							bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
+							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
+							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
+							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
+							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
 						"$rsync_bin" -a --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/next/workspace/"
@@ -206,10 +207,11 @@ resources: [
 						bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
-						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
-						bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
-						bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
-						'
+							bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
+							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
+							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
+							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
+							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
 						fly_delta="$("$rsync_bin" -a --dry-run --checksum --itemize-changes --timeout=60 --relative -e "$ssh_opts" .guardian/fly/document.json "$remote:$remote_root/current/workspace/")"
@@ -260,8 +262,8 @@ resources: [
 				]
 			}
 			remote: {
-				repoRoot:  "/home/ubuntu/.local/state/guardian/repo/current"
-				guardian:  "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian"
+				repoRoot: "/home/ubuntu/.local/state/guardian/repo/current"
+				guardian: "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian"
 				ssh: [
 					"ssh",
 					"-T",
@@ -456,6 +458,35 @@ resources: [
 							  capabilities = ["read"]
 							}
 							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+							  capabilities = ["read"]
+							}
+							"""
+					},
+					{
+						name: "iam-service-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.spicedb.grpc_preshared_key" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.admin_token" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.github_login_idp_id" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_id" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.oidc_client_secret" {
+							  capabilities = ["read"]
+							}
+							path "kv-runtime/data/secret/org/iam-service.zitadel.action_signing_key" {
 							  capabilities = ["read"]
 							}
 							"""
@@ -663,6 +694,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["object-storage-service-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "iam-service-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "iam-service"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["iam-service-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -987,6 +1035,10 @@ resources: [
 					owner: "object_storage_service"
 				},
 				{
+					name:  "iam_service"
+					owner: "iam_service"
+				},
+				{
 					name:  "zitadel"
 					owner: "zitadel"
 				},
@@ -1018,6 +1070,10 @@ resources: [
 					memberOf: ["pg_monitor"]
 				},
 				{
+					name:  "iam_service"
+					login: true
+				},
+				{
 					name:  "zitadel"
 					login: true
 				},
@@ -1046,6 +1102,10 @@ resources: [
 				{
 					systemUser:   "object_storage_admin"
 					postgresUser: "object_storage_service"
+				},
+				{
+					systemUser:   "iam_service"
+					postgresUser: "iam_service"
 				},
 				{
 					systemUser:   "otelcol"
@@ -1639,6 +1699,7 @@ resources: [
 						"gamma.verself.sh",
 						"api.gamma.verself.sh",
 						"deployments.api.gamma.verself.sh",
+						"iam.api.gamma.verself.sh",
 					]
 					pemPath: "/etc/haproxy/certs/gamma.verself.sh.pem"
 				},
@@ -1649,6 +1710,25 @@ resources: [
 				},
 			]
 			routes: [
+				{
+					name: "product-auth"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "gamma.verself.sh"
+					backend:  "be_route_product_auth_zitadel_oidc"
+					paths: [
+						"/.well-known/openid-configuration",
+					]
+					pathPrefixes: [
+						"/oauth/v2/",
+						"/oidc/v1/",
+						"/ui/",
+						"/assets/",
+					]
+				},
 				{
 					name: "product-apex"
 					originRef: {
@@ -1678,6 +1758,16 @@ resources: [
 					}
 					hostname: "deployments.api.gamma.verself.sh"
 					backend:  "be_route_product_deployments_api_deployment_service_public_api"
+				},
+				{
+					name: "iam-api"
+					originRef: {
+						apiVersion: "networking.guardianintelligence.org/v1alpha1"
+						kind:       "PublicOrigin"
+						name:       "product"
+					}
+					hostname: "iam.api.gamma.verself.sh"
+					backend:  "be_route_product_iam_api_iam_service_public_api"
 				},
 				{
 					name: "dashboard"
@@ -1887,6 +1977,20 @@ resources: [
 			source: "generated"
 			generate: {
 				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "iam-service.email_identity.hmac_key"
+		spec: {
+			path:   "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    64
 				encoding: "base64url"
 			}
 		}
@@ -2309,6 +2413,67 @@ resources: [
 				apiVersion: "zitadel.guardianintelligence.org/v1alpha1"
 				kind:       "ZitadelAuthControlPlane"
 				name:       "auth-control-plane"
+			}
+		}
+	},
+	{
+		apiVersion: "iam.guardianintelligence.org/v1alpha1"
+		kind:       "IAMService"
+		metadata: name: "iam-service"
+		spec: {
+			installationID: "inst_gamma_01JZ0000000000000000000000"
+			auth: {
+				issuerURL:                   "https://gamma.verself.sh"
+				browserAuthPublicBaseURL:    "https://gamma.verself.sh"
+				pwnedPasswordsRangeEndpoint: "https://api.pwnedpasswords.com"
+			}
+			zitadel: host: "gamma.verself.sh"
+			postgres: {
+				dsn:      "postgres://iam_service@/iam_service?host=/var/run/postgresql&sslmode=disable"
+				maxConns: 8
+			}
+			clickhouse: {
+				address:    "127.0.0.1:9440"
+				user:       "iam_service"
+				caCertPath: "/etc/verself/clickhouse/server-ca.pem"
+			}
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+			credentials: {
+				zitadelActionSigningKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.action_signing_key"
+				}
+				browserOIDCClientIDRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.oidc_client_id"
+				}
+				browserOIDCClientSecretRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.oidc_client_secret"
+				}
+				authAudienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.auth_audience"
+				}
+				zitadelAdminTokenRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.admin_token"
+				}
+				spiceDBPresharedKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.spicedb.grpc_preshared_key"
+				}
+				emailIdentityHMACKeyRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.email_identity.hmac_key"
+				}
 			}
 		}
 	},

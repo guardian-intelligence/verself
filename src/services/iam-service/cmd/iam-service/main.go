@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -42,35 +43,53 @@ const (
 )
 
 func main() {
-	if handled, err := runBootstrapPolicyCLI(context.Background()); handled {
+	if handled, err := runIAMRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runBootstrapPolicyCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+	opts, remaining, err := parseIAMMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, errors.New("usage: migrate [--resource-graph PATH] [--resource-name NAME] up")
+	}
+	runtimeCfg, err := loadIAMRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func runBootstrapPolicyCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "bootstrap-policy" {
+func runBootstrapPolicyCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "bootstrap-policy" {
 		return false, nil
 	}
 	fs := flag.NewFlagSet("bootstrap-policy", flag.ExitOnError)
@@ -78,7 +97,7 @@ func runBootstrapPolicyCLI(ctx context.Context) (bool, error) {
 	spiceDBPresharedKeyFile := fs.String("spicedb-preshared-key-file", "", "SpiceDB preshared key file")
 	orgID := fs.String("org-id", "", "Verself public organization ID")
 	ownerSubject := fs.String("owner-subject", "", "Zitadel subject ID for a human organization owner")
-	if err := fs.Parse(os.Args[2:]); err != nil {
+	if err := fs.Parse(args[1:]); err != nil {
 		return true, err
 	}
 	if strings.TrimSpace(*spiceDBEndpoint) == "" {
@@ -155,9 +174,17 @@ func appendOwnerBinding(bindings []authz.PolicyBinding, ownerMember string) []au
 	return append(out, authz.PolicyBinding{Role: "roles/owner", Members: []string{ownerMember}})
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	opts, err := parseIAMRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadIAMRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
@@ -170,29 +197,19 @@ func run() error {
 	}()
 
 	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
-	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
-	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
-	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
-	githubLoginIDPID := cfg.RequireCredential("github-login-idp-id")
-	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
-	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "iam_service")
-	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4248")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
-	pwnedPasswordsRangeEndpoint := cfg.URL("IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT", defaultPwnedPasswordsRangeEndpoint)
+	zitadelActionSigningKey := cfg.RequireCredential(runtimeCfg.ZitadelActionSigningKeyName)
+	browserOIDCClientID := cfg.RequireCredential(runtimeCfg.BrowserOIDCClientIDName)
+	browserOIDCClientSecret := cfg.RequireCredential(runtimeCfg.BrowserOIDCClientSecretName)
+	githubLoginIDPID := ""
+	if runtimeCfg.GithubLoginIDPName != "" {
+		githubLoginIDPID = cfg.RequireCredential(runtimeCfg.GithubLoginIDPName)
+	}
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
-	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
-	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
-	spiceDBPresharedKey := cfg.RequireCredential("spicedb-grpc-preshared-key")
-	emailIdentityHMACKey := cfg.RequireCredential("email-identity-hmac-key")
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
+	zitadelAdminToken := cfg.RequireCredential(runtimeCfg.ZitadelAdminTokenName)
+	spiceDBPresharedKey := cfg.RequireCredential(runtimeCfg.SpiceDBPresharedKeyName)
+	emailIdentityHMACKey := cfg.RequireCredential(runtimeCfg.EmailIdentityHMACKeyName)
 	if err := cfg.Err(); err != nil {
 		return err
 	}
@@ -200,13 +217,13 @@ func run() error {
 		return fmt.Errorf("iam email identity secret must be at least 32 bytes")
 	}
 
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open postgres: %w", err)
 	}
 	defer pg.Close()
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("iam spiffe workload source: %w", err)
 	}
@@ -218,7 +235,7 @@ func run() error {
 
 	zitadelClient, err := zitadel.New(zitadel.Config{
 		BaseURL:    zitadelBaseURL,
-		HostHeader: zitadelHostHeader,
+		HostHeader: runtimeCfg.ZitadelHost,
 		AdminToken: zitadelAdminToken,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
@@ -229,7 +246,7 @@ func run() error {
 		return err
 	}
 	pwnedPasswordsClient, err := pwnedpasswords.New(pwnedpasswords.Config{
-		RangeEndpoint: pwnedPasswordsRangeEndpoint,
+		RangeEndpoint: runtimeCfg.PwnedPasswordsRangeEndpoint,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,
@@ -240,15 +257,15 @@ func run() error {
 		return fmt.Errorf("iam pwned passwords client: %w", err)
 	}
 	passwordChecker := pwnedPasswordChecker{client: pwnedPasswordsClient}
-	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, chCACertPath)
+	chTLSConfig, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, runtimeCfg.ClickHouseCACertPath)
 	if err != nil {
 		return fmt.Errorf("iam clickhouse tls: %w", err)
 	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{chAddress},
+		Addr: []string{runtimeCfg.ClickHouseAddress},
 		Auth: clickhouse.Auth{
 			Database: "verself",
-			Username: chUser,
+			Username: runtimeCfg.ClickHouseUser,
 		},
 		TLS: chTLSConfig,
 	})
@@ -298,7 +315,7 @@ func run() error {
 		Billing:            billingOrganizationProvisioner{client: billingClient},
 		PasswordChecker:    passwordChecker,
 		ProjectID:          authAudience,
-		IdentityIssuer:     authIssuerURL,
+		IdentityIssuer:     runtimeCfg.AuthIssuerURL,
 		EmailIdentityKey:   []byte(emailIdentityHMACKey),
 	}
 	api.ConfigureAPIActivitySink(workloadauth.InternalURL(workloadauth.ServiceGovernance), spiffeSource)
@@ -315,10 +332,10 @@ func run() error {
 	browserAuth, err := api.NewBrowserAuth(ctx, api.BrowserAuthConfig{
 		PG:                 pg,
 		Logger:             logger,
-		IssuerURL:          authIssuerURL,
+		IssuerURL:          runtimeCfg.AuthIssuerURL,
 		ClientID:           browserOIDCClientID,
 		ClientSecret:       browserOIDCClientSecret,
-		PublicBaseURL:      browserAuthPublicBaseURL,
+		PublicBaseURL:      runtimeCfg.BrowserAuthPublicBaseURL,
 		ProductAudience:    authAudience,
 		Authz:              authzService,
 		ProviderSession:    zitadelClient,
@@ -358,24 +375,24 @@ func run() error {
 		Version:        serviceVersion,
 		Service:        identityService,
 		Authz:          authzService,
-		InstallationID: installationID,
-		ProductBaseURL: browserAuthPublicBaseURL,
+		InstallationID: runtimeCfg.InstallationID,
+		ProductBaseURL: runtimeCfg.BrowserAuthPublicBaseURL,
 		SignupNotifier: signupNotifier,
 	})
 
 	privateMux := http.NewServeMux()
 	api.NewAPI(privateMux, api.Config{
 		Version:         serviceVersion,
-		ListenAddr:      listenAddr,
+		ListenAddr:      opts.ListenAddr,
 		Service:         identityService,
 		Authz:           authzService,
-		InstallationID:  installationID,
-		ProductBaseURL:  browserAuthPublicBaseURL,
+		InstallationID:  runtimeCfg.InstallationID,
+		ProductBaseURL:  runtimeCfg.BrowserAuthPublicBaseURL,
 		InviteNotifier:  inviteNotifier,
 		ProviderSession: zitadelClient,
 	})
 	authConfig := auth.Config{
-		IssuerURL: authIssuerURL,
+		IssuerURL: runtimeCfg.AuthIssuerURL,
 		Audience:  authAudience,
 	}
 	protected := auth.Middleware(authConfig)(privateMux)
@@ -403,7 +420,7 @@ func run() error {
 		return fmt.Errorf("iam spiffe internal tls: %w", err)
 	}
 	internalMux := http.NewServeMux()
-	api.NewInternalAPI(internalMux, serviceVersion, "https://"+internalListenAddr, identityService, authzService)
+	api.NewInternalAPI(internalMux, serviceVersion, "https://"+opts.InternalListenAddr, identityService, authzService)
 	profileAuthenticated := auth.Middleware(authConfig)(internalMux)
 	internalHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/internal/v1/subjects/") {
@@ -417,8 +434,8 @@ func run() error {
 		return fmt.Errorf("iam internal allowlist: %w", err)
 	}
 
-	srv := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	srv := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 	return httpserver.RunPair(ctx, logger, srv, internal)
 }
