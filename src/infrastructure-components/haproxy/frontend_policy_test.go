@@ -24,6 +24,9 @@ func TestDeploymentServicePublicBackendAllowsOnlyAPIAndHealthz(t *testing.T) {
 	requireContains(t, runtimeBackend, `[[ with nomadService "deployment-service-public-api" ]]`)
 	requireContains(t, runtimeBackend, "acl deployment_service_allowed path -i /healthz")
 	requireContains(t, runtimeBackend, "acl deployment_service_allowed path_beg /api/v1")
+	if strings.Contains(runtimeBackend, "proto h2") {
+		t.Fatalf("deployment-service backend is plain HTTP/1.1 until the service explicitly supports h2c")
+	}
 	if strings.Contains(runtimeBackend, "/readyz") {
 		t.Fatalf("deployment-service readiness details must stay behind authenticated API checks")
 	}

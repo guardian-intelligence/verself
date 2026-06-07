@@ -51,6 +51,7 @@ type config struct {
 	haproxyConfigs       stringList
 	haproxyLDLibraryPath string
 	reloadUnit           string
+	restartPIDFile       string
 	daemon               bool
 }
 
@@ -81,6 +82,7 @@ func run(args []string) error {
 	fs.Var(&cfg.haproxyConfigs, "haproxy-config", "HAProxy config to validate; repeat in HAProxy load order.")
 	fs.StringVar(&cfg.haproxyLDLibraryPath, "haproxy-ld-library-path", "/opt/verself/profile/lib/haproxy", "LD_LIBRARY_PATH used when invoking HAProxy.")
 	fs.StringVar(&cfg.reloadUnit, "reload-unit", "haproxy.service", "systemd unit to reload after a valid upstream swap.")
+	fs.StringVar(&cfg.restartPIDFile, "restart-pid-file", "", "Process pid file to signal after a valid upstream swap.")
 	fs.BoolVar(&cfg.daemon, "daemon", false, "Apply once, then stay alive until SIGINT or SIGTERM.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -142,6 +144,7 @@ func applyOnceWithTelemetry(ctx context.Context, cfg config) (bool, error) {
 			attribute.String("haproxy.upstreams.source", cfg.source),
 			attribute.String("haproxy.upstreams.dest", cfg.dest),
 			attribute.String("haproxy.reload_unit", cfg.reloadUnit),
+			attribute.String("haproxy.restart_pid_file", cfg.restartPIDFile),
 			attribute.Bool("haproxy.upstreams.daemon", cfg.daemon),
 		),
 	)
@@ -185,6 +188,11 @@ func applyOnce(cfg config) (bool, error) {
 	}
 	if cfg.reloadUnit != "" {
 		if err := reloadOrStartSystemdUnit(cfg.reloadUnit); err != nil {
+			return false, err
+		}
+	}
+	if cfg.restartPIDFile != "" {
+		if err := signalPIDsFromFile(cfg.restartPIDFile, syscall.SIGTERM); err != nil {
 			return false, err
 		}
 	}
@@ -376,6 +384,30 @@ func withLDLibraryPath(env []string, path string) []string {
 		}
 	}
 	return append(env, "LD_LIBRARY_PATH="+path)
+}
+
+func signalPIDsFromFile(path string, signal syscall.Signal) error {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read pid file %s: %w", path, err)
+	}
+	fields := strings.Fields(string(raw))
+	if len(fields) == 0 {
+		return nil
+	}
+	for _, field := range fields {
+		pid, err := strconv.Atoi(field)
+		if err != nil || pid <= 0 {
+			return fmt.Errorf("invalid pid %q in %s", field, path)
+		}
+		if err := syscall.Kill(pid, signal); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return fmt.Errorf("signal pid %d from %s: %w", pid, path, err)
+		}
+	}
+	return nil
 }
 
 func reloadOrStartSystemdUnit(unit string) error {

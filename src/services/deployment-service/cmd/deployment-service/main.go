@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	deploymentapi "github.com/verself/deployment-service/internal/deployment"
 	"github.com/verself/deployment-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
-	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
 )
@@ -30,29 +30,55 @@ const (
 )
 
 func main() {
-	if handled, err := runMigrationCLI(context.Background()); handled {
+	if handled, err := runDeploymentRecoveryCLI(context.Background(), os.Args[1:]); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if handled, err := runMigrationCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func runMigrationCLI(ctx context.Context) (bool, error) {
-	if len(os.Args) < 2 || os.Args[1] != "migrate" {
+func runMigrationCLI(ctx context.Context, args []string) (bool, error) {
+	if len(args) < 1 || args[0] != "migrate" {
 		return false, nil
 	}
-	return true, migrations.RunCLI(ctx, os.Args[2:], serviceName)
+	opts, remaining, err := parseDeploymentMigrationOptions(args[1:])
+	if err != nil {
+		return true, err
+	}
+	if len(remaining) != 1 || remaining[0] != "up" {
+		return true, errors.New("usage: migrate [--resource-graph PATH] [--resource-name NAME] up")
+	}
+	runtimeCfg, err := loadDeploymentRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return true, err
+	}
+	return true, migrations.UpDSN(ctx, serviceName, runtimeCfg.PostgresDSN)
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	opts, err := parseDeploymentRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadDeploymentRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
@@ -65,54 +91,27 @@ func run() error {
 	}()
 	slog.SetDefault(logger)
 
-	cfg := envconfig.New()
-	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4294")
-	site := cfg.RequireString("VERSELF_SITE")
-	repoRoot := cfg.RequireString("VERSELF_DEPLOY_REPO_ROOT")
-	repoURL := cfg.RequireURL("VERSELF_DEPLOY_REPO_URL")
-	repoInitTimeout := cfg.Duration("VERSELF_DEPLOY_REPO_INIT_TIMEOUT", 2*time.Minute)
-	nomadAddr := cfg.String("VERSELF_NOMAD_ADDR", "http://127.0.0.1:4646")
-	nomadAllocID := cfg.String("NOMAD_ALLOC_ID", "")
-	recoverySSHReady := cfg.String("VERSELF_RECOVERY_SSH_READY", "")
-	objectStorageAddr := cfg.String("VERSELF_OBJECT_STORAGE_ADDR", workloadauth.InternalURL(workloadauth.ServiceObjectStorageAdmin))
-	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
-	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
-	githubRepositories := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES", "")
-	githubRefs := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REFS", "")
-	githubWorkflowRefs := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS", "")
-	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 4)
-	admissionConcurrency := cfg.Int("VERSELF_DEPLOY_ADMISSION_CONCURRENCY", 4)
-	if err := cfg.Err(); err != nil {
-		return err
-	}
-	bazelJobs, err := parsePositiveInt("VERSELF_DEPLOY_BAZEL_JOBS", bazelJobsRaw)
-	if err != nil {
-		return err
-	}
-	if admissionConcurrency <= 0 {
-		return fmt.Errorf("VERSELF_DEPLOY_ADMISSION_CONCURRENCY must be positive")
-	}
-	repoCtx, repoCancel := context.WithTimeout(ctx, repoInitTimeout)
+	nomadAllocID := strings.TrimSpace(os.Getenv("NOMAD_ALLOC_ID"))
+	repoCtx, repoCancel := context.WithTimeout(ctx, runtimeCfg.SourceRepoInitTimeout)
 	defer repoCancel()
-	if err := deploymentapi.EnsureSourceRepository(repoCtx, deploymentapi.SourceRepositoryConfig{RepoRoot: repoRoot, RepoURL: repoURL}); err != nil {
+	if err := deploymentapi.EnsureSourceRepository(repoCtx, deploymentapi.SourceRepositoryConfig{RepoRoot: runtimeCfg.SourceRepoRoot, RepoURL: runtimeCfg.SourceRepoURL}); err != nil {
 		return fmt.Errorf("deployment source repository: %w", err)
 	}
 
-	pg, err := openPool(ctx, pgDSN, pgMaxConns)
+	pg, err := openPool(ctx, runtimeCfg.PostgresDSN, runtimeCfg.PostgresMaxConns)
 	if err != nil {
 		return fmt.Errorf("open deployment postgres: %w", err)
 	}
 	defer pg.Close()
 
-	verifier, err := githubVerifier(ctx, githubAudience, githubRepositories, githubRefs, githubWorkflowRefs)
+	verifier, err := githubVerifier(ctx, runtimeCfg.PublicBaseURL, runtimeCfg.GitHubRepositories, runtimeCfg.GitHubRefs, runtimeCfg.GitHubWorkflowRefs)
 	if err != nil {
 		return err
 	}
 	if verifier == nil {
 		return fmt.Errorf("deployment auth requires GitHub OIDC allow-lists")
 	}
-	spiffeSource, err := workloadauth.Source(ctx, "")
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("deployment-service spiffe source: %w", err)
 	}
@@ -129,20 +128,20 @@ func run() error {
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
 		Config: deploymentapi.Config{
-			Site:              site,
-			RepoRoot:          repoRoot,
-			ObjectStorageAddr: objectStorageAddr,
-			NomadAddr:         nomadAddr,
+			Site:              runtimeCfg.Site,
+			RepoRoot:          runtimeCfg.SourceRepoRoot,
+			ObjectStorageAddr: runtimeCfg.ObjectStorageAddress,
+			NomadAddr:         runtimeCfg.NomadAddress,
 			NomadAllocID:      nomadAllocID,
-			RecoverySSHReady:  recoverySSHReady,
-			BazelJobs:         bazelJobs,
+			RecoverySSHReady:  boolString(runtimeCfg.RecoverySSHReady),
+			BazelJobs:         runtimeCfg.BazelJobs,
 		},
 		ObjectStorageHTTPClient: objectStorageHTTPClient,
 	}
 	if err := svc.Store.Ready(ctx); err != nil {
 		return fmt.Errorf("deployment postgres readiness: %w", err)
 	}
-	interrupted, err := svc.Store.MarkInterrupted(ctx, site, "deployment-service restarted before completion; submit the same sha again to reconcile")
+	interrupted, err := svc.Store.MarkInterrupted(ctx, runtimeCfg.Site, "deployment-service restarted before completion; submit the same sha again to reconcile")
 	if err != nil {
 		return fmt.Errorf("deployment interrupted recovery: %w", err)
 	}
@@ -154,9 +153,9 @@ func run() error {
 	deploymentapi.RegisterRoutes(mux, deploymentapi.API{
 		Service:         svc,
 		GitHub:          verifier,
-		SubmitAdmission: make(chan struct{}, admissionConcurrency),
+		SubmitAdmission: make(chan struct{}, runtimeCfg.AdmissionConcurrency),
 	})
-	server := httpserver.New(listenAddr, otelhttp.NewHandler(mux, serviceName))
+	server := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(mux, serviceName))
 	return httpserver.Run(ctx, logger, server)
 }
 
@@ -191,9 +190,9 @@ func openPool(ctx context.Context, dsn string, maxConns int) (*pgxpool.Pool, err
 		return nil, err
 	}
 	if maxConns <= 0 {
-		return nil, fmt.Errorf("VERSELF_PG_MAX_CONNS must be positive")
+		return nil, fmt.Errorf("DeploymentService.spec.postgres.maxConns must be positive")
 	}
-	pgMaxConns, err := int32FromInt(maxConns, "VERSELF_PG_MAX_CONNS")
+	pgMaxConns, err := int32FromInt(maxConns, "DeploymentService.spec.postgres.maxConns")
 	if err != nil {
 		return nil, err
 	}

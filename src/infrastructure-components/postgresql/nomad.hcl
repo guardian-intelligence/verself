@@ -715,27 +715,26 @@ PY
       }
 
       config {
-        command = "/usr/sbin/runuser"
+        command = "/usr/bin/python3"
         args = [
-          "-u",
-          "postgres",
-          "--",
-          "/usr/bin/python3",
           "-c",
           <<-PY
 import json
 import os
 import pathlib
+import pwd
 import re
 import subprocess
 import time
 
 resource_name = "${var.postgresql_resource_name}"
-doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
+repo_root = pathlib.Path("${var.guardian_repo_root}")
+doc_path = repo_root / "workspace/.guardian/fly/document.json"
+projected_doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
 postgres_major = "16"
 identifier_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-def load_spec():
+def load_document():
     doc = json.loads(doc_path.read_text(encoding="utf-8"))
     resources = [
         resource for resource in doc.get("resources", [])
@@ -745,7 +744,18 @@ def load_spec():
     ]
     if len(resources) != 1:
         raise RuntimeError(f"expected exactly one PostgreSQLCluster resource named {resource_name!r}, found {len(resources)}")
-    return resources[0].get("spec") or {}
+    return doc, resources[0].get("spec") or {}
+
+def project_document(doc):
+    postgres = pwd.getpwnam("postgres")
+    projected_doc_path.parent.mkdir(parents=True, exist_ok=True)
+    os.chown(projected_doc_path.parent, postgres.pw_uid, postgres.pw_gid)
+    os.chmod(projected_doc_path.parent, 0o750)
+    tmp = projected_doc_path.with_name(projected_doc_path.name + "." + str(os.getpid()) + ".tmp")
+    tmp.write_text(json.dumps(doc, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    os.chown(tmp, postgres.pw_uid, postgres.pw_gid)
+    os.chmod(tmp, 0o640)
+    os.replace(tmp, projected_doc_path)
 
 def check_identifier(value, field):
     if not isinstance(value, str) or not identifier_pattern.match(value):
@@ -759,11 +769,19 @@ def quote_ident(value):
 def command_env(spec):
     runtime_root = pathlib.Path(spec["runtimeRoot"])
     current = runtime_root / "current"
-    return {
-        **os.environ,
-        "HOME": "/var/lib/postgresql",
-        "LD_LIBRARY_PATH": str(current / "usr/lib/x86_64-linux-gnu") + ":" + str(current / "usr/lib/postgresql" / postgres_major / "lib"),
-    }
+    return [
+        "HOME=/var/lib/postgresql",
+        "LD_LIBRARY_PATH=" + str(current / "usr/lib/x86_64-linux-gnu") + ":" + str(current / "usr/lib/postgresql" / postgres_major / "lib"),
+    ]
+
+def run_as_postgres(spec, command, *, input_text=None, check=True, capture_output=True):
+    return subprocess.run(
+        ["/usr/sbin/runuser", "-u", "postgres", "--", "/usr/bin/env", *command_env(spec), *[str(arg) for arg in command]],
+        check=check,
+        text=True,
+        input=input_text,
+        capture_output=capture_output,
+    )
 
 def backup_spec(spec):
     backup = spec.get("backup")
@@ -785,12 +803,11 @@ def recovery_command(spec, backup, action, *extra):
     return command
 
 def run_recovery(spec, backup, action, *extra, check=True, capture_output=False):
-    return subprocess.run(
+    return run_as_postgres(
+        spec,
         recovery_command(spec, backup, action, *extra),
         check=check,
-        text=True,
         capture_output=capture_output,
-        env=command_env(spec),
     )
 
 def pgbackrest_info(spec, backup):
@@ -831,7 +848,7 @@ def psql(spec, *args, input_text=None):
         "-v", "ON_ERROR_STOP=1",
     ]
     command.extend(args)
-    return subprocess.run(command, check=True, text=True, input=input_text, capture_output=True, env=command_env(spec))
+    return run_as_postgres(spec, command, input_text=input_text)
 
 def psql_database(spec, database, *args, input_text=None):
     runtime_root = pathlib.Path(spec["runtimeRoot"])
@@ -843,7 +860,38 @@ def psql_database(spec, database, *args, input_text=None):
         "-v", "ON_ERROR_STOP=1",
     ]
     command.extend(args)
-    return subprocess.run(command, check=True, text=True, input=input_text, capture_output=True, env=command_env(spec))
+    return run_as_postgres(spec, command, input_text=input_text)
+
+def write_peer_auth_config(spec):
+    postgres = pwd.getpwnam("postgres")
+    config_dir = pathlib.Path(spec["configDir"])
+    pg_hba = """local   all       all                peer map=verself_services
+host    all       all   127.0.0.1/32 scram-sha-256
+host    all       all   ::1/128      scram-sha-256
+"""
+    mappings = [{"systemUser": "postgres", "postgresUser": "postgres"}]
+    mappings.extend(spec.get("peerMappings") or [])
+    seen = set()
+    pg_ident_lines = ["verself_services      postgres                 postgres"]
+    for mapping in sorted(mappings, key=lambda item: (item.get("systemUser", ""), item.get("postgresUser", ""))):
+        system_user = check_identifier(mapping.get("systemUser"), "PostgreSQLCluster.spec.peerMappings[].systemUser")
+        postgres_user = check_identifier(mapping.get("postgresUser"), "PostgreSQLCluster.spec.peerMappings[].postgresUser")
+        key = (system_user, postgres_user)
+        if key in seen:
+            continue
+        seen.add(key)
+        if key == ("postgres", "postgres"):
+            continue
+        pg_ident_lines.append(f"verself_services      {system_user:<24} {postgres_user}")
+    for path, content in {
+        config_dir / "pg_hba.conf": pg_hba,
+        config_dir / "pg_ident.conf": "\n".join(pg_ident_lines) + "\n",
+    }.items():
+        tmp = path.with_name(path.name + "." + str(os.getpid()) + ".tmp")
+        tmp.write_text(content, encoding="utf-8")
+        os.chown(tmp, postgres.pw_uid, postgres.pw_gid)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
 
 def wait_for_ready(spec):
     deadline = time.monotonic() + 60
@@ -904,7 +952,9 @@ def reconcile_role(spec, role):
     return name
 
 def reconcile_once():
-    spec = load_spec()
+    doc, spec = load_document()
+    project_document(doc)
+    write_peer_auth_config(spec)
     report_path = pathlib.Path(spec["reportPath"])
     wait_for_ready(spec)
     psql(spec, "-c", "select pg_reload_conf();")

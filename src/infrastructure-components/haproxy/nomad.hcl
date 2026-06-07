@@ -323,7 +323,7 @@ PY
       kill_timeout = "5s"
 
       config {
-        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "/var/lib/haproxy/runtime/current/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/var/lib/haproxy/runtime/current/lib/haproxy", "--reload-unit", "", "--daemon"]
+        args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "/var/lib/haproxy/runtime/current/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/var/lib/haproxy/runtime/current/lib/haproxy", "--reload-unit", "", "--restart-pid-file", "/run/haproxy/haproxy.pid", "--daemon"]
         command = "/var/lib/haproxy/runtime/current/bin/haproxy-upstreams-apply"
       }
       env {
@@ -582,7 +582,7 @@ backend be_route_product_deployments_api_deployment_service_public_api
   http-request deny deny_status 413 if { req.body_size gt 65536 }
 [[ with nomadService "deployment-service-public-api" ]]
 [[ range $i, $svc := . ]]
-  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] proto h2 check inter 1s fall 1 rise 1 guid be_route_product_deployments_api_deployment_service_public_api_srv_[[ $i ]]
+  server srv_[[ $i ]] [[ $svc.Address ]]:[[ $svc.Port ]] check inter 1s fall 1 rise 1 guid be_route_product_deployments_api_deployment_service_public_api_srv_[[ $i ]]
 [[ end ]]
 [[ else ]]
   http-request return status 503 content-type text/plain string "service unavailable"
@@ -978,7 +978,7 @@ EOT
         }
         change_script {
           command = "/var/lib/haproxy/runtime/current/bin/haproxy-upstreams-apply"
-          args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "/var/lib/haproxy/runtime/current/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/var/lib/haproxy/runtime/current/lib/haproxy", "--reload-unit", ""]
+          args = ["--source", "local/nomad-upstreams.cfg", "--dest", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-bin", "/var/lib/haproxy/runtime/current/bin/haproxy", "--haproxy-config", "/etc/haproxy/haproxy.cfg", "--haproxy-config", "/etc/haproxy/nomad-upstreams.cfg", "--haproxy-ld-library-path", "/var/lib/haproxy/runtime/current/lib/haproxy", "--reload-unit", "", "--restart-pid-file", "/run/haproxy/haproxy.pid"]
           timeout = "5s"
           fail_on_error = true
         }

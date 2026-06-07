@@ -127,6 +127,8 @@ resources: [
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
 							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
+							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
+							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
 							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
@@ -211,6 +213,8 @@ resources: [
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service_/object-storage-service
 							bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar
 							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
+							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
+							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
 							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
@@ -1039,6 +1043,10 @@ resources: [
 					owner: "iam_service"
 				},
 				{
+					name:  "deployment_service"
+					owner: "deployment_service"
+				},
+				{
 					name:  "zitadel"
 					owner: "zitadel"
 				},
@@ -1074,6 +1082,10 @@ resources: [
 					login: true
 				},
 				{
+					name:  "deployment_service"
+					login: true
+				},
+				{
 					name:  "zitadel"
 					login: true
 				},
@@ -1106,6 +1118,10 @@ resources: [
 				{
 					systemUser:   "iam_service"
 					postgresUser: "iam_service"
+				},
+				{
+					systemUser:   "deployment_service"
+					postgresUser: "deployment_service"
 				},
 				{
 					systemUser:   "otelcol"
@@ -2474,6 +2490,35 @@ resources: [
 					kind:       "SecretPath"
 					name:       "iam-service.email_identity.hmac_key"
 				}
+			}
+		}
+	},
+	{
+		apiVersion: "deployment.guardianintelligence.org/v1alpha1"
+		kind:       "DeploymentService"
+		metadata: name: "deployment-service"
+		spec: {
+			site:          "gamma"
+			publicBaseURL: "https://deployments.api.gamma.verself.sh"
+			sourceRepo: {
+				root:        "/var/lib/deployment-service/repo"
+				url:         "https://github.com/guardian-intelligence/verself.git"
+				initTimeout: "2m"
+			}
+			nomad: address:         "http://127.0.0.1:4646"
+			objectStorage: address: "https://object-storage-admin-internal-https"
+			postgres: {
+				dsn:      "postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable"
+				maxConns: 4
+			}
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
+			bazel: jobs:            4
+			admissionConcurrency: 4
+			recoverySSHReady:     true
+			githubOIDC: {
+				allowedRepositories: "guardian-intelligence/verself"
+				allowedRefs:         "refs/heads/main"
+				allowedWorkflowRefs: "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main"
 			}
 		}
 	},

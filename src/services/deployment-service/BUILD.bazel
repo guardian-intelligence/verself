@@ -9,6 +9,43 @@ deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
+filegroup(
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//src/guardian-specification:__pkg__"],
+)
+
+genrule(
+    name = "runtime_tools",
+    srcs = [
+        "@deployment_service_tool_git//file",
+        "@deployment_service_tool_libcurl3t64_gnutls//file",
+    ],
+    outs = ["deployment-service-runtime-tools.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract" "$$tmp/runtime/bin" "$$tmp/runtime/lib/git-core" "$$tmp/runtime/lib/x86_64-linux-gnu" "$$tmp/runtime/share/git-core"
+dpkg-deb -x "$(location @deployment_service_tool_git//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @deployment_service_tool_libcurl3t64_gnutls//file)" "$$tmp/extract"
+install -m 0755 "$$tmp/extract/usr/bin/git" "$$tmp/runtime/bin/git"
+cp -aL "$$tmp/extract/usr/lib/git-core/." "$$tmp/runtime/lib/git-core/"
+cp -a "$$tmp/extract/usr/share/git-core/templates" "$$tmp/runtime/share/git-core/templates"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libcurl-gnutls.so.4" "$$tmp/runtime/lib/x86_64-linux-gnu/libcurl-gnutls.so.4"
+test -x "$$tmp/runtime/bin/git"
+test -x "$$tmp/runtime/lib/git-core/git-remote-https"
+test -r "$$tmp/runtime/lib/x86_64-linux-gnu/libcurl-gnutls.so.4"
+chmod -R a+rX "$$tmp/runtime"
+tar --sort=name --hard-dereference --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 spire_identity(
     name = "spiffe_identity",
     component = "deployment_service",

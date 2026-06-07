@@ -1,0 +1,15 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "deployment_service_tool_git",
+    downloaded_file_path = "git_2.43.0-1ubuntu7.3_amd64.deb",
+    sha256 = "099bb129f543adc4c14203334b0fa0a909f8bf038c4d56bc9cc7c774ebf78f87",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/g/git/git_2.43.0-1ubuntu7.3_amd64.deb",
+)
+
+http_file(
+    name = "deployment_service_tool_libcurl3t64_gnutls",
+    downloaded_file_path = "libcurl3t64-gnutls_8.5.0-2ubuntu10.9_amd64.deb",
+    sha256 = "f3051b017a772f1e39757d6f3e073589c8f2b043a5ff44daf2e4ee9136303fcb",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/c/curl/libcurl3t64-gnutls_8.5.0-2ubuntu10.9_amd64.deb",
+)

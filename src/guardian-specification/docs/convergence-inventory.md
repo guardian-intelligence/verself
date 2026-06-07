@@ -21,6 +21,7 @@ consecutive submissions do not create unexpected allocation churn.
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged on latest gamma run | None in current gamma state | Materialized OTel Collector runtime/config artifacts, direct `otelcol-recover` prestart binary, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
 | IAM Service | `iam.guardianintelligence.org/v1alpha1/IAMService/iam-service` | Converged on latest gamma run | None in current gamma state | Materialized IAM binary, IAM CRD static config, PostgreSQL `iam_service` database/peer role, OpenBao-generated/runtime Zitadel credentials, SpiceDB, ClickHouse, Zitadel OIDC issuer reachable through HAProxy |
+| Deployment Service | `deployment.guardianintelligence.org/v1alpha1/DeploymentService/deployment-service` | Converged on latest gamma run | None in current gamma state | Materialized deployment-service binary, Bazel-pinned Git runtime tools, PostgreSQL `deployment_service` database/peer role, SPIRE workload identity, object-storage admin API, Nomad API, HAProxy public route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
@@ -44,6 +45,42 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the deployment-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:0944ce1d74bfb85cbfec52d8b47349e9255ee31c4b3207774f3b0f0102f15786`,
+  and verified upload digest
+  `sha256:dceb14680d5f2ebbb3527f527194d54b68a288433ed0ad246ee0861472c82bb7`;
+- deployment-service deployment `bd40b656` is successful, allocation
+  `eb6ed0ea` is running on `127.0.0.1:30037`, and
+  `http://127.0.0.1:30037/healthz` returns `ok`;
+- `https://deployments.api.gamma.verself.sh/healthz` through HAProxy returns
+  `ok` after the HAProxy upstream template stopped forcing `proto h2` for the
+  plain HTTP/1.1 deployment-service backend;
+- HAProxy deployment `f68d44d8`, allocation `68904094`, is successful; after
+  deployment-service was rescheduled from allocation `1388c458` on
+  `127.0.0.1:21362` to allocation `eb6ed0ea` on `127.0.0.1:30037`,
+  `/etc/haproxy/nomad-upstreams.cfg` rendered
+  `server srv_0 127.0.0.1:30037 check ...` for
+  `be_route_product_deployments_api_deployment_service_public_api`, and the
+  Nomad-owned HAProxy task restarted once from the upstream PID signal;
+- the deployment-service recovery prestart installs a content-addressed runtime
+  release containing `deployment-service`, `guardian`, and a Bazel-pinned Git
+  runtime toolset; the service user can run Git against
+  `/var/lib/deployment-service/repo`, and the origin is
+  `https://github.com/guardian-intelligence/verself.git`;
+- deployment-service initially blocked on PostgreSQL peer auth because the
+  PostgreSQL reconciler was operating from a stale projected resource graph
+  without the `deployment_service` peer mapping. The PostgreSQL sidecar now
+  projects the current boarded graph, rewrites `pg_hba.conf` and
+  `pg_ident.conf`, reloads PostgreSQL, and reconciles the declared database and
+  role set;
+- deployment-service then blocked because the runtime had no `git` in PATH.
+  The service now owns `deployment-service-runtime-tools.tar`, built from
+  pinned Ubuntu Git and libcurl `.deb` artifacts and uploaded by preflight;
+- the first runtime-tools recovery attempt rejected Git command alias hardlinks
+  in the tar archive. The Bazel tar action now uses hardlink dereferencing so
+  the recovery extractor only has to accept regular files, directories, and
+  safe relative symlinks;
 - current preflight after the IAM/HAProxy slice reported `ready_to_fly: yes`,
   resource graph digest
   `sha256:096e2129fd26d529d229fc83a51c2c11cb50410aca9c12bbff037f3a9ff828e8`,

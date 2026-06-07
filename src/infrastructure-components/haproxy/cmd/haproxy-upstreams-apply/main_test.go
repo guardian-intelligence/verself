@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -84,5 +85,29 @@ func TestValidateHAProxyResolvesRelativeLibraryPathBeforeChangingDir(t *testing.
 	want := filepath.Join(root, "local", "lib", "haproxy")
 	if !strings.Contains(string(got), want) {
 		t.Fatalf("LD_LIBRARY_PATH = %q, want %q", string(got), want)
+	}
+}
+
+func TestSignalPIDsFromFileAllowsMissingAndEmptyPidFiles(t *testing.T) {
+	if err := signalPIDsFromFile(filepath.Join(t.TempDir(), "missing.pid"), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+
+	empty := filepath.Join(t.TempDir(), "empty.pid")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := signalPIDsFromFile(empty, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSignalPIDsFromFileRejectsInvalidPid(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.pid")
+	if err := os.WriteFile(path, []byte("not-a-pid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := signalPIDsFromFile(path, syscall.SIGTERM); err == nil {
+		t.Fatal("expected invalid pid to fail")
 	}
 }
