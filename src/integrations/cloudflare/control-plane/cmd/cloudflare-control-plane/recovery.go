@@ -9,7 +9,7 @@ import (
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
-const rootTrustMaterialRequiredReason = "RootTrustMaterialRequired"
+const operatorAuthorityRequiredReason = "OperatorAuthorityRequired"
 
 func (cfg *config) applyRecoveryConfig() error {
 	if strings.TrimSpace(cfg.action) != "recover" {
@@ -183,8 +183,8 @@ func verifyRecoveryCredential(ctx context.Context, cfg config, out *report) erro
 
 func cloudflareRecoveryAuthorityUnavailableError(accountAdminPath string, accountAdminErr error, recoveryCredentialPath string, recoveryCredentialErr error) error {
 	return fmt.Errorf(
-		"CloudflareRecoveryAuthorityAvailable=False: %s: no deployed Cloudflare account-admin authority exists at %s (%v), and no bucket-scoped R2 recovery credential exists at %s (%v). Provide root trust material only through the component import path. Preferred: cloudflare-control-plane --action=import-account-admin --operator-import-init-material=<init-material.json> --operator-import-private-key-file=<operator-private-key> --account-admin-api-token-file=<cloudflare-token-file>. Fresh OpenBao init writes the encrypted guardian-operator-import scoped OpenBao token handoff to init-material.json. Stdin JSON import is still available with --operator-import-stdin for tightly controlled operator sessions",
-		rootTrustMaterialRequiredReason,
+		"CloudflareRecoveryAuthorityAvailable=False: %s: no deployed Cloudflare account-admin authority exists at %s (%v), and no bucket-scoped R2 recovery credential exists at %s (%v). Provide operator authority only through the component import path. Preferred: cloudflare-control-plane --action=import-account-admin --operator-import-init-material=<init-material.json> --operator-import-private-key-file=<operator-private-key> --account-admin-api-token-file=<cloudflare-token-file>. Fresh OpenBao init writes the encrypted guardian-operator-import scoped OpenBao token handoff to init-material.json. Stdin JSON import is still available with --operator-import-stdin for tightly controlled operator sessions",
+		operatorAuthorityRequiredReason,
 		accountAdminPath,
 		accountAdminErr,
 		recoveryCredentialPath,

@@ -36,10 +36,8 @@ func TestRenderConfigUsesCRDValues(t *testing.T) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
 		}
 	}
-	for _, old := range []string{"__VERSELF_", "__STALWART_"} {
-		if strings.Contains(rendered, old) {
-			t.Fatalf("rendered config kept placeholder %q:\n%s", old, rendered)
-		}
+	if strings.Contains(rendered, "__") {
+		t.Fatalf("rendered config kept an unresolved placeholder:\n%s", rendered)
 	}
 }
 

@@ -30,14 +30,14 @@ details, hook details, and stable conditions. Preflight recovers the fixed
 Nomad/OpenBao substrate prerequisites.
 
 `fly` starts with preflight and writes the resource graph into the materialized
-workspace, then runs the configured Nomad job hook. Component behavior is
+workspace, then submits the declared Nomad jobs. Component behavior is
 expressed in component-owned Nomad job files, typically as lifecycle tasks that
 install, restore, reconcile, or block with stable health evidence.
 
 ## Boundaries
 
 Guardian owns config parsing, local artifact checks, resource graph
-materialization, preflight invocation, Nomad hook invocation, and structured
+materialization, preflight invocation, generic Nomad submission, and structured
 command responses.
 
 The preflight playbook owns substrate access, file transfer, permissions,

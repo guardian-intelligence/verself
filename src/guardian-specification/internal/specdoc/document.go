@@ -48,7 +48,7 @@ type ResourceSpec map[string]any
 type FlyProcedureSpec struct {
 	SubstrateRef ObjectRef `json:"substrateRef,omitempty" yaml:"substrateRef,omitempty" toml:"substrateRef,omitempty" toon:"substrateRef,omitempty"`
 	Preflight    Preflight `json:"preflight,omitempty" yaml:"preflight,omitempty" toml:"preflight,omitempty" toon:"preflight,omitempty"`
-	Nomad        NomadRun  `json:"nomad,omitempty" yaml:"nomad,omitempty" toml:"nomad,omitempty" toon:"nomad,omitempty"`
+	Nomad        NomadFly  `json:"nomad,omitempty" yaml:"nomad,omitempty" toml:"nomad,omitempty" toon:"nomad,omitempty"`
 }
 
 type SubstrateSpec struct {
@@ -59,10 +59,6 @@ type PublicOriginSpec struct {
 	URL string `json:"url,omitempty" yaml:"url,omitempty" toml:"url,omitempty" toon:"url,omitempty"`
 }
 
-type LifecycleHook struct {
-	Argv []string `json:"argv,omitempty" yaml:"argv,omitempty" toml:"argv,omitempty" toon:"argv,omitempty"`
-}
-
 type Preflight struct {
 	Ansible AnsiblePreflight `json:"ansible,omitempty" yaml:"ansible,omitempty" toml:"ansible,omitempty" toon:"ansible,omitempty"`
 }
@@ -71,8 +67,16 @@ type AnsiblePreflight struct {
 	Playbook string `json:"playbook,omitempty" yaml:"playbook,omitempty" toml:"playbook,omitempty" toon:"playbook,omitempty"`
 }
 
-type NomadRun struct {
-	Run LifecycleHook `json:"run,omitempty" yaml:"run,omitempty" toml:"run,omitempty" toon:"run,omitempty"`
+type NomadFly struct {
+	Address   string     `json:"address,omitempty" yaml:"address,omitempty" toml:"address,omitempty" toon:"address,omitempty"`
+	Namespace string     `json:"namespace,omitempty" yaml:"namespace,omitempty" toml:"namespace,omitempty" toon:"namespace,omitempty"`
+	Jobs      []NomadJob `json:"jobs,omitempty" yaml:"jobs,omitempty" toml:"jobs,omitempty" toon:"jobs,omitempty"`
+}
+
+type NomadJob struct {
+	Name          string   `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" toon:"name,omitempty"`
+	Path          string   `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty" toon:"path,omitempty"`
+	ArtifactPaths []string `json:"artifactPaths,omitempty" yaml:"artifactPaths,omitempty" toml:"artifactPaths,omitempty" toon:"artifactPaths,omitempty"`
 }
 
 type Remote struct {
@@ -205,7 +209,7 @@ func validateResourceSpec(resource Resource) error {
 		if err := validatePreflight("spec.preflight", spec.Preflight); err != nil {
 			return err
 		}
-		return validateHook("spec.nomad.run", spec.Nomad.Run)
+		return validateNomadFly("spec.nomad", spec.Nomad)
 	case APISubstrate + "/" + KindSubstrate:
 		spec, err := DecodeResourceSpec[SubstrateSpec](resource.Spec)
 		if err != nil {
@@ -321,14 +325,47 @@ func requireKindRef(name string, ref ObjectRef, apiVersion string, kind string) 
 	return nil
 }
 
-func validateHook(name string, hook LifecycleHook) error {
-	if len(hook.Argv) == 0 {
-		return fmt.Errorf("%s.argv is required", name)
+func validateNomadFly(name string, nomad NomadFly) error {
+	if err := validateHTTPURL(name+".address", nomad.Address); err != nil {
+		return err
 	}
-	for i, arg := range hook.Argv {
-		if strings.TrimSpace(arg) == "" {
-			return fmt.Errorf("%s.argv[%d] must not be empty", name, i)
+	if strings.TrimSpace(nomad.Namespace) == "" {
+		return fmt.Errorf("%s.namespace is required", name)
+	}
+	if len(nomad.Jobs) == 0 {
+		return fmt.Errorf("%s.jobs is required", name)
+	}
+	seen := map[string]struct{}{}
+	for i, job := range nomad.Jobs {
+		if strings.TrimSpace(job.Name) == "" {
+			return fmt.Errorf("%s.jobs[%d].name is required", name, i)
 		}
+		if _, exists := seen[job.Name]; exists {
+			return fmt.Errorf("%s.jobs[%d].name duplicates %q", name, i, job.Name)
+		}
+		seen[job.Name] = struct{}{}
+		if err := validateWorkspacePath(fmt.Sprintf("%s.jobs[%d].path", name, i), job.Path); err != nil {
+			return err
+		}
+		for j, path := range job.ArtifactPaths {
+			if err := validateWorkspacePath(fmt.Sprintf("%s.jobs[%d].artifactPaths[%d]", name, i, j), path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateHTTPURL(name string, value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", name, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must be http or https", name)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("%s host is required", name)
 	}
 	return nil
 }

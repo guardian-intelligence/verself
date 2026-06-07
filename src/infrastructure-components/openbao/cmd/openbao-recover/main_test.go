@@ -31,6 +31,7 @@ type fakeOpenBaoClient struct {
 	jwtConfigs    map[string]openBaoJWTAuthConfig
 	jwtRoles      map[string]openBaoJWTRole
 	policies      map[string]string
+	kvData        map[string]map[string]string
 	createdTokens []openBaoTokenSpec
 	restored      bool
 	revokeErr     error
@@ -145,6 +146,14 @@ func (f *fakeOpenBaoClient) WriteJWTRole(_ context.Context, _ string, path strin
 	return nil
 }
 
+func (f *fakeOpenBaoClient) WriteKV2Data(_ context.Context, _ string, path string, data map[string]string) error {
+	if f.kvData == nil {
+		f.kvData = map[string]map[string]string{}
+	}
+	f.kvData[path] = data
+	return nil
+}
+
 func (f *fakeOpenBaoClient) CreateToken(_ context.Context, _ string, spec openBaoTokenSpec) (string, error) {
 	f.createdTokens = append(f.createdTokens, spec)
 	return fmt.Sprintf("created-token-%d", len(f.createdTokens)), nil
@@ -209,6 +218,17 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 				Name:       "gamma-cloudflare",
 			},
 		},
+		{
+			Name:   "cloudflare.r2.recovery",
+			Path:   "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery",
+			Key:    "access_key_id",
+			Source: "producedBy",
+			ProducerRef: &objectRef{
+				APIVersion: "cloudflare.guardianintelligence.org/v1alpha1",
+				Kind:       "CloudflareControlPlane",
+				Name:       "gamma-cloudflare",
+			},
+		},
 	}
 	client := &fakeOpenBaoClient{
 		status:       baoStatus{Initialized: false, Sealed: true},
@@ -222,6 +242,9 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
 	if !containsString(client.enabledMounts, "kv-controller") || !containsString(client.enabledMounts, "kv-runtime") {
 		t.Fatalf("enabled mounts = %#v", client.enabledMounts)
+	}
+	if got := client.kvData["kv-runtime/data/secret/org/postgresql.pgbackrest.cipher_pass"]["value"]; got == "" {
+		t.Fatalf("generated pgBackRest cipher pass was not written: %#v", client.kvData)
 	}
 	policy := client.policies["guardian-operator-import"]
 	if !strings.Contains(policy, `path "kv-controller/data/integrations/cloudflare/account-admin"`) {
@@ -237,6 +260,13 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 	if !strings.Contains(cloudflarePolicy, `path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id"`) {
 		t.Fatalf("cloudflare recovery policy missing produced path write: %q", cloudflarePolicy)
 	}
+	postgresqlPolicy := client.policies[postgresqlRuntimeRole]
+	if !strings.Contains(postgresqlPolicy, `path "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery"`) {
+		t.Fatalf("postgresql runtime policy missing R2 recovery read: %q", postgresqlPolicy)
+	}
+	if !strings.Contains(postgresqlPolicy, `path "kv-runtime/data/secret/org/postgresql.pgbackrest.cipher_pass"`) {
+		t.Fatalf("postgresql runtime policy missing cipher pass read: %q", postgresqlPolicy)
+	}
 	if !containsString(client.enabledAuth, nomadJWTAuthPath) {
 		t.Fatalf("enabled auth methods = %#v", client.enabledAuth)
 	}
@@ -249,6 +279,13 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 	}
 	if role.BoundClaims["nomad_job_id"] != cloudflareRecoveryRole || len(role.TokenPolicies) != 1 || role.TokenPolicies[0] != cloudflareRecoveryRole {
 		t.Fatalf("jwt role = %#v", role)
+	}
+	postgresqlRole, ok := client.jwtRoles[nomadJWTAuthPath+"/"+postgresqlRuntimeRole]
+	if !ok {
+		t.Fatalf("jwt roles = %#v", client.jwtRoles)
+	}
+	if postgresqlRole.BoundClaims["nomad_job_id"] != postgresqlJobID || len(postgresqlRole.TokenPolicies) != 1 || postgresqlRole.TokenPolicies[0] != postgresqlRuntimeRole {
+		t.Fatalf("postgresql jwt role = %#v", postgresqlRole)
 	}
 	if len(client.createdTokens) != 1 {
 		t.Fatalf("created tokens = %#v", client.createdTokens)

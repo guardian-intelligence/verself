@@ -53,6 +53,8 @@ const (
 	nomadJWKSURL            = "http://127.0.0.1:4646/.well-known/jwks.json"
 	nomadWorkloadAudience   = "vault.io"
 	cloudflareRecoveryRole  = "cloudflare-integration-recovery"
+	postgresqlRuntimeRole   = "postgresql-runtime"
+	postgresqlJobID         = "postgresql"
 )
 
 type config struct {
@@ -211,6 +213,7 @@ type openBaoClient interface {
 	ConfigureJWTAuth(context.Context, string, string, openBaoJWTAuthConfig) error
 	WritePolicy(context.Context, string, string, string) error
 	WriteJWTRole(context.Context, string, string, string, openBaoJWTRole) error
+	WriteKV2Data(context.Context, string, string, map[string]string) error
 	CreateToken(context.Context, string, openBaoTokenSpec) (string, error)
 }
 
@@ -1110,6 +1113,11 @@ func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBao
 	}); err != nil {
 		return nil, err
 	}
+	if err := retryOpenBaoBootstrapStep(ctx, "ensure generated secrets", func() error {
+		return ensureGeneratedSecretPaths(ctx, client, rootToken, cfg.secretPaths)
+	}); err != nil {
+		return nil, err
+	}
 	if err := retryOpenBaoBootstrapStep(ctx, "ensure Nomad workload auth", func() error {
 		return ensureNomadWorkloadAuth(ctx, client, rootToken, cfg.secretPaths)
 	}); err != nil {
@@ -1141,6 +1149,58 @@ func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBao
 	}}, nil
 }
 
+func ensureGeneratedSecretPaths(ctx context.Context, client openBaoClient, token string, paths []openBaoSecretPathSpec) error {
+	for _, path := range paths {
+		if path.Source != "generated" {
+			continue
+		}
+		value, err := generateSecretValue(*path.Generate)
+		if err != nil {
+			return fmt.Errorf("generate %s: %w", path.Name, err)
+		}
+		if err := client.WriteKV2Data(ctx, token, path.Path, map[string]string{path.Key: value}); err != nil {
+			return fmt.Errorf("write generated secret %s: %w", path.Name, err)
+		}
+	}
+	return nil
+}
+
+func generateSecretValue(spec openBaoGenerateSpec) (string, error) {
+	raw := make([]byte, spec.Bytes)
+	if _, err := io.ReadFull(rand.Reader, raw); err != nil {
+		return "", err
+	}
+	switch spec.Encoding {
+	case "hex":
+		return hex.EncodeToString(raw), nil
+	case "base64url":
+		return base64.RawURLEncoding.EncodeToString(raw), nil
+	case "alphanumeric":
+		return randomString(spec.Bytes, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	case "password":
+		return randomString(spec.Bytes, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}:,.?")
+	default:
+		return "", fmt.Errorf("unsupported encoding %q", spec.Encoding)
+	}
+}
+
+func randomString(length int, alphabet string) (string, error) {
+	if length <= 0 {
+		return "", errors.New("length must be positive")
+	}
+	var b strings.Builder
+	b.Grow(length)
+	max := big.NewInt(int64(len(alphabet)))
+	for i := 0; i < length; i++ {
+		index, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return "", err
+		}
+		b.WriteByte(alphabet[index.Int64()])
+	}
+	return b.String(), nil
+}
+
 func retryOpenBaoBootstrapStep(ctx context.Context, label string, fn func() error) error {
 	var last error
 	deadline := time.Now().Add(15 * time.Second)
@@ -1162,8 +1222,23 @@ func retryOpenBaoBootstrapStep(ctx context.Context, label string, fn func() erro
 }
 
 func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token string, paths []openBaoSecretPathSpec) error {
-	policy := cloudflareRecoveryPolicy(paths)
-	if strings.TrimSpace(policy) == "" {
+	policies := map[string]struct {
+		jobID  string
+		policy string
+	}{}
+	if policy := cloudflareRecoveryPolicy(paths); strings.TrimSpace(policy) != "" {
+		policies[cloudflareRecoveryRole] = struct {
+			jobID  string
+			policy string
+		}{jobID: cloudflareRecoveryRole, policy: policy}
+	}
+	if policy := postgresqlRuntimePolicy(paths); strings.TrimSpace(policy) != "" {
+		policies[postgresqlRuntimeRole] = struct {
+			jobID  string
+			policy string
+		}{jobID: postgresqlJobID, policy: policy}
+	}
+	if len(policies) == 0 {
 		return nil
 	}
 	if err := ensureJWTAuthMethod(ctx, client, token, nomadJWTAuthPath); err != nil {
@@ -1175,13 +1250,23 @@ func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token st
 	}); err != nil {
 		return fmt.Errorf("configure OpenBao Nomad JWT auth: %w", err)
 	}
-	if err := client.WritePolicy(ctx, token, cloudflareRecoveryRole, policy); err != nil {
-		return fmt.Errorf("write %s policy: %w", cloudflareRecoveryRole, err)
+	for _, roleName := range sortedNomadPolicyNames(policies) {
+		policy := policies[roleName]
+		if err := client.WritePolicy(ctx, token, roleName, policy.policy); err != nil {
+			return fmt.Errorf("write %s policy: %w", roleName, err)
+		}
+		if err := client.WriteJWTRole(ctx, token, nomadJWTAuthPath, roleName, nomadJWTWorkloadRole(roleName, policy.jobID)); err != nil {
+			return fmt.Errorf("write OpenBao Nomad JWT role %s: %w", roleName, err)
+		}
 	}
-	role := openBaoJWTRole{
+	return nil
+}
+
+func nomadJWTWorkloadRole(roleName string, jobID string) openBaoJWTRole {
+	return openBaoJWTRole{
 		RoleType:             "jwt",
 		BoundAudiences:       []string{nomadWorkloadAudience},
-		BoundClaims:          map[string]string{"nomad_namespace": "default", "nomad_job_id": cloudflareRecoveryRole},
+		BoundClaims:          map[string]string{"nomad_namespace": "default", "nomad_job_id": jobID},
 		UserClaim:            "/nomad_job_id",
 		UserClaimJSONPointer: true,
 		ClaimMappings: map[string]string{
@@ -1190,14 +1275,19 @@ func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token st
 			"nomad_task":      "nomad_task",
 		},
 		TokenType:           "service",
-		TokenPolicies:       []string{cloudflareRecoveryRole},
+		TokenPolicies:       []string{roleName},
 		TokenPeriod:         "30m",
 		TokenExplicitMaxTTL: 0,
 	}
-	if err := client.WriteJWTRole(ctx, token, nomadJWTAuthPath, cloudflareRecoveryRole, role); err != nil {
-		return fmt.Errorf("write OpenBao Nomad JWT role %s: %w", cloudflareRecoveryRole, err)
+}
+
+func sortedNomadPolicyNames[T any](values map[string]T) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	return nil
+	sort.Strings(keys)
+	return keys
 }
 
 func ensureJWTAuthMethod(ctx context.Context, client openBaoClient, token string, path string) error {
@@ -1278,6 +1368,24 @@ func cloudflareRecoveryPolicy(paths []openBaoSecretPathSpec) string {
 	}
 	for _, path := range sortedMapKeys(write) {
 		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"create\", \"update\", \"read\"]\n}\n", path)
+	}
+	return b.String()
+}
+
+func postgresqlRuntimePolicy(paths []openBaoSecretPathSpec) string {
+	readOnly := map[string]struct{}{}
+	for _, path := range paths {
+		trimmed := strings.Trim(strings.TrimSpace(path.Path), "/")
+		switch {
+		case path.Name == "cloudflare.r2.recovery" && trimmed != "":
+			readOnly[trimmed] = struct{}{}
+		case path.Name == "postgresql.pgbackrest.cipher_pass" && trimmed != "":
+			readOnly[trimmed] = struct{}{}
+		}
+	}
+	var b strings.Builder
+	for _, path := range sortedMapKeys(readOnly) {
+		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"read\"]\n}\n", path)
 	}
 	return b.String()
 }
@@ -2093,6 +2201,11 @@ func (c *realOpenBaoClient) WritePolicy(ctx context.Context, token string, name 
 
 func (c *realOpenBaoClient) WriteJWTRole(ctx context.Context, token string, path string, name string, role openBaoJWTRole) error {
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+strings.Trim(strings.TrimSpace(path), "/")+"/role/"+url.PathEscape(name), role, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) WriteKV2Data(ctx context.Context, token string, path string, data map[string]string) error {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	return c.apiJSON(ctx, token, http.MethodPost, trimmed, map[string]any{"data": data}, nil, http.StatusNoContent, http.StatusOK)
 }
 
 func (c *realOpenBaoClient) CreateToken(ctx context.Context, token string, spec openBaoTokenSpec) (string, error) {

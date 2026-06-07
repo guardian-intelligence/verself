@@ -36,7 +36,7 @@ func TestValidateSecretPathRequiresGenerateForGeneratedSource(t *testing.T) {
 func TestRenderConfigHasNoLegacyPlaceholdersOrSecretValues(t *testing.T) {
 	cfg := validConfig()
 	rendered := renderConfig(cfg)
-	for _, forbidden := range []string{"__VERSELF", "secret-key", "internal-token"} {
+	for _, forbidden := range []string{"__", "secret-key", "internal-token"} {
 		if strings.Contains(rendered, forbidden) {
 			t.Fatalf("rendered config contained forbidden marker %q", forbidden)
 		}

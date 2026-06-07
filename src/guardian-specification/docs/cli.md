@@ -81,7 +81,7 @@ with stable condition reasons.
 `fly` starts with the same preflight phase. `fly --dry-run` validates the graph
 and verifies local preflight inputs without mutating the target.
 
-Live `fly` prepares the target and runs the configured Nomad hook.
+Live `fly` prepares the target and submits the declared Nomad jobs.
 Components own provider reconciliation, backup restore, health waiting, and
 other runtime behavior through their job files and owner-local binaries.
 

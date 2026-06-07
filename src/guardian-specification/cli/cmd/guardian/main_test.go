@@ -463,10 +463,18 @@ func testFlyResult() flyResult {
 			Kind:       "FlyProcedure",
 			Name:       "gamma",
 		},
-		Nomad: hookResult{
-			Argv:   []string{"sh", "-c", "test -d extracted"},
-			Status: "ready",
-			Reason: "HookSucceeded",
+		Nomad: nomadResult{
+			Address:   "http://127.0.0.1:4646",
+			Namespace: "default",
+			Status:    "ready",
+			Reason:    "JobsConverged",
+			Jobs: []nomadJobResult{{
+				Name:   "example",
+				Path:   "example.nomad.hcl",
+				Type:   "service",
+				Status: "ready",
+				Reason: "AllocationRunning",
+			}},
 		},
 		Conditions: []condition{{
 			Type:     "PreflightReady",
@@ -623,12 +631,59 @@ for arg in "$@"; do
   remote_command="$arg"
 done
 test -n "$remote_command"
+remote_command="$(printf '%s' "$remote_command" | sed "s#/opt/verself/profile/bin/nomad#$PWD/nomad#g")"
 exec sh -c "$remote_command"
 `), 0o755); err != nil {
 		t.Fatalf("write fake ssh: %v", err)
 	}
+	nomadPath := filepath.Join(dir, "nomad")
+	if err := os.WriteFile(nomadPath, []byte(`#!/bin/sh
+set -eu
+if [ "$1" != job ]; then
+  echo "unexpected nomad command: $*" >&2
+  exit 1
+fi
+case "$2" in
+  validate)
+    exit 0
+    ;;
+  run)
+    exit 0
+    ;;
+  inspect)
+    printf '{"Job":{"Type":"service"}}\n'
+    exit 0
+    ;;
+  allocs)
+    printf '[{"CreateIndex":1,"ClientStatus":"running","ID":"alloc-test"}]\n'
+    exit 0
+    ;;
+esac
+echo "unexpected nomad job command: $*" >&2
+exit 1
+`), 0o755); err != nil {
+		t.Fatalf("write fake nomad: %v", err)
+	}
+	jobDir := filepath.Join(dir, "jobs")
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		t.Fatalf("mkdir jobs dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(jobDir, "example.nomad.hcl"), []byte(`job "example" {
+  datacenters = ["*"]
+  type = "service"
+}
+`), 0o644); err != nil {
+		t.Fatalf("write fake job: %v", err)
+	}
 	path := filepath.Join(dir, "gamma.cue")
 	repoRoot := filepath.Join(dir, "remote-repo")
+	remoteJobPath := filepath.Join(repoRoot, "workspace", "jobs", "example.nomad.hcl")
+	if err := os.MkdirAll(filepath.Dir(remoteJobPath), 0o755); err != nil {
+		t.Fatalf("mkdir remote job dir: %v", err)
+	}
+	if err := os.WriteFile(remoteJobPath, []byte("job \"example\" {}\n"), 0o644); err != nil {
+		t.Fatalf("write remote fake job: %v", err)
+	}
 	document := fmt.Sprintf(`package gamma
 
 entrypoint: {
@@ -649,7 +704,16 @@ resources: [
 				name:       "local"
 			}
 			preflight: ansible: playbook: "preflight.yml"
-			nomad: run: argv: ["sh", "-c", "test -f ansible-ran"]
+			nomad: {
+				address: "http://127.0.0.1:4646"
+				namespace: "default"
+				jobs: [
+					{
+						name: "example"
+						path: "jobs/example.nomad.hcl"
+					},
+				]
+			}
 		}
 	},
 	{

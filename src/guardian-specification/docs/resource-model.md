@@ -31,8 +31,8 @@ resources:
 
 `preflight` and `fly` read the same graph. `preflight` stops after verified
 upload and Nomad executor readiness. `fly` performs the same preflight work,
-materializes the graph in the remote workspace, and runs the configured Nomad
-job hook.
+materializes the graph in the remote workspace, and submits the declared Nomad
+jobs.
 
 The input graph uses the Kubernetes-style `spec` convention for desired input.
 It does not define `status`. Observed state is reported through command

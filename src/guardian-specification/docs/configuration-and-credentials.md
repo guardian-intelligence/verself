@@ -85,9 +85,9 @@ unsealed OpenBao state. During from-zero recovery without a usable snapshot, the
 component reports its own import blocker until an operator imports or rotates
 the provider credential through a component-owned path.
 
-The shared reason code for this blocker is `RootTrustMaterialRequired`. It is a
-command/report reason, not a Guardian CRD. Components use it when all autonomous
-sources have been exhausted and an operator must present root trust material.
+This is a component-specific command/report condition, not a Guardian CRD.
+Components use it when all autonomous sources have been exhausted and an
+operator must present authority.
 
 For Cloudflare recovery, the autonomous sources are:
 
@@ -96,13 +96,13 @@ For Cloudflare recovery, the autonomous sources are:
   configured recovery bucket.
 
 If neither exists, the Cloudflare component must fail loudly with
-`CloudflareRecoveryAuthorityAvailable=False` and reason
-`RootTrustMaterialRequired`. The operator may then provide an account-admin
-token through the component-owned import path. The preferred from-zero path is
-to decrypt the scoped OpenBao import token from OpenBao `init-material.json`
-with an operator-held PGP private key, then import the Cloudflare token from a
-local operator-only file. Stdin JSON import remains available for tightly
-controlled operator sessions. A local `secret.env` file is acceptable as an
-operator-held source only when it is gitignored, readable only by the operator,
-and transformed into the import command without being committed, logged, passed
-through argv, or written to host-local durable files.
+`CloudflareRecoveryAuthorityAvailable=False` with a component-owned reason. The
+operator may then provide an account-admin token through the component-owned
+import path. The preferred from-zero path is to decrypt the scoped OpenBao
+import token from OpenBao `init-material.json` with an operator-held PGP
+private key, then import the Cloudflare token from a local operator-only file.
+Stdin JSON import remains available for tightly controlled operator sessions.
+A local `secret.env` file is acceptable as an operator-held source only when it
+is gitignored, readable only by the operator, and transformed into the import
+command without being committed, logged, passed through argv, or written to
+host-local durable files.

@@ -40,7 +40,7 @@ Place every new concept at the narrowest layer that can validate and use it.
 
 | Concept | Location | Example |
 | --- | --- | --- |
-| Graph envelope, entrypoint, preflight playbook, Nomad run hook, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
+| Graph envelope, entrypoint, preflight playbook, declared Nomad job list, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
 | Static configuration for one deployable component | Component CRD beside the owner | `OpenBaoCluster`, `HAProxyGateway`, `ObjectStorageService` |
 | Runtime behavior and convergence steps | Component-owned Nomad job and owner-local binary | `task "recover"` prestart logic |
 | Provider authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
@@ -119,7 +119,7 @@ The base spec owns:
 
 - `Document`: `entrypoint` plus `resources`;
 - `FlyProcedure`: the root procedure that references one `Substrate`, one
-  preflight playbook, and one Nomad run hook;
+  preflight playbook, and declared Nomad jobs;
 - `Substrate`: remote access facts;
 - `PublicOrigin`: shared externally visible URL facts;
 - CLI response keys such as `ready_to_fly`, upload digests, hook status, and

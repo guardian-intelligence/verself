@@ -176,7 +176,7 @@ func TestValidateImportAccountAdminRequiresExactlyOneTokenSource(t *testing.T) {
 	}
 }
 
-func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t *testing.T) {
+func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsOperatorAuthority(t *testing.T) {
 	err := cloudflareRecoveryAuthorityUnavailableError(
 		"kv-controller/data/integrations/cloudflare/account-admin",
 		errors.New("missing account-admin"),
@@ -186,7 +186,7 @@ func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t 
 	msg := err.Error()
 	for _, want := range []string{
 		"CloudflareRecoveryAuthorityAvailable=False",
-		"RootTrustMaterialRequired",
+		"OperatorAuthorityRequired",
 		"--operator-import-init-material",
 		"--operator-import-private-key-file",
 		"--account-admin-api-token-file",

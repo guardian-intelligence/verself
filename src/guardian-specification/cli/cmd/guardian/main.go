@@ -42,8 +42,6 @@ type guardianDocument struct {
 	Compiled specdoc.CompiledDocument
 }
 
-type lifecycleHookSpec = specdoc.LifecycleHook
-
 type condition struct {
 	Type     string `json:"type" yaml:"type" toml:"type" toon:"type"`
 	Status   string `json:"status" yaml:"status" toml:"status" toon:"status"`
@@ -98,8 +96,27 @@ type flyResult struct {
 	ExecutionMode  string            `json:"execution_mode" yaml:"execution_mode" toml:"execution_mode" toon:"execution_mode"`
 	ResourceDigest string            `json:"resource_digest,omitempty" yaml:"resource_digest,omitempty" toml:"resource_digest,omitempty" toon:"resource_digest,omitempty"`
 	Entrypoint     resourceRefResult `json:"entrypoint" yaml:"entrypoint" toml:"entrypoint" toon:"entrypoint"`
-	Nomad          hookResult        `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
+	Nomad          nomadResult       `json:"nomad" yaml:"nomad" toml:"nomad" toon:"nomad"`
 	Conditions     []condition       `json:"conditions" yaml:"conditions" toml:"conditions" toon:"conditions"`
+}
+
+type nomadResult struct {
+	Address   string           `json:"address" yaml:"address" toml:"address" toon:"address"`
+	Namespace string           `json:"namespace" yaml:"namespace" toml:"namespace" toon:"namespace"`
+	Status    string           `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason    string           `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Message   string           `json:"message,omitempty" yaml:"message,omitempty" toml:"message,omitempty" toon:"message,omitempty"`
+	Jobs      []nomadJobResult `json:"jobs" yaml:"jobs" toml:"jobs" toon:"jobs"`
+}
+
+type nomadJobResult struct {
+	Name        string `json:"name" yaml:"name" toml:"name" toon:"name"`
+	Path        string `json:"path" yaml:"path" toml:"path" toon:"path"`
+	Type        string `json:"type,omitempty" yaml:"type,omitempty" toml:"type,omitempty" toon:"type,omitempty"`
+	InputDigest string `json:"input_digest,omitempty" yaml:"input_digest,omitempty" toml:"input_digest,omitempty" toon:"input_digest,omitempty"`
+	Status      string `json:"status" yaml:"status" toml:"status" toon:"status"`
+	Reason      string `json:"reason" yaml:"reason" toml:"reason" toon:"reason"`
+	Message     string `json:"message,omitempty" yaml:"message,omitempty" toml:"message,omitempty" toon:"message,omitempty"`
 }
 
 type commandOptions struct {
@@ -909,10 +926,6 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	return result
 }
 
-func hookPending(hook lifecycleHookSpec) hookResult {
-	return hookResult{Argv: hook.Argv, Status: "pending", Reason: "NotStarted"}
-}
-
 func ansiblePending(preflight specdoc.Preflight) ansibleResult {
 	return ansibleResult{Playbook: preflight.Ansible.Playbook, Status: "pending", Reason: "NotStarted"}
 }
@@ -1496,39 +1509,6 @@ func pathIsInside(root string, candidate string) (bool, error) {
 	return rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."), nil
 }
 
-func runLifecycleHook(name string, hook lifecycleHookSpec, workspaceRoot string, emitter eventWriter) (hookResult, []byte) {
-	result := hookResult{Argv: hook.Argv, Status: "blocked", Reason: "HookFailed"}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
-	emitter.emit(name, "start", "", "running lifecycle hook")
-	stdout, stderr, err := execHook(ctx, hook, workspaceRoot)
-	if err != nil {
-		result.Reason = "HookFailed"
-		result.Message = commandFailureMessage(err, stdout, stderr)
-		emitter.emit(name, "blocked", "", result.Message)
-		return result, stdout
-	}
-	result.Status = "ready"
-	result.Reason = "HookSucceeded"
-	emitter.emit(name, "ok", "", "lifecycle hook completed")
-	return result, stdout
-}
-
-func execHook(ctx context.Context, hook lifecycleHookSpec, workspaceRoot string) ([]byte, []byte, error) {
-	if len(hook.Argv) == 0 {
-		return nil, nil, errors.New("hook argv is empty")
-	}
-	cmd := exec.CommandContext(ctx, hook.Argv[0], hook.Argv[1:]...)
-	cmd.Dir = workspaceRoot
-	cmd.Env = os.Environ()
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
-}
-
 func hookFailureMessage(prefix string, result hookResult) string {
 	if strings.TrimSpace(result.Message) == "" {
 		return prefix
@@ -1571,6 +1551,24 @@ func digestValue(value any) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
+func nomadPending(nomad specdoc.NomadFly) nomadResult {
+	result := nomadResult{
+		Address:   nomad.Address,
+		Namespace: nomad.Namespace,
+		Status:    "pending",
+		Reason:    "NotStarted",
+	}
+	for _, job := range nomad.Jobs {
+		result.Jobs = append(result.Jobs, nomadJobResult{
+			Name:   job.Name,
+			Path:   job.Path,
+			Status: "pending",
+			Reason: "NotStarted",
+		})
+	}
+	return result
+}
+
 func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter) flyResult {
 	emitter.emit("fly.load", "ok", "", "loaded Guardian config document")
 	preflightResult := evaluatePreflight(doc, opts, emitter)
@@ -1586,7 +1584,7 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		ExecutionMode:  mode,
 		ResourceDigest: preflightResult.ResourceDigest,
 		Entrypoint:     preflightResult.Entrypoint,
-		Nomad:          hookPending(doc.Compiled.FlySpec.Nomad.Run),
+		Nomad:          nomadPending(doc.Compiled.FlySpec.Nomad),
 	}
 	result.Conditions = append(result.Conditions, conditionFromPreflight(preflightResult, opts.DryRun))
 	preflightReadyForFly := preflightResult.ReadyToFly == "yes" || (opts.DryRun && !hasFalseCondition(preflightResult.Conditions))
@@ -1594,21 +1592,286 @@ func evaluateFly(doc guardianDocument, opts commandOptions, emitter eventWriter)
 		return result
 	}
 	if opts.DryRun {
-		result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "DryRun", "dry run did not submit a Nomad job", "fly.nomad"))
+		result.Nomad.Status = "ready"
+		result.Nomad.Reason = "DryRun"
+		for i := range result.Nomad.Jobs {
+			result.Nomad.Jobs[i].Status = "ready"
+			result.Nomad.Jobs[i].Reason = "DryRun"
+		}
+		result.Conditions = append(result.Conditions, conditionTrue("NomadJobsReady", "DryRun", "dry run did not submit Nomad jobs", "fly.nomad"))
 		result.Status = "ready"
 		result.ReadyToFly = "yes"
 		return result
 	}
-	nomadResult, _ := runLifecycleHook("fly.nomad.run", doc.Compiled.FlySpec.Nomad.Run, opts.WorkspaceRoot, emitter)
+	nomadResult := runNomadJobs(doc, opts, preflightResult.ResourceDigest, emitter)
 	result.Nomad = nomadResult
 	if nomadResult.Status != "ready" {
-		result.Conditions = append(result.Conditions, conditionFalse("NomadJobReady", nomadResult.Reason, hookFailureMessage("Nomad job hook failed", nomadResult), "fly.nomad"))
+		result.Conditions = append(result.Conditions, conditionFalse("NomadJobsReady", nomadResult.Reason, nomadResult.Message, "fly.nomad"))
 		return result
 	}
-	result.Conditions = append(result.Conditions, conditionTrue("NomadJobReady", "HookSucceeded", "Nomad job hook completed", "fly.nomad"))
+	result.Conditions = append(result.Conditions, conditionTrue("NomadJobsReady", "JobsConverged", "declared Nomad jobs converged", "fly.nomad"))
 	result.Status = "ready"
 	result.ReadyToFly = "yes"
 	return result
+}
+
+func runNomadJobs(doc guardianDocument, opts commandOptions, resourceDigest string, emitter eventWriter) nomadResult {
+	nomad := doc.Compiled.FlySpec.Nomad
+	result := nomadPending(nomad)
+	result.Status = "running"
+	result.Reason = "SubmittingJobs"
+	manifest, err := readBazelBuildManifest(opts.WorkspaceRoot)
+	if err != nil {
+		result.Status = "blocked"
+		result.Reason = "BuildManifestUnreadable"
+		result.Message = err.Error()
+		return result
+	}
+	for i, job := range nomad.Jobs {
+		emitter.emit("fly.nomad", "start", job.Name, "submitting Nomad job")
+		jobResult, err := prepareNomadJobResult(opts.WorkspaceRoot, resourceDigest, manifest, job)
+		if err != nil {
+			jobResult.Name = job.Name
+			jobResult.Path = job.Path
+			jobResult.Status = "blocked"
+			jobResult.Reason = "LocalInputInvalid"
+			jobResult.Message = err.Error()
+			result.Jobs[i] = jobResult
+			result.Status = "blocked"
+			result.Reason = jobResult.Reason
+			result.Message = jobResult.Name + ": " + jobResult.Message
+			emitter.emit("fly.nomad", "blocked", job.Name, jobResult.Message)
+			return result
+		}
+		result.Jobs[i] = jobResult
+		remoteResult, err := runRemoteNomadJob(doc.Compiled.SubstrateSpec.Remote, nomad, jobResult, opts.WorkspaceRoot)
+		if err != nil {
+			jobResult.Status = "blocked"
+			jobResult.Reason = "RemoteNomadFailed"
+			jobResult.Message = err.Error()
+			result.Jobs[i] = jobResult
+			result.Status = "blocked"
+			result.Reason = jobResult.Reason
+			result.Message = jobResult.Name + ": " + jobResult.Message
+			emitter.emit("fly.nomad", "blocked", job.Name, jobResult.Message)
+			return result
+		}
+		result.Jobs[i] = remoteResult
+		if remoteResult.Status != "ready" {
+			result.Status = "blocked"
+			result.Reason = remoteResult.Reason
+			result.Message = remoteResult.Name + ": " + remoteResult.Message
+			emitter.emit("fly.nomad", "blocked", job.Name, remoteResult.Message)
+			return result
+		}
+		emitter.emit("fly.nomad", "ok", job.Name, "Nomad job converged")
+	}
+	result.Status = "ready"
+	result.Reason = "JobsConverged"
+	return result
+}
+
+func readBazelBuildManifest(workspaceRoot string) (map[string]bazelBuildOutput, error) {
+	path := filepath.Join(workspaceRoot, filepath.FromSlash(bazelBuildManifestPath))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", bazelBuildManifestPath, err)
+	}
+	var manifest bazelBuildManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", bazelBuildManifestPath, err)
+	}
+	byTargetPath := map[string]bazelBuildOutput{}
+	for _, output := range manifest.Outputs {
+		if output.TargetPath == "" {
+			continue
+		}
+		byTargetPath[output.TargetPath] = output
+	}
+	return byTargetPath, nil
+}
+
+func prepareNomadJobResult(workspaceRoot string, resourceDigest string, manifest map[string]bazelBuildOutput, job specdoc.NomadJob) (nomadJobResult, error) {
+	localJobPath := filepath.Join(workspaceRoot, filepath.FromSlash(job.Path))
+	jobBytes, err := os.ReadFile(localJobPath)
+	if err != nil {
+		return nomadJobResult{}, fmt.Errorf("read Nomad job %s: %w", job.Path, err)
+	}
+	h := sha256.New()
+	_, _ = h.Write([]byte(resourceDigest))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(job.Name))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(job.Path))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write(jobBytes)
+	for _, artifactPath := range job.ArtifactPaths {
+		output, ok := manifest[artifactPath]
+		if !ok {
+			return nomadJobResult{}, fmt.Errorf("%s is missing from %s; run guardian run bazel -- build before fly", artifactPath, bazelBuildManifestPath)
+		}
+		if strings.TrimSpace(output.Digest) == "" {
+			return nomadJobResult{}, fmt.Errorf("%s has no digest in %s", artifactPath, bazelBuildManifestPath)
+		}
+		localArtifactPath := filepath.Join(workspaceRoot, filepath.FromSlash(defaultBazelBuildRoot), filepath.FromSlash(artifactPath))
+		if _, err := os.Stat(localArtifactPath); err != nil {
+			return nomadJobResult{}, fmt.Errorf("stat materialized artifact %s: %w", artifactPath, err)
+		}
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(artifactPath))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(output.Digest))
+	}
+	return nomadJobResult{
+		Name:        job.Name,
+		Path:        job.Path,
+		InputDigest: "sha256:" + hex.EncodeToString(h.Sum(nil)),
+		Status:      "pending",
+		Reason:      "NotStarted",
+	}, nil
+}
+
+func runRemoteNomadJob(remote specdoc.Remote, nomad specdoc.NomadFly, job nomadJobResult, workspaceRoot string) (nomadJobResult, error) {
+	if remote.RepoRoot == "" || len(remote.SSH) == 0 {
+		return job, errors.New("Substrate.spec.remote.repoRoot and ssh are required for guardian fly")
+	}
+	script := remoteNomadJobScript(remote.RepoRoot, nomad, job)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	argv := append([]string{}, remote.SSH...)
+	argv = append(argv, script)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = workspaceRoot
+	cmd.Env = os.Environ()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if out, decErr := decodeNomadJobResult(stdout.Bytes()); decErr == nil && out.Name != "" {
+			return out, nil
+		}
+		return job, errors.New(commandFailureMessage(err, stdout.Bytes(), stderr.Bytes()))
+	}
+	out, err := decodeNomadJobResult(stdout.Bytes())
+	if err != nil {
+		return job, fmt.Errorf("decode Nomad job result for %s: %w; stdout: %s", job.Name, err, outputTail(stdout.Bytes(), hookOutputTailBytes))
+	}
+	return out, nil
+}
+
+func decodeNomadJobResult(data []byte) (nomadJobResult, error) {
+	var out nomadJobResult
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&out); err != nil {
+		return nomadJobResult{}, err
+	}
+	return out, nil
+}
+
+func remoteNomadJobScript(repoRoot string, nomad specdoc.NomadFly, job nomadJobResult) string {
+	varFile := strings.Join([]string{
+		"guardian_repo_root = " + strconv.Quote(repoRoot),
+		"guardian_job_input_digest = " + strconv.Quote(job.InputDigest),
+		"",
+	}, "\n")
+	return fmt.Sprintf(`set -eu
+nomad=/opt/verself/profile/bin/nomad
+job_name=%s
+job_path=%s
+var_file="$(mktemp)"
+trap 'rm -f "$var_file"' EXIT
+cat >"$var_file" <<'GUARDIAN_NOMAD_VARS'
+%sGUARDIAN_NOMAD_VARS
+test -f "$job_path"
+export NOMAD_ADDR=%s
+export NOMAD_NAMESPACE=%s
+"$nomad" job validate -var-file "$var_file" "$job_path" >&2
+"$nomad" job run -detach -var-file "$var_file" "$job_path" >&2
+python3 - "$nomad" "$job_name" %s "$job_path" "$var_file" %s %s <<'PY'
+import json
+import subprocess
+import sys
+import time
+
+nomad, name, result_path, job_file, var_file, input_digest, fallback_type = sys.argv[1:]
+
+def run_json(args):
+    raw = subprocess.check_output([nomad, *args], text=True)
+    return json.loads(raw)
+
+def inspect_job_type():
+    payload = run_json(["job", "inspect", "-json", name])
+    job = payload.get("Job") if isinstance(payload, dict) else None
+    if not isinstance(job, dict):
+        job = payload if isinstance(payload, dict) else {}
+    return str(job.get("Type") or fallback_type or "")
+
+def latest_alloc():
+    try:
+        allocs = run_json(["job", "allocs", "-json", name])
+    except subprocess.CalledProcessError:
+        return {}
+    if not isinstance(allocs, list) or not allocs:
+        return {}
+    return max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0) if isinstance(alloc, dict) else 0)
+
+def emit(status, reason, message, job_type=""):
+    print(json.dumps({
+        "name": name,
+        "path": result_path,
+        "type": job_type,
+        "input_digest": input_digest,
+        "status": status,
+        "reason": reason,
+        "message": message,
+    }, sort_keys=True))
+
+def retry_failed_allocation(job_type, alloc_id):
+    if job_type == "batch":
+        subprocess.run([nomad, "job", "stop", "-purge", "-yes", name], check=False, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([nomad, "job", "run", "-detach", "-var-file", var_file, job_file], check=False, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    if job_type in {"service", "system"} and alloc_id:
+        subprocess.run([nomad, "alloc", "stop", "-detach", "-no-shutdown-delay", alloc_id], check=False, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+job_type = ""
+last = {}
+retried = False
+for second in range(601):
+    if not job_type:
+        job_type = inspect_job_type()
+    last = latest_alloc()
+    client_status = str(last.get("ClientStatus") or "")
+    alloc_id = str(last.get("ID") or "")
+    if job_type == "batch" and client_status == "complete":
+        emit("ready", "BatchComplete", "latest batch allocation completed", job_type)
+        raise SystemExit(0)
+    if job_type in {"service", "system"} and client_status == "running":
+        emit("ready", "AllocationRunning", "latest allocation is running", job_type)
+        raise SystemExit(0)
+    if client_status in {"failed", "lost"}:
+        if not retried:
+            retried = True
+            retry_failed_allocation(job_type, alloc_id)
+            time.sleep(1)
+            continue
+        emit("blocked", "AllocationFailed", f"latest allocation {alloc_id} is {client_status}", job_type)
+        raise SystemExit(2)
+    time.sleep(1)
+
+message = "timed out waiting for allocation"
+if last:
+    message += ": " + json.dumps({
+        "id": last.get("ID"),
+        "client_status": last.get("ClientStatus"),
+        "desired_status": last.get("DesiredStatus"),
+    }, sort_keys=True)
+emit("blocked", "WaitTimeout", message, job_type)
+raise SystemExit(2)
+PY
+`, shellQuote(job.Name), shellQuote(repoRoot+"/workspace/"+job.Path), varFile, shellQuote(nomad.Address), shellQuote(nomad.Namespace), shellQuote(job.Path), shellQuote(job.InputDigest), shellQuote(""))
 }
 
 func writeFlyDocument(workspaceRoot string, doc specdoc.Document) error {

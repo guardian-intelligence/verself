@@ -3,12 +3,7 @@ variable "guardian_repo_root" {
   default = "/home/ubuntu/.local/state/guardian/repo"
 }
 
-variable "cloudflare_control_plane_image_archive" {
-  type    = string
-  default = ""
-}
-
-variable "cloudflare_control_plane_image_digest" {
+variable "guardian_job_input_digest" {
   type    = string
   default = "sha256:local"
 }
@@ -18,7 +13,7 @@ job "cloudflare-integration-recovery" {
   datacenters = ["*"]
   type        = "batch"
   meta {
-    image_digest = "${var.cloudflare_control_plane_image_digest}"
+    guardian_job_input_digest = "${var.guardian_job_input_digest}"
   }
 
   group "cloudflare-integration-recovery" {
@@ -58,7 +53,7 @@ job "cloudflare-integration-recovery" {
       }
 
       config {
-        image           = "docker-archive:${var.cloudflare_control_plane_image_archive}"
+        image           = "docker-archive:${var.guardian_repo_root}/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
         init            = true
         network_mode    = "host"
         readonly_rootfs = true

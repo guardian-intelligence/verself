@@ -1,6 +1,6 @@
 # Fly
 
-`fly` runs Guardian preflight and then runs the configured Nomad hook against
+`fly` runs Guardian preflight and then submits the declared Nomad jobs against
 the materialized workspace.
 
 ```sh
@@ -34,14 +34,13 @@ resources:
         kind: Substrate
         name: gamma-primary
       nomad:
-        run:
-          argv:
-            - ssh
-            - -T
-            - ubuntu@206.223.228.87
-            - /opt/verself/profile/bin/nomad
-            - job
-            - status
+        address: http://127.0.0.1:4646
+        namespace: default
+        jobs:
+          - name: cloudflare-integration-recovery
+            path: src/integrations/cloudflare/control-plane/nomad.hcl
+          - name: postgresql
+            path: src/infrastructure-components/postgresql/nomad.hcl
 
   - apiVersion: networking.guardianintelligence.org/v1alpha1
     kind: PublicOrigin
@@ -70,19 +69,18 @@ jobs.
 
 ## Live Run
 
-`guardian fly` performs preflight, then runs `FlyProcedure.spec.nomad.run`.
-That hook is an opaque command. In this repo it SSHes to the boarded host and
-runs the repo-bundled Nomad binary against component-owned jobs. Owner job
-files use lifecycle tasks to install runtime artifacts, restore or initialize
-state, reconcile configuration, and block loudly when external authority is
-missing.
+`guardian fly` performs preflight, then submits
+`FlyProcedure.spec.nomad.jobs` in declaration order through the repo-bundled
+Nomad binary on the boarded host. Owner job files use lifecycle tasks to
+install runtime artifacts, restore or initialize state, reconcile
+configuration, and block loudly when external authority is missing.
 
 On a wiped node, preflight prepares and starts OpenBao before Nomad starts. The
 `openbao-recover prepare` hook installs the repo-built OpenBao runtime, writes
 host-local config, and creates the CA file Nomad needs for Vault integration.
 Preflight then starts OpenBao as a systemd root service, runs one bounded
 OpenBao recovery pass, starts the single-node Nomad agent, and verifies the
-Podman driver. After that, `fly` runs the configured post-root Nomad hook.
+Podman driver. After that, `fly` submits the configured post-root Nomad jobs.
 
 OpenBao recovery reports concrete component blockers when it cannot continue.
 Examples include missing Shamir unseal quorum, unavailable auto-unseal backing
@@ -90,15 +88,16 @@ key, missing PGP recipient identities for fresh initialization, and missing
 provider parent credential during re-import.
 
 When a component has exhausted autonomous recovery sources and needs an
-operator-held credential, it reports reason `RootTrustMaterialRequired`. For
-Cloudflare, that means neither an account-admin credential nor bucket-scoped R2
-recovery credentials are available in the deployed OpenBao state. Manual import
-is allowed in that branch; the import material must enter through the
-component-owned import path and must not be committed, logged, passed through
-argv, or persisted as plaintext. The preferred import path decrypts the scoped
-OpenBao token from `init-material.json` with an operator-held PGP key and reads
-the Cloudflare account-admin token from an operator-only local file; stdin JSON
-import is only for tightly controlled operator sessions.
+operator-held credential, it reports a component-specific authority blocker.
+For Cloudflare, that means neither an account-admin credential nor
+bucket-scoped R2 recovery credentials are available in the deployed OpenBao
+state. Manual import is allowed in that branch; the import material must enter
+through the component-owned import path and must not be committed, logged,
+passed through argv, or persisted as plaintext. The preferred import path
+decrypts the scoped OpenBao token from `init-material.json` with an
+operator-held PGP key and reads the Cloudflare account-admin token from an
+operator-only local file; stdin JSON import is only for tightly controlled
+operator sessions.
 
 Point-in-time recovery, snapshot restore, backup catalog selection, offsite
 object-store reads, and provider token import are component concerns. They live

@@ -4,6 +4,10 @@ import guardian "guardianintelligence.org/guardian-specification/cue/guardian/v1
 
 guardian.#Document
 
+// Transitional harvested graph. Do not add non-site-specific config here.
+// The replacement gamma overlay should be small: substrate access, public origins,
+// and per-site secret refs/import authority only.
+
 let openbaoOperatorAPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAAYbADEfH17sDLX0SI7iAC9bcdPH8aotQRTtD8Zsmyf60TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYSA8b3BlcmF0b3ItYS5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEJb5vLYzeQToxU4BAPkVtbeOQmuDizUjl/gJO5SHezdDHWfyzoyUtackFBm5AP9TVpFLbOb0aFgw1LQxjdYLAZQkh0NlizTtFU1fGKgkDbg4BGojifkSCisGAQQBl1UBBQEBB0BuQaidG8ObtxFzAEwIrKZAChiP7TTpV1Xx/UJIDsZ6NwMBCAeIeAQYFgoAIBYhBEZBawrVEmfloiCCL5b5vLYzeQToBQJqI4n5AhsMAAoJEJb5vLYzeQTo3JoA/0v35/RUCPblBuwSC7sdSnpUHBzfjyYr0roc+eJHHSltAQDXnVUtg/O/B2mibJt87LtT1hijA/Oiox4/D5fj/XdABA=="
 let openbaoOperatorBPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdA6bubGkccdirSzvgIIgVVpt4Fj3NcYhs/9wqeCPmfqz20TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYiA8b3BlcmF0b3ItYi5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJECsvVrVb81xIdjUBAMmkwKz1aZ6M6p/hy8VCERUaifleNguTvL0MoFOMt9KLAQDS4geMPEWp7Ot7m5vMZN9jMIDnLE7LE9ExT725kJXIArg4BGojifkSCisGAQQBl1UBBQEBB0BBzz6cUUJWeUMbPmL8AjY9bqGX+s6/NMwpisBbXXnvCwMBCAeIeAQYFgoAIBYhBM5fgQ69yZaRlgZuICsvVrVb81xIBQJqI4n5AhsMAAoJECsvVrVb81xIP6ABAKa68/nvx5mGA6Ukz05sJhQqcLMNMUzfFu50NfJS6DrvAPwMAkX/AKJKJv0kn/YLG/WS3PTjNNRhwZtef9lTQc9kDA=="
 let openbaoOperatorCPublicKeyBase64 = "mDMEaiOJ+RYJKwYBBAHaRw8BAQdAk8b33//YRFh+tnQTHdF8YBoRbdQlK0f9GTjc8uK3dcC0TEdhbW1hIE9wZW5CYW8gb3BlcmF0b3ItYyA8b3BlcmF0b3ItYy5nYW1tYS1vcGVuYmFvQGd1YXJkaWFuaW50ZWxsaWdlbmNlLm9yZz6IkwQTFgoAOxYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsDBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4HAheAAAoJEOT897zG400NCVkA/iGDVuMteClIXDhC75Z5mQdD9xS3/k0g1zt1DihRPK2uAP0bmmC8TZObdVBNn7mQ8TxzMwisK0CDmtwJHp8yQ/H+A7g4BGojifkSCisGAQQBl1UBBQEBB0C8tq2q7d+EeFOMdkpP4c9xyGukm9M6FlFLV59zgiD0UQMBCAeIeAQYFgoAIBYhBBxAfMN++1GYi1EqmeT897zG400NBQJqI4n5AhsMAAoJEOT897zG400NydsA/0oeRRJ3ZAoy7bMXsBXd3wgaUA4w8R+JgSH5RwbErvfXAQC8Ckpse31YZ3CF6d+PgXOiLeafNr8+B1hQU3+5ATGdAQ=="
@@ -26,110 +30,27 @@ resources: [
 				name:       "gamma-primary"
 			}
 			preflight: ansible: playbook: "src/guardian-specification/ansible/preflight.yml"
-			nomad: run: argv: [
-				"ssh",
-				"-T",
-				"-o", "BatchMode=yes",
-				"-o", "StrictHostKeyChecking=yes",
-				"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
-				"-o", "ConnectTimeout=10",
-				"ubuntu@206.223.228.87",
-				"""
-					tmp="$(mktemp)"
-					trap 'rm -f "$tmp"' EXIT
-						cat >"$tmp" <<'GUARDIAN_FLY_CLOUDFLARE'
-						set -eu
-						repo=/home/ubuntu/.local/state/guardian/repo
-					workspace="$repo/workspace"
-					manifest="$workspace/.guardian/build/manifest.json"
-					job="$workspace/src/integrations/cloudflare/control-plane/nomad.hcl"
-					archive_rel="bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
-					archive="$repo/$archive_rel"
-					digest="$(
-						python3 - "$manifest" "$archive_rel" <<'PY'
-					import json
-					import sys
-
-					manifest_path, target_path = sys.argv[1], sys.argv[2]
-					with open(manifest_path, encoding="utf-8") as handle:
-					    manifest = json.load(handle)
-					for output in manifest.get("outputs", []):
-					    if output.get("target_path") == target_path:
-					        digest = output.get("digest", "")
-					        if not digest:
-					            raise SystemExit("output digest is empty")
-					        print(digest if digest.startswith("sha256:") else "sha256:" + digest)
-					        raise SystemExit(0)
-					raise SystemExit(f"output {target_path} not found in {manifest_path}")
-					PY
-						)"
-						test -f "$job"
-					test -f "$archive"
-					var_file="$(mktemp)"
-					trap 'rm -f "$var_file"' EXIT
-					printf 'guardian_repo_root = "%s"\n' "$repo" >"$var_file"
-					printf 'cloudflare_control_plane_image_archive = "%s"\n' "$archive" >>"$var_file"
-					printf 'cloudflare_control_plane_image_digest = "%s"\n' "$digest" >>"$var_file"
-					nomad=/opt/verself/profile/bin/nomad
-					job_name=cloudflare-integration-recovery
-					export NOMAD_ADDR=http://127.0.0.1:4646
-					job_exists() {
-						"$nomad" job status "$job_name" >/dev/null 2>&1
-					}
-					current_job_image_digest() {
-						"$nomad" job inspect -json "$job_name" 2>/dev/null | python3 -c 'import json, sys; job=json.load(sys.stdin); meta=job.get("Meta") or job.get("Job", {}).get("Meta") or {}; print(meta.get("image_digest", ""))' || true
-					}
-					latest_client_status() {
-						"$nomad" job allocs -json "$job_name" 2>/dev/null | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ClientStatus", ""))' || true
-					}
-					dump_job_debug() {
-						"$nomad" job status "$job_name" >&2 || true
-						alloc="$("$nomad" job allocs -json "$job_name" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ID", ""))' || true)"
-						test -z "$alloc" && return
-						"$nomad" alloc status "$alloc" >&2 || true
-						"$nomad" alloc logs -tail -n=80 "$alloc" recover >&2 || true
-						"$nomad" alloc logs -stderr -tail -n=80 "$alloc" recover >&2 || true
-					}
-					if job_exists; then
-						current_digest="$(current_job_image_digest)"
-						latest_status="$(latest_client_status)"
-						if [ "$current_digest" = "$digest" ] && [ "$latest_status" = complete ]; then
-							"$nomad" job allocs -json "$job_name"
-							exit 0
-						fi
-						if [ "$current_digest" = "$digest" ] && { [ "$latest_status" = failed ] || [ "$latest_status" = lost ]; }; then
-							"$nomad" job stop -purge -detach "$job_name" >/dev/null || true
-							for _ in $(seq 1 60); do
-								if ! job_exists; then
-									break
-								fi
-								sleep 1
-							done
-						fi
-					fi
-					"$nomad" job run -detach -var-file "$var_file" "$job"
-					for second in $(seq 1 600); do
-						allocs="$("$nomad" job allocs -json "$job_name" || true)"
-						if printf '%s\n' "$allocs" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; status=latest.get("ClientStatus"); sys.exit(0 if status == "complete" else 2 if status in {"failed", "lost"} else 1)'; then
-							printf '%s\n' "$allocs"
-							exit 0
-						fi
-						rc=$?
-						if [ "$rc" -eq 2 ]; then
-							dump_job_debug
-							exit 1
-						fi
-						if [ $((second % 10)) -eq 0 ]; then
-							echo "waiting for $job_name recovery: ${second}s" >&2
-						fi
-						sleep 1
-					done
-					dump_job_debug
-					exit 1
-					GUARDIAN_FLY_CLOUDFLARE
-					sh "$tmp"
-					""",
-			]
+			nomad: {
+				address:   "http://127.0.0.1:4646"
+				namespace: "default"
+				jobs: [
+					{
+						name: "cloudflare-integration-recovery"
+						path: "src/integrations/cloudflare/control-plane/nomad.hcl"
+						artifactPaths: [
+							"bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar",
+						]
+					},
+					{
+						name: "postgresql"
+						path: "src/infrastructure-components/postgresql/nomad.hcl"
+						artifactPaths: [
+							"bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar",
+							"bazel-bin/src/infrastructure-components/postgresql/cmd/postgresql-recovery/postgresql-recovery_/postgresql-recovery",
+						]
+					},
+				]
+			}
 		}
 	},
 	{

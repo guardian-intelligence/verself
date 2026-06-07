@@ -8,10 +8,18 @@ variable "postgresql_resource_name" {
   default = "postgresql"
 }
 
+variable "guardian_job_input_digest" {
+  type    = string
+  default = "sha256:local"
+}
+
 job "postgresql" {
   name        = "postgresql"
   datacenters = ["*"]
   type        = "service"
+  meta {
+    guardian_job_input_digest = "${var.guardian_job_input_digest}"
+  }
 
   group "postgresql" {
     count = 1

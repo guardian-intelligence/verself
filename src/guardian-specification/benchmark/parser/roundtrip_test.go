@@ -178,8 +178,13 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 								Playbook: "src/guardian-specification/ansible/" + token(t, "playbook") + ".yml",
 							},
 						},
-						Nomad: specdoc.NomadRun{
-							Run: lifecycleHook(t, "nomad_run"),
+						Nomad: specdoc.NomadFly{
+							Address:   "http://127.0.0.1:4646",
+							Namespace: token(t, "nomad_namespace"),
+							Jobs: []specdoc.NomadJob{{
+								Name: token(t, "nomad_job"),
+								Path: "src/" + token(t, "nomad_job_dir") + "/nomad.hcl",
+							}},
 						},
 					}),
 				},
@@ -207,16 +212,6 @@ func guardianDocument() *rapid.Generator[specdoc.Document] {
 		}
 		return doc
 	})
-}
-
-func lifecycleHook(t *rapid.T, label string) specdoc.LifecycleHook {
-	return specdoc.LifecycleHook{
-		Argv: []string{
-			"guardian-test-hook",
-			label,
-			token(t, label),
-		},
-	}
 }
 
 func token(t *rapid.T, label string) string {

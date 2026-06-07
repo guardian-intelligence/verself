@@ -50,7 +50,7 @@ package v1alpha1
 			kind:       "Substrate"
 		}
 		preflight: #Preflight
-		nomad: run: #LifecycleHook
+		nomad: #NomadFly
 	}
 }
 
@@ -75,15 +75,24 @@ package v1alpha1
 	}
 }
 
-#LifecycleHook: {
-	argv: [#NonEmptyString, ...#NonEmptyString]
-}
-
 #Preflight: {
 	ansible: {
 		playbook: #WorkspaceRelativePath
 	}
 }
 
+#NomadFly: {
+	address:   #HTTPURL
+	namespace: #NonEmptyString
+	jobs: [#NomadJob, ...#NomadJob]
+}
+
+#NomadJob: {
+	name:          #NonEmptyString
+	path:          #WorkspaceRelativePath
+	artifactPaths?: [...#WorkspaceRelativePath]
+}
+
 #WorkspaceRelativePath: string & !="" & !~"^/" & !~"(^|/)\\.\\.(/|$)"
 #AbsolutePath:          string & =~"^/.+"
+#HTTPURL:               =~"^https?://[^\\s]+$"
