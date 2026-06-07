@@ -9,26 +9,24 @@ materialized workspace for component-owned Nomad jobs.
 The command surface:
 
 ```sh
-guardian run bazel -- test //src/guardian-specification/...
+guardian run bazel -- build //src/guardian-specification/...
 guardian preflight gamma -o <yaml|json|toml|toon>
 guardian fly gamma --dry-run -o yaml
 guardian fly gamma
-guardian fly run gamma -- nomad status
 ```
 
 `preflight` is the first cut point in the convergence state machine. It
 resolves the profile, loads the resource graph, verifies local build artifacts
-are present, runs the referenced `Substrate` lifecycle hooks, verifies the
-remote repo tree, prepares OpenBao integration material for Nomad, starts the
-Nomad executor, and stops.
+and the materialized Bazel output tree are present under `.guardian/build`,
+runs the referenced Ansible preflight, verifies the remote repo tree, prepares
+OpenBao integration material for Nomad, starts the Nomad executor, and stops.
 
 `fly` starts with the same preflight phase and then runs the configured Nomad
-job hook. `fly run` converges first, then invokes a verified catalog tool
-through the remote Guardian binary. Component runtime behavior is a Nomad
-convention: owner job files include lifecycle tasks and consume the
-materialized resource graph. The base protocol does not encode component
-internals. Infrastructure components own their binaries, backup retrieval,
-credential import, health checks, and stabilization logic.
+hook. Component runtime behavior is a Nomad convention: owner job files include
+lifecycle tasks and consume the materialized resource graph and build manifest.
+The base protocol does not encode component internals. Infrastructure
+components own their binaries, backup retrieval, credential import, health
+checks, and stabilization logic.
 
 ## Scope Convention
 

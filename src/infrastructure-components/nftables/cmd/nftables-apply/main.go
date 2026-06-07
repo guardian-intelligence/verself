@@ -136,7 +136,7 @@ func parseConfig(args []string) (config, error) {
 	fs := flag.NewFlagSet("nftables-apply", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	cfg := config{
-		repoRoot:           "/home/ubuntu/.local/state/guardian/repo/current",
+		repoRoot:           "/home/ubuntu/.local/state/guardian/repo",
 		resourceName:       "nftables",
 		nftBin:             "nft",
 		ldLibraryPath:      os.Getenv("LD_LIBRARY_PATH"),

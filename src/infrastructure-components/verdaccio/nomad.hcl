@@ -1,6 +1,6 @@
 variable "guardian_repo_root" {
   type    = string
-  default = "/home/ubuntu/.local/state/guardian/repo/current"
+  default = "/home/ubuntu/.local/state/guardian/repo"
 }
 
 variable "verdaccio_resource_name" {

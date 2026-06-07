@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultGuardianResourceGraph        = "/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json"
+	defaultGuardianResourceGraph        = "/home/ubuntu/.local/state/guardian/repo/workspace/.guardian/fly/document.json"
 	defaultSourceCodeHostingResource    = "source-code-hosting-service"
 	defaultSourceCodeHostingPublicAddr  = "127.0.0.1:4261"
 	defaultSourceCodeHostingPrivateAddr = "127.0.0.1:4262"

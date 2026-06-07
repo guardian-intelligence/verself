@@ -29,7 +29,7 @@ import (
 const (
 	apiVersion      = "grafana.guardianintelligence.org/v1alpha1"
 	kind            = "GrafanaInstance"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "grafana"
 )
 

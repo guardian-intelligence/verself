@@ -59,6 +59,7 @@ VITEPLUS_NODE_TARGET = "//src/viteplus-monorepo:vp_node"
 VITEPLUS_WORKSPACE_INSTALL_TARGET = "//src/viteplus-monorepo:workspace_install"
 VITEPLUS_VP_SCRIPT = "src/viteplus-monorepo/node_modules/vite-plus/bin/vp"
 VITEPLUS_WORKSPACE = "src/viteplus-monorepo"
+MATERIALIZED_BAZEL_BIN = ".guardian/build/bazel-bin"
 
 def ws_path(ctx, *parts):
     """Resolve a workspace-relative path to absolute under the repo root."""
@@ -67,6 +68,10 @@ def ws_path(ctx, *parts):
     for p in parts:
         out = out + "/" + p
     return out
+
+def bazel_bin_path(ctx, *parts):
+    """Resolve a Bazel-built output materialized by `guardian run bazel -- build`."""
+    return ws_path(ctx, MATERIALIZED_BAZEL_BIN, *parts)
 
 def site_inventory_source(site):
     """Repo-relative path to the per-site authored inventory file."""
@@ -329,7 +334,7 @@ def viteplus_node(ctx, ensure_toolchain = True):
         )
         if rc != 0:
             return ""
-    node = ws_path(ctx, "bazel-bin", "src/viteplus-monorepo", "node")
+    node = bazel_bin_path(ctx, "src/viteplus-monorepo", "node")
     if not _path_exists(ctx, node):
         ctx.std.io.stderr.write("ERROR: expected Bazel-built Node at " + node + "\n")
         return ""
@@ -344,7 +349,7 @@ def viteplus_vp(ctx, args, env = None, label = None, ensure_toolchain = True):
     node = viteplus_node(ctx, ensure_toolchain = ensure_toolchain)
     if node == "":
         return 1
-    node_dir = ws_path(ctx, "bazel-bin", "src/viteplus-monorepo")
+    node_dir = bazel_bin_path(ctx, "src/viteplus-monorepo")
     vp = ws_path(ctx, VITEPLUS_VP_SCRIPT)
     arglist = list(args)
     vp_env = {}

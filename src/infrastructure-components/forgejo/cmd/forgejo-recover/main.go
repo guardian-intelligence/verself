@@ -30,7 +30,7 @@ import (
 const (
 	apiVersion      = "forgejo.guardianintelligence.org/v1alpha1"
 	kind            = "ForgejoInstance"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "forgejo"
 )
 

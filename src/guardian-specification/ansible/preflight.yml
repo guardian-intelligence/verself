@@ -5,24 +5,13 @@
   become: true
 
   vars:
-    guardian_remote_next: "{{ guardian_remote_repo_base }}/next"
-    guardian_remote_current: "{{ guardian_remote_repo_base }}/current"
-    guardian_remote_previous: "{{ guardian_remote_repo_base }}/previous"
     guardian_remote_owner: "{{ ansible_user | default('ubuntu') }}"
     guardian_remote_group: "{{ ansible_user | default('ubuntu') }}"
-    guardian_preflight_marker_path: "{{ guardian_remote_current }}/workspace/.guardian/preflight/ready.json"
-    guardian_openbao_recover: "{{ guardian_remote_current }}/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover"
+    guardian_preflight_marker_path: "{{ guardian_remote_repo_root }}/workspace/.guardian/preflight/ready.json"
+    guardian_openbao_recover: "{{ guardian_remote_repo_root }}/bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover"
     guardian_openbao_bao: /var/lib/openbao/runtime/current/bin/bao
     guardian_openbao_addr: https://127.0.0.1:8200
     guardian_openbao_ca_cert: /etc/verself/openbao/ca.pem
-    guardian_preflight_artifact_manifest: "{{ guardian_preflight_work_dir }}/artifacts.txt"
-    guardian_preflight_artifact_paths:
-      - bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
-      - bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar
-      - bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
-      - bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
-      - bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
-      - bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 
   tasks:
     - name: Probe already healthy preflight target
@@ -107,12 +96,24 @@
         enabled: true
         state: started
 
-    - name: Remove stale next repo tree
+    - name: Remove legacy release-slot repo trees
       ansible.builtin.file:
-        path: "{{ guardian_remote_next }}"
+        path: "{{ guardian_remote_repo_root }}/{{ item }}"
         state: absent
+      loop:
+        - next
+        - current
+        - previous
 
-    - name: Create remote repo staging directories
+    - name: Remove stale repo artifact directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ guardian_remote_repo_root }}/workspace"
+        - "{{ guardian_remote_repo_root }}/bazel-bin"
+
+    - name: Create remote repo directories
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
@@ -120,17 +121,9 @@
         group: "{{ guardian_remote_group }}"
         mode: "0755"
       loop:
-        - "{{ guardian_remote_next }}"
-        - "{{ guardian_remote_next }}/workspace"
-        - "{{ guardian_remote_next }}/bazel-bin"
-
-    - name: Write local artifact manifest
-      ansible.builtin.copy:
-        dest: "{{ guardian_preflight_artifact_manifest }}"
-        content: "{{ guardian_preflight_artifact_paths | join('\n') }}\n"
-        mode: "0600"
-      delegate_to: localhost
-      become: false
+        - "{{ guardian_remote_repo_root }}"
+        - "{{ guardian_remote_repo_root }}/workspace"
+        - "{{ guardian_remote_repo_root }}/bazel-bin"
 
     - name: Upload workspace
       ansible.builtin.command:
@@ -146,7 +139,7 @@
           - -e
           - "{{ guardian_rsync_ssh_command }}"
           - "{{ guardian_workspace_root }}/"
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_next }}/workspace/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/workspace/"
       delegate_to: localhost
       become: false
 
@@ -160,65 +153,50 @@
           - -e
           - "{{ guardian_rsync_ssh_command }}"
           - .guardian/fly/document.json
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_next }}/workspace/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/workspace/"
         chdir: "{{ guardian_workspace_root }}"
       delegate_to: localhost
       become: false
 
-    - name: Upload built artifacts
+    - name: Upload generated build manifest
       ansible.builtin.command:
         argv:
           - "{{ guardian_rsync_bin }}"
-          - -aL
-          - --mkpath
+          - -a
           - --relative
-          - "--files-from={{ guardian_preflight_artifact_manifest }}"
           - --timeout=60
           - -e
           - "{{ guardian_rsync_ssh_command }}"
-          - "{{ guardian_workspace_root }}/"
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_next }}/"
+          - .guardian/build/manifest.json
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/workspace/"
+        chdir: "{{ guardian_workspace_root }}"
       delegate_to: localhost
       become: false
 
-    - name: Verify staged fly graph exists
+    - name: Upload materialized Bazel output tree
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_rsync_bin }}"
+          - -a
+          - --delete
+          - --timeout=60
+          - -e
+          - "{{ guardian_rsync_ssh_command }}"
+          - "{{ guardian_bazel_output_root }}/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/bazel-bin/"
+      delegate_to: localhost
+      become: false
+
+    - name: Verify remote fly graph exists
       ansible.builtin.stat:
-        path: "{{ guardian_remote_next }}/workspace/.guardian/fly/document.json"
+        path: "{{ guardian_remote_repo_root }}/workspace/.guardian/fly/document.json"
       register: guardian_fly_graph
 
-    - name: Require staged fly graph
+    - name: Require remote fly graph
       ansible.builtin.assert:
         that:
           - guardian_fly_graph.stat.exists
           - guardian_fly_graph.stat.isreg
-
-    - name: Check current repo tree
-      ansible.builtin.stat:
-        path: "{{ guardian_remote_current }}"
-      register: guardian_current_tree
-
-    - name: Remove previous repo tree
-      ansible.builtin.file:
-        path: "{{ guardian_remote_previous }}"
-        state: absent
-      when: guardian_current_tree.stat.exists
-
-    - name: Preserve current repo tree
-      ansible.builtin.command:
-        argv:
-          - mv
-          - -Tf
-          - "{{ guardian_remote_current }}"
-          - "{{ guardian_remote_previous }}"
-      when: guardian_current_tree.stat.exists
-
-    - name: Promote staged repo tree
-      ansible.builtin.command:
-        argv:
-          - mv
-          - -Tf
-          - "{{ guardian_remote_next }}"
-          - "{{ guardian_remote_current }}"
 
     - name: Verify workspace rsync checksum delta is empty
       ansible.builtin.command:
@@ -238,7 +216,7 @@
           - -e
           - "{{ guardian_rsync_ssh_command }}"
           - "{{ guardian_workspace_root }}/"
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_current }}/workspace/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/workspace/"
       delegate_to: localhost
       become: false
       register: guardian_workspace_delta
@@ -259,7 +237,7 @@
       ansible.builtin.command:
         argv:
           - sha256sum
-          - "{{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+          - "{{ guardian_remote_repo_root }}/workspace/.guardian/fly/document.json"
       register: guardian_remote_fly_digest
       changed_when: false
 
@@ -268,35 +246,56 @@
         that:
           - guardian_local_fly_digest.stdout.split()[0] == guardian_remote_fly_digest.stdout.split()[0]
 
-    - name: Verify artifact rsync checksum delta is empty
+    - name: Read local build manifest digest
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - "{{ guardian_bazel_manifest_path }}"
+      delegate_to: localhost
+      become: false
+      register: guardian_local_bazel_manifest_digest
+      changed_when: false
+
+    - name: Read remote build manifest digest
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - "{{ guardian_remote_repo_root }}/workspace/.guardian/build/manifest.json"
+      register: guardian_remote_bazel_manifest_digest
+      changed_when: false
+
+    - name: Verify build manifest digest
+      ansible.builtin.assert:
+        that:
+          - guardian_local_bazel_manifest_digest.stdout.split()[0] == guardian_remote_bazel_manifest_digest.stdout.split()[0]
+
+    - name: Verify materialized Bazel output rsync checksum delta is empty
       ansible.builtin.command:
         argv:
           - "{{ guardian_rsync_bin }}"
-          - -aL
-          - --mkpath
+          - -a
+          - --delete
           - --dry-run
           - --checksum
           - --itemize-changes
-          - --relative
-          - "--files-from={{ guardian_preflight_artifact_manifest }}"
           - --timeout=60
           - -e
           - "{{ guardian_rsync_ssh_command }}"
-          - "{{ guardian_workspace_root }}/"
-          - "{{ guardian_rsync_target }}:{{ guardian_remote_current }}/"
+          - "{{ guardian_bazel_output_root }}/"
+          - "{{ guardian_rsync_target }}:{{ guardian_remote_repo_root }}/bazel-bin/"
       delegate_to: localhost
       become: false
-      register: guardian_artifact_delta
+      register: guardian_bazel_output_delta
       changed_when: false
-      failed_when: guardian_artifact_delta.stdout != ""
+      failed_when: guardian_bazel_output_delta.stdout != ""
 
     - name: Prepare OpenBao host integration
       ansible.builtin.command:
         argv:
           - "{{ guardian_openbao_recover }}"
           - prepare
-          - "--repo-root={{ guardian_remote_current }}"
-          - "--resource-graph={{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+          - "--repo-root={{ guardian_remote_repo_root }}"
+          - "--resource-graph={{ guardian_remote_repo_root }}/workspace/.guardian/fly/document.json"
           - --resource-name=openbao
 
     - name: Configure OpenBao systemd unit
@@ -375,7 +374,7 @@
 
     - name: Install Nomad runtime artifact
       ansible.builtin.unarchive:
-        src: "{{ guardian_remote_current }}/bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
+        src: "{{ guardian_remote_repo_root }}/bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
         dest: /opt/verself/profile
         remote_src: true
 
@@ -547,8 +546,8 @@
         argv:
           - "{{ guardian_openbao_recover }}"
           - recover
-          - "--repo-root={{ guardian_remote_current }}"
-          - "--resource-graph={{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+          - "--repo-root={{ guardian_remote_repo_root }}"
+          - "--resource-graph={{ guardian_remote_repo_root }}/workspace/.guardian/fly/document.json"
           - --resource-name=openbao
       register: guardian_openbao_recovery
       changed_when: false
@@ -591,7 +590,7 @@
           - /opt/verself/profile/bin/nomad
           - job
           - validate
-          - "{{ guardian_remote_current }}/workspace/{{ item }}"
+          - "{{ guardian_remote_repo_root }}/workspace/{{ item }}"
       environment:
         NOMAD_ADDR: http://127.0.0.1:4646
       loop:

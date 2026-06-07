@@ -5,7 +5,7 @@ historical incident log.
 
 | Component | Current convergence owner | Current status | Next proof |
 | --- | --- | --- | --- |
-| Guardian preflight | Guardian CLI + Ansible preflight playbook | Uploads the repo/workspace graph and prepares root services; verified on gamma from wiped OpenBao/Nomad state | Keep fast path and wiped-host path green |
+| Guardian preflight | Guardian CLI + Ansible preflight playbook | Uploads the repo/workspace graph plus `.guardian/build/bazel-bin` materialized outputs and prepares root services; verified on gamma from wiped OpenBao/Nomad state | Keep fast path and wiped-host path green |
 | OpenBao | Preflight root service via `openbao-recover` and systemd | Installs, starts, initializes/restores, unseals, bootstraps `SecretPath` KV mounts/import handoff and Nomad JWT auth, then revokes fresh init root token | Sealed restart recovery |
 | Nomad | Preflight root service via systemd | Starts the agent, exposes workload-identity JWKS before OpenBao JWT auth setup, and validates the Podman driver | Add the next component job to the fly loop |
 | Podman | Preflight root prerequisite | Nomad loads repo-local image archives through the Podman driver | More services run from repo-local image archives |
@@ -38,8 +38,10 @@ historical incident log.
 - Batch recovery jobs skip when the same image digest has already completed,
   but a failed or lost batch allocation is purged and resubmitted so operator
   imports can be retried without changing job bytes.
-- The repo upload is the golden image; Bazel-built artifacts are uploaded
-  explicitly when they live under `bazel-bin`.
+- The repo upload is the golden image; `guardian run bazel -- build ...`
+  materializes Bazel-reported outputs into `.guardian/build/bazel-bin`, and the
+  preflight playbook uploads that tree without following Bazel convenience
+  symlinks.
 - Component packages own their Nomad jobs, OCI image/archive outputs, and
   component CRD schemas.
 - No fixed host ports for services. Nomad allocates dynamic ports.

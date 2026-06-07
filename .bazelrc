@@ -18,6 +18,9 @@ build --experimental_action_cache_gc_threshold=10
 build --experimental_action_cache_gc_idle_delay=5m
 build --incompatible_strict_action_env
 build --jobs=auto
+# Deployment consumes materialized repo-local outputs under .guardian/build,
+# never Bazel convenience symlinks into the user's output base.
+build --experimental_convenience_symlinks=ignore
 # Reuse sandbox directories across actions; cuts setup/teardown cost on
 # incremental builds.
 build --reuse_sandbox_directories

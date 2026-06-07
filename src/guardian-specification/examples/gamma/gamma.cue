@@ -27,37 +27,52 @@ resources: [
 			}
 			preflight: ansible: playbook: "src/guardian-specification/ansible/preflight.yml"
 			nomad: run: argv: [
-				"sh",
-				"-c",
+				"ssh",
+				"-T",
+				"-o", "BatchMode=yes",
+				"-o", "StrictHostKeyChecking=yes",
+				"-o", "UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts",
+				"-o", "ConnectTimeout=10",
+				"ubuntu@206.223.228.87",
 				"""
-					set -eu
-					ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 ubuntu@206.223.228.87 'sh -s' <<-'REMOTE'
-					set -eu
+					tmp="$(mktemp)"
+					trap 'rm -f "$tmp"' EXIT
+						cat >"$tmp" <<'GUARDIAN_FLY_CLOUDFLARE'
+						set -eu
+						repo=/home/ubuntu/.local/state/guardian/repo
+					workspace="$repo/workspace"
+					manifest="$workspace/.guardian/build/manifest.json"
+					job="$workspace/src/integrations/cloudflare/control-plane/nomad.hcl"
+					archive_rel="bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
+					archive="$repo/$archive_rel"
+					digest="$(
+						python3 - "$manifest" "$archive_rel" <<'PY'
+					import json
+					import sys
+
+					manifest_path, target_path = sys.argv[1], sys.argv[2]
+					with open(manifest_path, encoding="utf-8") as handle:
+					    manifest = json.load(handle)
+					for output in manifest.get("outputs", []):
+					    if output.get("target_path") == target_path:
+					        digest = output.get("digest", "")
+					        if not digest:
+					            raise SystemExit("output digest is empty")
+					        print(digest if digest.startswith("sha256:") else "sha256:" + digest)
+					        raise SystemExit(0)
+					raise SystemExit(f"output {target_path} not found in {manifest_path}")
+					PY
+						)"
+						test -f "$job"
+					test -f "$archive"
+					var_file="$(mktemp)"
+					trap 'rm -f "$var_file"' EXIT
+					printf 'guardian_repo_root = "%s"\n' "$repo" >"$var_file"
+					printf 'cloudflare_control_plane_image_archive = "%s"\n' "$archive" >>"$var_file"
+					printf 'cloudflare_control_plane_image_digest = "%s"\n' "$digest" >>"$var_file"
 					nomad=/opt/verself/profile/bin/nomad
-					repo=/home/ubuntu/.local/state/guardian/repo/current
-					job="$repo/workspace/src/integrations/cloudflare/control-plane/nomad.hcl"
 					job_name=cloudflare-integration-recovery
-					image="$repo/bazel-bin/src/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane/cloudflare-control-plane_image_load/tarball.tar"
 					export NOMAD_ADDR=http://127.0.0.1:4646
-					dump_job_debug() {
-						echo "===== $job_name job status =====" >&2
-						"$nomad" job status "$job_name" >&2 || true
-						alloc="$("$nomad" job allocs -json "$job_name" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ID", ""))' || true)"
-						if [ -z "$alloc" ]; then
-							echo "no $job_name allocation found" >&2
-							return
-						fi
-						echo "===== $job_name alloc status $alloc =====" >&2
-						"$nomad" alloc status "$alloc" >&2 || true
-						for task in recover; do
-							echo "===== $job_name $task stdout tail =====" >&2
-							"$nomad" alloc logs -tail -n=80 "$alloc" "$task" >&2 || true
-							echo "===== $job_name $task stderr tail =====" >&2
-							"$nomad" alloc logs -stderr -tail -n=80 "$alloc" "$task" >&2 || true
-						done
-					}
-					set -- $(sha256sum "$image")
-					image_digest="sha256:$1"
 					job_exists() {
 						"$nomad" job status "$job_name" >/dev/null 2>&1
 					}
@@ -67,14 +82,22 @@ resources: [
 					latest_client_status() {
 						"$nomad" job allocs -json "$job_name" 2>/dev/null | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ClientStatus", ""))' || true
 					}
+					dump_job_debug() {
+						"$nomad" job status "$job_name" >&2 || true
+						alloc="$("$nomad" job allocs -json "$job_name" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ID", ""))' || true)"
+						test -z "$alloc" && return
+						"$nomad" alloc status "$alloc" >&2 || true
+						"$nomad" alloc logs -tail -n=80 "$alloc" recover >&2 || true
+						"$nomad" alloc logs -stderr -tail -n=80 "$alloc" recover >&2 || true
+					}
 					if job_exists; then
 						current_digest="$(current_job_image_digest)"
 						latest_status="$(latest_client_status)"
-						if [ "$current_digest" = "$image_digest" ] && [ "$latest_status" = complete ]; then
+						if [ "$current_digest" = "$digest" ] && [ "$latest_status" = complete ]; then
 							"$nomad" job allocs -json "$job_name"
 							exit 0
 						fi
-						if [ "$current_digest" = "$image_digest" ] && { [ "$latest_status" = failed ] || [ "$latest_status" = lost ]; }; then
+						if [ "$current_digest" = "$digest" ] && { [ "$latest_status" = failed ] || [ "$latest_status" = lost ]; }; then
 							"$nomad" job stop -purge -detach "$job_name" >/dev/null || true
 							for _ in $(seq 1 60); do
 								if ! job_exists; then
@@ -82,24 +105,19 @@ resources: [
 								fi
 								sleep 1
 							done
-							if job_exists; then
-								echo "failed to purge dead $job_name before retry" >&2
-								exit 1
-							fi
 						fi
 					fi
-					"$nomad" job run -detach -var "cloudflare_control_plane_image_archive=$image" -var "cloudflare_control_plane_image_digest=$image_digest" "$job"
+					"$nomad" job run -detach -var-file "$var_file" "$job"
 					for second in $(seq 1 600); do
 						allocs="$("$nomad" job allocs -json "$job_name" || true)"
 						if printf '%s\n' "$allocs" | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; status=latest.get("ClientStatus"); sys.exit(0 if status == "complete" else 2 if status in {"failed", "lost"} else 1)'; then
 							printf '%s\n' "$allocs"
 							exit 0
-						else
-							rc=$?
-							if [ "$rc" -eq 2 ]; then
-								dump_job_debug
-								exit 1
-							fi
+						fi
+						rc=$?
+						if [ "$rc" -eq 2 ]; then
+							dump_job_debug
+							exit 1
 						fi
 						if [ $((second % 10)) -eq 0 ]; then
 							echo "waiting for $job_name recovery: ${second}s" >&2
@@ -108,7 +126,8 @@ resources: [
 					done
 					dump_job_debug
 					exit 1
-					REMOTE
+					GUARDIAN_FLY_CLOUDFLARE
+					sh "$tmp"
 					""",
 			]
 		}
@@ -120,8 +139,7 @@ resources: [
 		spec: {
 
 			remote: {
-				repoRoot: "/home/ubuntu/.local/state/guardian/repo/current"
-				guardian: "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian"
+				repoRoot: "/home/ubuntu/.local/state/guardian/repo"
 				ssh: [
 					"ssh",
 					"-T",

@@ -27,7 +27,7 @@ import (
 const (
 	apiVersion      = "zot.guardianintelligence.org/v1alpha1"
 	kind            = "ZotRegistry"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "zot"
 )
 

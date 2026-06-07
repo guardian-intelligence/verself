@@ -22,7 +22,7 @@ import (
 const (
 	apiVersion      = "spire.guardianintelligence.org/v1alpha1"
 	kind            = "SPIRECluster"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "spire"
 )
 

@@ -135,7 +135,7 @@ These are tracked and contributions are welcome.
 
 **Roadmap:** Python SDK → MCP server from the same model → a second language →
 docs. One language done well first.
-
+x
 ## Contributing
 
 PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the

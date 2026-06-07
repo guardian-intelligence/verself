@@ -1,9 +1,9 @@
 # Spec Scope
 
 Guardian alpha keeps the base protocol small. The base spec defines the
-resource graph envelope, the preflight entrypoint, substrate access/upload
-hooks, shared public-origin facts, command response shape, and stable condition
-names for cross-component blockers.
+resource graph envelope, the preflight entrypoint, substrate remote facts,
+shared public-origin facts, command response shape, and stable condition names
+for cross-component blockers.
 
 The base resource graph uses the Kubernetes-style envelope:
 
@@ -40,7 +40,7 @@ Place every new concept at the narrowest layer that can validate and use it.
 
 | Concept | Location | Example |
 | --- | --- | --- |
-| Graph envelope, entrypoint, upload hooks, kernel hooks, Nomad run hook, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
+| Graph envelope, entrypoint, preflight playbook, Nomad run hook, shared origin facts, command response shape | Guardian base spec | `FlyProcedure`, `Substrate`, `PublicOrigin`, `ready_to_fly` |
 | Static configuration for one deployable component | Component CRD beside the owner | `OpenBaoCluster`, `HAProxyGateway`, `ObjectStorageService` |
 | Runtime behavior and convergence steps | Component-owned Nomad job and owner-local binary | `task "recover"` prestart logic |
 | Provider authority, unseal material, private keys, runtime DEKs | External operator or trust path | Shamir shares, PGP private keys, provider parent tokens |
@@ -118,9 +118,9 @@ identifiers, origins, and substrate hooks. The site name is an operator label.
 The base spec owns:
 
 - `Document`: `entrypoint` plus `resources`;
-- `FlyProcedure`: the root procedure that references one `Substrate` and one
-  Nomad run hook;
-- `Substrate`: access, upload, and fixed executor lifecycle hook commands;
+- `FlyProcedure`: the root procedure that references one `Substrate`, one
+  preflight playbook, and one Nomad run hook;
+- `Substrate`: remote access facts;
 - `PublicOrigin`: shared externally visible URL facts;
 - CLI response keys such as `ready_to_fly`, upload digests, hook status, and
   conditions.
@@ -183,7 +183,7 @@ Use these checks before adding a field:
 
 | Proposed field describes | Placement |
 | --- | --- |
-| How `guardian preflight` reaches, uploads to, extracts on, or verifies a substrate | `Substrate` |
+| Which remote `guardian preflight` should use as the substrate | `Substrate` |
 | A URL that multiple components consume as public configuration | `PublicOrigin` |
 | Which host daemon, service, provider, backup object, policy, or runtime path a component owns | Component CRD |
 | A component operation such as init, restore, unseal, certificate issuance, bucket creation, schema migration, or health wait | Nomad lifecycle task or owner-local binary |
@@ -200,7 +200,7 @@ Component convergence and deployment are Nomad conventions. A component job
 file is checked into the component directory and shipped inside the materialized
 repo. The job file may include lifecycle tasks that:
 
-- read `/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json`;
+- read `$guardian_repo_root/workspace/.guardian/fly/document.json`;
 - select the component CRD resources it owns;
 - install repo-built runtime artifacts;
 - restore or initialize state;

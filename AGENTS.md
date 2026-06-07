@@ -26,8 +26,8 @@ Newsroom - Business updates: guardianintelligence.org/newsroom
 The Guardian software specification specifies the procedure to convert compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code.
 
 ```sh
-guardian preflight src/guardian-specification/examples/gamma/gamma.cue
-guardian fly src/guardian-specification/examples/gamma/gamma.cue --dry-run
+guardian preflight gamma
+guardian fly gamma --dry-run
 ```
 
 `preflight` establishes a connection with a remote, uploads the repo's built artifacts, verifies the materialized repo tree, and prepares fixed host executor prerequisites. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, feeds CRD values into the declared Ansible preflight playbook, and reports whether the target is ready for `fly`.
@@ -310,7 +310,7 @@ Top-level landmarks:
 
 - `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or `guardian run bazel -- ...`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
-- Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
+- Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` with `guardian run bazel -- build ...` and run the repo-local binary as `.guardian/build/bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
 
 Orienting commands: `aspect db pg list` enumerates per-service PostgreSQL databases, `aspect observe` opens the telemetry surface, `aspect db ch schemas` lists ClickHouse tables.
 

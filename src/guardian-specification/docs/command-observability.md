@@ -2,15 +2,13 @@
 
 Guardian commands keep data and observation separate: command results and remote
 tool output go to stdout, while state transitions and diagnostics go to stderr.
-`preflight`, `fly`, and `fly run` emit state transitions by default.
+`preflight` and `fly` emit state transitions by default.
 
 ## Usage
 
 ```sh
 guardian preflight gamma
 guardian fly gamma
-guardian fly run gamma -- bazel test //...
-guardian -v fly run -f src/guardian-specification/examples/gamma/gamma.cue -- bazel info release
 guardian --quiet fly gamma
 ```
 
@@ -20,8 +18,8 @@ output; `--quiet` prints only final errors.
 ## Tee and Files
 
 ```sh
-guardian fly run gamma -- bazel test //... >bazel.out 2> >(tee .guardian/logs/gamma.flyrun.log >&2)
-guardian --log-file .guardian/logs/gamma.flyrun.jsonl --event-format jsonl fly run gamma -- bazel test //...
+guardian fly gamma >fly.out 2> >(tee .guardian/logs/gamma.fly.log >&2)
+guardian --log-file .guardian/logs/gamma.fly.jsonl --event-format jsonl fly gamma
 ```
 
 `--log-file` mirrors the event stream to a file and keeps stderr active for the
@@ -43,7 +41,7 @@ event schema as one record per event.
 ## Event Schema
 
 ```json
-{"time":"2026-06-07T00:00:00Z","run_id":"01JY0000000000000000000000","command":"guardian fly run","profile":"gamma","level":"state","kind":"transition","phase":"preflight.upload","state":"RemoteTreeVerified","status":"ok","message":"remote tree verified","duration_ms":1183,"attrs":{"digest":"sha256:..."}}
+{"time":"2026-06-07T00:00:00Z","run_id":"01JY0000000000000000000000","command":"guardian fly","profile":"gamma","level":"state","kind":"transition","phase":"preflight.upload","state":"RemoteTreeVerified","status":"ok","message":"remote tree verified","duration_ms":1183,"attrs":{"digest":"sha256:..."}}
 ```
 
 Every event includes `time`, `run_id`, `command`, `level`, `kind`, `phase`,

@@ -77,7 +77,6 @@ type NomadRun struct {
 
 type Remote struct {
 	RepoRoot string   `json:"repoRoot,omitempty" yaml:"repoRoot,omitempty" toml:"repoRoot,omitempty" toon:"repoRoot,omitempty"`
-	Guardian string   `json:"guardian,omitempty" yaml:"guardian,omitempty" toml:"guardian,omitempty" toon:"guardian,omitempty"`
 	SSH      []string `json:"ssh,omitempty" yaml:"ssh,omitempty" toml:"ssh,omitempty" toon:"ssh,omitempty"`
 }
 
@@ -335,14 +334,11 @@ func validateHook(name string, hook LifecycleHook) error {
 }
 
 func validateRemote(name string, remote Remote) error {
-	if remote.RepoRoot == "" && remote.Guardian == "" && len(remote.SSH) == 0 {
+	if remote.RepoRoot == "" && len(remote.SSH) == 0 {
 		return nil
 	}
 	if !strings.HasPrefix(remote.RepoRoot, "/") {
 		return fmt.Errorf("%s.repoRoot must be an absolute path", name)
-	}
-	if !strings.HasPrefix(remote.Guardian, "/") {
-		return fmt.Errorf("%s.guardian must be an absolute path", name)
 	}
 	if len(remote.SSH) == 0 {
 		return fmt.Errorf("%s.ssh is required", name)

@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,8 @@ import (
 
 const (
 	defaultFlyDocumentPath = ".guardian/fly/document.json"
+	defaultBazelBuildRoot  = ".guardian/build"
+	bazelBuildManifestPath = ".guardian/build/manifest.json"
 	hookOutputTailBytes    = 12000
 )
 
@@ -143,7 +146,7 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	case "profiles":
 		return runProfiles(args[1:], stdout, stderr)
 	case "fly":
-		return runFlyCommand(args[1:], stdout, stderr)
+		return runFly(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		usage(stderr)
 		return 0
@@ -222,11 +225,73 @@ func runTool(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "guardian run: %v\n", err)
 		return 1
 	}
+	if toolName == "bazel" && len(toolArgs) > 0 && toolArgs[0] == "build" {
+		return runBazelBuildTool(context.Background(), tool, toolArgs, workspaceRoot, stdout, stderr)
+	}
 	return toolrun.Exec(context.Background(), tool, toolArgs, toolrun.Options{
 		WorkDir: workspaceRoot,
 		Stdout:  stdout,
 		Stderr:  stderr,
 	})
+}
+
+func runBazelBuildTool(ctx context.Context, tool toolcatalog.ResolvedTool, args []string, workspaceRoot string, stdout io.Writer, stderr io.Writer) int {
+	buildRoot := filepath.Join(workspaceRoot, filepath.FromSlash(defaultBazelBuildRoot))
+	if err := os.MkdirAll(buildRoot, 0o755); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian run: create %s: %v\n", defaultBazelBuildRoot, err)
+		return 1
+	}
+	bepPath, hasBEPPath := bazelBuildEventJSONPath(args, workspaceRoot)
+	if !hasBEPPath {
+		bepPath = filepath.Join(buildRoot, "build-events.json")
+	}
+	bazelArgs := append([]string(nil), args...)
+	bazelArgs = append(bazelArgs,
+		"--experimental_convenience_symlinks=ignore",
+		"--nobuild_event_publish_all_actions",
+	)
+	if !hasBEPPath {
+		bazelArgs = append(bazelArgs, "--build_event_json_file="+bepPath)
+	}
+	code := toolrun.Exec(ctx, tool, bazelArgs, toolrun.Options{
+		WorkDir: workspaceRoot,
+		Stdout:  stdout,
+		Stderr:  stderr,
+	})
+	if code != 0 {
+		return code
+	}
+	if err := materializeBazelBuildOutputs(workspaceRoot, bepPath); err != nil {
+		_, _ = fmt.Fprintf(stderr, "guardian run: materialize Bazel outputs: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func bazelBuildEventJSONPath(args []string, workspaceRoot string) (string, bool) {
+	for i, arg := range args {
+		if value, ok := strings.CutPrefix(arg, "--build_event_json_file="); ok {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if filepath.IsAbs(value) {
+				return value, true
+			}
+			return filepath.Join(workspaceRoot, value), true
+		}
+		if arg == "--build_event_json_file" && i+1 < len(args) {
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				continue
+			}
+			if filepath.IsAbs(value) {
+				return value, true
+			}
+			return filepath.Join(workspaceRoot, value), true
+		}
+	}
+	return "", false
 }
 
 func runToolList(opts runOptions, stdout io.Writer, stderr io.Writer) int {
@@ -459,17 +524,6 @@ func runPreflight(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
-func runFlyCommand(args []string, stdout io.Writer, stderr io.Writer) int {
-	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
-		flyUsage(stderr)
-		return 0
-	}
-	if len(args) > 0 && args[0] == "run" {
-		return runFlyRun(args[1:], stdout, stderr)
-	}
-	return runFly(args, stdout, stderr)
-}
-
 func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
 	opts, ok := parseProfileFlags("guardian fly", args, stderr)
 	if !ok {
@@ -493,104 +547,6 @@ func runFly(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 	return 0
-}
-
-func runFlyRun(args []string, stdout io.Writer, stderr io.Writer) int {
-	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
-		flyRunUsage(stderr)
-		return 0
-	}
-	before, remoteArgs, ok := splitFlyRunArgs(args)
-	if !ok {
-		return commandUsageError(stderr, "guardian fly run", "expected -- before remote tool", nil)
-	}
-	if len(remoteArgs) == 0 {
-		return commandUsageError(stderr, "guardian fly run", "remote tool is required", nil)
-	}
-	opts, ok := parseProfileFlags("guardian fly run", before, stderr)
-	if !ok {
-		return 2
-	}
-	if opts.Help {
-		flyRunUsage(stderr)
-		return 0
-	}
-	emitter := eventWriter{enabled: opts.Stream, stderr: stderr}
-	doc, ok := resolveDocument("guardian fly run", &opts, stderr)
-	if !ok {
-		return 1
-	}
-	fly := evaluateFly(doc, opts, emitter)
-	if hasFalseCondition(fly.Conditions) || fly.Status != "ready" {
-		_, _ = fmt.Fprintf(stderr, "guardian fly run: fly did not converge for profile %q\n", opts.Profile)
-		return 1
-	}
-	toolName := remoteArgs[0]
-	if _, err := toolcatalog.Resolve(opts.WorkspaceRoot, toolName); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian fly run: %v\n", err)
-		return 1
-	}
-	return runRemoteGuardianTool(doc.Compiled.SubstrateSpec.Remote, toolName, remoteArgs[1:], stdout, stderr)
-}
-
-func splitFlyRunArgs(args []string) ([]string, []string, bool) {
-	for i, arg := range args {
-		if arg == "--" {
-			return append([]string(nil), args[:i]...), append([]string(nil), args[i+1:]...), true
-		}
-	}
-	return nil, nil, false
-}
-
-func runRemoteGuardianTool(remote specdoc.Remote, toolName string, toolArgs []string, stdout io.Writer, stderr io.Writer) int {
-	if len(remote.SSH) == 0 || strings.TrimSpace(remote.Guardian) == "" || strings.TrimSpace(remote.RepoRoot) == "" {
-		_, _ = fmt.Fprintln(stderr, "guardian fly run: substrate remote guardian is not configured")
-		return 1
-	}
-	verify := remoteGuardianCommand(remote, []string{"run", toolName, "--verify", "-o", "json"})
-	if output, err := execRemoteCommand(context.Background(), remote.SSH, verify, nil, nil); err != nil {
-		_, _ = fmt.Fprintf(stderr, "guardian fly run: remote tool verification failed: %v\n%s", err, outputTail(output, 1600))
-		return 1
-	}
-	runArgs := append([]string{"run", toolName, "--"}, toolArgs...)
-	command := remoteGuardianCommand(remote, runArgs)
-	_, err := execRemoteCommand(context.Background(), remote.SSH, command, stdout, stderr)
-	if err == nil {
-		return 0
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode()
-	}
-	_, _ = fmt.Fprintf(stderr, "guardian fly run: remote command failed: %v\n", err)
-	return 1
-}
-
-func remoteGuardianCommand(remote specdoc.Remote, guardianArgs []string) string {
-	workspace := filepath.Join(remote.RepoRoot, "workspace")
-	parts := []string{"cd", shellQuote(workspace), "&&", "exec", shellQuote(remote.Guardian)}
-	for _, arg := range guardianArgs {
-		parts = append(parts, shellQuote(arg))
-	}
-	return strings.Join(parts, " ")
-}
-
-func execRemoteCommand(ctx context.Context, ssh []string, remoteCommand string, stdout io.Writer, stderr io.Writer) ([]byte, error) {
-	if len(ssh) == 0 {
-		return nil, errors.New("ssh argv is empty")
-	}
-	argv := append(append([]string(nil), ssh[1:]...), remoteCommand)
-	cmd := exec.CommandContext(ctx, ssh[0], argv...)
-	if stdout != nil || stderr != nil {
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		return nil, cmd.Run()
-	}
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	err := cmd.Run()
-	return output.Bytes(), err
 }
 
 func shellQuote(value string) string {
@@ -927,7 +883,7 @@ func evaluatePreflight(doc guardianDocument, opts commandOptions, emitter eventW
 	}
 	result.Upload.Status = "prepared"
 	result.Upload.Reason = "WorkspaceReady"
-	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and artifact directory are present locally", "preflight.upload"))
+	result.Conditions = append(result.Conditions, conditionTrue("LocalArtifactsPresent", "WorkspaceReady", "workspace graph and materialized Bazel outputs are present locally", "preflight.upload"))
 	if hasFalseCondition(result.Conditions) {
 		return result
 	}
@@ -979,10 +935,10 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 		result.Message = err.Error()
 		return result, err
 	}
-	uvxPath := filepath.Join(opts.WorkspaceRoot, "bazel-bin/src/tools/dev/binaries/uvx")
+	uvxPath := filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultBazelBuildRoot+"/bazel-bin/src/tools/dev/binaries/uvx"))
 	if _, err := os.Stat(uvxPath); err != nil {
 		result.Reason = "AnsibleRunnerMissing"
-		result.Message = "bazel-bin/src/tools/dev/binaries/uvx is missing; build //src/tools/dev/binaries:uv_tools before preflight"
+		result.Message = defaultBazelBuildRoot + "/bazel-bin/src/tools/dev/binaries/uvx is missing; run guardian run bazel -- build //src/tools/dev/binaries:uv_tools before preflight"
 		return result, fmt.Errorf("%s: %w", result.Message, err)
 	}
 	target, err := parseAnsibleSSHTarget(doc.Compiled.SubstrateSpec.Remote.SSH)
@@ -1182,10 +1138,6 @@ func inventoryValue(value string) string {
 
 func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest string, target ansibleSSHTarget, tmpDir string) (map[string]any, error) {
 	remote := doc.Compiled.SubstrateSpec.Remote
-	repoBase, err := remoteRepoBase(remote.RepoRoot)
-	if err != nil {
-		return nil, err
-	}
 	workspaceState := gitWorkspaceState(opts.WorkspaceRoot)
 	return map[string]any{
 		"guardian_document":               doc.Source,
@@ -1196,11 +1148,11 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		"guardian_workspace_git_clean":    workspaceState.Clean,
 		"guardian_workspace_root":         opts.WorkspaceRoot,
 		"guardian_fly_document_path":      filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultFlyDocumentPath)),
+		"guardian_bazel_manifest_path":    filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(bazelBuildManifestPath)),
+		"guardian_bazel_output_root":      filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultBazelBuildRoot+"/bazel-bin")),
 		"guardian_preflight_work_dir":     tmpDir,
-		"guardian_remote_repo_base":       repoBase,
-		"guardian_remote_repo_current":    remote.RepoRoot,
-		"guardian_remote_guardian":        remote.Guardian,
-		"guardian_rsync_bin":              filepath.Join(opts.WorkspaceRoot, "bazel-bin/src/guardian-specification/tools/rsync"),
+		"guardian_remote_repo_root":       remote.RepoRoot,
+		"guardian_rsync_bin":              filepath.Join(opts.WorkspaceRoot, filepath.FromSlash(defaultBazelBuildRoot+"/bazel-bin/src/guardian-specification/tools/rsync")),
 		"guardian_rsync_target":           target.User + "@" + target.Host,
 		"guardian_rsync_ssh_command":      ansibleRsyncSSHCommand(target),
 		"guardian_substrate_resource":     doc.Compiled.Substrate,
@@ -1230,17 +1182,6 @@ func gitWorkspaceState(workspaceRoot string) gitState {
 	return gitState{Revision: revision, Clean: strings.TrimSpace(string(statusOut)) == ""}
 }
 
-func remoteRepoBase(repoRoot string) (string, error) {
-	repoRoot = strings.TrimRight(repoRoot, "/")
-	if repoRoot == "" || !strings.HasPrefix(repoRoot, "/") {
-		return "", fmt.Errorf("substrate remote repoRoot must be absolute: %q", repoRoot)
-	}
-	if filepath.Base(repoRoot) == "current" {
-		return filepath.Dir(repoRoot), nil
-	}
-	return repoRoot, nil
-}
-
 func ansibleRsyncSSHCommand(target ansibleSSHTarget) string {
 	argv := []string{target.Executable}
 	if target.Port != "" {
@@ -1257,17 +1198,269 @@ func ansibleRsyncSSHCommand(target ansibleSSHTarget) string {
 func preparePreflightWorkspace(workspaceRoot string) error {
 	for _, rel := range []string{
 		defaultFlyDocumentPath,
-		"bazel-bin",
-		"bazel-bin/src/tools/dev/binaries/uvx",
-		"bazel-bin/src/guardian-specification/tools/rsync",
+		bazelBuildManifestPath,
+		defaultBazelBuildRoot + "/bazel-bin",
+		defaultBazelBuildRoot + "/bazel-bin/src/tools/dev/binaries/uvx",
+		defaultBazelBuildRoot + "/bazel-bin/src/guardian-specification/tools/rsync",
 	} {
 		path := filepath.Join(workspaceRoot, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s is missing; build the repo before preflight", rel)
+				return fmt.Errorf("%s is missing; run guardian run bazel -- build before preflight", rel)
 			}
 			return fmt.Errorf("stat %s: %w", rel, err)
 		}
+	}
+	return nil
+}
+
+type bazelBuildManifest struct {
+	Outputs []bazelBuildOutput `json:"outputs"`
+}
+
+type bazelBuildOutput struct {
+	Path       string `json:"path"`
+	SourceURI  string `json:"source_uri"`
+	Digest     string `json:"digest,omitempty"`
+	Length     string `json:"length,omitempty"`
+	TargetPath string `json:"target_path"`
+}
+
+type bazelBuildEvent struct {
+	ID struct {
+		NamedSet *struct {
+			ID string `json:"id"`
+		} `json:"namedSet,omitempty"`
+	} `json:"id"`
+	NamedSetOfFiles *bazelNamedSetOfFiles `json:"namedSetOfFiles,omitempty"`
+	Completed       *struct {
+		Success     bool               `json:"success"`
+		OutputGroup []bazelOutputGroup `json:"outputGroup"`
+	} `json:"completed,omitempty"`
+}
+
+type bazelNamedSetOfFiles struct {
+	Files    []bazelOutputFile `json:"files"`
+	FileSets []bazelFileSet    `json:"fileSets"`
+}
+
+type bazelOutputGroup struct {
+	Name     string         `json:"name"`
+	FileSets []bazelFileSet `json:"fileSets"`
+}
+
+type bazelFileSet struct {
+	ID string `json:"id"`
+}
+
+type bazelOutputFile struct {
+	Name       string   `json:"name"`
+	URI        string   `json:"uri"`
+	PathPrefix []string `json:"pathPrefix"`
+	Digest     string   `json:"digest"`
+	Length     string   `json:"length"`
+}
+
+func materializeBazelBuildOutputs(workspaceRoot string, bepPath string) error {
+	file, err := os.Open(bepPath)
+	if err != nil {
+		return fmt.Errorf("open build event file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	namedSets := map[string]bazelNamedSetOfFiles{}
+	var completedSets []string
+	decoder := json.NewDecoder(file)
+	for {
+		var event bazelBuildEvent
+		if err := decoder.Decode(&event); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("decode build event: %w", err)
+		}
+		if event.ID.NamedSet != nil && event.NamedSetOfFiles != nil {
+			namedSets[event.ID.NamedSet.ID] = *event.NamedSetOfFiles
+		}
+		if event.Completed != nil && event.Completed.Success {
+			for _, group := range event.Completed.OutputGroup {
+				if group.Name != "default" {
+					continue
+				}
+				for _, set := range group.FileSets {
+					if set.ID != "" {
+						completedSets = append(completedSets, set.ID)
+					}
+				}
+			}
+		}
+	}
+	if len(completedSets) == 0 {
+		return errors.New("Bazel build did not report default output files")
+	}
+	buildRoot := filepath.Join(workspaceRoot, filepath.FromSlash(defaultBazelBuildRoot))
+	materializedRoot := filepath.Join(buildRoot, "bazel-bin")
+	if err := os.RemoveAll(materializedRoot); err != nil {
+		return fmt.Errorf("clear materialized bazel-bin: %w", err)
+	}
+	seenFiles := map[string]bool{}
+	seenSets := map[string]bool{}
+	var manifest bazelBuildManifest
+	for _, setID := range completedSets {
+		files, err := flattenBazelFileSet(setID, namedSets, seenSets)
+		if err != nil {
+			return err
+		}
+		for _, output := range files {
+			targetPath, err := bazelOutputTargetPath(output)
+			if err != nil {
+				return err
+			}
+			if seenFiles[targetPath] {
+				continue
+			}
+			seenFiles[targetPath] = true
+			sourcePath, err := fileURIPath(output.URI)
+			if err != nil {
+				return err
+			}
+			destination := filepath.Join(buildRoot, filepath.FromSlash(targetPath))
+			if err := copyMaterializedOutput(sourcePath, destination); err != nil {
+				return err
+			}
+			manifest.Outputs = append(manifest.Outputs, bazelBuildOutput{
+				Path:       strings.Join(append(append([]string(nil), output.PathPrefix...), output.Name), "/"),
+				SourceURI:  output.URI,
+				Digest:     output.Digest,
+				Length:     output.Length,
+				TargetPath: targetPath,
+			})
+		}
+	}
+	sort.Slice(manifest.Outputs, func(i, j int) bool {
+		return manifest.Outputs[i].TargetPath < manifest.Outputs[j].TargetPath
+	})
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode build manifest: %w", err)
+	}
+	data = append(data, '\n')
+	return writeWorkspaceFile(filepath.Join(workspaceRoot, filepath.FromSlash(bazelBuildManifestPath)), data, 0o644)
+}
+
+func flattenBazelFileSet(setID string, namedSets map[string]bazelNamedSetOfFiles, seen map[string]bool) ([]bazelOutputFile, error) {
+	if seen[setID] {
+		return nil, nil
+	}
+	seen[setID] = true
+	set, ok := namedSets[setID]
+	if !ok {
+		return nil, fmt.Errorf("Bazel build referenced missing file set %s", setID)
+	}
+	files := append([]bazelOutputFile(nil), set.Files...)
+	for _, child := range set.FileSets {
+		childFiles, err := flattenBazelFileSet(child.ID, namedSets, seen)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, childFiles...)
+	}
+	return files, nil
+}
+
+func bazelOutputTargetPath(output bazelOutputFile) (string, error) {
+	nameParts := strings.Split(output.Name, "/")
+	for _, part := range append(append([]string(nil), output.PathPrefix...), nameParts...) {
+		if strings.TrimSpace(part) == "" || part == "." || part == ".." || strings.Contains(part, string(filepath.Separator)) || strings.Contains(part, "\x00") {
+			return "", fmt.Errorf("Bazel output has invalid path segment %q", part)
+		}
+	}
+	if len(output.PathPrefix) >= 3 && output.PathPrefix[0] == "bazel-out" && output.PathPrefix[len(output.PathPrefix)-1] == "bin" {
+		return filepath.ToSlash(filepath.Join(append([]string{"bazel-bin"}, nameParts...)...)), nil
+	}
+	parts := append([]string(nil), output.PathPrefix...)
+	parts = append(parts, nameParts...)
+	return filepath.ToSlash(filepath.Join(parts...)), nil
+}
+
+func fileURIPath(uri string) (string, error) {
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return "", fmt.Errorf("parse output URI %q: %w", uri, err)
+	}
+	if parsed.Scheme != "file" {
+		return "", fmt.Errorf("unsupported Bazel output URI scheme %q", parsed.Scheme)
+	}
+	if parsed.Path == "" {
+		return "", fmt.Errorf("Bazel output URI %q has no path", uri)
+	}
+	return parsed.Path, nil
+}
+
+func copyMaterializedOutput(src string, dst string) error {
+	stat, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat Bazel output %s: %w", src, err)
+	}
+	if stat.IsDir() {
+		return copyMaterializedDirectory(src, dst)
+	}
+	return copyMaterializedFile(src, dst, stat.Mode().Perm())
+}
+
+func copyMaterializedDirectory(src string, dst string) error {
+	return filepath.WalkDir(src, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return os.MkdirAll(target, info.Mode().Perm())
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("Bazel output %s is not a regular file", path)
+		}
+		return copyMaterializedFile(path, target, info.Mode().Perm())
+	})
+}
+
+func copyMaterializedFile(src string, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open Bazel output %s: %w", src, err)
+	}
+	defer func() { _ = in.Close() }()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("create output directory %s: %w", filepath.Dir(dst), err)
+	}
+	tmp := dst + ".tmp." + fmt.Sprint(os.Getpid())
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return fmt.Errorf("create materialized output %s: %w", dst, err)
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("copy materialized output %s: %w", dst, err)
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close materialized output %s: %w", dst, err)
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("chmod materialized output %s: %w", dst, err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("promote materialized output %s: %w", dst, err)
 	}
 	return nil
 }
@@ -1497,7 +1690,6 @@ usage:
   guardian profiles show [profile] [-o yaml|json|toml|toon]
   guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
   guardian fly [-f <config>] [profile] [--dry-run] [-o yaml|json|toml|toon] [--stream]
-  guardian fly run [-f <config>] [profile] -- <tool> <args...>
 `)
 }
 
@@ -1529,13 +1721,13 @@ usage:
 func preflightUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `guardian preflight
 
-	usage:
-	  guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
+usage:
+  guardian preflight [-f <config>] [profile] [-o yaml|json|toml|toon] [--dry-run] [--stream]
 
-	preflight resolves a Guardian profile, writes the generated fly document,
-	verifies local build artifacts, runs the configured preflight playbook, and
-	reports whether the target is ready for Nomad-driven fly.
-	`)
+preflight resolves a Guardian profile, writes the generated fly document,
+verifies local build artifacts, runs the configured preflight playbook, and
+reports whether the target is ready for Nomad-driven fly.
+`)
 }
 
 func flyUsage(w io.Writer) {
@@ -1543,21 +1735,9 @@ func flyUsage(w io.Writer) {
 
 usage:
   guardian fly [-f <config>] [profile] [--dry-run] [-o yaml|json|toml|toon] [--stream]
-  guardian fly run [-f <config>] [profile] -- <tool> <args...>
 
 fly runs the same preflight phase and then runs the FlyProcedure Nomad job hook
 from the materialized workspace.
-`)
-}
-
-func flyRunUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `guardian fly run
-
-usage:
-  guardian fly run [-f <config>] [profile] -- <tool> <args...>
-
-fly run converges the profile first, verifies the remote Guardian catalog tool,
-and then executes that catalog tool on the remote host.
 `)
 }
 
@@ -1584,11 +1764,7 @@ func printCommandUsage(w io.Writer, command string) {
 		runUsage(w)
 	case "guardian preflight":
 		preflightUsage(w)
-	case "guardian fly", "guardian fly run":
-		if command == "guardian fly run" {
-			flyRunUsage(w)
-			return
-		}
+	case "guardian fly":
 		flyUsage(w)
 	default:
 		rootUsage(w)

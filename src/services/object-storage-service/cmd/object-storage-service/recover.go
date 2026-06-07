@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultGuardianRepoRoot             = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultGuardianRepoRoot             = "/home/ubuntu/.local/state/guardian/repo"
 	defaultObjectStorageRuntimeArtifact = "bazel-bin/src/services/object-storage-service/cmd/object-storage-service/object-storage-service.tar"
 	defaultObjectStorageRuntimeRoot     = "/var/lib/object-storage-service/runtime"
 	defaultObjectStorageProjectedGraph  = "/run/verself/recovery/object-storage/document.json"

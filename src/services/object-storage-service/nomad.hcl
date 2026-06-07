@@ -1,6 +1,6 @@
 variable "guardian_repo_root" {
   type    = string
-  default = "/home/ubuntu/.local/state/guardian/repo/current"
+  default = "/home/ubuntu/.local/state/guardian/repo"
 }
 
 variable "object_storage_resource_name" {

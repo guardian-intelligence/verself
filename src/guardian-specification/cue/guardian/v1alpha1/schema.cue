@@ -61,7 +61,6 @@ package v1alpha1
 	spec: {
 		remote?: {
 			repoRoot: #AbsolutePath
-			guardian: #AbsolutePath
 			ssh: [#NonEmptyString, ...#NonEmptyString]
 		}
 	}
@@ -87,4 +86,4 @@ package v1alpha1
 }
 
 #WorkspaceRelativePath: string & !="" & !~"^/" & !~"(^|/)\\.\\.(/|$)"
-#AbsolutePath: string & =~"^/.+"
+#AbsolutePath:          string & =~"^/.+"

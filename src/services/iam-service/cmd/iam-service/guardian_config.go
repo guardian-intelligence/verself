@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultGuardianResourceGraph = "/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json"
+	defaultGuardianResourceGraph = "/home/ubuntu/.local/state/guardian/repo/workspace/.guardian/fly/document.json"
 	defaultIAMResourceName       = "iam-service"
 )
 

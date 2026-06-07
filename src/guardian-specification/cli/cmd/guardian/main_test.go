@@ -51,6 +51,64 @@ func TestProjectionOutputFormatsRejected(t *testing.T) {
 	}
 }
 
+func TestMaterializeBazelBuildOutputs(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "bazel-out", "k8-fastbuild", "bin", "pkg", "tool")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
+		t.Fatalf("mkdir source output: %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("tool bytes\n"), 0o755); err != nil {
+		t.Fatalf("write source output: %v", err)
+	}
+	bepPath := filepath.Join(dir, ".guardian", "build", "build-events.json")
+	if err := os.MkdirAll(filepath.Dir(bepPath), 0o755); err != nil {
+		t.Fatalf("mkdir BEP dir: %v", err)
+	}
+	bep := fmt.Sprintf(`{"id":{"namedSet":{"id":"0"}},"namedSetOfFiles":{"files":[{"name":"pkg/tool","uri":"file://%s","pathPrefix":["bazel-out","k8-fastbuild","bin"],"digest":"sha256-test","length":"11"}]}}
+{"id":{"targetCompleted":{"label":"//pkg:tool"}},"completed":{"success":true,"outputGroup":[{"name":"default","fileSets":[{"id":"0"}]}]}}
+`, sourcePath)
+	if err := os.WriteFile(bepPath, []byte(bep), 0o644); err != nil {
+		t.Fatalf("write BEP: %v", err)
+	}
+	if err := materializeBazelBuildOutputs(dir, bepPath); err != nil {
+		t.Fatalf("materialize outputs: %v", err)
+	}
+	materialized := filepath.Join(dir, ".guardian", "build", "bazel-bin", "pkg", "tool")
+	data, err := os.ReadFile(materialized)
+	if err != nil {
+		t.Fatalf("read materialized output: %v", err)
+	}
+	if string(data) != "tool bytes\n" {
+		t.Fatalf("materialized output = %q", string(data))
+	}
+	manifestData, err := os.ReadFile(filepath.Join(dir, ".guardian", "build", "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if !strings.Contains(string(manifestData), `"target_path": "bazel-bin/pkg/tool"`) {
+		t.Fatalf("manifest omitted target path:\n%s", string(manifestData))
+	}
+}
+
+func TestBazelBuildEventJSONPathUsesExistingFlag(t *testing.T) {
+	dir := t.TempDir()
+	path, ok := bazelBuildEventJSONPath([]string{"build", "--build_event_json_file=.aspect/bep/build.json", "//pkg:tool"}, dir)
+	if !ok {
+		t.Fatalf("BEP path flag was not detected")
+	}
+	if path != filepath.Join(dir, ".aspect", "bep", "build.json") {
+		t.Fatalf("BEP path = %q", path)
+	}
+	abs := filepath.Join(dir, "events.json")
+	path, ok = bazelBuildEventJSONPath([]string{"build", "--build_event_json_file", abs, "//pkg:tool"}, dir)
+	if !ok {
+		t.Fatalf("separate BEP path flag was not detected")
+	}
+	if path != abs {
+		t.Fatalf("absolute BEP path = %q", path)
+	}
+}
+
 func TestPositionalProfileAllowsFlagsAfterOperand(t *testing.T) {
 	dir, _ := writeTestCUEDocument(t)
 	var stderr bytes.Buffer
@@ -244,44 +302,6 @@ func TestFlyLiveCUEDocument(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("PreflightReady true condition not found: %#v", result.Conditions)
-	}
-}
-
-func TestFlyRunExecutesVerifiedRemoteCatalogTool(t *testing.T) {
-	dir, path := writeTestCUEDocument(t)
-	writeTestToolCatalog(t, dir)
-	repoRoot := filepath.Join(dir, "remote-repo")
-	if err := os.MkdirAll(filepath.Join(repoRoot, "workspace"), 0o755); err != nil {
-		t.Fatalf("mkdir remote workspace: %v", err)
-	}
-	remoteGuardian := filepath.Join(dir, "remote-guardian")
-	if err := os.WriteFile(remoteGuardian, []byte(`#!/bin/sh
-set -eu
-if [ "$1" = "run" ] && [ "$2" = "bazel" ] && [ "$3" = "--verify" ]; then
-  printf '{"status":"ready"}\n'
-  exit 0
-fi
-if [ "$1" = "run" ] && [ "$2" = "bazel" ] && [ "$3" = "--" ]; then
-  shift 3
-  printf 'remote bazel: %s\n' "$*"
-  exit 0
-fi
-exit 64
-`), 0o755); err != nil {
-		t.Fatalf("write remote guardian: %v", err)
-	}
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	var code int
-	withWorkingDir(t, dir, func() {
-		code = run([]string{"fly", "run", "-f", path, "--", "bazel", "test", "//src/guardian-specification/..."}, &stdout, &stderr)
-	})
-	if code != 0 {
-		t.Fatalf("run exited %d, stderr:\n%s\nstdout:\n%s", code, stderr.String(), stdout.String())
-	}
-	if !strings.Contains(stdout.String(), "remote bazel: test //src/guardian-specification/...") {
-		t.Fatalf("stdout omitted remote bazel invocation:\n%s", stdout.String())
 	}
 }
 
@@ -558,13 +578,17 @@ language: version: "v0.11.0"
 	if err := os.WriteFile(filepath.Join(dir, "guardian"), []byte("guardian binary\n"), 0o755); err != nil {
 		t.Fatalf("write guardian source: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(dir, "bazel-bin"), 0o755); err != nil {
-		t.Fatalf("mkdir bazel-bin: %v", err)
+	materializedBazelBin := filepath.Join(dir, ".guardian", "build", "bazel-bin")
+	if err := os.MkdirAll(materializedBazelBin, 0o755); err != nil {
+		t.Fatalf("mkdir materialized bazel-bin: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "bazel-bin", "guardian"), []byte("built guardian\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(materializedBazelBin, "guardian"), []byte("built guardian\n"), 0o755); err != nil {
 		t.Fatalf("write built artifact: %v", err)
 	}
-	uvxPath := filepath.Join(dir, "bazel-bin", "src", "tools", "dev", "binaries", "uvx")
+	if err := os.WriteFile(filepath.Join(dir, ".guardian", "build", "manifest.json"), []byte("{\"outputs\":[]}\n"), 0o644); err != nil {
+		t.Fatalf("write build manifest: %v", err)
+	}
+	uvxPath := filepath.Join(materializedBazelBin, "src", "tools", "dev", "binaries", "uvx")
 	if err := os.MkdirAll(filepath.Dir(uvxPath), 0o755); err != nil {
 		t.Fatalf("mkdir uvx dir: %v", err)
 	}
@@ -581,7 +605,7 @@ printf 'ansible ran\n' > ansible-ran
 `), 0o755); err != nil {
 		t.Fatalf("write fake uvx: %v", err)
 	}
-	rsyncPath := filepath.Join(dir, "bazel-bin", "src", "guardian-specification", "tools", "rsync")
+	rsyncPath := filepath.Join(materializedBazelBin, "src", "guardian-specification", "tools", "rsync")
 	if err := os.MkdirAll(filepath.Dir(rsyncPath), 0o755); err != nil {
 		t.Fatalf("mkdir rsync dir: %v", err)
 	}
@@ -605,7 +629,6 @@ exec sh -c "$remote_command"
 	}
 	path := filepath.Join(dir, "gamma.cue")
 	repoRoot := filepath.Join(dir, "remote-repo")
-	remoteGuardian := filepath.Join(dir, "remote-guardian")
 	document := fmt.Sprintf(`package gamma
 
 entrypoint: {
@@ -634,11 +657,10 @@ resources: [
 		kind:       "Substrate"
 		metadata: name: "local"
 		spec: {
-			remote: {
-				repoRoot: %q
-				guardian: %q
-				ssh: [%q, "test-target"]
-			}
+				remote: {
+					repoRoot: %q
+					ssh: [%q, "test-target"]
+				}
 		}
 	},
 	{
@@ -654,7 +676,7 @@ resources: [
 		spec: url: "https://gamma.verself.sh"
 	},
 ]
-`, repoRoot, remoteGuardian, sshPath)
+`, repoRoot, sshPath)
 	if err := os.WriteFile(path, []byte(document), 0o644); err != nil {
 		t.Fatalf("write gamma.cue: %v", err)
 	}

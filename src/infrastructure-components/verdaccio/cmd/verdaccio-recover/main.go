@@ -21,7 +21,7 @@ import (
 const (
 	apiVersion      = "verdaccio.guardianintelligence.org/v1alpha1"
 	kind            = "VerdaccioRegistry"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "verdaccio"
 )
 

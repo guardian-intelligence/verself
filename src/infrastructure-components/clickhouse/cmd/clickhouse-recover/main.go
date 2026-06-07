@@ -31,7 +31,7 @@ import (
 const (
 	apiVersion      = "clickhouse.guardianintelligence.org/v1alpha1"
 	kind            = "ClickHouseCluster"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "clickhouse"
 
 	monitorProbeTimeout  = 45 * time.Second

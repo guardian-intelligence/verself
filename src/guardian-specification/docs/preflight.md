@@ -1,8 +1,8 @@
 # Preflight
 
 `guardian preflight` resolves one Guardian CRD graph, writes the generated fly
-document into the workspace, verifies required local build artifacts are
-present, and runs the declared Ansible playbook.
+document into the workspace, verifies the repo-local materialized Bazel output
+tree is present, and runs the declared Ansible playbook.
 
 ```sh
 guardian preflight gamma -o yaml
@@ -37,7 +37,13 @@ resources:
           playbook: src/guardian-specification/ansible/preflight.yml
       nomad:
         run:
-          argv: [ssh, -T, ubuntu@206.223.228.87, nomad, job, run, /path/to/job.hcl]
+          argv:
+            - ssh
+            - -T
+            - ubuntu@206.223.228.87
+            - /opt/verself/profile/bin/nomad
+            - job
+            - status
 
   - apiVersion: substrate.guardianintelligence.org/v1alpha1
     kind: Substrate
@@ -45,8 +51,7 @@ resources:
       name: gamma-primary
     spec:
       remote:
-        repoRoot: /home/ubuntu/.local/state/guardian/repo/current
-        guardian: /home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
+        repoRoot: /home/ubuntu/.local/state/guardian/repo
         ssh: [ssh, -T, -o, BatchMode=yes, ubuntu@206.223.228.87]
 ```
 
@@ -58,9 +63,10 @@ The preflight playbook must fail loudly when the target is not ready for
 - first runs a fast health probe and exits immediately when the previously
   verified repo tree, OpenBao service, Nomad agent, and Podman driver are
   already healthy,
-- uploads the workspace and required Bazel artifacts with the repo-pinned rsync
-  when repair or refresh is needed,
-- verifies workspace and artifact checksum deltas with rsync dry runs,
+- uploads the workspace and `.guardian/build/bazel-bin` materialized output
+  tree into `Substrate.spec.remote.repoRoot` with the repo-pinned rsync when
+  repair or refresh is needed,
+- verifies workspace and Bazel output checksum deltas with rsync dry runs,
 - runs `openbao-recover prepare` to materialize OpenBao host integration inputs,
 - starts OpenBao as a systemd root service and runs one bounded
   recovery-or-verification pass,

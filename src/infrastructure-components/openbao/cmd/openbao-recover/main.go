@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	defaultRepoRoot         = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot         = "/home/ubuntu/.local/state/guardian/repo"
 	defaultRuntimeRoot      = "/var/lib/openbao/runtime"
 	defaultDataDir          = "/var/lib/openbao/raft"
 	defaultConfigPath       = "/etc/openbao/openbao.hcl"

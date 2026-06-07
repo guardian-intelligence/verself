@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	defaultRepoRoot               = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot               = "/home/ubuntu/.local/state/guardian/repo"
 	defaultZitadelBin             = "local/bin/zitadel"
 	defaultZitadelConfig          = "/etc/zitadel/config.yaml"
 	defaultZitadelSteps           = "/etc/zitadel/steps.yaml"

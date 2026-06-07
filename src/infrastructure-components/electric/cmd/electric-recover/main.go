@@ -30,7 +30,7 @@ import (
 const (
 	apiVersion      = "electric.guardianintelligence.org/v1alpha1"
 	kind            = "ElectricDeployment"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "electric"
 	postgresMajor   = "16"
 )

@@ -70,8 +70,8 @@ func TestParseIAMMigrationOptions(t *testing.T) {
 
 func TestParseIAMRecoverOptions(t *testing.T) {
 	opts, err := parseIAMRecoverOptions([]string{
-		"--repo-root=/opt/guardian/repo/current",
-		"--resource-graph=/opt/guardian/repo/current/workspace/.guardian/fly/document.json",
+		"--repo-root=/opt/guardian/repo",
+		"--resource-graph=/opt/guardian/repo/workspace/.guardian/fly/document.json",
 		"--resource-name=custom",
 		"--runtime-root=/var/lib/iam-service/runtime",
 		"--projected-graph=/run/verself/recovery/iam-service/document.json",
@@ -80,7 +80,7 @@ func TestParseIAMRecoverOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseIAMRecoverOptions: %v", err)
 	}
-	if opts.RepoRoot != "/opt/guardian/repo/current" || opts.ResourceName != "custom" || !opts.Migrate {
+	if opts.RepoRoot != "/opt/guardian/repo" || opts.ResourceName != "custom" || !opts.Migrate {
 		t.Fatalf("opts = %#v", opts)
 	}
 }

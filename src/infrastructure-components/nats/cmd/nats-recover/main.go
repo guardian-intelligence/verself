@@ -22,7 +22,7 @@ import (
 const (
 	apiVersion      = "nats.guardianintelligence.org/v1alpha1"
 	kind            = "NATSCluster"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "nats"
 )
 

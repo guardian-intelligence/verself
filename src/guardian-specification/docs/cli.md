@@ -4,10 +4,10 @@
 convergence state machine to the requested stop point.
 
 ```sh
-guardian run bazel -- test //src/guardian-specification/...
+guardian run bazel -- build //src/guardian-specification/...
 guardian preflight gamma -o json
 guardian fly gamma --dry-run -o yaml
-guardian fly run gamma -- nomad status
+guardian fly gamma
 ```
 
 The stable command response is written to stdout. State transitions and
@@ -40,6 +40,11 @@ config files or standalone Guardian documents.
 verifies its admitted digest, materializes it in the Guardian cache, and
 executes it without consulting `PATH`.
 
+For Bazel builds, Guardian also asks Bazel to emit build events and then
+materializes Bazel-reported top-level outputs under `.guardian/build` inside
+the repo. Preflight uploads that repo-local output tree; it does not consume
+Bazel convenience symlinks.
+
 Tool inspection and shim installation stay under `run`:
 
 ```sh
@@ -62,8 +67,8 @@ Profiles are named contexts. There is no mutable local profile selection.
 and referenced `Substrate`, verifies local build artifacts exist, runs the
 configured preflight playbook, materializes the repo tree on the target when
 needed, and verifies OpenBao, Nomad, and the Podman driver. Preflight writes
-`.guardian/fly/document.json` before upload hooks run so component-owned Nomad
-jobs can read the graph from the materialized workspace.
+`.guardian/fly/document.json` before the playbook runs so component-owned
+Nomad jobs can read the graph from the materialized workspace.
 
 `ready_to_fly: yes` means the configured preflight playbook completed, the
 materialized tree is verified or already marked healthy, and Nomad can run
@@ -76,15 +81,12 @@ with stable condition reasons.
 `fly` starts with the same preflight phase. `fly --dry-run` validates the graph
 and verifies local preflight inputs without mutating the target.
 
-Live `fly` prepares the target and runs the configured Nomad job hook.
+Live `fly` prepares the target and runs the configured Nomad hook.
 Components own provider reconciliation, backup restore, health waiting, and
 other runtime behavior through their job files and owner-local binaries.
 
-`fly run <profile> -- <tool> <args...>` runs `fly` first, verifies the remote
-Guardian and remote catalog tool, then streams the remote tool output.
-
 ## Observability
 
-State transitions are emitted by default for `preflight`, `fly`, and `fly run`.
+State transitions are emitted by default for `preflight` and `fly`.
 Use [Command Observability](command-observability.md) for verbosity, filters,
 tee-friendly logs, and structured event formats.

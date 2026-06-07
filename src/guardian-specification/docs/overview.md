@@ -10,7 +10,7 @@ A Guardian resource graph document contains:
 
 - an `entrypoint` object reference;
 - a `FlyProcedure` resource;
-- a `Substrate` resource with access and upload lifecycle hooks;
+- a `Substrate` resource with remote access facts;
 - shared configuration resources such as `PublicOrigin`;
 - component extension resources.
 
@@ -24,9 +24,9 @@ protocol, component CRDs, component-owned Nomad jobs, and runtime evidence.
 
 `preflight` runs the state machine through substrate readiness. It resolves the
 profile, entrypoint, and referenced substrate, checks local build artifacts,
-computes the upload digest, runs the `Substrate` access/upload/kernel lifecycle
-hooks, and emits a structured command result with `ready_to_fly`, upload
-details, hook details, and stable conditions. Kernel hooks recover the fixed
+materializes the resolved resource graph, runs the configured Ansible
+preflight, and emits a structured command result with `ready_to_fly`, upload
+details, hook details, and stable conditions. Preflight recovers the fixed
 Nomad/OpenBao substrate prerequisites.
 
 `fly` starts with preflight and writes the resource graph into the materialized
@@ -36,11 +36,11 @@ install, restore, reconcile, or block with stable health evidence.
 
 ## Boundaries
 
-Guardian owns config parsing, local artifact checks, lifecycle hook execution,
-resource graph materialization, verified digest collection, and structured
+Guardian owns config parsing, local artifact checks, resource graph
+materialization, preflight invocation, Nomad hook invocation, and structured
 command responses.
 
-Lifecycle hook commands own substrate access, file transfer, permissions,
+The preflight playbook owns substrate access, file transfer, permissions,
 remote directories, and remote tooling.
 
 Infrastructure components own Nomad job files and runtime behavior.

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultGuardianResourceGraph       = "/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json"
+	defaultGuardianResourceGraph       = "/home/ubuntu/.local/state/guardian/repo/workspace/.guardian/fly/document.json"
 	defaultDeploymentServiceResource   = "deployment-service"
 	defaultDeploymentServiceListen     = "127.0.0.1:4294"
 	defaultDeploymentSourceInitTimeout = 2 * time.Minute

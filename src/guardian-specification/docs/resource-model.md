@@ -43,9 +43,9 @@ responses and component evidence.
 `FlyProcedure` is the entrypoint. It references the substrate. The base
 procedure stays a small entrypoint into the graph.
 
-`Substrate` contains the access hook and upload hooks. Guardian executes them
-as argv commands after verifying local preflight inputs. The hooks own access,
-transfer, extraction, permissions, and remote tooling.
+`Substrate` contains remote access facts. Guardian passes those facts to the
+configured preflight playbook after verifying local preflight inputs. The
+playbook owns access, transfer, extraction, permissions, and remote tooling.
 
 `PublicOrigin` is the shared URL abstraction. Components that need an external
 origin reference it as a stable shared fact.
@@ -76,7 +76,7 @@ src/services/object-storage-service/guardian/v1alpha1/schema.cue
 The component schema is the place to define component-specific static
 configuration. The root graph selects component resources from those schemas.
 The base Guardian schema stays limited to the common resource envelope,
-preflight entrypoint, substrate lifecycle hooks, shared origins, and stable
+preflight entrypoint, substrate remote facts, shared origins, and stable
 condition vocabulary.
 
 Component schemas should model facts that can be checked before running the

@@ -22,7 +22,7 @@ import (
 const (
 	apiVersion      = "tigerbeetle.guardianintelligence.org/v1alpha1"
 	kind            = "TigerBeetleCluster"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "tigerbeetle"
 )
 

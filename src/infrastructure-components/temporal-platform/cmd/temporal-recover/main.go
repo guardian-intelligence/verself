@@ -20,7 +20,7 @@ import (
 const (
 	apiVersion      = "temporal.guardianintelligence.org/v1alpha1"
 	kind            = "TemporalPlatform"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "temporal"
 )
 

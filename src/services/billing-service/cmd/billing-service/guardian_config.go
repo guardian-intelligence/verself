@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultGuardianResourceGraph      = "/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json"
+	defaultGuardianResourceGraph      = "/home/ubuntu/.local/state/guardian/repo/workspace/.guardian/fly/document.json"
 	defaultBillingServiceResource     = "billing-service"
 	defaultBillingServicePublicAddr   = "127.0.0.1:4242"
 	defaultBillingServiceInternalAddr = "127.0.0.1:4255"

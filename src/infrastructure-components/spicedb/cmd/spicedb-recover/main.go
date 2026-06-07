@@ -29,7 +29,7 @@ import (
 const (
 	apiVersion      = "spicedb.guardianintelligence.org/v1alpha1"
 	kind            = "SpiceDBCluster"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "spicedb"
 )
 

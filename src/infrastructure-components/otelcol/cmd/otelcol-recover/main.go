@@ -21,7 +21,7 @@ import (
 const (
 	apiVersion      = "otelcol.guardianintelligence.org/v1alpha1"
 	kind            = "OtelCollector"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "otelcol"
 )
 

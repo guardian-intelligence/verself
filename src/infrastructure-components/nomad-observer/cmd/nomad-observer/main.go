@@ -42,7 +42,7 @@ const (
 
 	apiVersion      = "nomadobserver.guardianintelligence.org/v1alpha1"
 	kind            = "NomadObserver"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "nomad-observer"
 
 	heartbeatInterval = 60 * time.Second

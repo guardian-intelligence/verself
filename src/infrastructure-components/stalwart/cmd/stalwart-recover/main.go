@@ -29,7 +29,7 @@ import (
 const (
 	apiVersion      = "stalwart.guardianintelligence.org/v1alpha1"
 	kind            = "StalwartMailServer"
-	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
 	defaultResource = "stalwart"
 )
 

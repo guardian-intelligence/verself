@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultGuardianResourceGraph       = "/home/ubuntu/.local/state/guardian/repo/current/workspace/.guardian/fly/document.json"
+	defaultGuardianResourceGraph       = "/home/ubuntu/.local/state/guardian/repo/workspace/.guardian/fly/document.json"
 	defaultProjectsServiceResource     = "projects-service"
 	defaultProjectsServicePublicAddr   = "127.0.0.1:4264"
 	defaultProjectsServiceInternalAddr = "127.0.0.1:4265"
