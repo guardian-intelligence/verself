@@ -98,6 +98,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
 						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
+						bazel-bin/src/infrastructure-components/zot/zot-runtime.tar
+						bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
 						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
@@ -158,6 +160,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
 						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
 						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
+						bazel-bin/src/infrastructure-components/zot/zot-runtime.tar
+						bazel-bin/src/infrastructure-components/zot/cmd/zot-recover/zot-recover_/zot-recover
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
 						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
