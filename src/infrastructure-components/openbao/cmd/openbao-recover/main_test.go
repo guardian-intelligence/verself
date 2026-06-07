@@ -24,6 +24,10 @@ type fakeOpenBaoClient struct {
 	unsealShares  []string
 	snapshot      []byte
 	revokedTokens []string
+	mounts        map[string]openBaoMountInfo
+	enabledMounts []string
+	policies      map[string]string
+	createdTokens []openBaoTokenSpec
 	restored      bool
 	revokeErr     error
 }
@@ -81,6 +85,35 @@ func (f *fakeOpenBaoClient) RevokeSelf(_ context.Context, token string) error {
 	return f.revokeErr
 }
 
+func (f *fakeOpenBaoClient) Mounts(context.Context, string) (map[string]openBaoMountInfo, error) {
+	if f.mounts == nil {
+		f.mounts = map[string]openBaoMountInfo{}
+	}
+	return f.mounts, nil
+}
+
+func (f *fakeOpenBaoClient) EnableKVv2Mount(_ context.Context, _ string, mount string) error {
+	if f.mounts == nil {
+		f.mounts = map[string]openBaoMountInfo{}
+	}
+	f.enabledMounts = append(f.enabledMounts, mount)
+	f.mounts[mount+"/"] = openBaoMountInfo{Type: "kv", Options: map[string]string{"version": "2"}}
+	return nil
+}
+
+func (f *fakeOpenBaoClient) WritePolicy(_ context.Context, _ string, name string, hcl string) error {
+	if f.policies == nil {
+		f.policies = map[string]string{}
+	}
+	f.policies[name] = hcl
+	return nil
+}
+
+func (f *fakeOpenBaoClient) CreateToken(_ context.Context, _ string, spec openBaoTokenSpec) (string, error) {
+	f.createdTokens = append(f.createdTokens, spec)
+	return fmt.Sprintf("created-token-%d", len(f.createdTokens)), nil
+}
+
 func TestFreshInitWritesEncryptedMaterialAndRevokesInitialRootToken(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.pgpKeys = writeTestPGPRecipientFiles(t, 3)
@@ -106,6 +139,73 @@ func TestFreshInitWritesEncryptedMaterialAndRevokesInitialRootToken(t *testing.T
 	}
 	assertDoesNotContain(t, body, "root-token-secret")
 	assertDoesNotContain(t, body, "share-a")
+}
+
+func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.pgpKeys = writeTestPGPRecipientFiles(t, 3)
+	cfg.initOutputPath = filepath.Join(t.TempDir(), "init-material.json")
+	cfg.secretPaths = []openBaoSecretPathSpec{
+		{
+			Name:   "cloudflare.account-admin",
+			Path:   "kv-controller/data/integrations/cloudflare/account-admin",
+			Key:    "api_token",
+			Source: "operatorImport",
+		},
+		{
+			Name:   "postgresql.pgbackrest.cipher_pass",
+			Path:   "kv-runtime/data/secret/org/postgresql.pgbackrest.cipher_pass",
+			Key:    "value",
+			Source: "generated",
+			Generate: &openBaoGenerateSpec{
+				Bytes:    32,
+				Encoding: "base64url",
+			},
+		},
+	}
+	client := &fakeOpenBaoClient{
+		status:       baoStatus{Initialized: false, Sealed: true},
+		rootToken:    "root-token-secret",
+		unsealShares: []string{"share-a", "share-b", "share-c"},
+	}
+
+	rep := recoverOnce(context.Background(), cfg, client, strings.NewReader(""))
+
+	assertCondition(t, rep, "OpenBaoSecretStoreBootstrapped", "True", "BootstrapComplete")
+	assertCondition(t, rep, "OpenBaoTransientTokenRevoked", "True", "Revoked")
+	if !containsString(client.enabledMounts, "kv-controller") || !containsString(client.enabledMounts, "kv-runtime") {
+		t.Fatalf("enabled mounts = %#v", client.enabledMounts)
+	}
+	policy := client.policies["guardian-operator-import"]
+	if !strings.Contains(policy, `path "kv-controller/data/integrations/cloudflare/account-admin"`) {
+		t.Fatalf("operator import policy = %q", policy)
+	}
+	if strings.Contains(policy, "postgresql.pgbackrest") {
+		t.Fatalf("operator import policy included generated secret path: %q", policy)
+	}
+	if len(client.createdTokens) != 1 {
+		t.Fatalf("created tokens = %#v", client.createdTokens)
+	}
+	if got := client.createdTokens[0]; len(got.Policies) != 1 || got.Policies[0] != "guardian-operator-import" || got.TTL != operatorImportTokenTTL || got.NumUses != operatorImportTokenUses {
+		t.Fatalf("created token spec = %#v", got)
+	}
+	body, err := os.ReadFile(cfg.initOutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDoesNotContain(t, body, "root-token-secret")
+	assertDoesNotContain(t, body, "share-a")
+	assertDoesNotContain(t, body, "created-token-1")
+	var material encryptedInitMaterial
+	if err := json.Unmarshal(body, &material); err != nil {
+		t.Fatal(err)
+	}
+	if len(material.Spec.OperatorImportTokens) != 1 {
+		t.Fatalf("operator import handoff = %#v", material.Spec.OperatorImportTokens)
+	}
+	if got := material.Spec.OperatorImportTokens[0]; got.Name != "guardian-operator-import" || got.Policy != "guardian-operator-import" || got.TTL != operatorImportTokenTTL || got.Uses != operatorImportTokenUses || len(got.EncryptedTokensB64) != 3 {
+		t.Fatalf("operator import handoff = %#v", got)
+	}
 }
 
 func TestInitializedUnsealedCompletesWithoutOperatorMaterial(t *testing.T) {
@@ -312,4 +412,13 @@ func assertDoesNotContain(t *testing.T, body []byte, secret string) {
 	if bytes.Contains(body, []byte(secret)) {
 		t.Fatalf("body contains secret %q: %s", secret, string(body))
 	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }

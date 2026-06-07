@@ -5,9 +5,12 @@ Nomad job. Preflight installs the repo-bundled OpenBao runtime, prepares the
 host integration, starts the systemd service, and runs `openbao-recover` until
 OpenBao is initialized and unsealed or a concrete blocker is reported.
 
-Service-specific mounts, policies, auth methods, provider imports, generated
-runtime secrets, and secret readers belong to the owning component's Nomad job
-and component binary. OpenBao recovery only makes the trust store available.
+OpenBao recovery owns only root-service trust-store bootstrap: OpenBao runtime,
+KV v2 mounts implied by declared `SecretPath` resources, and encrypted
+operator-import token handoff for `source: operatorImport` paths during fresh
+initialization. Provider imports, generated runtime secret values, secret
+readers, auth methods, and service-specific reconciliation belong to the owning
+component's Nomad job and component binary.
 
 ## State Machine
 
@@ -32,6 +35,8 @@ uninitialized + no snapshot
   -> keep initial root token and unseal shares in memory only
   -> write encrypted init material without the root token
   -> unseal with the in-memory threshold shares
+  -> enable KV v2 mounts implied by SecretPath resources
+  -> create encrypted guardian-operator-import handoff when operator imports exist
   -> revoke the initial root token
   -> report recovered
 
@@ -77,8 +82,9 @@ OpenBao recovery reports concrete component conditions:
 - `OpenBaoInitialized`
 - `OpenBaoInitMaterialDelivered`
 - `OpenBaoUnsealed`
+- `OpenBaoSecretStoreBootstrapped`
 - `OpenBaoTransientTokenRevoked`
 - `OpenBaoRecoveryComplete`
 
-Provider credentials and service-specific secret paths are reported by the
-components that own those dependencies after OpenBao is available.
+Provider credentials and generated service-specific secret values are reported
+by the components that own those dependencies after OpenBao is available.

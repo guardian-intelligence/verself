@@ -22,10 +22,12 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -36,15 +38,17 @@ import (
 )
 
 const (
-	defaultRepoRoot    = "/home/ubuntu/.local/state/guardian/repo/current"
-	defaultRuntimeRoot = "/var/lib/openbao/runtime"
-	defaultDataDir     = "/var/lib/openbao/raft"
-	defaultConfigPath  = "/etc/openbao/openbao.hcl"
-	defaultAddr        = "https://127.0.0.1:8200"
-	defaultCACert      = "/etc/verself/openbao/ca.pem"
-	defaultReportPath  = "/run/verself/recovery/openbao/report.json"
-	defaultKeyShares   = 3
-	defaultThreshold   = 2
+	defaultRepoRoot         = "/home/ubuntu/.local/state/guardian/repo/current"
+	defaultRuntimeRoot      = "/var/lib/openbao/runtime"
+	defaultDataDir          = "/var/lib/openbao/raft"
+	defaultConfigPath       = "/etc/openbao/openbao.hcl"
+	defaultAddr             = "https://127.0.0.1:8200"
+	defaultCACert           = "/etc/verself/openbao/ca.pem"
+	defaultReportPath       = "/run/verself/recovery/openbao/report.json"
+	defaultKeyShares        = 3
+	defaultThreshold        = 2
+	operatorImportTokenTTL  = "4h"
+	operatorImportTokenUses = 20
 )
 
 type config struct {
@@ -71,6 +75,7 @@ type config struct {
 	resourceGraph    string
 	resourceName     string
 	pgpKeyDir        string
+	secretPaths      []openBaoSecretPathSpec
 }
 
 type stringList []string
@@ -163,12 +168,29 @@ type encryptedInitMaterialMeta struct {
 }
 
 type encryptedInitMaterialSpec struct {
-	CreatedAt                  string   `json:"createdAt"`
-	KeyShares                  int      `json:"keyShares"`
-	KeyThreshold               int      `json:"keyThreshold"`
-	PGPRecipientCount          int      `json:"pgpRecipientCount"`
-	EncryptedUnsealSharesB64   []string `json:"encryptedUnsealSharesB64"`
-	EncryptedRecoverySharesB64 []string `json:"encryptedRecoverySharesB64,omitempty"`
+	CreatedAt                  string                                 `json:"createdAt"`
+	KeyShares                  int                                    `json:"keyShares"`
+	KeyThreshold               int                                    `json:"keyThreshold"`
+	PGPRecipientCount          int                                    `json:"pgpRecipientCount"`
+	EncryptedUnsealSharesB64   []string                               `json:"encryptedUnsealSharesB64"`
+	EncryptedRecoverySharesB64 []string                               `json:"encryptedRecoverySharesB64,omitempty"`
+	OperatorImportTokens       []encryptedOperatorImportTokenMaterial `json:"operatorImportTokens,omitempty"`
+}
+
+type encryptedOperatorImportTokenMaterial struct {
+	Name               string   `json:"name"`
+	Policy             string   `json:"policy"`
+	TTL                string   `json:"ttl"`
+	Uses               int      `json:"uses"`
+	EncryptedTokensB64 []string `json:"encryptedTokensB64"`
+}
+
+type operatorImportTokenHandoff struct {
+	Name   string
+	Policy string
+	TTL    string
+	Uses   int
+	Token  string
 }
 
 type openBaoClient interface {
@@ -178,6 +200,10 @@ type openBaoClient interface {
 	RestoreSnapshot(context.Context, string, string) error
 	SaveSnapshot(context.Context, string) ([]byte, error)
 	RevokeSelf(context.Context, string) error
+	Mounts(context.Context, string) (map[string]openBaoMountInfo, error)
+	EnableKVv2Mount(context.Context, string, string) error
+	WritePolicy(context.Context, string, string, string) error
+	CreateToken(context.Context, string, openBaoTokenSpec) (string, error)
 }
 
 func main() {
@@ -457,6 +483,31 @@ type openBaoSnapshotSaveSpec struct {
 	DestinationRef objectRef `json:"destinationRef"`
 }
 
+type openBaoSecretPathSpec struct {
+	Name        string
+	Path        string               `json:"path"`
+	Key         string               `json:"key"`
+	Source      string               `json:"source"`
+	Generate    *openBaoGenerateSpec `json:"generate"`
+	ProducerRef *objectRef           `json:"producerRef"`
+}
+
+type openBaoGenerateSpec struct {
+	Bytes    int    `json:"bytes"`
+	Encoding string `json:"encoding"`
+}
+
+type openBaoMountInfo struct {
+	Type    string            `json:"type"`
+	Options map[string]string `json:"options"`
+}
+
+type openBaoTokenSpec struct {
+	Policies []string `json:"policies"`
+	TTL      string   `json:"ttl"`
+	NumUses  int      `json:"num_uses,omitempty"`
+}
+
 type pgpRecipientSpec struct {
 	PublicKeyBase64 string `json:"publicKeyBase64"`
 }
@@ -500,6 +551,11 @@ func applyResourceGraphConfig(cfg config) (config, error) {
 	cfg.initOutputPath = spec.InitMaterialPath
 	cfg.keyShares = spec.Seal.Shamir.KeyShares
 	cfg.threshold = spec.Seal.Shamir.KeyThreshold
+	secretPaths, err := loadOpenBaoSecretPaths(resources)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.secretPaths = secretPaths
 	if spec.Snapshots.Restore != nil {
 		cfg.snapshotPath = spec.Snapshots.Restore.SnapshotPath
 		cfg.snapshotManifest = spec.Snapshots.Restore.ManifestPath
@@ -548,6 +604,67 @@ func materializePGPRecipients(cfg config, resources map[string]guardianResource,
 		out = append(out, path)
 	}
 	return out, nil
+}
+
+func loadOpenBaoSecretPaths(resources map[string]guardianResource) ([]openBaoSecretPathSpec, error) {
+	var paths []openBaoSecretPathSpec
+	for _, resource := range resources {
+		if resource.APIVersion != "openbao.guardianintelligence.org/v1alpha1" || resource.Kind != "SecretPath" {
+			continue
+		}
+		var spec openBaoSecretPathSpec
+		decoder := json.NewDecoder(bytes.NewReader(resource.Spec))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&spec); err != nil {
+			return nil, fmt.Errorf("decode SecretPath %q: %w", resource.Metadata.Name, err)
+		}
+		spec.Name = resource.Metadata.Name
+		if err := validateSecretPath(spec); err != nil {
+			return nil, fmt.Errorf("SecretPath %q: %w", resource.Metadata.Name, err)
+		}
+		paths = append(paths, spec)
+	}
+	return paths, nil
+}
+
+func validateSecretPath(spec openBaoSecretPathSpec) error {
+	if strings.TrimSpace(spec.Name) == "" || strings.Trim(strings.TrimSpace(spec.Path), "/") == "" || strings.TrimSpace(spec.Key) == "" {
+		return errors.New("metadata.name, spec.path, and spec.key are required")
+	}
+	if _, err := secretPathMount(spec.Path); err != nil {
+		return err
+	}
+	switch spec.Source {
+	case "generated":
+		if spec.Generate == nil {
+			return errors.New("spec.generate is required when spec.source is generated")
+		}
+		if spec.Generate.Bytes <= 0 {
+			return errors.New("spec.generate.bytes must be positive")
+		}
+		switch spec.Generate.Encoding {
+		case "hex", "base64url", "alphanumeric", "password":
+		default:
+			return errors.New("spec.generate.encoding must be hex, base64url, alphanumeric, or password")
+		}
+	case "producedBy":
+		if spec.ProducerRef == nil {
+			return errors.New("spec.producerRef is required when spec.source is producedBy")
+		}
+	case "operatorImport":
+	default:
+		return errors.New("spec.source must be generated, producedBy, or operatorImport")
+	}
+	return nil
+}
+
+func secretPathMount(path string) (string, error) {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	before, _, ok := strings.Cut(trimmed, "/data/")
+	if !ok || strings.TrimSpace(before) == "" {
+		return "", fmt.Errorf("spec.path %q must be a KV v2 data path", path)
+	}
+	return before, nil
 }
 
 func resourceKey(apiVersion string, kind string, name string) string {
@@ -834,7 +951,7 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		)
 		return rep
 	}
-	if err := writeEncryptedInitMaterial(cfg, init); err != nil {
+	if err := writeEncryptedInitMaterial(cfg, init, nil); err != nil {
 		rep.Conditions = append(rep.Conditions,
 			conditionTrue("OpenBaoInitialized", "FreshInitComplete", "openbao", "OpenBao was initialized"),
 			conditionFalse("OpenBaoInitMaterialDelivered", "InitMaterialDeliveryFailed", "openbao", err.Error()),
@@ -868,6 +985,25 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 		conditionTrue("OpenBaoInitMaterialDelivered", "InitOutputWritten", "openbao", "encrypted init material was written to the configured handoff path"),
 		conditionTrue("OpenBaoUnsealed", "UnsealComplete", "openbao", "OpenBao was unsealed with in-memory init shares"),
 	}
+	handoffs, err := bootstrapOpenBaoRootService(ctx, cfg, client, rootToken)
+	if err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionFalse("OpenBaoSecretStoreBootstrapped", "BootstrapFailed", "openbao", err.Error()),
+			conditionFalse("OpenBaoRecoveryComplete", "SecretStoreBootstrapFailed", "openbao", "fresh OpenBao is unsealed but root-service secret store bootstrap failed"),
+		)
+		return rep
+	}
+	if err := writeEncryptedInitMaterial(cfg, init, handoffs); err != nil {
+		rep.Conditions = append(rep.Conditions, extra...)
+		rep.Conditions = append(rep.Conditions,
+			conditionTrue("OpenBaoSecretStoreBootstrapped", "BootstrapComplete", "openbao", "OpenBao root-service secret engines and operator import handoff are prepared"),
+			conditionFalse("OpenBaoInitMaterialDelivered", "InitMaterialDeliveryFailed", "openbao", err.Error()),
+			conditionFalse("OpenBaoRecoveryComplete", "InitMaterialDeliveryFailed", "openbao", "encrypted init material was not updated with operator import handoff"),
+		)
+		return rep
+	}
+	extra = append(extra, conditionTrue("OpenBaoSecretStoreBootstrapped", "BootstrapComplete", "openbao", "OpenBao root-service secret engines and operator import handoff are prepared"))
 	revokeCondition := revokePresentedToken(ctx, client, rootToken)
 	if revokeCondition.Status != "True" {
 		rep.Conditions = append(rep.Conditions, extra...)
@@ -885,7 +1021,7 @@ func freshInit(ctx context.Context, cfg config, client openBaoClient, rep report
 	return rep
 }
 
-func writeEncryptedInitMaterial(cfg config, init initResponse) error {
+func writeEncryptedInitMaterial(cfg config, init initResponse, handoffs []operatorImportTokenHandoff) error {
 	shares := initUnsealShares(init)
 	if len(shares) != cfg.keyShares {
 		return fmt.Errorf("unseal share count %d does not match configured key shares %d", len(shares), cfg.keyShares)
@@ -913,12 +1049,113 @@ func writeEncryptedInitMaterial(cfg config, init initResponse) error {
 		}
 		material.Spec.EncryptedRecoverySharesB64 = encryptedRecoveryKeys
 	}
+	for _, handoff := range handoffs {
+		encryptedTokens, err := encryptRepeatedStringToPGPRecipients(handoff.Token, []string(cfg.pgpKeys))
+		if err != nil {
+			return err
+		}
+		material.Spec.OperatorImportTokens = append(material.Spec.OperatorImportTokens, encryptedOperatorImportTokenMaterial{
+			Name:               handoff.Name,
+			Policy:             handoff.Policy,
+			TTL:                handoff.TTL,
+			Uses:               handoff.Uses,
+			EncryptedTokensB64: encryptedTokens,
+		})
+	}
 	body, err := json.MarshalIndent(material, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode encrypted init material: %w", err)
 	}
 	body = append(body, '\n')
 	return writePrivateFile(cfg.initOutputPath, body, 0o600)
+}
+
+func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBaoClient, rootToken string) ([]operatorImportTokenHandoff, error) {
+	if len(cfg.secretPaths) == 0 {
+		return nil, nil
+	}
+	if err := ensureSecretPathMounts(ctx, client, rootToken, cfg.secretPaths); err != nil {
+		return nil, err
+	}
+	policy := operatorImportPolicy(cfg.secretPaths)
+	if strings.TrimSpace(policy) == "" {
+		return nil, nil
+	}
+	const policyName = "guardian-operator-import"
+	if err := client.WritePolicy(ctx, rootToken, policyName, policy); err != nil {
+		return nil, fmt.Errorf("write %s policy: %w", policyName, err)
+	}
+	token, err := client.CreateToken(ctx, rootToken, openBaoTokenSpec{
+		Policies: []string{policyName},
+		TTL:      operatorImportTokenTTL,
+		NumUses:  operatorImportTokenUses,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create %s token: %w", policyName, err)
+	}
+	return []operatorImportTokenHandoff{{
+		Name:   policyName,
+		Policy: policyName,
+		TTL:    operatorImportTokenTTL,
+		Uses:   operatorImportTokenUses,
+		Token:  token,
+	}}, nil
+}
+
+func ensureSecretPathMounts(ctx context.Context, client openBaoClient, token string, paths []openBaoSecretPathSpec) error {
+	mounts, err := client.Mounts(ctx, token)
+	if err != nil {
+		return fmt.Errorf("list mounts: %w", err)
+	}
+	required := map[string]struct{}{}
+	for _, path := range paths {
+		mount, err := secretPathMount(path.Path)
+		if err != nil {
+			return err
+		}
+		required[mount] = struct{}{}
+	}
+	for mount := range required {
+		info, ok := mounts[mount+"/"]
+		if !ok {
+			info, ok = mounts[mount]
+		}
+		if ok {
+			if info.Type != "kv" || info.Options["version"] != "2" {
+				return fmt.Errorf("mount %s exists as type=%s version=%s, want kv version 2", mount, info.Type, info.Options["version"])
+			}
+			continue
+		}
+		if err := client.EnableKVv2Mount(ctx, token, mount); err != nil {
+			return fmt.Errorf("enable KV v2 mount %s: %w", mount, err)
+		}
+	}
+	return nil
+}
+
+func operatorImportPolicy(paths []openBaoSecretPathSpec) string {
+	seen := map[string]struct{}{}
+	var selected []string
+	for _, path := range paths {
+		if path.Source != "operatorImport" {
+			continue
+		}
+		trimmed := strings.Trim(strings.TrimSpace(path.Path), "/")
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		selected = append(selected, trimmed)
+	}
+	if len(selected) == 0 {
+		return ""
+	}
+	sort.Strings(selected)
+	var b strings.Builder
+	for _, path := range selected {
+		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"create\", \"update\", \"read\"]\n}\n", path)
+	}
+	return b.String()
 }
 
 func encryptSharesToPGPRecipients(shares []string, recipientPaths []string) ([]string, error) {
@@ -928,6 +1165,18 @@ func encryptSharesToPGPRecipients(shares []string, recipientPaths []string) ([]s
 	out := make([]string, 0, len(shares))
 	for i, share := range shares {
 		encrypted, err := encryptStringToPGPRecipient(share, recipientPaths[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, encrypted)
+	}
+	return out, nil
+}
+
+func encryptRepeatedStringToPGPRecipients(value string, recipientPaths []string) ([]string, error) {
+	out := make([]string, 0, len(recipientPaths))
+	for _, recipientPath := range recipientPaths {
+		encrypted, err := encryptStringToPGPRecipient(value, recipientPath)
 		if err != nil {
 			return nil, err
 		}
@@ -1633,6 +1882,48 @@ func (c *realOpenBaoClient) SaveSnapshot(ctx context.Context, token string) ([]b
 
 func (c *realOpenBaoClient) RevokeSelf(ctx context.Context, token string) error {
 	return c.apiJSON(ctx, token, http.MethodPost, "auth/token/revoke-self", map[string]any{}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) Mounts(ctx context.Context, token string) (map[string]openBaoMountInfo, error) {
+	var out struct {
+		Data map[string]openBaoMountInfo `json:"data"`
+	}
+	if err := c.apiJSON(ctx, token, http.MethodGet, "sys/mounts", nil, &out, http.StatusOK); err != nil {
+		return nil, err
+	}
+	if out.Data == nil {
+		return map[string]openBaoMountInfo{}, nil
+	}
+	return out.Data, nil
+}
+
+func (c *realOpenBaoClient) EnableKVv2Mount(ctx context.Context, token string, mount string) error {
+	body := map[string]any{
+		"type": "kv",
+		"options": map[string]string{
+			"version": "2",
+		},
+	}
+	return c.apiJSON(ctx, token, http.MethodPost, "sys/mounts/"+strings.Trim(strings.TrimSpace(mount), "/"), body, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) WritePolicy(ctx context.Context, token string, name string, hcl string) error {
+	return c.apiJSON(ctx, token, http.MethodPut, "sys/policies/acl/"+url.PathEscape(name), map[string]string{"policy": hcl}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) CreateToken(ctx context.Context, token string, spec openBaoTokenSpec) (string, error) {
+	var out struct {
+		Auth struct {
+			ClientToken string `json:"client_token"`
+		} `json:"auth"`
+	}
+	if err := c.apiJSON(ctx, token, http.MethodPost, "auth/token/create", spec, &out, http.StatusOK); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(out.Auth.ClientToken) == "" {
+		return "", errors.New("OpenBao token create response did not include auth.client_token")
+	}
+	return out.Auth.ClientToken, nil
 }
 
 func (c *realOpenBaoClient) apiJSON(ctx context.Context, token string, method string, path string, body any, out any, expected ...int) error {

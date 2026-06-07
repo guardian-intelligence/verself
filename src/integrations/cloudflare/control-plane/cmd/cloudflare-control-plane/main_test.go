@@ -166,7 +166,8 @@ func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t 
 		"RootTrustMaterialRequired",
 		"--action=import-account-admin --operator-import-stdin",
 		"scoped OpenBao token",
-		"gitignored source such as secret.env",
+		"guardian-operator-import",
+		"init-material.json",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("error %q did not contain %q", msg, want)

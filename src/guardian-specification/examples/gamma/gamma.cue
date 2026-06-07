@@ -110,6 +110,16 @@ resources: [
 		spec: {}
 	},
 	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "cloudflare.account-admin"
+		spec: {
+			path:   "kv-controller/data/integrations/cloudflare/account-admin"
+			key:    "api_token"
+			source: "operatorImport"
+		}
+	},
+	{
 		apiVersion: "networking.guardianintelligence.org/v1alpha1"
 		kind:       "PublicOrigin"
 		metadata: name: "product"
