@@ -22,6 +22,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
+| TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Converged on latest gamma run | None in current gamma state | OpenBao baseline reconciliation, Cloudflare-produced bucket-scoped R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
@@ -38,9 +39,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:9cef0c35ba73c7f64de53a3f9bb28a3eb293d3234ecfe64d050af336ccfa7d35`;
+  `sha256:97616f8f7d71013fa1a7be284a2dbc361f0b6251b66569f945c43d977e331392`;
 - latest verified upload digest:
-  `sha256:190daa1653f4dde253696fb4fe4b34a2aa482a8ace9226ab37bc3ff3ff574a77`;
+  `sha256:e783ddef0b45bf68ac77c8149d9575a0c59f8fbfae575161b018ec5038d40e1d`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -148,6 +149,19 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   allocation `bf6df579` running and healthy;
 - local HTTPS readiness checks through HAProxy returned `guardian haproxy ready`
   for both `gamma.verself.sh` and `gamma.guardianintelligence.org`;
+- the first TigerBeetle submission would have failed because the boarded
+  artifact set omitted `tigerbeetle-runtime.tar` and the direct
+  `tigerbeetle-recover` binary used by the Nomad prestart task;
+- after adding those artifacts to board upload and verify, `tigerbeetle`
+  deployment `f22030e4` completed successfully with allocation `7ac4b7e6`
+  running and healthy;
+- `/run/verself/recovery/tigerbeetle/report.json` reports
+  `TigerBeetleRuntimeInstalled=True`, `TigerBeetleDataFileReady=True`, and
+  `TigerBeetleRecoveryComplete=True`;
+- TigerBeetle runtime artifact digest:
+  `sha256:b2de1f8e1aca0d5b889ab08299faec57bcf5f4915c03f8f229bb521eacc2a47e`;
+- Nomad reports `tigerbeetle-client-tcp` as `success`, and the server is
+  listening on `127.0.0.1:3320`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
