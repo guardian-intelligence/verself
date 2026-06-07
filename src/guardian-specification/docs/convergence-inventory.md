@@ -26,6 +26,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Converged on latest gamma run | None in current gamma state | OpenBao baseline reconciliation, Cloudflare-produced bucket-scoped R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 | Zot | `zot.guardianintelligence.org/v1alpha1/ZotRegistry/zot` | Converged on latest gamma run | None in current gamma state | Materialized Zot runtime artifact, `zot-recover`, local storage directory, htpasswd publisher entry |
 | Verdaccio | `verdaccio.guardianintelligence.org/v1alpha1/VerdaccioRegistry/verdaccio` | Converged on latest gamma run | None in current gamma state | Materialized Verdaccio runtime artifact, `verdaccio-recover`, local storage directory, generated htpasswd file, npm uplink network egress |
+| SpiceDB | `spicedb.guardianintelligence.org/v1alpha1/SpiceDBCluster/spicedb` | Converged on latest gamma run | None in current gamma state | Materialized SpiceDB runtime artifact, `spicedb-recover`, OpenBao generated gRPC preshared key, PostgreSQL `spicedb` database, Nomad OpenBao workload token |
 
 ## Latest Gamma Evidence
 
@@ -41,9 +42,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:71ca3eae3ad439508d11ee6b932e55b88a6dcbf020e821f2afcc449bee6cdebc`;
+  `sha256:8b98a4af14ac95e06210f9ddd8d8943d5bc58dcefdefae6f207ab62c4e03ab70`;
 - latest verified upload digest:
-  `sha256:8cca5084d1af493af5cd76648a63aac7d7c2e7233a555d5fb778b4c1c9c62d91`;
+  `sha256:fabd231fece8868311f5cdade7f9c667d1aa293e605106c69d4b0cabf6a5b912`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -204,6 +205,20 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `sha256:3b513acb3b3eeb9fe0ddf3ee2967eae224b40e8e76c7628354637d53350cca8e`;
 - Nomad reports the `verdaccio-http-ping` check as `success`, `/-/ping`
   returns `200 OK`, and the server is listening on `127.0.0.1:4873`;
+- the first SpiceDB submission failed before starting because the boarded
+  artifact set omitted the direct `spicedb-recover` prestart binary and
+  `spicedb-runtime.tar`;
+- after adding those artifacts to board upload and verify, `spicedb` deployment
+  `8a3350ea` completed successfully with allocation `79d54723` running and
+  healthy;
+- `/run/verself/recovery/spicedb/report.json` reports
+  `SpiceDBRuntimeInstalled=True`, `SpiceDBCredentialReady=True`,
+  `SpiceDBDatastoreMigrated=True`, and `SpiceDBRecoveryComplete=True`;
+- SpiceDB runtime artifact digest:
+  `sha256:56c1ccf3dc826c91ee55807fb9c7643be5f52d7f49a86d8d3d9a0aa6b6ec0843`;
+- Nomad reports `spicedb-grpc-tcp` and `spicedb-metrics-http` as `success`,
+  the metrics endpoint responds on `127.0.0.1:21702`, and gRPC listens on
+  `127.0.0.1:24640`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
