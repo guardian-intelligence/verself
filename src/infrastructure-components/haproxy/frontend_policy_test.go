@@ -32,6 +32,16 @@ func TestDeploymentServicePublicBackendAllowsOnlyAPIAndHealthz(t *testing.T) {
 	}
 }
 
+func TestSecretsServicePublicBackendUsesPlainHTTP(t *testing.T) {
+	runtimeTemplate := readRepoFile(t, "src/infrastructure-components/haproxy/nomad.hcl")
+	runtimeBackend := backendBlock(t, runtimeTemplate, "backend be_route_product_secrets_api_secrets_service_public_api")
+	requireContains(t, runtimeBackend, `[[ with nomadService "secrets-service-public-http" ]]`)
+	requireContains(t, runtimeBackend, "http-request return status 404 unless { path_beg /api/v1 }")
+	if strings.Contains(runtimeBackend, "proto h2") {
+		t.Fatalf("secrets-service backend is plain HTTP/1.1 until the service explicitly supports h2c")
+	}
+}
+
 func readRepoFile(t *testing.T, rel string) string {
 	t.Helper()
 	for _, path := range []string{

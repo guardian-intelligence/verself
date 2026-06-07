@@ -129,6 +129,7 @@ resources: [
 							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
 							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
 							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
+							bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
 							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" "sudo rm -rf '$remote_root/next' && mkdir -p '$remote_root/next/workspace' '$remote_root/next/bazel-bin'"
@@ -215,6 +216,7 @@ resources: [
 							bazel-bin/src/services/iam-service/cmd/iam-service/iam-service_/iam-service
 							bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service
 							bazel-bin/src/services/deployment-service/deployment-service-runtime-tools.tar
+							bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service
 							'
 						ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o ConnectTimeout=10 "$remote" 'command -v rsync >/dev/null || { echo remote rsync missing >&2; exit 127; }'
 						workspace_delta="$("$rsync_bin" -a --omit-dir-times --dry-run --checksum --itemize-changes --delete --timeout=60 --filter=':- .gitignore' --exclude='.git/' --exclude='.guardian/' --exclude='bazel-*' -e "$ssh_opts" ./ "$remote:$remote_root/current/workspace/")"
@@ -496,6 +498,14 @@ resources: [
 							"""
 					},
 					{
+						name: "secrets-service-runtime"
+						hcl: """
+							path "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" {
+							  capabilities = ["read"]
+							}
+							"""
+					},
+					{
 						name: "zitadel-runtime"
 						hcl: """
 							path "kv-runtime/data/secret/org/zitadel.masterkey" {
@@ -715,6 +725,23 @@ resources: [
 							}
 							tokenType: "service"
 							tokenPolicies: ["iam-service-runtime"]
+							tokenPeriod:         "30m"
+							tokenExplicitMaxTTL: 0
+						},
+						{
+							name:     "secrets-service-runtime"
+							roleType: "jwt"
+							boundAudiences: ["vault.io"]
+							boundClaims: nomad_job_id: "secrets-service"
+							userClaim:            "/nomad_job_id"
+							userClaimJSONPointer: true
+							claimMappings: {
+								nomad_namespace: "nomad_namespace"
+								nomad_job_id:    "nomad_job_id"
+								nomad_task:      "nomad_task"
+							}
+							tokenType: "service"
+							tokenPolicies: ["secrets-service-runtime"]
 							tokenPeriod:         "30m"
 							tokenExplicitMaxTTL: 0
 						},
@@ -2520,6 +2547,34 @@ resources: [
 				allowedRefs:         "refs/heads/main"
 				allowedWorkflowRefs: "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main"
 			}
+		}
+	},
+	{
+		apiVersion: "secrets.guardianintelligence.org/v1alpha1"
+		kind:       "SecretsService"
+		metadata: name: "secrets-service"
+		spec: {
+			installationID: "inst_gamma_01JZ0000000000000000000000"
+			environment:    "single-node"
+			auth: {
+				issuerURL: "https://gamma.verself.sh"
+				audienceRef: {
+					apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+					kind:       "SecretPath"
+					name:       "iam-service.zitadel.auth_audience"
+				}
+			}
+			openbao: {
+				address:          "https://127.0.0.1:8200"
+				caCertPath:       "/etc/verself/openbao/ca.pem"
+				kvPrefix:         "kv"
+				transitPrefix:    "transit"
+				jwtPrefix:        "jwt"
+				spiffeJWTPrefix:  "spiffe-jwt"
+				workloadAudience: "openbao"
+			}
+			runtimeSecretNamespace: "runtime"
+			spiffe: endpointSocket: "unix:///run/spire-agent/sockets/agent.sock"
 		}
 	},
 	{

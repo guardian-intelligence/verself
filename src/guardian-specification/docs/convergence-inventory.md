@@ -22,6 +22,7 @@ consecutive submissions do not create unexpected allocation churn.
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
 | IAM Service | `iam.guardianintelligence.org/v1alpha1/IAMService/iam-service` | Converged on latest gamma run | None in current gamma state | Materialized IAM binary, IAM CRD static config, PostgreSQL `iam_service` database/peer role, OpenBao-generated/runtime Zitadel credentials, SpiceDB, ClickHouse, Zitadel OIDC issuer reachable through HAProxy |
 | Deployment Service | `deployment.guardianintelligence.org/v1alpha1/DeploymentService/deployment-service` | Converged on latest gamma run | None in current gamma state | Materialized deployment-service binary, Bazel-pinned Git runtime tools, PostgreSQL `deployment_service` database/peer role, SPIRE workload identity, object-storage admin API, Nomad API, HAProxy public route |
+| Secrets Service | `secrets.guardianintelligence.org/v1alpha1/SecretsService/secrets-service` | Converged on latest gamma run | None in current gamma state | Materialized secrets-service binary, SecretsService CRD static config, OpenBao Nomad JWT role `secrets-service-runtime`, Zitadel auth audience secret, SPIRE workload identity, HAProxy public route |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
 | TigerBeetle | `tigerbeetle.guardianintelligence.org/v1alpha1/TigerBeetleCluster/tigerbeetle` | Converged on latest gamma run | None in current gamma state | Materialized TigerBeetle runtime artifact, `tigerbeetle-recover`, singleton data file |
@@ -45,6 +46,35 @@ guardian fly -f src/guardian-specification/examples/gamma/gamma.cue -o json --st
 
 Observed results from the latest gamma run on June 7, 2026 UTC:
 
+- current preflight after the secrets-service slice reported
+  `ready_to_fly: yes`, resource graph digest
+  `sha256:d78dda3972963c4a6987ce7f5a4f85f5c608a2005c40e7cd5cfa685a89964a09`,
+  and verified upload digest
+  `sha256:d7a7440c4f644390f40e15556141d71fa0313048a63f8d18d1095563bb1ba1a4`;
+- secrets-service deployment `27488a9e` is successful with allocations
+  `2634bf5c` and `afdb71a4` running and healthy;
+- Nomad reports `secrets-service-public-http` on
+  `127.0.0.1:31638` and `127.0.0.1:31244`; both direct `/readyz`
+  checks return `ready`;
+- the projected auth-audience credential is rendered as
+  `secrets_service:secrets_service` with mode `0600` in each allocation,
+  matching the fixed recovery-managed local identity `975:968`;
+- HAProxy deployment `dc56940a`, allocation `c2498b6f`, is successful after
+  regenerating the secrets-service backend. The generated
+  `be_route_product_secrets_api_secrets_service_public_api` block points at
+  `127.0.0.1:31638` and `127.0.0.1:31244` with plain HTTP server entries
+  and no `proto h2`;
+- secrets-service initially blocked on the old
+  `verself-artifact://secrets-service` stanza, then on a missing OpenBao
+  `secrets-service-runtime` Nomad JWT role, then on a stale OpenBao reconcile
+  loop that had loaded the previous resource graph once at process start. The
+  OpenBao reconcile sidecar now reloads the boarded graph on each loop
+  iteration before reconciling baseline roles;
+- the final secrets-service blockers were local to the component job: the
+  template destination was `secrets/auth-audience` while the CRD-referenced
+  credential name was `iam-service.zitadel.auth_audience`, and Nomad rendered
+  the corrected credential as `root:root` until the template declared the
+  fixed service UID/GID;
 - current preflight after the deployment-service slice reported
   `ready_to_fly: yes`, resource graph digest
   `sha256:0944ce1d74bfb85cbfec52d8b47349e9255ee31c4b3207774f3b0f0102f15786`,

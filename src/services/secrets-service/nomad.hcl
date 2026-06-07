@@ -1,3 +1,23 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current"
+}
+
+variable "secrets_service_resource_name" {
+  type    = string
+  default = "secrets-service"
+}
+
+variable "secrets_service_runtime_root" {
+  type    = string
+  default = "/var/lib/secrets-service/runtime"
+}
+
+variable "secrets_service_projected_graph" {
+  type    = string
+  default = "/run/verself/recovery/secrets-service/document.json"
+}
+
 job "secrets-service" {
   name = "secrets-service"
   datacenters = ["*"]
@@ -13,6 +33,33 @@ job "secrets-service" {
         host_network = "loopback"
       }
     }
+    task "setup" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "${var.guardian_repo_root}/bazel-bin/src/services/secrets-service/cmd/secrets-service/secrets-service_/secrets-service"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.secrets_service_resource_name}",
+          "--runtime-root=${var.secrets_service_runtime_root}",
+          "--projected-graph=${var.secrets_service_projected_graph}",
+        ]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "secrets-service" {
       driver = "raw_exec"
       user = "secrets_service"
@@ -29,37 +76,30 @@ job "secrets-service" {
         ttl  = "1h"
       }
 
-      artifact {
-        source = "verself-artifact://secrets-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        command = "local/bin/secrets-service"
+        command = "${var.secrets_service_runtime_root}/current/bin/secrets-service"
+        args = [
+          "--resource-graph=${var.secrets_service_projected_graph}",
+          "--resource-name=${var.secrets_service_resource_name}",
+          "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
+          "--internal-listen-addr=127.0.0.1:$${NOMAD_PORT_internal_https}",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "secrets-service"
-        SECRETS_OPENBAO_JWT_PREFIX = "jwt"
-        SECRETS_OPENBAO_KV_PREFIX = "kv"
-        SECRETS_OPENBAO_SPIFFE_JWT_PREFIX = "spiffe-jwt"
-        SECRETS_OPENBAO_TRANSIT_PREFIX = "transit"
-        SECRETS_OPENBAO_WORKLOAD_AUDIENCE = "openbao"
-        SECRETS_RUNTIME_SECRET_NAMESPACE = "runtime"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_CRED_OPENBAO_CA_CERT = "/etc/verself/openbao/ca.pem"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
+        HOME = "/var/lib/secrets-service/home"
+        TMPDIR = "/var/lib/secrets-service/home/tmp"
         VERSELF_SUPERVISOR = "nomad"
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience"
+        destination = "secrets/iam-service.zitadel.auth_audience"
         perms = "0600"
+        uid = "975"
+        gid = "968"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -100,15 +140,6 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/upstreams.env"
-        perms = "0600"
-        data = <<-EOT
-SECRETS_OPENBAO_ADDR=https://{{- with nomadService "openbao-api" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
       }
     }
     update {

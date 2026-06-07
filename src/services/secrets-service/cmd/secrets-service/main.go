@@ -31,16 +31,31 @@ const (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if handled, err := runRecoveryCLI(context.Background(), os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	opts, err := parseRunOptions(args)
+	if err != nil {
+		return err
+	}
+	runtimeCfg, err := loadSecretsRuntimeConfig(opts.ResourceGraph, opts.ResourceName)
+	if err != nil {
+		return err
+	}
 	otelShutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{ServiceName: serviceName, ServiceVersion: serviceVersion})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -52,26 +67,12 @@ func run() error {
 	}()
 
 	cfg := envconfig.New()
-	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4251")
-	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4253")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
-	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
-	openBaoAddr := cfg.RequireString("SECRETS_OPENBAO_ADDR")
-	openBaoCACert := cfg.RequireCredentialPath("openbao-ca-cert")
-	runtimeSecretNamespace := cfg.RequireString("SECRETS_RUNTIME_SECRET_NAMESPACE")
-	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
-	environment := cfg.String("SECRETS_ENVIRONMENT", "single-node")
-	kvPrefix := cfg.String("SECRETS_OPENBAO_KV_PREFIX", "kv")
-	transitPrefix := cfg.String("SECRETS_OPENBAO_TRANSIT_PREFIX", "transit")
-	jwtPrefix := cfg.String("SECRETS_OPENBAO_JWT_PREFIX", "jwt")
-	workloadAudience := cfg.String("SECRETS_OPENBAO_WORKLOAD_AUDIENCE", "openbao")
-	spiffeJWTPrefix := cfg.String("SECRETS_OPENBAO_SPIFFE_JWT_PREFIX", "spiffe-jwt")
+	authAudience := cfg.RequireCredential(runtimeCfg.AuthAudienceName)
 	if err := cfg.Err(); err != nil {
 		return err
 	}
 
-	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
+	spiffeSource, err := workloadauth.Source(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("spiffe workload source: %w", err)
 	}
@@ -80,7 +81,7 @@ func run() error {
 			logger.ErrorContext(context.Background(), "secrets-service spiffe source close", "error", err)
 		}
 	}()
-	workloadJWTSource, err := workloadauth.JWTSource(ctx, spiffeEndpoint)
+	workloadJWTSource, err := workloadauth.JWTSource(ctx, runtimeCfg.SPIFFEEndpointSocket)
 	if err != nil {
 		return fmt.Errorf("spiffe jwt source: %w", err)
 	}
@@ -95,16 +96,16 @@ func run() error {
 	}
 
 	store, err := secrets.NewBaoStore(ctx, secrets.BaoStoreConfig{
-		Address:       openBaoAddr,
-		CACertPath:    openBaoCACert,
-		KVMountPrefix: kvPrefix,
-		TransitPrefix: transitPrefix,
-		JWTAuthPrefix: jwtPrefix,
+		Address:       runtimeCfg.OpenBaoAddress,
+		CACertPath:    runtimeCfg.OpenBaoCACertPath,
+		KVMountPrefix: runtimeCfg.OpenBaoKVPrefix,
+		TransitPrefix: runtimeCfg.OpenBaoTransitPrefix,
+		JWTAuthPrefix: runtimeCfg.OpenBaoJWTPrefix,
 		WorkloadJWT: secrets.WorkloadJWTConfig{
 			Source:     workloadJWTSource,
-			Audience:   workloadAudience,
+			Audience:   runtimeCfg.OpenBaoWorkloadAudience,
 			Subject:    secretsSPIFFEID,
-			AuthPrefix: spiffeJWTPrefix,
+			AuthPrefix: runtimeCfg.OpenBaoSPIFFEJWTPrefix,
 		},
 	}, logger)
 	if err != nil {
@@ -132,7 +133,7 @@ func run() error {
 		Billing:        billingClient,
 		Logger:         logger,
 		ServiceVersion: serviceVersion,
-		Environment:    environment,
+		Environment:    runtimeCfg.Environment,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("secrets readiness: %w", err)
@@ -155,16 +156,16 @@ func run() error {
 		_, _ = w.Write([]byte("ready\n"))
 	})
 	privateMux := http.NewServeMux()
-	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+listenAddr, svc, installationID, iamclient.NewAuthorizer(iamClient))
+	secretsapi.NewAPI(privateMux, serviceVersion, "http://"+opts.ListenAddr, svc, runtimeCfg.InstallationID, iamclient.NewAuthorizer(iamClient))
 	authenticated := auth.Middleware(auth.Config{
-		IssuerURL: authIssuerURL,
+		IssuerURL: runtimeCfg.AuthIssuerURL,
 		Audience:  authAudience,
 	})(privateMux)
 	protected := secretsapi.CaptureRawBearerToken(authenticated)
 	rootMux.Handle("/", protected)
 	internalMux := http.NewServeMux()
 	internalPeerIDs, err := secretsapi.RegisterInternalRoutes(internalMux, svc, spiffeSource, secretsapi.InternalRoutesConfig{
-		RuntimeSecretNamespace: runtimeSecretNamespace,
+		RuntimeSecretNamespace: runtimeCfg.RuntimeSecretNamespace,
 		SandboxService:         workloadauth.ServiceSandboxRental,
 		SourceService:          workloadauth.ServiceSourceCodeHosting,
 		RuntimeSecretReadPolicies: []secretsapi.RuntimeSecretPolicy{
@@ -200,8 +201,8 @@ func run() error {
 		return fmt.Errorf("secrets internal allowlist: %w", err)
 	}
 
-	public := httpserver.New(listenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
-	internal := httpserver.New(internalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
+	public := httpserver.New(opts.ListenAddr, otelhttp.NewHandler(limitRequestBodies(rootMux, requestBodyLimit), serviceName))
+	internal := httpserver.New(opts.InternalListenAddr, otelhttp.NewHandler(limitRequestBodies(internalAllowlist, requestBodyLimit), serviceName+"-internal"))
 	internal.TLSConfig = internalTLSConfig
 
 	return httpserver.RunPair(ctx, logger, public, internal)

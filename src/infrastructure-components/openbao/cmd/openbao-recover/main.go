@@ -250,12 +250,12 @@ func run(ctx context.Context, args []string, stdout io.Writer, stdin io.Reader) 
 		if err != nil {
 			return err
 		}
+		if cfg.loop {
+			return recoverLoop(ctx, cfg, stdout, stdin)
+		}
 		client, err := newRealOpenBaoClient(cfg)
 		if err != nil {
 			return err
-		}
-		if cfg.loop {
-			return recoverLoop(ctx, cfg, client, stdout, stdin)
 		}
 		rep := recoverOnce(ctx, cfg, client, stdin)
 		return writeRecoveryReport(stdout, cfg.reportPath, rep)
@@ -901,13 +901,25 @@ func recoverOnce(ctx context.Context, cfg config, client openBaoClient, stdin io
 	}
 }
 
-func recoverLoop(ctx context.Context, cfg config, client openBaoClient, stdout io.Writer, stdin io.Reader) error {
+func recoverLoop(ctx context.Context, cfg config, stdout io.Writer, stdin io.Reader) error {
 	for {
-		rep := recoverOnce(ctx, cfg, client, stdin)
-		if err := writeReport(stdout, cfg.reportPath, rep); err != nil {
+		loopCfg := cfg
+		if loopCfg.resourceGraph != "" {
+			next, err := applyResourceGraphConfig(loopCfg)
+			if err != nil {
+				return err
+			}
+			loopCfg = normalizeConfig(next)
+		}
+		client, err := newRealOpenBaoClient(loopCfg)
+		if err != nil {
 			return err
 		}
-		timer := time.NewTimer(cfg.loopInterval)
+		rep := recoverOnce(ctx, loopCfg, client, stdin)
+		if err := writeReport(stdout, loopCfg.reportPath, rep); err != nil {
+			return err
+		}
+		timer := time.NewTimer(loopCfg.loopInterval)
 		select {
 		case <-ctx.Done():
 			if !timer.Stop() {
