@@ -350,8 +350,12 @@ receivers:
         include:
           match_type: regexp
           names: ["billing-service", "sandbox-rental.*", "haproxy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server"]
+        # Short-lived PIDs can vanish between /proc enumeration and scrape.
+        scrape_process_delay: 2s
+        mute_process_name_error: true
         mute_process_exe_error: true
         mute_process_io_error: true
+        mute_process_user_error: true
       cpu: {}
       memory: {}
       load: {}

@@ -95,6 +95,9 @@ resources: [
 						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
 						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
+						bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar
+						bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar
+						bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover
 						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
 						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
 						bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar
@@ -165,6 +168,9 @@ resources: [
 						bazel-bin/src/infrastructure-components/grafana/grafana-runtime.tar
 						bazel-bin/src/infrastructure-components/grafana/cmd/grafana-recover/grafana-recover_/grafana-recover
 						bazel-bin/src/infrastructure-components/haproxy/haproxy-runtime.tar
+						bazel-bin/src/infrastructure-components/otelcol/otelcol-runtime.tar
+						bazel-bin/src/infrastructure-components/otelcol/otelcol-config.tar
+						bazel-bin/src/infrastructure-components/otelcol/cmd/otelcol-recover/otelcol-recover_/otelcol-recover
 						bazel-bin/src/infrastructure-components/nats/nats-runtime.tar
 						bazel-bin/src/infrastructure-components/nats/cmd/nats-recover/nats-recover_/nats-recover
 						bazel-bin/src/infrastructure-components/spicedb/spicedb-runtime.tar

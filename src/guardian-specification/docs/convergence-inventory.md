@@ -18,7 +18,7 @@ consecutive submissions do not create unexpected allocation churn.
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged on latest gamma run | None in current gamma state | Materialized NATS runtime artifact, `nats-recover`, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged on latest gamma run | None in current gamma state | Materialized Nomad Observer runtime artifact, direct `nomad-observer` prestart binary, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
-| OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
+| OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged on latest gamma run | None in current gamma state | Materialized OTel Collector runtime/config artifacts, direct `otelcol-recover` prestart binary, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
@@ -43,9 +43,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:21263d0a4f1d59032788ac9c88ea7c40081f3e2a94b90da90a9470f06e0e55c1`;
+  `sha256:4460bc6abeb1182f0c1b9a6bed0b985948dba9d7dee3bb2d7efef74ff35f433c`;
 - latest verified upload digest:
-  `sha256:4039e4a6926833faa004812302a903888789148bd3cebe260501475623239798`;
+  `sha256:79e40e62f8857c2d307f7dd4dcbd4688838f70a347f338f9552cb4aa589ee18f`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -126,6 +126,33 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `sha256:c903df08ae2c9d743c4c94b8b418777a6c2c2cd7a60e9e871b0942e02d9e26bf`;
 - ClickHouse `verself.fleet_nodes` contains live projection rows from Nomad
   Observer, with latest `observed_at` `2026-06-07 01:36:07.765`;
+- the first OTel Collector submission in the latest run failed before starting
+  because the boarded artifact set omitted the direct `otelcol-recover`
+  prestart binary plus `otelcol-runtime.tar` and `otelcol-config.tar`;
+- after adding those artifacts to board upload and verify, `otelcol`
+  deployment `94e7da8f` completed successfully with allocation `930deba3`
+  running and healthy;
+- `/run/verself/recovery/otelcol/report.json` reports
+  `OtelCollectorRuntimeInstalled=True`,
+  `OtelCollectorConfigInstalled=True`, and
+  `OtelCollectorRecoveryComplete=True`;
+- OTel Collector runtime artifact digest:
+  `sha256:4c29347a3dad1c4e9bb60af074523fd8287b94b32aae7bd846839310887471de`;
+- OTel Collector config artifact digest:
+  `sha256:272205884b9702132ba2d327e2d0d15e3f08f06e17eee4f53f17353f21c6158b`;
+- the collector listens on `127.0.0.1:4317`, `127.0.0.1:4318`, and
+  `127.0.0.1:13133`; the `otelcol-health` Nomad service check is `success`;
+- OTel Collector health returned `Server available` from
+  `http://127.0.0.1:13133/`;
+- the hostmetrics process scraper now delays short-lived process scrapes and
+  mutes the upstream-supported process name/user read failures, removing the
+  repeated `/proc/<pid>/status` scrape errors from steady-state logs;
+- OTel Collector spiffe-helper received
+  `spiffe://gamma.verself.sh/svc/otelcol` and refreshed the X.509 material;
+- ClickHouse had fresh OTel ingestion after the restart:
+  `default.otel_logs` had `546` rows with max `Timestamp`
+  `2026-06-07 01:46:43.793246253`, and `default.otel_traces` had `470` rows
+  with max `Timestamp` `2026-06-07 01:46:44.806890316`;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after
@@ -365,31 +392,22 @@ Previous observed results:
   `0640`, allowing the service user to read configuration without exposing the
   materialized workspace tree broadly;
 - OTel Collector now has a component CRD and a component-owned Nomad service
-  job;
-- OTel Collector recovery installs the materialized `otelcol-runtime.tar` and
-  `otelcol-config.tar`, creates the `otelcol` account, and reports
-  `OtelCollectorRecoveryComplete=True` in
-  `/run/verself/recovery/otelcol/report.json`;
-- OTel Collector runtime digest:
+  job whose recovery prestart installs `otelcol-runtime.tar` and
+  `otelcol-config.tar`, creates the `otelcol` account, prepares the
+  ClickHouse SPIFFE helper directory, and reports
+  `OtelCollectorRecoveryComplete=True`;
+- latest live OTel Collector allocation `930deba3` is running, deployment
+  `94e7da8f` completed successfully, and the `otelcol-health` Nomad service
+  check is `success`;
+- latest OTel Collector runtime digest:
   `sha256:4c29347a3dad1c4e9bb60af074523fd8287b94b32aae7bd846839310887471de`;
-- OTel Collector config digest:
-  `sha256:60870e2bd6856ac2dcec0ec051d35c6851405e93f9db95872926a1475a8ef651`;
-- live OTel Collector allocation `6078c0f2` is running, deployment `519ad6a9`
-  completed successfully, and the `otelcol-health` Nomad service check is
-  `success`;
-- OTel Collector health endpoint returned `Server available` from
-  `127.0.0.1:13133`;
+- latest OTel Collector config digest:
+  `sha256:272205884b9702132ba2d327e2d0d15e3f08f06e17eee4f53f17353f21c6158b`;
+- the collector health endpoint returned `Server available`, OTLP gRPC/HTTP
+  and health listeners were bound on loopback, and ClickHouse recorded fresh
+  rows in `default.otel_logs` and `default.otel_traces`;
 - OTel Collector spiffe-helper received
   `spiffe://gamma.verself.sh/svc/otelcol` and refreshed the X.509 material;
-- OTel Collector wrote fresh ClickHouse evidence newer than five minutes:
-  `default.otel_metrics_sum` had `115495` rows with
-  `max(TimeUnix) = 2026-06-06 06:26:17.015`,
-  `default.otel_metrics_gauge` had `17144` rows with
-  `max(TimeUnix) = 2026-06-06 06:26:16.996`, and `default.otel_logs` had `240`
-  rows with `max(Timestamp) = 2026-06-06 06:26:05.118326000`;
-- re-submitting the same OTel Collector job produced evaluation `890cb326`
-  without allocation churn; allocation `6078c0f2` remained the only running
-  allocation;
 - artifact-only changes are not visible to Nomad when the job HCL is unchanged;
   the live OTel config update required an explicit allocation restart after
   materializing the new artifact. Future `fly` submission logic should carry a
@@ -510,10 +528,10 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -addre
 ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(observed_at) FROM verself.fleet_nodes WHERE observed_at > now() - INTERVAL 5 MINUTE"'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/otelcol/report.json'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default otelcol'
-ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 6078c0f2'
+ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default 930deba3'
 ssh -T ubuntu@206.223.228.87 'curl -fsS http://127.0.0.1:13133/'
-ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(TimeUnix) FROM default.otel_metrics_sum WHERE TimeUnix > now() - INTERVAL 5 MINUTE"'
-ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count(), max(Timestamp) FROM default.otel_logs WHERE TimestampTime > now() - INTERVAL 5 MINUTE"'
+ssh -T ubuntu@206.223.228.87 'sudo /opt/verself/clickhouse/current/bin/clickhouse client --config-file=/etc/clickhouse-client/operator.xml --query "SELECT count(), max(Timestamp) FROM default.otel_logs"'
+ssh -T ubuntu@206.223.228.87 'sudo /opt/verself/clickhouse/current/bin/clickhouse client --config-file=/etc/clickhouse-client/operator.xml --query "SELECT count(), max(Timestamp) FROM default.otel_traces"'
 ssh -T ubuntu@206.223.228.87 'for p in /etc/haproxy/certs/gamma.verself.sh.pem /etc/haproxy/certs/gamma.guardianintelligence.org.pem; do sudo test -f "$p" && echo present:$p || echo missing:$p; done'
 ```
 
