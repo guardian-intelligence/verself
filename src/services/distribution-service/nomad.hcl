@@ -18,10 +18,28 @@ variable "distribution_service_projected_graph" {
   default = "/run/verself/recovery/distribution-service/document.json"
 }
 
+variable "distribution_service_image_archive" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo/current/bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_image_load/tarball.tar"
+}
+
+variable "distribution_service_projected_image" {
+  type    = string
+  default = "/var/lib/distribution-service/runtime/image.tar"
+}
+
+variable "distribution_service_image_digest" {
+  type    = string
+  default = "sha256:local"
+}
+
 job "distribution-service" {
   name        = "distribution-service"
   datacenters = ["*"]
   type        = "service"
+  meta {
+    image_digest = "${var.distribution_service_image_digest}"
+  }
 
   group "distribution-service" {
     count = 2
@@ -51,12 +69,11 @@ job "distribution-service" {
         command = "${var.guardian_repo_root}/bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_/distribution-service"
         args = [
           "recover",
-          "--repo-root=${var.guardian_repo_root}",
           "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
-          "--resource-name=${var.distribution_service_resource_name}",
           "--runtime-root=${var.distribution_service_runtime_root}",
           "--projected-graph=${var.distribution_service_projected_graph}",
-          "--migrate",
+          "--image-archive=${var.distribution_service_image_archive}",
+          "--projected-image=${var.distribution_service_projected_image}",
         ]
       }
 
@@ -66,17 +83,63 @@ job "distribution-service" {
       }
     }
 
+    task "migrate" {
+      driver = "podman"
+      user   = "distribution_service"
+
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
+      }
+
+      config {
+        image        = "docker-archive:${var.distribution_service_projected_image}"
+        network_mode = "host"
+        readonly_rootfs = true
+        volumes = [
+          "${var.distribution_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "/var/run/postgresql:/var/run/postgresql",
+        ]
+        tmpfs = ["/tmp"]
+        args = [
+          "migrate",
+          "--resource-graph=/guardian/document.json",
+          "--resource-name=${var.distribution_service_resource_name}",
+          "up",
+        ]
+      }
+
+      env {
+        HOME   = "/tmp"
+        TMPDIR = "/tmp"
+      }
+
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+    }
+
     task "distribution-service" {
-      driver         = "raw_exec"
+      driver         = "podman"
       user           = "distribution_service"
       kill_signal    = "SIGTERM"
       kill_timeout   = "30s"
       shutdown_delay = "5s"
 
       config {
-        command = "${var.distribution_service_runtime_root}/current/bin/distribution-service"
+        image        = "docker-archive:${var.distribution_service_projected_image}"
+        network_mode = "host"
+        readonly_rootfs = true
+        volumes = [
+          "${var.distribution_service_projected_graph}:/guardian/document.json:ro,noexec",
+          "/etc/verself/clickhouse:/etc/verself/clickhouse:ro,noexec",
+          "/run/spire-agent/sockets:/run/spire-agent/sockets:ro",
+          "/var/run/postgresql:/var/run/postgresql",
+        ]
+        tmpfs = ["/tmp"]
         args = [
-          "--resource-graph=${var.distribution_service_projected_graph}",
+          "--resource-graph=/guardian/document.json",
           "--resource-name=${var.distribution_service_resource_name}",
           "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
           "--internal-listen-addr=127.0.0.1:$${NOMAD_PORT_internal_https}",
@@ -84,11 +147,11 @@ job "distribution-service" {
       }
 
       env {
-        HOME                         = "/var/lib/distribution-service/home"
+        HOME                         = "/tmp"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES     = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME            = "distribution-service"
-        TMPDIR                       = "/var/lib/distribution-service/home/tmp"
+        TMPDIR                       = "/tmp"
         VERSELF_SUPERVISOR           = "nomad"
       }
 

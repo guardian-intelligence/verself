@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
@@ -130,7 +134,7 @@ func TestValidateImportAccountAdminRequiresExactlyOneTokenSource(t *testing.T) {
 	cfg.openBaoAddr = "https://openbao.internal"
 
 	err := cfg.validate()
-	if err == nil || !strings.Contains(err.Error(), "--openbao-token-file and --account-admin-api-token-file are required") {
+	if err == nil || !strings.Contains(err.Error(), "--account-admin-api-token-file is required") {
 		t.Fatalf("validate error = %v", err)
 	}
 
@@ -151,6 +155,25 @@ func TestValidateImportAccountAdminRequiresExactlyOneTokenSource(t *testing.T) {
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("operator import stdin should validate: %v", err)
 	}
+
+	cfg.operatorImportStdin = false
+	cfg.accountAdminAPITokenFile = "/run/operator/cloudflare-token"
+	cfg.operatorImportInitMaterial = "/run/operator/init-material.json"
+	err = cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--operator-import-init-material and --operator-import-private-key-file are required together") {
+		t.Fatalf("validate error with incomplete init material source = %v", err)
+	}
+
+	cfg.operatorImportPrivateKeyFile = "/run/operator/private-key.asc"
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("init-material token source should validate: %v", err)
+	}
+
+	cfg.openBaoTokenFile = "/run/openbao/token"
+	err = cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--openbao-token-file cannot be combined") {
+		t.Fatalf("validate error with mixed file token sources = %v", err)
+	}
 }
 
 func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t *testing.T) {
@@ -164,7 +187,10 @@ func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsRootTrustMaterial(t 
 	for _, want := range []string{
 		"CloudflareRecoveryAuthorityAvailable=False",
 		"RootTrustMaterialRequired",
-		"--action=import-account-admin --operator-import-stdin",
+		"--operator-import-init-material",
+		"--operator-import-private-key-file",
+		"--account-admin-api-token-file",
+		"--operator-import-stdin",
 		"scoped OpenBao token",
 		"guardian-operator-import",
 		"init-material.json",
@@ -246,6 +272,45 @@ func TestReadOperatorImportStdinRequiresBothTokens(t *testing.T) {
 	_, err = readOperatorImportStdin(strings.NewReader(`{"openBaoToken":"openbao-token"}`))
 	if err == nil || !strings.Contains(err.Error(), "requires openBaoToken and cloudflareAccountAdminAPIToken") {
 		t.Fatalf("missing token error = %v", err)
+	}
+}
+
+func TestReadAccountAdminImportDecryptsOpenBaoTokenFromInitMaterial(t *testing.T) {
+	dir := t.TempDir()
+	privateKeyPath, encryptedToken := writeTestOperatorImportPGPMaterial(t, dir, "openbao-token")
+	initMaterialPath := filepath.Join(dir, "init-material.json")
+	writeTestFile(t, initMaterialPath, fmt.Sprintf(`{
+  "apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+  "kind": "OpenBaoEncryptedInitMaterial",
+  "metadata": {"name": "openbao"},
+  "spec": {
+    "operatorImportTokens": [{
+      "name": "guardian-operator-import",
+      "encryptedTokensB64": [%q]
+    }]
+  }
+}`, encryptedToken))
+	accountAdminPath := filepath.Join(dir, "cloudflare-token")
+	if err := os.WriteFile(accountAdminPath, []byte("cloudflare-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := validTestConfig()
+	cfg.action = "import-account-admin"
+	cfg.accountAdminAPITokenFile = accountAdminPath
+	cfg.operatorImportInitMaterial = initMaterialPath
+	cfg.operatorImportPrivateKeyFile = privateKeyPath
+	cfg.operatorImportTokenName = "guardian-operator-import"
+
+	token, got, err := readAccountAdminImport(strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearBytes(token)
+	if string(token) != "cloudflare-token" {
+		t.Fatalf("account-admin token = %q", token)
+	}
+	if got.openBaoToken != "openbao-token" {
+		t.Fatalf("OpenBao token = %q", got.openBaoToken)
 	}
 }
 
@@ -477,6 +542,34 @@ func writeCloudflareAccountConfig(t *testing.T, root string) {
     "recovery_bucket": "verself-recovery"
   }
 }`)
+}
+
+func writeTestOperatorImportPGPMaterial(t *testing.T, dir string, token string) (string, string) {
+	t.Helper()
+	entity, err := openpgp.NewEntity("operator", "", "operator@example.invalid", nil)
+	if err != nil {
+		t.Fatalf("generate operator PGP entity: %v", err)
+	}
+	var private bytes.Buffer
+	if err := entity.SerializePrivate(&private, nil); err != nil {
+		t.Fatalf("serialize private key: %v", err)
+	}
+	privateKeyPath := filepath.Join(dir, "operator-private-key.asc")
+	if err := os.WriteFile(privateKeyPath, private.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var encrypted bytes.Buffer
+	writer, err := openpgp.Encrypt(&encrypted, []*openpgp.Entity{entity}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("encrypt operator import token: %v", err)
+	}
+	if _, err := writer.Write([]byte(token)); err != nil {
+		t.Fatalf("write encrypted token: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close encrypted token: %v", err)
+	}
+	return privateKeyPath, base64.StdEncoding.EncodeToString(encrypted.Bytes())
 }
 
 func minimalRecoveryConfigYAML() string {

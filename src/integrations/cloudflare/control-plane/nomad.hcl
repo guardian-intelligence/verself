@@ -27,6 +27,11 @@ job "cloudflare-integration-recovery" {
     task "recover" {
       driver = "podman"
 
+      vault {
+        role        = "cloudflare-integration-recovery"
+        change_mode = "noop"
+      }
+
       config {
         image           = "docker-archive:${var.cloudflare_control_plane_image_archive}"
         network_mode    = "host"

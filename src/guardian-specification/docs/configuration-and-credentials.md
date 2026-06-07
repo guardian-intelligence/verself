@@ -98,8 +98,11 @@ For Cloudflare recovery, the autonomous sources are:
 If neither exists, the Cloudflare component must fail loudly with
 `CloudflareRecoveryAuthorityAvailable=False` and reason
 `RootTrustMaterialRequired`. The operator may then provide an account-admin
-token through the component-owned import path. A local `secret.env` file is
-acceptable as an operator-held source only when it is gitignored, readable only
-by the operator, and transformed into the import command's stdin payload without
-being committed, logged, passed through argv, or written to host-local durable
-files.
+token through the component-owned import path. The preferred from-zero path is
+to decrypt the scoped OpenBao import token from OpenBao `init-material.json`
+with an operator-held PGP private key, then import the Cloudflare token from a
+local operator-only file. Stdin JSON import remains available for tightly
+controlled operator sessions. A local `secret.env` file is acceptable as an
+operator-held source only when it is gitignored, readable only by the operator,
+and transformed into the import command without being committed, logged, passed
+through argv, or written to host-local durable files.

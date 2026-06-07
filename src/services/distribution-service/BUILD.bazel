@@ -25,7 +25,7 @@ spire_identity(
 nomad_component(
     name = "nomad_component",
     artifacts = {
-        "//src/services/distribution-service/cmd/distribution-service:distribution-service_image_archive": "distribution-service-image",
+        "//src/services/distribution-service/cmd/distribution-service:distribution-service_image_archive": "distribution-service_image_archive",
     },
     component = "distribution_service",
     job_id = "distribution-service",

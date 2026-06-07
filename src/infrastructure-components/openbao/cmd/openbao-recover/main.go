@@ -49,6 +49,10 @@ const (
 	defaultThreshold        = 2
 	operatorImportTokenTTL  = "4h"
 	operatorImportTokenUses = 20
+	nomadJWTAuthPath        = "jwt-nomad"
+	nomadJWKSURL            = "http://127.0.0.1:4646/.well-known/jwks.json"
+	nomadWorkloadAudience   = "vault.io"
+	cloudflareRecoveryRole  = "cloudflare-integration-recovery"
 )
 
 type config struct {
@@ -202,7 +206,11 @@ type openBaoClient interface {
 	RevokeSelf(context.Context, string) error
 	Mounts(context.Context, string) (map[string]openBaoMountInfo, error)
 	EnableKVv2Mount(context.Context, string, string) error
+	AuthMethods(context.Context, string) (map[string]openBaoAuthInfo, error)
+	EnableJWTAuth(context.Context, string, string) error
+	ConfigureJWTAuth(context.Context, string, string, openBaoJWTAuthConfig) error
 	WritePolicy(context.Context, string, string, string) error
+	WriteJWTRole(context.Context, string, string, string, openBaoJWTRole) error
 	CreateToken(context.Context, string, openBaoTokenSpec) (string, error)
 }
 
@@ -502,10 +510,32 @@ type openBaoMountInfo struct {
 	Options map[string]string `json:"options"`
 }
 
+type openBaoAuthInfo struct {
+	Type string `json:"type"`
+}
+
 type openBaoTokenSpec struct {
 	Policies []string `json:"policies"`
 	TTL      string   `json:"ttl"`
 	NumUses  int      `json:"num_uses,omitempty"`
+}
+
+type openBaoJWTAuthConfig struct {
+	JWKSURL          string   `json:"jwks_url"`
+	JWTSupportedAlgs []string `json:"jwt_supported_algs"`
+}
+
+type openBaoJWTRole struct {
+	RoleType             string            `json:"role_type"`
+	BoundAudiences       []string          `json:"bound_audiences"`
+	BoundClaims          map[string]string `json:"bound_claims,omitempty"`
+	UserClaim            string            `json:"user_claim"`
+	UserClaimJSONPointer bool              `json:"user_claim_json_pointer"`
+	ClaimMappings        map[string]string `json:"claim_mappings"`
+	TokenType            string            `json:"token_type"`
+	TokenPolicies        []string          `json:"token_policies"`
+	TokenPeriod          string            `json:"token_period"`
+	TokenExplicitMaxTTL  int               `json:"token_explicit_max_ttl"`
 }
 
 type pgpRecipientSpec struct {
@@ -1074,7 +1104,14 @@ func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBao
 	if len(cfg.secretPaths) == 0 {
 		return nil, nil
 	}
-	if err := ensureSecretPathMounts(ctx, client, rootToken, cfg.secretPaths); err != nil {
+	if err := retryOpenBaoBootstrapStep(ctx, "ensure secret path mounts", func() error {
+		return ensureSecretPathMounts(ctx, client, rootToken, cfg.secretPaths)
+	}); err != nil {
+		return nil, err
+	}
+	if err := retryOpenBaoBootstrapStep(ctx, "ensure Nomad workload auth", func() error {
+		return ensureNomadWorkloadAuth(ctx, client, rootToken, cfg.secretPaths)
+	}); err != nil {
 		return nil, err
 	}
 	policy := operatorImportPolicy(cfg.secretPaths)
@@ -1100,6 +1137,85 @@ func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBao
 		Uses:   operatorImportTokenUses,
 		Token:  token,
 	}}, nil
+}
+
+func retryOpenBaoBootstrapStep(ctx context.Context, label string, fn func() error) error {
+	var last error
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		last = err
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s: %w", label, last)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%s: %w", label, ctx.Err())
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token string, paths []openBaoSecretPathSpec) error {
+	policy := cloudflareRecoveryPolicy(paths)
+	if strings.TrimSpace(policy) == "" {
+		return nil
+	}
+	if err := ensureJWTAuthMethod(ctx, client, token, nomadJWTAuthPath); err != nil {
+		return err
+	}
+	if err := client.ConfigureJWTAuth(ctx, token, nomadJWTAuthPath, openBaoJWTAuthConfig{
+		JWKSURL:          nomadJWKSURL,
+		JWTSupportedAlgs: []string{"RS256", "EdDSA"},
+	}); err != nil {
+		return fmt.Errorf("configure OpenBao Nomad JWT auth: %w", err)
+	}
+	if err := client.WritePolicy(ctx, token, cloudflareRecoveryRole, policy); err != nil {
+		return fmt.Errorf("write %s policy: %w", cloudflareRecoveryRole, err)
+	}
+	role := openBaoJWTRole{
+		RoleType:             "jwt",
+		BoundAudiences:       []string{nomadWorkloadAudience},
+		BoundClaims:          map[string]string{"nomad_namespace": "default", "nomad_job_id": cloudflareRecoveryRole},
+		UserClaim:            "/nomad_job_id",
+		UserClaimJSONPointer: true,
+		ClaimMappings: map[string]string{
+			"nomad_namespace": "nomad_namespace",
+			"nomad_job_id":    "nomad_job_id",
+			"nomad_task":      "nomad_task",
+		},
+		TokenType:           "service",
+		TokenPolicies:       []string{cloudflareRecoveryRole},
+		TokenPeriod:         "30m",
+		TokenExplicitMaxTTL: 0,
+	}
+	if err := client.WriteJWTRole(ctx, token, nomadJWTAuthPath, cloudflareRecoveryRole, role); err != nil {
+		return fmt.Errorf("write OpenBao Nomad JWT role %s: %w", cloudflareRecoveryRole, err)
+	}
+	return nil
+}
+
+func ensureJWTAuthMethod(ctx context.Context, client openBaoClient, token string, path string) error {
+	methods, err := client.AuthMethods(ctx, token)
+	if err != nil {
+		return fmt.Errorf("list OpenBao auth methods: %w", err)
+	}
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	for _, key := range []string{trimmed + "/", trimmed} {
+		if method, ok := methods[key]; ok {
+			if method.Type != "jwt" {
+				return fmt.Errorf("OpenBao auth method %s exists as type=%s, want jwt", trimmed, method.Type)
+			}
+			return nil
+		}
+	}
+	if err := client.EnableJWTAuth(ctx, token, trimmed); err != nil {
+		return fmt.Errorf("enable OpenBao auth method %s: %w", trimmed, err)
+	}
+	return nil
 }
 
 func ensureSecretPathMounts(ctx context.Context, client openBaoClient, token string, paths []openBaoSecretPathSpec) error {
@@ -1131,6 +1247,46 @@ func ensureSecretPathMounts(ctx context.Context, client openBaoClient, token str
 		}
 	}
 	return nil
+}
+
+func cloudflareRecoveryPolicy(paths []openBaoSecretPathSpec) string {
+	readOnly := map[string]struct{}{}
+	write := map[string]struct{}{}
+	for _, path := range paths {
+		trimmed := strings.Trim(strings.TrimSpace(path.Path), "/")
+		if trimmed == "" {
+			continue
+		}
+		if path.Source == "operatorImport" && trimmed == "kv-controller/data/integrations/cloudflare/account-admin" {
+			readOnly[trimmed] = struct{}{}
+			continue
+		}
+		if path.Source == "producedBy" && path.ProducerRef != nil &&
+			path.ProducerRef.APIVersion == "cloudflare.guardianintelligence.org/v1alpha1" &&
+			path.ProducerRef.Kind == "CloudflareControlPlane" {
+			write[trimmed] = struct{}{}
+		}
+	}
+	var b strings.Builder
+	for _, path := range sortedMapKeys(readOnly) {
+		if _, writable := write[path]; writable {
+			continue
+		}
+		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"read\"]\n}\n", path)
+	}
+	for _, path := range sortedMapKeys(write) {
+		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"create\", \"update\", \"read\"]\n}\n", path)
+	}
+	return b.String()
+}
+
+func sortedMapKeys(values map[string]struct{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func operatorImportPolicy(paths []openBaoSecretPathSpec) string {
@@ -1907,8 +2063,34 @@ func (c *realOpenBaoClient) EnableKVv2Mount(ctx context.Context, token string, m
 	return c.apiJSON(ctx, token, http.MethodPost, "sys/mounts/"+strings.Trim(strings.TrimSpace(mount), "/"), body, nil, http.StatusNoContent, http.StatusOK)
 }
 
+func (c *realOpenBaoClient) AuthMethods(ctx context.Context, token string) (map[string]openBaoAuthInfo, error) {
+	var out struct {
+		Data map[string]openBaoAuthInfo `json:"data"`
+	}
+	if err := c.apiJSON(ctx, token, http.MethodGet, "sys/auth", nil, &out, http.StatusOK); err != nil {
+		return nil, err
+	}
+	if out.Data == nil {
+		return map[string]openBaoAuthInfo{}, nil
+	}
+	return out.Data, nil
+}
+
+func (c *realOpenBaoClient) EnableJWTAuth(ctx context.Context, token string, path string) error {
+	body := map[string]string{"type": "jwt"}
+	return c.apiJSON(ctx, token, http.MethodPost, "sys/auth/"+strings.Trim(strings.TrimSpace(path), "/"), body, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) ConfigureJWTAuth(ctx context.Context, token string, path string, cfg openBaoJWTAuthConfig) error {
+	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+strings.Trim(strings.TrimSpace(path), "/")+"/config", cfg, nil, http.StatusNoContent, http.StatusOK)
+}
+
 func (c *realOpenBaoClient) WritePolicy(ctx context.Context, token string, name string, hcl string) error {
 	return c.apiJSON(ctx, token, http.MethodPut, "sys/policies/acl/"+url.PathEscape(name), map[string]string{"policy": hcl}, nil, http.StatusNoContent, http.StatusOK)
+}
+
+func (c *realOpenBaoClient) WriteJWTRole(ctx context.Context, token string, path string, name string, role openBaoJWTRole) error {
+	return c.apiJSON(ctx, token, http.MethodPost, "auth/"+strings.Trim(strings.TrimSpace(path), "/")+"/role/"+url.PathEscape(name), role, nil, http.StatusNoContent, http.StatusOK)
 }
 
 func (c *realOpenBaoClient) CreateToken(ctx context.Context, token string, spec openBaoTokenSpec) (string, error) {

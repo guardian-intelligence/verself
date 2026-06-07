@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 	"gopkg.in/yaml.v3"
 )
@@ -41,47 +43,51 @@ const (
 )
 
 type config struct {
-	action                   string
-	repoRoot                 string
-	site                     string
-	accountID                string
-	bucket                   string
-	keyPrefix                string
-	region                   string
-	accountAdminOpenBaoPath  string
-	accountAdminAPITokenFile string
-	operatorImportStdin      bool
-	openBaoAddr              string
-	openBaoPath              string
-	openBaoCACertFile        string
-	openBaoTokenFile         string
-	openBaoToken             string
-	runtimeOpenBaoAddr       string
-	runtimeOpenBaoCACertFile string
-	runtimeOpenBaoTokenFile  string
-	dnsInventory             string
-	dnsConcurrency           int
-	dryRun                   bool
-	provider                 string
-	cloudflareAPITokenFile   string
-	certificateOutputDir     string
-	tlsProductDomain         string
-	tlsCompanyDomain         string
-	tlsProductZone           string
-	tlsCompanyZone           string
-	acmeDirectoryURL         string
-	acmeContactEmail         string
-	acmeDNSPropagationWait   time.Duration
-	certificateRenewBefore   time.Duration
-	testPrefix               string
-	inventoryPrefix          string
-	inventoryDepth           int
-	tempTTL                  time.Duration
-	childTokenTTL            time.Duration
-	timeout                  time.Duration
-	verifyTempCredentials    bool
-	recoveryConfig           string
-	recovery                 *CloudflareControlPlane
+	action                                 string
+	repoRoot                               string
+	site                                   string
+	accountID                              string
+	bucket                                 string
+	keyPrefix                              string
+	region                                 string
+	accountAdminOpenBaoPath                string
+	accountAdminAPITokenFile               string
+	operatorImportStdin                    bool
+	operatorImportInitMaterial             string
+	operatorImportPrivateKeyFile           string
+	operatorImportPrivateKeyPassphraseFile string
+	operatorImportTokenName                string
+	openBaoAddr                            string
+	openBaoPath                            string
+	openBaoCACertFile                      string
+	openBaoTokenFile                       string
+	openBaoToken                           string
+	runtimeOpenBaoAddr                     string
+	runtimeOpenBaoCACertFile               string
+	runtimeOpenBaoTokenFile                string
+	dnsInventory                           string
+	dnsConcurrency                         int
+	dryRun                                 bool
+	provider                               string
+	cloudflareAPITokenFile                 string
+	certificateOutputDir                   string
+	tlsProductDomain                       string
+	tlsCompanyDomain                       string
+	tlsProductZone                         string
+	tlsCompanyZone                         string
+	acmeDirectoryURL                       string
+	acmeContactEmail                       string
+	acmeDNSPropagationWait                 time.Duration
+	certificateRenewBefore                 time.Duration
+	testPrefix                             string
+	inventoryPrefix                        string
+	inventoryDepth                         int
+	tempTTL                                time.Duration
+	childTokenTTL                          time.Duration
+	timeout                                time.Duration
+	verifyTempCredentials                  bool
+	recoveryConfig                         string
+	recovery                               *CloudflareControlPlane
 }
 
 type report struct {
@@ -169,6 +175,10 @@ func run(args []string) error {
 	fs.StringVar(&cfg.accountAdminOpenBaoPath, "account-admin-openbao-path", accountAdminOpenBaoPathDefault, "Controller OpenBao KV path for the Cloudflare account-admin API token.")
 	fs.StringVar(&cfg.accountAdminAPITokenFile, "account-admin-api-token-file", "", "File containing the Cloudflare account-admin API token for --action=import-account-admin.")
 	fs.BoolVar(&cfg.operatorImportStdin, "operator-import-stdin", false, "Read OpenBao and Cloudflare account-admin tokens from a JSON stdin payload for --action=import-account-admin.")
+	fs.StringVar(&cfg.operatorImportInitMaterial, "operator-import-init-material", "", "OpenBao init-material.json containing encrypted operator import token handoff for --action=import-account-admin.")
+	fs.StringVar(&cfg.operatorImportPrivateKeyFile, "operator-import-private-key-file", "", "Operator PGP private key file used to decrypt init-material operator import token handoff.")
+	fs.StringVar(&cfg.operatorImportPrivateKeyPassphraseFile, "operator-import-private-key-passphrase-file", "", "Optional file containing the operator PGP private key passphrase.")
+	fs.StringVar(&cfg.operatorImportTokenName, "operator-import-token-name", "guardian-operator-import", "Operator import token handoff name in init-material.json.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address.")
 	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
@@ -476,14 +486,27 @@ func (cfg config) validate() error {
 		if strings.TrimSpace(cfg.openBaoAddr) == "" {
 			return fmt.Errorf("--openbao-addr is required for account-admin import")
 		}
+		initMaterialConfigured := strings.TrimSpace(cfg.operatorImportInitMaterial) != "" || strings.TrimSpace(cfg.operatorImportPrivateKeyFile) != "" || strings.TrimSpace(cfg.operatorImportPrivateKeyPassphraseFile) != ""
 		if cfg.operatorImportStdin {
-			if strings.TrimSpace(cfg.openBaoTokenFile) != "" || strings.TrimSpace(cfg.accountAdminAPITokenFile) != "" {
-				return fmt.Errorf("--operator-import-stdin cannot be combined with --openbao-token-file or --account-admin-api-token-file")
+			if strings.TrimSpace(cfg.openBaoTokenFile) != "" || strings.TrimSpace(cfg.accountAdminAPITokenFile) != "" || initMaterialConfigured {
+				return fmt.Errorf("--operator-import-stdin cannot be combined with file-based account-admin import inputs")
 			}
 			return nil
 		}
-		if strings.TrimSpace(cfg.openBaoTokenFile) == "" || strings.TrimSpace(cfg.accountAdminAPITokenFile) == "" {
-			return fmt.Errorf("--openbao-token-file and --account-admin-api-token-file are required for account-admin import unless --operator-import-stdin is used")
+		if strings.TrimSpace(cfg.accountAdminAPITokenFile) == "" {
+			return fmt.Errorf("--account-admin-api-token-file is required for file-based account-admin import")
+		}
+		if initMaterialConfigured {
+			if strings.TrimSpace(cfg.openBaoTokenFile) != "" {
+				return fmt.Errorf("--openbao-token-file cannot be combined with --operator-import-init-material")
+			}
+			if strings.TrimSpace(cfg.operatorImportInitMaterial) == "" || strings.TrimSpace(cfg.operatorImportPrivateKeyFile) == "" {
+				return fmt.Errorf("--operator-import-init-material and --operator-import-private-key-file are required together")
+			}
+			return nil
+		}
+		if strings.TrimSpace(cfg.openBaoTokenFile) == "" {
+			return fmt.Errorf("--openbao-token-file or --operator-import-init-material is required for file-based account-admin import")
 		}
 	}
 	return nil
@@ -589,6 +612,15 @@ func readAccountAdminImport(stdin io.Reader, cfg config) ([]byte, config, error)
 		cfg.openBaoToken = material.OpenBaoToken
 		return []byte(material.CloudflareAccountAdminAPIToken), cfg, nil
 	}
+	if strings.TrimSpace(cfg.operatorImportInitMaterial) != "" {
+		openBaoToken, err := decryptOperatorImportToken(cfg)
+		if err != nil {
+			return nil, config{}, err
+		}
+		cfg.openBaoToken = openBaoToken
+		token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "account-admin API token")
+		return token, cfg, err
+	}
 	token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "account-admin API token")
 	return token, cfg, err
 }
@@ -596,6 +628,183 @@ func readAccountAdminImport(stdin io.Reader, cfg config) ([]byte, config, error)
 type operatorImportMaterial struct {
 	OpenBaoToken                   string `json:"openBaoToken"`
 	CloudflareAccountAdminAPIToken string `json:"cloudflareAccountAdminAPIToken"`
+}
+
+type openBaoInitMaterial struct {
+	APIVersion string                  `json:"apiVersion"`
+	Kind       string                  `json:"kind"`
+	Metadata   json.RawMessage         `json:"metadata"`
+	Spec       openBaoInitMaterialSpec `json:"spec"`
+}
+
+type openBaoInitMaterialSpec struct {
+	CreatedAt                  string                               `json:"createdAt"`
+	KeyShares                  int                                  `json:"keyShares"`
+	KeyThreshold               int                                  `json:"keyThreshold"`
+	PGPRecipientCount          int                                  `json:"pgpRecipientCount"`
+	EncryptedUnsealSharesB64   []string                             `json:"encryptedUnsealSharesB64"`
+	EncryptedRecoverySharesB64 []string                             `json:"encryptedRecoverySharesB64,omitempty"`
+	OperatorImportTokens       []openBaoOperatorImportTokenMaterial `json:"operatorImportTokens,omitempty"`
+}
+
+type openBaoOperatorImportTokenMaterial struct {
+	Name               string   `json:"name"`
+	Policy             string   `json:"policy"`
+	TTL                string   `json:"ttl"`
+	Uses               int      `json:"uses"`
+	EncryptedTokensB64 []string `json:"encryptedTokensB64"`
+}
+
+func decryptOperatorImportToken(cfg config) (string, error) {
+	materialBody, err := readRegularFile(cfg.operatorImportInitMaterial, "OpenBao init material")
+	if err != nil {
+		return "", err
+	}
+	var material openBaoInitMaterial
+	decoder := json.NewDecoder(bytes.NewReader(materialBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&material); err != nil {
+		return "", fmt.Errorf("decode OpenBao init material: %w", err)
+	}
+	if strings.TrimSpace(material.APIVersion) != "openbao.guardianintelligence.org/v1alpha1" || strings.TrimSpace(material.Kind) != "OpenBaoEncryptedInitMaterial" {
+		return "", fmt.Errorf("OpenBao init material must be openbao.guardianintelligence.org/v1alpha1/OpenBaoEncryptedInitMaterial")
+	}
+	tokenName := strings.TrimSpace(cfg.operatorImportTokenName)
+	if tokenName == "" {
+		return "", fmt.Errorf("--operator-import-token-name is required")
+	}
+	var encrypted []string
+	for _, token := range material.Spec.OperatorImportTokens {
+		if strings.TrimSpace(token.Name) == tokenName {
+			encrypted = token.EncryptedTokensB64
+			break
+		}
+	}
+	if len(encrypted) == 0 {
+		return "", fmt.Errorf("OpenBao init material missing operator import token %q", tokenName)
+	}
+	keyring, err := readOperatorPrivateKey(cfg.operatorImportPrivateKeyFile, cfg.operatorImportPrivateKeyPassphraseFile)
+	if err != nil {
+		return "", err
+	}
+	var failures []string
+	for i, encoded := range encrypted {
+		ciphertext, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("entry %d base64: %v", i, err))
+			continue
+		}
+		message, err := openpgp.ReadMessage(bytes.NewReader(ciphertext), keyring, nil, nil)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("entry %d decrypt: %v", i, err))
+			continue
+		}
+		plaintext, err := io.ReadAll(io.LimitReader(message.UnverifiedBody, 1<<20))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("entry %d read plaintext: %v", i, err))
+			continue
+		}
+		token := strings.TrimSpace(string(plaintext))
+		if token == "" {
+			failures = append(failures, fmt.Sprintf("entry %d plaintext was empty", i))
+			continue
+		}
+		return token, nil
+	}
+	return "", fmt.Errorf("decrypt operator import token %q: no encrypted entry matched the provided private key: %s", tokenName, strings.Join(failures, "; "))
+}
+
+func readOperatorPrivateKey(path string, passphrasePath string) (openpgp.EntityList, error) {
+	body, err := readRequiredSecretFileRaw(path, "operator PGP private key")
+	if err != nil {
+		return nil, err
+	}
+	keyring, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(body))
+	if err != nil {
+		keyring, err = openpgp.ReadKeyRing(bytes.NewReader(body))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read operator PGP private key: %w", err)
+	}
+	if strings.TrimSpace(passphrasePath) == "" {
+		return keyring, nil
+	}
+	passphrase, err := readRequiredSecretFile(passphrasePath, "operator PGP private key passphrase")
+	if err != nil {
+		return nil, err
+	}
+	defer clearBytes(passphrase)
+	for _, entity := range keyring {
+		if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
+			if err := entity.PrivateKey.Decrypt(passphrase); err != nil {
+				return nil, fmt.Errorf("decrypt operator PGP private key: %w", err)
+			}
+		}
+		for _, subkey := range entity.Subkeys {
+			if subkey.PrivateKey != nil && subkey.PrivateKey.Encrypted {
+				if err := subkey.PrivateKey.Decrypt(passphrase); err != nil {
+					return nil, fmt.Errorf("decrypt operator PGP subkey: %w", err)
+				}
+			}
+		}
+	}
+	return keyring, nil
+}
+
+func readRequiredSecretFileRaw(path, label string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("%s file is required", label)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %s must not be a symlink", label, path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%s file %s must be readable only by the operator", label, path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	return body, nil
+}
+
+func readRegularFile(path string, label string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("%s file is required", label)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %s must not be a symlink", label, path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	return body, nil
 }
 
 func readRequiredSecretFile(path, label string) ([]byte, error) {

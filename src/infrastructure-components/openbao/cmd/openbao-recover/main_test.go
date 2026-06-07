@@ -26,6 +26,10 @@ type fakeOpenBaoClient struct {
 	revokedTokens []string
 	mounts        map[string]openBaoMountInfo
 	enabledMounts []string
+	authMethods   map[string]openBaoAuthInfo
+	enabledAuth   []string
+	jwtConfigs    map[string]openBaoJWTAuthConfig
+	jwtRoles      map[string]openBaoJWTRole
 	policies      map[string]string
 	createdTokens []openBaoTokenSpec
 	restored      bool
@@ -101,11 +105,43 @@ func (f *fakeOpenBaoClient) EnableKVv2Mount(_ context.Context, _ string, mount s
 	return nil
 }
 
+func (f *fakeOpenBaoClient) AuthMethods(context.Context, string) (map[string]openBaoAuthInfo, error) {
+	if f.authMethods == nil {
+		f.authMethods = map[string]openBaoAuthInfo{}
+	}
+	return f.authMethods, nil
+}
+
+func (f *fakeOpenBaoClient) EnableJWTAuth(_ context.Context, _ string, path string) error {
+	if f.authMethods == nil {
+		f.authMethods = map[string]openBaoAuthInfo{}
+	}
+	f.enabledAuth = append(f.enabledAuth, path)
+	f.authMethods[path+"/"] = openBaoAuthInfo{Type: "jwt"}
+	return nil
+}
+
+func (f *fakeOpenBaoClient) ConfigureJWTAuth(_ context.Context, _ string, path string, cfg openBaoJWTAuthConfig) error {
+	if f.jwtConfigs == nil {
+		f.jwtConfigs = map[string]openBaoJWTAuthConfig{}
+	}
+	f.jwtConfigs[path] = cfg
+	return nil
+}
+
 func (f *fakeOpenBaoClient) WritePolicy(_ context.Context, _ string, name string, hcl string) error {
 	if f.policies == nil {
 		f.policies = map[string]string{}
 	}
 	f.policies[name] = hcl
+	return nil
+}
+
+func (f *fakeOpenBaoClient) WriteJWTRole(_ context.Context, _ string, path string, name string, role openBaoJWTRole) error {
+	if f.jwtRoles == nil {
+		f.jwtRoles = map[string]openBaoJWTRole{}
+	}
+	f.jwtRoles[path+"/"+name] = role
 	return nil
 }
 
@@ -162,6 +198,17 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 				Encoding: "base64url",
 			},
 		},
+		{
+			Name:   "object-storage-service.r2.admin_access_key_id",
+			Path:   "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id",
+			Key:    "value",
+			Source: "producedBy",
+			ProducerRef: &objectRef{
+				APIVersion: "cloudflare.guardianintelligence.org/v1alpha1",
+				Kind:       "CloudflareControlPlane",
+				Name:       "gamma-cloudflare",
+			},
+		},
 	}
 	client := &fakeOpenBaoClient{
 		status:       baoStatus{Initialized: false, Sealed: true},
@@ -182,6 +229,26 @@ func TestFreshInitBootstrapsOperatorImportHandoff(t *testing.T) {
 	}
 	if strings.Contains(policy, "postgresql.pgbackrest") {
 		t.Fatalf("operator import policy included generated secret path: %q", policy)
+	}
+	cloudflarePolicy := client.policies[cloudflareRecoveryRole]
+	if !strings.Contains(cloudflarePolicy, `path "kv-controller/data/integrations/cloudflare/account-admin"`) {
+		t.Fatalf("cloudflare recovery policy missing account-admin read: %q", cloudflarePolicy)
+	}
+	if !strings.Contains(cloudflarePolicy, `path "kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id"`) {
+		t.Fatalf("cloudflare recovery policy missing produced path write: %q", cloudflarePolicy)
+	}
+	if !containsString(client.enabledAuth, nomadJWTAuthPath) {
+		t.Fatalf("enabled auth methods = %#v", client.enabledAuth)
+	}
+	if got := client.jwtConfigs[nomadJWTAuthPath]; got.JWKSURL != nomadJWKSURL || len(got.JWTSupportedAlgs) != 2 {
+		t.Fatalf("jwt config = %#v", got)
+	}
+	role, ok := client.jwtRoles[nomadJWTAuthPath+"/"+cloudflareRecoveryRole]
+	if !ok {
+		t.Fatalf("jwt roles = %#v", client.jwtRoles)
+	}
+	if role.BoundClaims["nomad_job_id"] != cloudflareRecoveryRole || len(role.TokenPolicies) != 1 || role.TokenPolicies[0] != cloudflareRecoveryRole {
+		t.Fatalf("jwt role = %#v", role)
 	}
 	if len(client.createdTokens) != 1 {
 		t.Fatalf("created tokens = %#v", client.createdTokens)

@@ -91,8 +91,11 @@ operator-held credential, it reports reason `RootTrustMaterialRequired`. For
 Cloudflare, that means neither an account-admin credential nor bucket-scoped R2
 recovery credentials are available in the deployed OpenBao state. Manual import
 is allowed in that branch; the import material must enter through the
-component-owned stdin path and must not be committed, logged, passed through
-argv, or persisted as plaintext.
+component-owned import path and must not be committed, logged, passed through
+argv, or persisted as plaintext. The preferred import path decrypts the scoped
+OpenBao token from `init-material.json` with an operator-held PGP key and reads
+the Cloudflare account-admin token from an operator-only local file; stdin JSON
+import is only for tightly controlled operator sessions.
 
 Point-in-time recovery, snapshot restore, backup catalog selection, offsite
 object-store reads, and provider token import are component concerns. They live

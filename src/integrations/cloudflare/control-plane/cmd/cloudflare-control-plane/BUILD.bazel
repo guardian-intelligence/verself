@@ -17,6 +17,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//src/integrations/cloudflare/control-plane/r2control",
+        "@com_github_protonmail_go_crypto//openpgp",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_x_crypto//acme",
     ],
@@ -34,7 +35,10 @@ go_test(
     name = "cloudflare-control-plane_test",
     srcs = ["main_test.go"],
     embed = [":cloudflare-control-plane_lib"],
-    deps = ["//src/integrations/cloudflare/control-plane/r2control"],
+    deps = [
+        "//src/integrations/cloudflare/control-plane/r2control",
+        "@com_github_protonmail_go_crypto//openpgp",
+    ],
 )
 
 pkg_tar(

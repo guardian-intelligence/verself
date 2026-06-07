@@ -18,6 +18,8 @@
     guardian_preflight_artifact_manifest: "{{ guardian_preflight_work_dir }}/artifacts.txt"
     guardian_preflight_artifact_paths:
       - bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
+      - bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_/distribution-service
+      - bazel-bin/src/services/distribution-service/cmd/distribution-service/distribution-service_image_load/tarball.tar
       - bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_/profile-service
       - bazel-bin/src/services/profile-service/cmd/profile-service/profile-service_image_load/tarball.tar
       - bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
@@ -53,6 +55,15 @@
             systemctl is-active --quiet nomad.service
             BAO_ADDR="$GUARDIAN_OPENBAO_ADDR" BAO_CACERT="$GUARDIAN_OPENBAO_CA_CERT" "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
             NOMAD_ADDR=http://127.0.0.1:4646 /opt/verself/profile/bin/nomad node status -self >/dev/null
+            python3 - <<'PY'
+            import json
+            import urllib.request
+
+            with urllib.request.urlopen("http://127.0.0.1:4646/.well-known/jwks.json", timeout=2) as response:
+                payload = json.load(response)
+            if not isinstance(payload.get("keys"), list):
+                raise SystemExit(1)
+            PY
             NOMAD_ADDR=http://127.0.0.1:4646 /opt/verself/profile/bin/nomad node status -self -json | python3 -c 'import json, sys; node=json.load(sys.stdin); podman=node.get("Drivers", {}).get("podman", {}); sys.exit(0 if podman.get("Detected") and podman.get("Healthy") else 1)'
       environment:
         GUARDIAN_PREFLIGHT_MARKER: "{{ guardian_preflight_marker_path }}"
@@ -360,47 +371,6 @@
       retries: 60
       delay: 1
 
-    - name: Check OpenBao root service health
-      ansible.builtin.command:
-        argv:
-          - sh
-          - -c
-          - |
-            set -eu
-            "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
-      environment:
-        BAO_ADDR: "{{ guardian_openbao_addr }}"
-        BAO_CACERT: "{{ guardian_openbao_ca_cert }}"
-        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
-      register: guardian_openbao_ready
-      changed_when: false
-      failed_when: false
-
-    - name: Recover or verify OpenBao root service
-      ansible.builtin.command:
-        argv:
-          - "{{ guardian_openbao_recover }}"
-          - recover
-          - "--repo-root={{ guardian_remote_current }}"
-          - "--resource-graph={{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
-          - --resource-name=openbao
-      register: guardian_openbao_recovery
-      changed_when: false
-
-    - name: Verify OpenBao is initialized and unsealed
-      ansible.builtin.command:
-        argv:
-          - sh
-          - -c
-          - |
-            set -eu
-            "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
-      environment:
-        BAO_ADDR: "{{ guardian_openbao_addr }}"
-        BAO_CACERT: "{{ guardian_openbao_ca_cert }}"
-        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
-      changed_when: false
-
     - name: Install Nomad runtime directory
       ansible.builtin.file:
         path: /opt/verself/profile
@@ -556,6 +526,50 @@
       until: guardian_nomad_status.rc == 0
       retries: 60
       delay: 1
+
+    - name: Wait for Nomad workload identity JWKS
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import json
+            import urllib.request
+
+            with urllib.request.urlopen("http://127.0.0.1:4646/.well-known/jwks.json", timeout=2) as response:
+                payload = json.load(response)
+            if not isinstance(payload.get("keys"), list):
+                raise SystemExit(1)
+      register: guardian_nomad_jwks
+      changed_when: false
+      until: guardian_nomad_jwks.rc == 0
+      retries: 60
+      delay: 1
+
+    - name: Recover or verify OpenBao root service
+      ansible.builtin.command:
+        argv:
+          - "{{ guardian_openbao_recover }}"
+          - recover
+          - "--repo-root={{ guardian_remote_current }}"
+          - "--resource-graph={{ guardian_remote_current }}/workspace/.guardian/fly/document.json"
+          - --resource-name=openbao
+      register: guardian_openbao_recovery
+      changed_when: false
+
+    - name: Verify OpenBao is initialized and unsealed
+      ansible.builtin.command:
+        argv:
+          - sh
+          - -c
+          - |
+            set -eu
+            "$GUARDIAN_OPENBAO_BAO" status -format=json | python3 -c 'import json, sys; status=json.load(sys.stdin); sys.exit(0 if status.get("initialized") and not status.get("sealed") else 1)'
+      environment:
+        BAO_ADDR: "{{ guardian_openbao_addr }}"
+        BAO_CACERT: "{{ guardian_openbao_ca_cert }}"
+        GUARDIAN_OPENBAO_BAO: "{{ guardian_openbao_bao }}"
+      changed_when: false
 
     - name: Wait for Nomad Podman driver
       ansible.builtin.command:

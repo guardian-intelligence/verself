@@ -57,6 +57,36 @@ resources: [
 					}
 					set -- $(sha256sum "$image")
 					image_digest="sha256:$1"
+					job_exists() {
+						"$nomad" job status "$job_name" >/dev/null 2>&1
+					}
+					current_job_image_digest() {
+						"$nomad" job inspect -json "$job_name" 2>/dev/null | python3 -c 'import json, sys; job=json.load(sys.stdin); meta=job.get("Meta") or job.get("Job", {}).get("Meta") or {}; print(meta.get("image_digest", ""))' || true
+					}
+					latest_client_status() {
+						"$nomad" job allocs -json "$job_name" 2>/dev/null | python3 -c 'import json, sys; allocs=json.load(sys.stdin); latest=max(allocs, key=lambda alloc: alloc.get("CreateIndex", 0)) if allocs else {}; print(latest.get("ClientStatus", ""))' || true
+					}
+					if job_exists; then
+						current_digest="$(current_job_image_digest)"
+						latest_status="$(latest_client_status)"
+						if [ "$current_digest" = "$image_digest" ] && [ "$latest_status" = complete ]; then
+							"$nomad" job allocs -json "$job_name"
+							exit 0
+						fi
+						if [ "$current_digest" = "$image_digest" ] && { [ "$latest_status" = failed ] || [ "$latest_status" = lost ]; }; then
+							"$nomad" job stop -purge -detach "$job_name" >/dev/null || true
+							for _ in $(seq 1 60); do
+								if ! job_exists; then
+									break
+								fi
+								sleep 1
+							done
+							if job_exists; then
+								echo "failed to purge dead $job_name before retry" >&2
+								exit 1
+							fi
+						fi
+					fi
 					"$nomad" job run -detach -var "cloudflare_control_plane_image_digest=$image_digest" "$job"
 					for second in $(seq 1 600); do
 						allocs="$("$nomad" job allocs -json "$job_name" || true)"
@@ -117,6 +147,36 @@ resources: [
 			path:   "kv-controller/data/integrations/cloudflare/account-admin"
 			key:    "api_token"
 			source: "operatorImport"
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "cloudflare.r2.object-storage-admin"
+		spec: {
+			path:   "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
+			key:    "access_key_id"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+				kind:       "CloudflareControlPlane"
+				name:       "gamma-cloudflare"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
+		metadata: name: "cloudflare.r2.recovery"
+		spec: {
+			path:   "kv-controller/data/integrations/cloudflare/r2/capabilities/recovery"
+			key:    "access_key_id"
+			source: "producedBy"
+			producerRef: {
+				apiVersion: "cloudflare.guardianintelligence.org/v1alpha1"
+				kind:       "CloudflareControlPlane"
+				name:       "gamma-cloudflare"
+			}
 		}
 	},
 	{
