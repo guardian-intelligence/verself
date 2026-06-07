@@ -17,7 +17,7 @@ consecutive submissions do not create unexpected allocation churn.
 | HAProxy | `haproxy.guardianintelligence.org/v1alpha1/HAProxyGateway/public-edge` | Converged on latest gamma run | None in current gamma state | Materialized HAProxy runtime artifact, public certificate files for `gamma.verself.sh` and `gamma.guardianintelligence.org`, PublicOrigin/Gateway route graph |
 | nftables | `nftables.guardianintelligence.org/v1alpha1/NftablesFirewall/nftables` | Converged | None | Materialized nftables runtime artifact, root access for kernel ruleset and systemd unit installation |
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged on latest gamma run | None in current gamma state | Materialized NATS runtime artifact, `nats-recover`, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
-| Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Materialized Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
+| Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged on latest gamma run | None in current gamma state | Materialized Nomad Observer runtime artifact, direct `nomad-observer` prestart binary, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
@@ -43,9 +43,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:a91bf0d582b37cc710c1d5cb839cd84430cd57fa014a579be678de96bf7d8907`;
+  `sha256:21263d0a4f1d59032788ac9c88ea7c40081f3e2a94b90da90a9470f06e0e55c1`;
 - latest verified upload digest:
-  `sha256:71cc3c0163b9f4071029b7ad258528d897ffcc32066cd343e706d59eb819390e`;
+  `sha256:4039e4a6926833faa004812302a903888789148bd3cebe260501475623239798`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -113,6 +113,19 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - Nomad reports the `nats-monitoring` check as `success`, `/varz` reports
   NATS `2.12.7` with JetStream enabled, and the server is listening on
   `127.0.0.1:4222` and `127.0.0.1:8222`;
+- the first Nomad Observer submission in the latest run failed before starting
+  because the boarded artifact set omitted the direct `nomad-observer`
+  prestart binary and `nomad-observer.tar`;
+- after adding those artifacts to board upload and verify, `nomad-observer`
+  deployment `925054c6` completed successfully with allocation `69c490b8`
+  running and healthy;
+- `/run/verself/recovery/nomad-observer/report.json` reports
+  `NomadObserverRuntimeInstalled=True`, `NomadObserverAccountReady=True`, and
+  `NomadObserverRecoveryComplete=True`;
+- Nomad Observer runtime artifact digest:
+  `sha256:c903df08ae2c9d743c4c94b8b418777a6c2c2cd7a60e9e871b0942e02d9e26bf`;
+- ClickHouse `verself.fleet_nodes` contains live projection rows from Nomad
+  Observer, with latest `observed_at` `2026-06-07 01:36:07.765`;
 - object-storage-service initially exposed a concurrent setup race where
   parallel prestart tasks could create fixed system users with stale or wrong
   primary group state; the recovery binary now re-reads host state after

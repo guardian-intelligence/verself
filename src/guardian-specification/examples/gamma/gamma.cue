@@ -84,6 +84,8 @@ resources: [
 						bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
 						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
 						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
+						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar
+						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer_/nomad-observer
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
@@ -152,6 +154,8 @@ resources: [
 						bazel-bin/src/guardian-specification/cli/cmd/guardian/guardian_/guardian
 						bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar
 						bazel-bin/src/infrastructure-components/nomad/cmd/nomad-recover/nomad-recover_/nomad-recover
+						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer.tar
+						bazel-bin/src/infrastructure-components/nomad-observer/cmd/nomad-observer/nomad-observer_/nomad-observer
 						bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
