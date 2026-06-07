@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "objectstorage",
@@ -37,4 +37,10 @@ go_library(
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
     ],
+)
+
+go_test(
+    name = "objectstorage_test",
+    srcs = ["r2_test.go"],
+    embed = [":objectstorage"],
 )

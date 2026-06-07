@@ -19,10 +19,10 @@ consecutive submissions do not create unexpected allocation churn.
 | NATS | `nats.guardianintelligence.org/v1alpha1/NATSCluster/nats` | Converged | None | Materialized NATS runtime artifact, SPIFFE helper, NATS SPIFFE identity, monitoring `/varz` check |
 | Nomad Observer | `nomadobserver.guardianintelligence.org/v1alpha1/NomadObserver/nomad-observer` | Converged | None | Materialized Nomad Observer runtime artifact, Nomad API, SPIFFE identity, ClickHouse `nomad_observer` user |
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
-| Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | Runtime jobs still need artifact/config CRD cutover and live verification against the latest bootstrapped graph | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
+| Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Converged on latest gamma run | None in current gamma state | OpenBao baseline roles, generated Zitadel masterkey/admin password satisfying Zitadel bootstrap password policy, PostgreSQL `zitadel` database, live Zitadel admin PAT handoff to OpenBao |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
 | ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | S3 workers running; admin allocation pending | Admin runtime needs Zitadel/auth-control-plane to produce `iam-service.zitadel.auth_audience` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Converged on latest gamma run | None in current gamma state | OpenBao baseline reconciliation, Cloudflare-produced bucket-scoped R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
 
@@ -38,9 +38,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:cdbabf8705a5c4a226ed2148363a58d4c3dc8e98fad1528a64153aa9ac65f8a7`;
+  `sha256:6de6326e5d98ba31221c3b8609458008c2964de80b6b68b0d3e521676fa02e38`;
 - latest verified upload digest:
-  `sha256:99752018f6395712c1e4d2256abe715cea6b2905b63947d09b11843246c76bab`;
+  `sha256:23ca3bcf3430cdd9eacda60ef14d03e44b1a2fc62e1b402b5d07516d0cbcdb72`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -113,12 +113,32 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   `009_recovery_events.up.sql`;
 - ClickHouse projected `/etc/verself/clickhouse/server-ca.pem` and an operator
   query counted `32` tables in database `verself`;
-- after ClickHouse recovery, object-storage-service S3 allocations run
+- after ClickHouse recovery, object-storage-service S3 allocations ran
   successfully instead of failing on the missing ClickHouse CA;
-- object-storage admin remains pending on the missing OpenBao secret
-  `kv-runtime/data/secret/org/iam-service.zitadel.auth_audience`;
-- the next convergence target for object-storage is Zitadel/auth-control-plane,
-  which must produce `iam-service.zitadel.auth_audience`;
+- Zitadel initially failed during migration `03_default_instance` with
+  `Errors.User.PasswordComplexityPolicy.HasSymbol` because
+  `zitadel.admin_password` was generated as `base64url`;
+- OpenBao now supports generated `SecretPath` encoding `password`, validates
+  existing generated values against the declared generator, and repairs stale
+  invalid generated values;
+- after a one-shot OpenBao baseline reconcile with the newly boarded
+  `openbao-recover` binary, the Zitadel admin password was repaired without
+  printing or persisting the plaintext value outside OpenBao;
+- `zitadel` deployment `3d8272a9` completed successfully with allocation
+  `72dc7d12` running and healthy;
+- `auth-control-plane` completed batch allocation `82403188`, reconciled
+  changed state, and produced the Zitadel/OIDC runtime secrets consumed by
+  object-storage;
+- object-storage admin then reached R2 provider health and failed with
+  `r2 health returned status 403`, identifying an overly broad account-root R2
+  readiness probe against bucket-scoped credentials;
+- object-storage R2 readiness now checks the declared deployment-artifacts
+  provider bucket with `HEAD` instead of requiring account-wide ListBuckets-like
+  access;
+- after re-boarding the rebuilt object-storage artifact,
+  `object-storage-service` deployment `4434cf34` completed successfully with
+  admin allocation `c6ff8184` and S3 allocations `5e30ae93` and `fe399014`
+  running and healthy;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
@@ -303,14 +323,15 @@ Previous observed results:
   that store;
 - OpenBao now has explicit `SecretPath` resources for the object-storage
   secrets referenced by the `ObjectStorageService` CRD;
-- OpenBao baseline reconciliation can create generated secret values only when
-  absent; the declared `object-storage-service.credential_kek` value is
-  generated as 32 random bytes encoded as hex on fresh bootstrap and left
-  untouched when restored from an existing store;
+- OpenBao baseline reconciliation creates missing generated secret values and
+  repairs values that do not match the declared generator; the declared
+  `object-storage-service.credential_kek` value is generated as 32 random bytes
+  encoded as hex on fresh bootstrap and left untouched when restored from a
+  valid existing store;
 - object-storage R2 credential paths are declared as produced by
   `CloudflareControlPlane/gamma-cloudflare`;
-- `iam-service.zitadel.auth_audience` is declared as produced by the future
-  Zitadel/auth-control-plane recovery path;
+- `iam-service.zitadel.auth_audience` is produced by the Zitadel
+  auth-control-plane batch job after the Zitadel service is healthy;
 - running the updated materialized OpenBao recovery binary against the previous
   allocation without operator material still reports
   `OpenBaoBaselineReconciled=False/BaselineAuthorityRequired`; the next proof is
@@ -320,8 +341,9 @@ Previous observed results:
   batch job, and the gamma graph declares the `zitadel` PostgreSQL database,
   peer role, OpenBao JWT roles, and OpenBao secret paths that the two jobs need;
 - OpenBao can generate `zitadel.masterkey` as 32 alphanumeric characters and
-  `zitadel.admin_password` as 32 random bytes encoded with base64url when those
-  paths are absent;
+  `zitadel.admin_password` as a 32-character bootstrap password with uppercase,
+  lowercase, digit, and symbol classes when those paths are absent or invalid
+  for the declared generator;
 - Zitadel-produced admin PATs and auth-control-plane-produced IAM OIDC values
   are declared as `SecretPath` resources, while SMTP and GitHub OAuth input
   material remain operator-import/provider-owned inputs;

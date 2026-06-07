@@ -21,14 +21,15 @@ import (
 const r2EmptyPayloadSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 type R2BucketProvider struct {
-	endpoint *url.URL
-	client   *http.Client
-	signer   *awsv4.Signer
-	creds    aws.Credentials
-	region   string
+	endpoint     *url.URL
+	client       *http.Client
+	signer       *awsv4.Signer
+	creds        aws.Credentials
+	region       string
+	healthBucket string
 }
 
-func NewR2BucketProvider(endpoint, accessKeyID, secretAccessKey, region string, httpClient *http.Client) (*R2BucketProvider, error) {
+func NewR2BucketProvider(endpoint, accessKeyID, secretAccessKey, region, healthBucket string, httpClient *http.Client) (*R2BucketProvider, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil {
 		return nil, fmt.Errorf("parse r2 endpoint: %w", err)
@@ -43,13 +44,18 @@ func NewR2BucketProvider(endpoint, accessKeyID, secretAccessKey, region string, 
 	if strings.TrimSpace(accessKeyID) == "" || strings.TrimSpace(secretAccessKey) == "" {
 		return nil, fmt.Errorf("r2 access key id and secret access key are required")
 	}
+	healthBucket = strings.TrimSpace(healthBucket)
+	if healthBucket == "" {
+		return nil, fmt.Errorf("r2 health bucket is required")
+	}
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 	}
 	return &R2BucketProvider{
-		endpoint: parsed,
-		client:   httpClient,
-		signer:   awsv4.NewSigner(),
+		endpoint:     parsed,
+		client:       httpClient,
+		signer:       awsv4.NewSigner(),
+		healthBucket: healthBucket,
 		creds: aws.Credentials{
 			AccessKeyID:     strings.TrimSpace(accessKeyID),
 			SecretAccessKey: strings.TrimSpace(secretAccessKey),
@@ -67,21 +73,12 @@ func (p *R2BucketProvider) Health(ctx context.Context) error {
 	if p == nil {
 		return fmt.Errorf("r2 provider is nil")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint.String(), http.NoBody)
+	status, err := p.headBucket(ctx, p.healthBucket)
 	if err != nil {
 		return err
 	}
-	if err := p.sign(ctx, req, r2EmptyPayloadSHA256); err != nil {
-		return err
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("r2 health: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("r2 health returned status %d", resp.StatusCode)
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("r2 health bucket %s returned status %d", p.healthBucket, status)
 	}
 	return nil
 }

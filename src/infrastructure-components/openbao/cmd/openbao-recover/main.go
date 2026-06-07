@@ -710,9 +710,9 @@ func validateSecretPath(spec openBaoSecretPathSpec) error {
 			return errors.New("spec.generate.bytes must be positive")
 		}
 		switch spec.Generate.Encoding {
-		case "hex", "base64url", "alphanumeric":
+		case "hex", "base64url", "alphanumeric", "password":
 		default:
-			return errors.New("spec.generate.encoding must be hex, base64url, or alphanumeric")
+			return errors.New("spec.generate.encoding must be hex, base64url, alphanumeric, or password")
 		}
 	case "producedBy":
 		if spec.ProducerRef == nil {
@@ -2397,12 +2397,18 @@ func (c *realOpenBaoClient) ensureGeneratedSecret(ctx context.Context, token str
 	if path == "" || key == "" || secretPath.Generate == nil {
 		return errors.New("OpenBao generated secret path, key, and generation config are required")
 	}
-	exists, err := c.secretExists(ctx, token, path)
+	exists, current, err := c.generatedSecretExists(ctx, token, path, key)
 	if err != nil {
 		return err
 	}
 	if exists {
-		return nil
+		valid, err := generatedSecretMatches(*secretPath.Generate, current)
+		if err != nil {
+			return err
+		}
+		if valid {
+			return nil
+		}
 	}
 	value, err := generatedSecretValue(*secretPath.Generate)
 	if err != nil {
@@ -2413,12 +2419,22 @@ func (c *realOpenBaoClient) ensureGeneratedSecret(ctx context.Context, token str
 	}, nil, http.StatusNoContent, http.StatusOK)
 }
 
-func (c *realOpenBaoClient) secretExists(ctx context.Context, token string, path string) (bool, error) {
-	status, _, err := c.apiRawStatus(ctx, token, http.MethodGet, path, nil, "", http.StatusOK, http.StatusNotFound)
+func (c *realOpenBaoClient) generatedSecretExists(ctx context.Context, token string, path string, key string) (bool, string, error) {
+	status, raw, err := c.apiRawStatus(ctx, token, http.MethodGet, path, nil, "", http.StatusOK, http.StatusNotFound)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
-	return status == http.StatusOK, nil
+	if status == http.StatusNotFound {
+		return false, "", nil
+	}
+	var response struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return false, "", fmt.Errorf("decode OpenBao generated secret %s: %w", path, err)
+	}
+	data, _ := response.Data["data"].(map[string]any)
+	return true, strings.TrimSpace(fmt.Sprint(data[key])), nil
 }
 
 func generatedSecretValue(spec openBaoGenerateSpec) (string, error) {
@@ -2436,8 +2452,37 @@ func generatedSecretValue(spec openBaoGenerateSpec) (string, error) {
 		return base64.RawURLEncoding.EncodeToString(raw), nil
 	case "alphanumeric":
 		return randomAlphanumeric(spec.Bytes)
+	case "password":
+		return randomPassword(spec.Bytes)
 	default:
 		return "", fmt.Errorf("unsupported OpenBao generated secret encoding %q", spec.Encoding)
+	}
+}
+
+func generatedSecretMatches(spec openBaoGenerateSpec, value string) (bool, error) {
+	value = strings.TrimSpace(value)
+	switch spec.Encoding {
+	case "hex":
+		if len(value) != spec.Bytes*2 {
+			return false, nil
+		}
+		_, err := hex.DecodeString(value)
+		return err == nil, nil
+	case "base64url":
+		if strings.ContainsAny(value, "+/=") {
+			return false, nil
+		}
+		decoded, err := base64.RawURLEncoding.DecodeString(value)
+		return err == nil && len(decoded) == spec.Bytes, nil
+	case "alphanumeric":
+		if len(value) != spec.Bytes {
+			return false, nil
+		}
+		return allRunesIn(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"), nil
+	case "password":
+		return passwordMeetsBootstrapPolicy(value, spec.Bytes), nil
+	default:
+		return false, fmt.Errorf("unsupported OpenBao generated secret encoding %q", spec.Encoding)
 	}
 }
 
@@ -2456,6 +2501,78 @@ func randomAlphanumeric(length int) (string, error) {
 		out[i] = alphabet[n.Int64()]
 	}
 	return string(out), nil
+}
+
+func randomPassword(length int) (string, error) {
+	if length < 4 {
+		return "", errors.New("OpenBao generated password secret length must be at least 4")
+	}
+	const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const lower = "abcdefghijklmnopqrstuvwxyz"
+	const digits = "0123456789"
+	const symbols = "!#$%&*+-=?@^_"
+	const alphabet = upper + lower + digits + symbols
+	out := make([]byte, length)
+	required := []string{upper, lower, digits, symbols}
+	for i, chars := range required {
+		char, err := randomAlphabetByte(chars)
+		if err != nil {
+			return "", err
+		}
+		out[i] = char
+	}
+	for i := len(required); i < len(out); i++ {
+		char, err := randomAlphabetByte(alphabet)
+		if err != nil {
+			return "", err
+		}
+		out[i] = char
+	}
+	for i := len(out) - 1; i > 0; i-- {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return "", fmt.Errorf("shuffle OpenBao generated password secret: %w", err)
+		}
+		j := int(n.Int64())
+		out[i], out[j] = out[j], out[i]
+	}
+	return string(out), nil
+}
+
+func randomAlphabetByte(alphabet string) (byte, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+	if err != nil {
+		return 0, fmt.Errorf("generate OpenBao password secret material: %w", err)
+	}
+	return alphabet[n.Int64()], nil
+}
+
+func passwordMeetsBootstrapPolicy(value string, length int) bool {
+	if len(value) != length {
+		return false
+	}
+	return containsRuneFrom(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&
+		containsRuneFrom(value, "abcdefghijklmnopqrstuvwxyz") &&
+		containsRuneFrom(value, "0123456789") &&
+		containsRuneFrom(value, "!#$%&*+-=?@^_")
+}
+
+func allRunesIn(value string, alphabet string) bool {
+	for _, char := range value {
+		if !strings.ContainsRune(alphabet, char) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsRuneFrom(value string, alphabet string) bool {
+	for _, char := range value {
+		if strings.ContainsRune(alphabet, char) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *realOpenBaoClient) configureJWTAuth(ctx context.Context, token string, auth openBaoNomadJWTAuthSpec) error {

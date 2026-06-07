@@ -242,7 +242,7 @@ func newBucketProviderFromConfig(ctx context.Context, l *envconfig.Loader, cfg o
 		if err := l.Err(); err != nil {
 			return nil, "", err
 		}
-		provider, err := objectstorage.NewR2BucketProvider(runtimeCfg.R2Endpoint, accessKeyID, secretAccessKey, cfg.ProxyRegion, providerHTTPClient)
+		provider, err := objectstorage.NewR2BucketProvider(runtimeCfg.R2Endpoint, accessKeyID, secretAccessKey, cfg.ProxyRegion, runtimeCfg.DeploymentArtifactsBucket, providerHTTPClient)
 		if err != nil {
 			return nil, "", err
 		}

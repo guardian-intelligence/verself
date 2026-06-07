@@ -90,6 +90,9 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
+						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
+						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
 						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
@@ -142,6 +145,9 @@ resources: [
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
 						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
+						bazel-bin/src/infrastructure-components/zitadel/zitadel-runtime.tar
+						bazel-bin/src/infrastructure-components/zitadel/cmd/zitadel-setup-apply/zitadel-setup-apply_/zitadel-setup-apply
+						bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
 						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
@@ -1747,7 +1753,7 @@ resources: [
 			source: "generated"
 			generate: {
 				bytes:    32
-				encoding: "base64url"
+				encoding: "password"
 			}
 		}
 	},

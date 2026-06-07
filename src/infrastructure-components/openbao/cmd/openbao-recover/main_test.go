@@ -1040,6 +1040,31 @@ func TestGeneratedSecretValue(t *testing.T) {
 			t.Fatalf("alphanumeric generated value used invalid character %q in %q", char, alphanumericValue)
 		}
 	}
+
+	passwordValue, err := generatedSecretValue(openBaoGenerateSpec{Bytes: 32, Encoding: "password"})
+	if err != nil {
+		t.Fatalf("generatedSecretValue password: %v", err)
+	}
+	if !passwordMeetsBootstrapPolicy(passwordValue, 32) {
+		t.Fatalf("password generated value did not meet bootstrap policy: %q", passwordValue)
+	}
+}
+
+func TestGeneratedSecretMatchesValidatesEncodedLength(t *testing.T) {
+	valid, err := generatedSecretMatches(openBaoGenerateSpec{Bytes: 32, Encoding: "base64url"}, "AQID")
+	if err != nil {
+		t.Fatalf("generatedSecretMatches: %v", err)
+	}
+	if valid {
+		t.Fatalf("short base64url value matched 32-byte generator")
+	}
+	valid, err = generatedSecretMatches(openBaoGenerateSpec{Bytes: 3, Encoding: "base64url"}, "AQID")
+	if err != nil {
+		t.Fatalf("generatedSecretMatches: %v", err)
+	}
+	if !valid {
+		t.Fatalf("3-byte base64url value did not match 3-byte generator")
+	}
 }
 
 func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {
@@ -1055,6 +1080,7 @@ func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {
 	}
 	var posts int
 	exists := false
+	value := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Vault-Token") != "root-token" {
 			t.Fatalf("OpenBao token header = %q", r.Header.Get("X-Vault-Token"))
@@ -1066,7 +1092,7 @@ func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {
 		case http.MethodGet:
 			if exists {
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"data":{"data":{"value":"existing"}}}`))
+				_, _ = fmt.Fprintf(w, `{"data":{"data":{"value":%q}}}`, value)
 				return
 			}
 			w.WriteHeader(http.StatusNotFound)
@@ -1083,6 +1109,7 @@ func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {
 			if len(body.Data["value"]) != 64 {
 				t.Fatalf("generated value length = %d", len(body.Data["value"]))
 			}
+			value = body.Data["value"]
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected OpenBao method %s", r.Method)
@@ -1099,6 +1126,58 @@ func TestEnsureGeneratedSecretWritesOnlyWhenAbsent(t *testing.T) {
 	}
 	if posts != 1 {
 		t.Fatalf("generated secret writes = %d", posts)
+	}
+}
+
+func TestEnsureGeneratedSecretRepairsInvalidPassword(t *testing.T) {
+	secret := openBaoSecretPathSpec{
+		Name:   "zitadel.admin_password",
+		Path:   "kv-runtime/data/secret/org/zitadel.admin_password",
+		Key:    "value",
+		Source: "generated",
+		Generate: &openBaoGenerateSpec{
+			Bytes:    32,
+			Encoding: "password",
+		},
+	}
+	value := "abcdefghijklmnopqrstuvwxyz123456"
+	var posts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/"+secret.Path {
+			t.Fatalf("OpenBao path = %s", r.URL.Path)
+		}
+		switch r.Method {
+		case http.MethodGet:
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprintf(w, `{"data":{"data":{"value":%q}}}`, value)
+		case http.MethodPost:
+			posts++
+			var body struct {
+				Data map[string]string `json:"data"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode write body: %v", err)
+			}
+			value = body.Data["value"]
+			if !passwordMeetsBootstrapPolicy(value, 32) {
+				t.Fatalf("repaired password did not meet bootstrap policy: %q", value)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected OpenBao method %s", r.Method)
+		}
+	}))
+	defer server.Close()
+	client := &realOpenBaoClient{cfg: config{addr: server.URL}, client: server.Client()}
+
+	if err := client.ensureGeneratedSecret(context.Background(), "root-token", secret); err != nil {
+		t.Fatalf("first ensureGeneratedSecret: %v", err)
+	}
+	if err := client.ensureGeneratedSecret(context.Background(), "root-token", secret); err != nil {
+		t.Fatalf("second ensureGeneratedSecret: %v", err)
+	}
+	if posts != 1 {
+		t.Fatalf("generated secret repairs = %d", posts)
 	}
 }
 

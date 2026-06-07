@@ -100,7 +100,7 @@ package v1alpha1
 		if source == "generated" {
 			generate: {
 				bytes:    int & >0
-				encoding: "hex" | "base64url" | "alphanumeric"
+				encoding: "hex" | "base64url" | "alphanumeric" | "password"
 			}
 		}
 		if source == "producedBy" {
