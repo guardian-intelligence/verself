@@ -21,8 +21,8 @@ consecutive submissions do not create unexpected allocation churn.
 | OTel Collector | `otelcol.guardianintelligence.org/v1alpha1/OtelCollector/otelcol` | Converged | None | Materialized OTel Collector runtime/config artifacts, SPIFFE helper, ClickHouse `otelcol` user, PostgreSQL `otelcol` peer role |
 | Zitadel/Auth Control Plane | `zitadel.guardianintelligence.org/v1alpha1/ZitadelCluster/zitadel`, `zitadel.guardianintelligence.org/v1alpha1/ZitadelAuthControlPlane/auth-control-plane` | Dependency model declared; jobs not submitted in current gamma state | Runtime jobs still need artifact/config CRD cutover and live verification against the latest bootstrapped graph | OpenBao baseline roles, generated Zitadel masterkey/admin password, operator-imported SMTP/GitHub material as configured, PostgreSQL `zitadel` database |
 | PostgreSQL | `postgresql.guardianintelligence.org/v1alpha1/PostgreSQLCluster/postgresql` | Converged on latest gamma run | None in current gamma state | Materialized PostgreSQL runtime artifact, generated pgBackRest cipher pass, Cloudflare recovery R2 capability, PostgreSQL service database/peer mapping config |
-| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Not submitted on current wiped gamma host | Object-storage depends on `/etc/verself/clickhouse/server-ca.pem`, which is absent until ClickHouse recovers | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
-| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | Setup passes and repairs bad local user state; runtime remains blocked | S3 runtime needs ClickHouse recovery to provide `/etc/verself/clickhouse/server-ca.pem`; admin runtime needs Zitadel/auth-control-plane to produce `iam-service.zitadel.auth_audience` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
+| ClickHouse | `clickhouse.guardianintelligence.org/v1alpha1/ClickHouseCluster/clickhouse` | Converged on latest gamma run | None in current gamma state | Materialized ClickHouse runtime artifact, SPIFFE helper, server/operator SPIFFE identities, schema migrations |
+| Object Storage Service | `objectstorage.guardianintelligence.org/v1alpha1/ObjectStorageService/object-storage` | S3 workers running; admin allocation pending | Admin runtime needs Zitadel/auth-control-plane to produce `iam-service.zitadel.auth_audience` | OpenBao baseline reconciliation, Cloudflare-produced R2 credentials, PostgreSQL, SPIRE, ClickHouse CA material, and Zitadel-produced auth audience |
 
 ## Latest Gamma Evidence
 
@@ -38,9 +38,9 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
   --stream` materialized gamma and submitted the OpenBao Nomad job;
 - preflight reported `ready_to_fly: yes`;
 - latest resource graph digest:
-  `sha256:cdc8c3ca3d5589edd0de73ee24ce31d8dc6948f4e740f50b64095127c4af6fc8`;
+  `sha256:cdbabf8705a5c4a226ed2148363a58d4c3dc8e98fad1528a64153aa9ac65f8a7`;
 - latest verified upload digest:
-  `sha256:b3871c6ce7b50736119f9a5eeca51ab94f8601cbb0b97715d826835605b1dafa`;
+  `sha256:99752018f6395712c1e4d2256abe715cea6b2905b63947d09b11843246c76bab`;
 - preflight prepared `/etc/verself/openbao/ca.pem`, started Nomad 1.11.3, and
   validated OpenBao, Cloudflare, and PostgreSQL Nomad jobs without submitting
   OpenBao during preflight;
@@ -102,13 +102,23 @@ Observed results from the latest gamma run on June 7, 2026 UTC:
 - after SPIRE recovery and the object-storage setup repair, object-storage
   setup exits `0` and repairs `object_storage_service` to uid `960`, primary
   group `object_storage_service`;
-- object-storage S3 runtime now reaches ClickHouse initialization and fails
-  explicitly on missing `/etc/verself/clickhouse/server-ca.pem`;
+- ClickHouse recovery converged from the boarded runtime artifact: Nomad
+  deployment `0950fc70` completed successfully, allocation `4c0f7962` is
+  running, and `/run/verself/recovery/clickhouse/report.json` reports
+  `ClickHouseRecoveryComplete=True`;
+- ClickHouse recovery installed runtime artifact
+  `sha256:5a18ad18185812f6dc421819ab48d08a46b0776ea1b946baf595b6f6c69fde75`,
+  prepared host users/directories/TLS/SPIFFE helpers/systemd units, accepted
+  an operator query, and applied migrations through
+  `009_recovery_events.up.sql`;
+- ClickHouse projected `/etc/verself/clickhouse/server-ca.pem` and an operator
+  query counted `32` tables in database `verself`;
+- after ClickHouse recovery, object-storage-service S3 allocations run
+  successfully instead of failing on the missing ClickHouse CA;
 - object-storage admin remains pending on the missing OpenBao secret
   `kv-runtime/data/secret/org/iam-service.zitadel.auth_audience`;
-- the current gamma host has no `clickhouse` Nomad job after the wipe, so the
-  next convergence target should be ClickHouse before retrying object-storage
-  S3;
+- the next convergence target for object-storage is Zitadel/auth-control-plane,
+  which must produce `iam-service.zitadel.auth_audience`;
 - after preflight and breakglass cleanup, the live empty-stdin breakglass
   probe reported `OpenBaoBreakglassRootToken=False/UnsealQuorumIncomplete` and
   `OpenBaoRecoveryComplete=False/BaselineBlocked`, confirming the path fails
@@ -353,7 +363,8 @@ ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc status -address=http://127.0.0.1:4646 -namespace=default <object-storage-admin-allocation-id>'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default clickhouse'
 ssh -T ubuntu@206.223.228.87 'sudo cat /run/verself/recovery/clickhouse/report.json'
-ssh -T ubuntu@206.223.228.87 'sudo /var/lib/clickhouse/runtime/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count() FROM system.tables WHERE database = '\''verself'\''"'
+ssh -T ubuntu@206.223.228.87 'sudo test -s /etc/verself/clickhouse/server-ca.pem && sudo ls -l /etc/verself/clickhouse/server-ca.pem'
+ssh -T ubuntu@206.223.228.87 'sudo /opt/verself/clickhouse/current/bin/clickhouse client --config-file /etc/clickhouse-client/operator.xml --user clickhouse_operator --query "SELECT count() FROM system.tables WHERE database = '\''verself'\''"'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad job status -address=http://127.0.0.1:4646 -namespace=default nftables'
 ssh -T ubuntu@206.223.228.87 '/opt/verself/profile/bin/nomad alloc logs -address=http://127.0.0.1:4646 -namespace=default -task apply 8d12f79e'
 ssh -T ubuntu@206.223.228.87 'sudo env LD_LIBRARY_PATH=/opt/verself/nftables/current/lib/x86_64-linux-gnu /opt/verself/nftables/current/bin/nft list table inet verself_host'

@@ -88,6 +88,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
+						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
+						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
 						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
@@ -138,6 +140,8 @@ resources: [
 						bazel-bin/src/infrastructure-components/openbao/cmd/openbao-recover/openbao-recover_/openbao-recover
 						bazel-bin/src/integrations/cloudflare/control-plane/cloudflare-control-plane-runtime.tar
 						bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar
+						bazel-bin/src/infrastructure-components/clickhouse/clickhouse-runtime.tar
+						bazel-bin/src/infrastructure-components/clickhouse/cmd/clickhouse-recover/clickhouse-recover_/clickhouse-recover
 						bazel-bin/src/infrastructure-components/spire/spire-recover_/spire-recover
 						bazel-bin/src/infrastructure-components/spire/spire-runtime.tar
 						bazel-bin/src/infrastructure-components/spire/identity_registry.spire_identity_registry.json
