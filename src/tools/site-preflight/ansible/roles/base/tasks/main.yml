@@ -20,6 +20,20 @@
     force_apt_get: true
     lock_timeout: 60
 
+- name: Gather service facts for legacy component units
+  ansible.builtin.service_facts:
+
+- name: Disable legacy component systemd units superseded by Nomad
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+    masked: true
+  loop: "{{ base_legacy_component_systemd_units }}"
+  loop_control:
+    label: "{{ item }}"
+  when: item in ansible_facts.services
+
 - name: Create non-SPIFFE Nomad runtime groups
   ansible.builtin.group:
     name: "{{ item.name }}"

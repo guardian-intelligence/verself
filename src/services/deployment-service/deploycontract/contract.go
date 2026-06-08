@@ -101,7 +101,8 @@ type githubWorkflowStep struct {
 }
 
 type sitePreflightBaseDefaults struct {
-	BaseNomadRuntimeUsers []sitePreflightRuntimeUser `yaml:"base_nomad_runtime_users"`
+	BaseLegacyComponentSystemdUnits []string                   `yaml:"base_legacy_component_systemd_units"`
+	BaseNomadRuntimeUsers           []sitePreflightRuntimeUser `yaml:"base_nomad_runtime_users"`
 }
 
 type sitePreflightRuntimeUser struct {
@@ -651,6 +652,11 @@ func (v *Validator) validatePreflightNomadRuntimeUsers() {
 	var defaults sitePreflightBaseDefaults
 	if !v.decode(rel, path, &defaults) {
 		return
+	}
+	for index, unit := range defaults.BaseLegacyComponentSystemdUnits {
+		if strings.TrimSpace(unit) == "" {
+			v.add(rel, fmt.Sprintf("base_legacy_component_systemd_units entry %d is empty", index))
+		}
 	}
 	declared := map[string]string{}
 	for _, runtimeUser := range defaults.BaseNomadRuntimeUsers {

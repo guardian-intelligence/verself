@@ -34,6 +34,10 @@ id -u postgres >/dev/null 2>&1 || useradd --system --gid postgres --home-dir /va
 install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/16/verself /etc/postgresql/verself
 install -d -o postgres -g adm -m 2755 /var/log/postgresql
 install -d -o postgres -g postgres -m 0755 /var/run/postgresql
+# Cutover hosts can retain stale numeric ownership from deleted systemd roles.
+if [ -e /var/lib/postgresql/16/verself/PG_VERSION ] && [ "$(stat -c '%U:%G' /var/lib/postgresql/16/verself/PG_VERSION)" != "postgres:postgres" ]; then
+  chown -R postgres:postgres /var/lib/postgresql/16/verself
+fi
 
 cat >/etc/postgresql/verself/postgresql.conf <<PGCONF
 listen_addresses = '127.0.0.1'

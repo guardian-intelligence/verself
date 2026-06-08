@@ -342,6 +342,8 @@ job "example-service" {
 }
 `)
 	write(t, root, "src/tools/site-preflight/ansible/roles/base/defaults/main.yml", `
+base_legacy_component_systemd_units:
+  - openbao.service
 base_nomad_runtime_users:
   - name: example_service
     home: /var/lib/example_service
@@ -349,6 +351,34 @@ base_nomad_runtime_users:
 
 	if _, err := ValidateRepo(root); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidateRepoRejectsEmptyLegacyComponentSystemdUnit(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "example-service" {
+  group "example-service" {
+    task "server" {
+      user = "example_service"
+    }
+  }
+}
+`)
+	write(t, root, "src/tools/site-preflight/ansible/roles/base/defaults/main.yml", `
+base_legacy_component_systemd_units:
+  - ""
+base_nomad_runtime_users:
+  - name: example_service
+    home: /var/lib/example_service
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "base_legacy_component_systemd_units entry 0 is empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
