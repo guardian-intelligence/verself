@@ -30,6 +30,29 @@ const (
 	defaultThreshold  = 2
 )
 
+var bootstrapRuntimeRoles = []nomadRuntimeRole{
+	{
+		Name:   "deployment-service-runtime",
+		JobID:  "deployment-service",
+		Task:   "deployment-service",
+		Policy: `path "sys/health" { capabilities = ["read"] }`,
+	},
+	{
+		Name:  "cloudflare-r2-control-plane-runtime",
+		JobID: "cloudflare-r2-control-plane",
+		Task:  "cloudflare-r2-control-plane",
+		Policy: `path "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" { capabilities = ["read"] }
+path "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" { capabilities = ["read"] }`,
+	},
+}
+
+type nomadRuntimeRole struct {
+	Name   string
+	JobID  string
+	Task   string
+	Policy string
+}
+
 type config struct {
 	bao         string
 	stateDir    string
@@ -653,6 +676,11 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	}, http.StatusNoContent); err != nil {
 		return err
 	}
+	for _, role := range bootstrapRuntimeRoles {
+		if err := ensureNomadRuntimeRole(api, role); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -670,6 +698,36 @@ func ensureAuth(api openBaoAPI, name string, body map[string]any) error {
 		return err
 	}
 	return nil
+}
+
+func ensureNomadRuntimeRole(api openBaoAPI, role nomadRuntimeRole) error {
+	if _, err := api(http.MethodPost, "sys/policies/acl/"+role.Name, map[string]any{
+		"policy": role.Policy,
+	}, http.StatusNoContent); err != nil {
+		return err
+	}
+	if _, err := api(http.MethodPost, "auth/jwt-nomad/role/"+role.Name, map[string]any{
+		"role_type":         "jwt",
+		"user_claim":        "sub",
+		"bound_audiences":   []string{"vault.io"},
+		"bound_claims":      nomadRuntimeRoleBoundClaims(role),
+		"token_policies":    []string{role.Name},
+		"token_ttl":         "1h",
+		"token_max_ttl":     "1h",
+		"token_num_uses":    0,
+		"token_bound_cidrs": []string{},
+	}, http.StatusNoContent); err != nil {
+		return err
+	}
+	return nil
+}
+
+func nomadRuntimeRoleBoundClaims(role nomadRuntimeRole) map[string]string {
+	return map[string]string{
+		"nomad_namespace": "default",
+		"nomad_job_id":    role.JobID,
+		"nomad_task":      role.Task,
+	}
 }
 
 func isOpenBaoPathInUse(err error) bool {

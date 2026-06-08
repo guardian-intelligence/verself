@@ -111,3 +111,13 @@ func TestOpenBaoPathInUseDetection(t *testing.T) {
 		t.Fatal("permission errors must not be treated as convergence")
 	}
 }
+
+func TestNomadRuntimeRoleBoundClaims(t *testing.T) {
+	claims := nomadRuntimeRoleBoundClaims(nomadRuntimeRole{
+		JobID: "deployment-service",
+		Task:  "deployment-service",
+	})
+	if claims["nomad_namespace"] != "default" || claims["nomad_job_id"] != "deployment-service" || claims["nomad_task"] != "deployment-service" {
+		t.Fatalf("claims = %#v", claims)
+	}
+}
