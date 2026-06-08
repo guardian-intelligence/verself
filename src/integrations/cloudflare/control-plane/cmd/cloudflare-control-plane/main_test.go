@@ -96,7 +96,7 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 
 func TestSiteDNSZonesUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 cloudflare_product_zone: verself.sh
 company_domain: gamma.guardianintelligence.org
@@ -116,14 +116,14 @@ cloudflare_dns_records:
 
 func TestLoadDNSDesiredStateUsesInventoryWhenSiteIPIsPlaceholder(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 company_domain: gamma.guardianintelligence.org
 bare_metal_public_ipv4: 0.0.0.0
 cloudflare_dns_records:
   - { kind: browser_origin, record: "@", zone: product }
 `)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/inventory.ini"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/inventory.ini"), `
 [infra]
 vs-gamma-w0 ansible_host=203.0.113.10
 `)
@@ -142,7 +142,7 @@ vs-gamma-w0 ansible_host=203.0.113.10
 
 func TestLoadDNSDesiredStateUsesHostedZoneForSubdomainSite(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/vars.yml"), `
 verself_domain: gamma.verself.sh
 cloudflare_product_zone: verself.sh
 company_domain: gamma.guardianintelligence.org
@@ -177,7 +177,7 @@ cloudflare_dns_records:
 func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	root := t.TempDir()
 	writeCloudflareAccountConfig(t, root)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/site.json"), `{
   "artifact_delivery": {
     "kind": "cloudflare_r2_control_plane",
     "key_prefix": "sha256",
@@ -204,7 +204,7 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
 	root := t.TempDir()
 	writeCloudflareAccountConfig(t, root)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
+	writeTestFile(t, filepath.Join(root, "src/sites/gamma/site.json"), `{
   "artifact_delivery": {
     "kind": "cloudflare_r2_control_plane",
     "bucket": "verself-deployment-artifacts",

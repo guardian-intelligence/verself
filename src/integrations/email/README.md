@@ -48,7 +48,7 @@ available.
 ```
 ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
 ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
-  ansible-playbook -i src/host/sites/prod/inventory.ini \
+  ansible-playbook -i src/sites/prod/inventory.ini \
     -e verself_site=prod src/integrations/email/provision-email-domains.yml
 ```
 

@@ -18,7 +18,7 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
     "recovery_bucket": "verself-recovery"
   }
 }`)
-	writeDeployEngineTestFile(t, root, "src/host/sites/gamma/site.json", `{
+	writeDeployEngineTestFile(t, root, "src/sites/gamma/site.json", `{
   "artifact_delivery": {
     "kind": "cloudflare_r2_control_plane",
     "key_prefix": "sha256",
@@ -52,7 +52,7 @@ func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
     "recovery_bucket": "verself-recovery"
   }
 }`)
-	writeDeployEngineTestFile(t, root, "src/host/sites/gamma/site.json", `{
+	writeDeployEngineTestFile(t, root, "src/sites/gamma/site.json", `{
   "artifact_delivery": {
     "kind": "cloudflare_r2_control_plane",
     "bucket": "verself-deployment-artifacts",

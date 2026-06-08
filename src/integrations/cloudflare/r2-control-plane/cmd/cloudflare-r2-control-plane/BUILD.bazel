@@ -42,4 +42,5 @@ go_test(
     name = "cloudflare-r2-control-plane_test",
     srcs = ["server_test.go"],
     embed = [":cloudflare-r2-control-plane_lib"],
+    deps = ["//src/integrations/cloudflare/r2-control-plane/internal/r2control"],
 )

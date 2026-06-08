@@ -122,7 +122,7 @@ cloudflare_control_plane = task(
         "runtime_openbao_addr": args.string(default = "", description = "Runtime OpenBao address for service-required secret projection. Defaults to openbao_addr."),
         "runtime_openbao_ca_cert": args.string(default = "", description = "Runtime OpenBao CA certificate file. Defaults to openbao_ca_cert, BAO_CACERT, or VAULT_CACERT."),
         "runtime_openbao_token_file": args.string(default = "", description = "Runtime OpenBao token file. Defaults to openbao_token_file."),
-        "dns_inventory": args.string(default = "", description = "Site inventory used for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini."),
+        "dns_inventory": args.string(default = "", description = "Site inventory used for DNS target IP fallback. Defaults to src/sites/<site>/inventory.ini."),
         "dns_concurrency": args.int(default = 8, description = "Maximum parallel Cloudflare DNS write requests for reconcile-dns."),
         "dry_run": args.boolean(default = False, description = "Report the DNS diff without applying writes for reconcile-dns."),
         "provider": args.string(default = "", description = "Provider for direct certificate issuance. Supported value: cloudflare."),

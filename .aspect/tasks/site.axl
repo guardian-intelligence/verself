@@ -3,7 +3,8 @@
 load(
     ".aspect/lib/helpers.axl",
     "DEFAULT_SITE",
-    "HOST_CONFIGURATION_DIR",
+    "SITE_CONFIGURATION_DIR",
+    "SITE_PREFLIGHT_DIR",
     "bazel_output_file",
     "bazel_run",
     "checked_spawn",
@@ -16,8 +17,7 @@ load(
 )
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
-_HOST_TOOLS_TARGET = "//src/host:host_tools_artifact"
-_SPIRE_IDENTITY_REGISTRY_TARGET = "//src/host:spire_identity_registry"
+_PREFLIGHT_TOOLS_TARGET = "//src/tools/site-preflight:preflight_tools_artifact"
 
 def _abs(ctx, path):
     if path == "":
@@ -27,7 +27,7 @@ def _abs(ctx, path):
     return ws_path(ctx, path)
 
 def _default_inventory(site):
-    return HOST_CONFIGURATION_DIR + "/sites/" + site + "/inventory.ini"
+    return SITE_CONFIGURATION_DIR + "/" + site + "/inventory.ini"
 
 def _require_existing_file(ctx, name, path):
     resolved = _abs(ctx, path)
@@ -148,25 +148,18 @@ def _converge_host_impl(ctx):
     env = host_ansible_env(ctx)
     if env == None:
         return 1
-    ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
-    host_tools = bazel_output_file(ctx, _HOST_TOOLS_TARGET)
-    if host_tools == "":
-        return 1
-    spire_registry = bazel_output_file(ctx, _SPIRE_IDENTITY_REGISTRY_TARGET)
-    if spire_registry == "":
+    ansible_dir = ws_path(ctx, SITE_PREFLIGHT_DIR, "ansible")
+    preflight_tools = bazel_output_file(ctx, _PREFLIGHT_TOOLS_TARGET)
+    if preflight_tools == "":
         return 1
     playbook_args = [
         "-i",
         ws_path(ctx, _default_inventory(site)),
         "playbooks/site.yml",
-        "--skip-tags",
-        "edge,haproxy",
         "-e",
         "verself_site=" + site,
         "-e",
-        "verself_host_tools_artifact=" + host_tools,
-        "-e",
-        "spire_registrations_file=" + spire_registry,
+        "verself_preflight_tools_artifact=" + preflight_tools,
         "-e",
         "verself_openbao_site_root_key_file=" + _abs(ctx, site_root_key),
     ]
@@ -183,7 +176,7 @@ converge_host = task(
     implementation = _converge_host_impl,
     name = "converge-host",
     group = ["site"],
-    summary = "Converge the minimum host foundation and Nomad substrate for a site.",
+    summary = "Converge the pre-Nomad foundation and Nomad agent for a site.",
     args = {
         "site": args.string(default = "prod", description = "Deployment site."),
         "openbao_site_root_key_file": args.string(default = "", description = "Operator-held site root key file for OpenBao bootstrap."),

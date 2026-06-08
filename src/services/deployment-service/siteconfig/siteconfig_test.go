@@ -8,7 +8,7 @@ import (
 
 func TestLoadResolvesSiteTokens(t *testing.T) {
 	root := t.TempDir()
-	siteDir := filepath.Join(root, "src", "host", "sites", "gamma")
+	siteDir := filepath.Join(root, "src", "sites", "gamma")
 	if err := os.MkdirAll(siteDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

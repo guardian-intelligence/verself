@@ -17,10 +17,11 @@ org-scoped compute pools and cells; see
 
 ## Service Architecture
 
-Host bootstrap substrate is authored under `src/host`. Components, services,
-frontends, SPIRE workload identities, runtime users, route metadata, and Nomad
-jobs are owned by the deployable package that needs them. Host firewall
-foundation files are authored in `src/infrastructure-components/nftables/`;
+Site facts are authored under `src/sites`. Pre-Nomad host convergence is
+authored under `src/tools/site-preflight`. Components, services, frontends,
+SPIRE workload identities, runtime users, route metadata, and Nomad jobs are
+owned by the deployable package that needs them. Host firewall foundation files
+are authored in `src/infrastructure-components/nftables/`;
 component, service, frontend, and privileged-substrate nftables snippets live
 with the owning package. Bazel-input artifacts are authored in their owner
 packages.

@@ -142,7 +142,7 @@ func rootHandoff(args []string) error {
 }
 
 func defaultInventoryPath(site string) string {
-	return filepath.Join("src", "host", "sites", site, "inventory.ini")
+	return filepath.Join("src", "sites", site, "inventory.ini")
 }
 
 func defaultHomePath(rel string) string {

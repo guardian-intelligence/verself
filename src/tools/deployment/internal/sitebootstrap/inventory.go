@@ -41,7 +41,7 @@ func WriteInventory(opts InventoryOptions) error {
 	}
 	output := strings.TrimSpace(opts.OutputPath)
 	if output == "" {
-		output = filepath.Join("src", "host", "sites", opts.Site, "inventory.ini")
+		output = filepath.Join("src", "sites", opts.Site, "inventory.ini")
 	}
 	recoveryHost := strings.TrimSpace(opts.RecoveryHost)
 	if recoveryHost == "" {

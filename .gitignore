@@ -19,10 +19,10 @@ src/tools/provisioning/terraform/terraform.tfstate.backup
 src/tools/provisioning/terraform/*.tfvars.json
 
 # Ansible
-src/host/ansible/*.retry
-src/host/ansible/.cache/
-src/host/ansible/*.ini
-!src/host/ansible/*.example
+src/tools/site-preflight/ansible/*.retry
+src/tools/site-preflight/ansible/.cache/
+src/tools/site-preflight/ansible/*.ini
+!src/tools/site-preflight/ansible/*.example
 
 # Legacy renderer cache.
 .cache/

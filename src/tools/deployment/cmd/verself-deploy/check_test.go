@@ -73,7 +73,7 @@ func TestBootstrapCheckIsReadOnly(t *testing.T) {
 func TestCheckRunsBootstrapReadinessByDefault(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeRunTestCloudflareAccountConfig(t, repoRoot)
-	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
+	writeRunTestFile(t, repoRoot, "src/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
 company_domain: gamma.guardianintelligence.test
@@ -127,7 +127,7 @@ deployment_service_domain: deployments.api.gamma.verself.test
 func TestCheckRequiresDeploymentAuthBeforeReadinessRequest(t *testing.T) {
 	repoRoot := t.TempDir()
 	writeRunTestCloudflareAccountConfig(t, repoRoot)
-	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
+	writeRunTestFile(t, repoRoot, "src/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
 company_domain: gamma.guardianintelligence.test

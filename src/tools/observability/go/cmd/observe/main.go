@@ -223,7 +223,7 @@ func parseConfigAt(args []string, now time.Time) (config, error) {
 	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&cfg.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/host")
+	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/tools/site-preflight")
 	flags.StringVar(&cfg.site, "site", strings.TrimSpace(os.Getenv("VERSELF_SITE")), "deployment site")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "query family to run")
 	flags.StringVar(&cfg.signal, "signal", strings.TrimSpace(os.Getenv("SIGNAL")), "signal catalog: metrics, traces, logs, http, deploys")

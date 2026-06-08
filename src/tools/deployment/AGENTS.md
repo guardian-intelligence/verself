@@ -1,31 +1,31 @@
 # deployment
 
-The deployment tooling is moving behind the site-local deployment-service.
-`aspect deploy` should remain a thin client: resolve the site endpoint,
-authenticate, submit a commit-SHA deployment request, and follow the returned
-deployment ID. The service owns build orchestration, artifact publication,
-Nomad submission, deployment state, errors as data, realtime health ingestion,
-and promotion evidence.
+The internal deployment path is controller-owned. `aspect deploy` should keep
+the authority to resolve the site, build Bazel outputs, publish immutable
+artifacts, submit owner-local Nomad jobs, and emit deployment evidence. Do not
+grow a site-local service that needs a mutable source checkout or Bazel in
+order to repair the site.
 
 ## Layout
 
 - `cmd/verself-deploy/` — single binary behind the `aspect deploy` task. Keep
-  request/auth/follow behavior in the CLI and move deployment mutation into the
-  site-local deployment-service.
+  deployment mutation controller-local unless a narrower admission service is
+  introduced.
 - `cmd/site-bootstrap/` — first-bootstrap/recovery entrypoint for sites
-  that do not yet have deployment-service online.
+  that do not yet have the normal deploy path online.
 - `internal/identity/` — derives the verself deploy identity env and emits W3C
   baggage so every span this binary creates carries `verself.deploy_run_key`,
   `verself.deploy_id`, `verself.site`, `verself.author`.
-- Deployment runtime packages live under `src/services/deployment-service`;
-  this module imports them only as a client/bootstrap adapter.
+- Shared deploy runtime packages may still live under
+  `src/services/deployment-service` during the cutover. Do not add new service
+  dependencies to that boundary.
 
 ## Phase boundaries
 
-This module must not grow new deployment authority while the service boundary is
-being introduced. Bazel produces the deployable bytes, the deployment-service
-records the state machine and evidence, and Nomad executes runtime rollout
-mechanics. Host bootstrap and patching remain outside this module.
+This module is the deployment controller boundary for internal sites. Bazel
+produces the deployable bytes, object storage holds immutable artifacts, and
+Nomad executes runtime rollout mechanics. Site preflight and patching remain
+outside this module.
 
 ## Conventions
 

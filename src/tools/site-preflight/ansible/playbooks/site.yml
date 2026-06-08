@@ -1,0 +1,62 @@
+---
+- name: "Site preflight foundation"
+  hosts: all
+  become: true
+  gather_facts: true
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - foundation
+  pre_tasks:
+    - name: Assert preflight tools artifact input
+      ansible.builtin.assert:
+        that:
+          - verself_preflight_tools_artifact is defined
+          - verself_preflight_tools_artifact | length > 0
+        fail_msg: "site.yml requires verself_preflight_tools_artifact from Bazel."
+
+    - name: Install Verself preflight tools
+      ansible.builtin.unarchive:
+        src: "{{ verself_preflight_tools_artifact }}"
+        dest: /
+        owner: root
+        group: root
+        mode: "0755"
+  roles:
+    - role: base
+      tags:
+        - base
+        - packages
+
+- name: "SPIRE bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - spire
+    - identity
+  roles:
+    - role: spire
+      tags:
+        - spire
+        - identity
+
+- name: "Nomad bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - nomad
+    - scheduler
+  roles:
+    - role: nomad
+      tags:
+        - nomad
+        - scheduler

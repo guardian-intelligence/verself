@@ -83,7 +83,7 @@ func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-r2-control-plane", flag.ContinueOnError)
 	fs.StringVar(&cfg.action, "action", "verify", "Action: serve, inventory, or verify.")
-	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Deployment site.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")

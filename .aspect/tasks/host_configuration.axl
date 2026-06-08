@@ -7,7 +7,8 @@ listeners and lock operators out.
 
 load(
     ".aspect/lib/helpers.axl",
-    "HOST_CONFIGURATION_DIR",
+    "SITE_CONFIGURATION_DIR",
+    "SITE_PREFLIGHT_DIR",
     "checked_spawn",
     "host_ansible_env",
     "host_ansible_playbook",
@@ -25,13 +26,13 @@ def _operator_access_handoff_impl(ctx):
     env = host_ansible_env(ctx)
     if env == None:
         return 1
-    ansible_dir = ws_path(ctx, HOST_CONFIGURATION_DIR, "ansible")
+    ansible_dir = ws_path(ctx, SITE_PREFLIGHT_DIR, "ansible")
     return checked_spawn(
         ctx,
         ansible_playbook,
         [
             "-i",
-            ws_path(ctx, HOST_CONFIGURATION_DIR, "sites/" + site + "/inventory.ini"),
+            ws_path(ctx, SITE_CONFIGURATION_DIR, site + "/inventory.ini"),
             "playbooks/operator-access-handoff.yml",
             "-e",
             "verself_site=" + site,

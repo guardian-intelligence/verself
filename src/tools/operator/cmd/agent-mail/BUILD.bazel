@@ -64,5 +64,5 @@ spire_identity(
     key = "agent_mail.default",
     path = "/svc/agent-mail",
     user = "agent_mail",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
