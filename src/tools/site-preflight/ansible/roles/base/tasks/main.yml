@@ -23,16 +23,35 @@
 - name: Gather service facts for legacy component units
   ansible.builtin.service_facts:
 
-- name: Disable legacy component systemd units superseded by Nomad
+- name: Stop legacy component systemd units superseded by Nomad
   ansible.builtin.systemd_service:
     name: "{{ item }}"
     state: stopped
     enabled: false
-    masked: true
   loop: "{{ base_legacy_component_systemd_units }}"
   loop_control:
     label: "{{ item }}"
   when: item in ansible_facts.services
+
+- name: Remove legacy component systemd unit files superseded by Nomad
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop: "{{ base_legacy_component_systemd_units }}"
+  loop_control:
+    label: "{{ item }}"
+  notify: Reload systemd manager
+
+- name: Flush systemd reload after legacy component unit removal
+  ansible.builtin.meta: flush_handlers
+
+- name: Mask legacy component systemd units superseded by Nomad
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop: "{{ base_legacy_component_systemd_units }}"
+  loop_control:
+    label: "{{ item }}"
 
 - name: Create non-SPIFFE Nomad runtime groups
   ansible.builtin.group:
