@@ -24,13 +24,22 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
+genrule(
+    name = "bazelisk_bin",
+    srcs = ["@deployment_service_tool_bazelisk//file"],
+    outs = ["bazelisk"],
+    cmd = "install -m 0755 $(location @deployment_service_tool_bazelisk//file) $@",
+)
+
 pkg_tar(
     name = "deployment-service_nomad_artifact",
     out = "deployment-service.tar",
     files = {
+        ":bazelisk_bin": "bin/bazelisk",
         ":deployment-service": "bin/deployment-service",
     },
     modes = {
+        "bin/bazelisk": "0755",
         "bin/deployment-service": "0755",
     },
     visibility = ["//visibility:public"],

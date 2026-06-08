@@ -31,6 +31,7 @@ include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
 include("//src/infrastructure-components/spire:spire.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
 include("//src/infrastructure-components/verdaccio:verdaccio.MODULE.bazel")
+include("//src/services/deployment-service:deployment_service.MODULE.bazel")
 include("//src/viteplus-monorepo:website_tools.MODULE.bazel")
 
 component_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
