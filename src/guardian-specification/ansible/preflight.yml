@@ -252,172 +252,28 @@
       changed_when: false
       failed_when: guardian_artifact_digest.stdout.split()[0] != item.digest
 
-    - name: Reset podman runtime prefix
+    - name: Create podman .deb staging directory
       ansible.builtin.file:
-        path: "{{ guardian_podman_prefix }}"
-        state: "{{ item }}"
-        mode: "0755"
-      loop:
-        - absent
-        - directory
-
-    - name: Extract pinned podman runtime closure
-      ansible.builtin.unarchive:
-        src: "{{ guardian_podman_runtime.remote_path }}"
-        dest: "{{ guardian_podman_prefix }}"
-        remote_src: true
-
-    # podman/crun/conmon are dynamically linked against prefix-only libs (libyajl,
-    # libgpgme, ...); podman does not propagate LD_LIBRARY_PATH to the crun it
-    # spawns, so register the prefix lib dirs in the host ld cache instead.
-    - name: Register podman prefix libraries in the loader cache
-      ansible.builtin.copy:
-        dest: /etc/ld.so.conf.d/verself-podman.conf
-        mode: "0644"
-        content: |
-          {{ guardian_podman_prefix }}/usr/lib/x86_64-linux-gnu
-          {{ guardian_podman_prefix }}/usr/lib
-
-    - name: Refresh the loader cache
-      ansible.builtin.command:
-        argv:
-          - /usr/sbin/ldconfig
-      changed_when: true
-
-    - name: Stop podman before reconfiguring from the pinned prefix
-      ansible.builtin.systemd:
-        name: "{{ item }}"
-        state: stopped
-      loop:
-        - podman.service
-        - podman.socket
-      failed_when: false
-
-    - name: Unmount stale podman storage mounts
-      ansible.builtin.shell: |
-        set -eu
-        for root in /var/lib/containers/storage /run/containers/storage; do
-          [ -e "$root" ] || continue
-          findmnt -Rnr -o TARGET --target "$root" 2>/dev/null | sort -r | while IFS= read -r target; do
-            case "$target" in
-              "$root"|"$root"/*) umount -l "$target" 2>/dev/null || true ;;
-            esac
-          done
-        done
-      changed_when: false
-
-    - name: Clear stale podman storage for a clean reconverge
-      ansible.builtin.command:
-        argv:
-          - rm
-          - -rf
-          - --one-file-system
-          - "{{ item }}"
-      loop:
-        - /var/lib/containers/storage
-        - /run/containers/storage
-
-    - name: Create podman host directories
-      ansible.builtin.file:
-        path: "{{ item }}"
+        path: "{{ guardian_remote_repo_root }}/bootstrap/podman-debs/{{ guardian_podman_runtime.digest }}"
         state: directory
         mode: "0755"
-      loop:
-        - /etc/containers
-        - /etc/cni/net.d
-        - /run/podman
-        - /var/lib/containers/storage
-        - /run/containers/storage
 
-    - name: Install podman signature policy and registries
-      ansible.builtin.copy:
-        src: "{{ guardian_podman_prefix }}/etc/containers/{{ item }}"
-        dest: "/etc/containers/{{ item }}"
+    - name: Unpack pinned podman .deb closure
+      ansible.builtin.unarchive:
+        src: "{{ guardian_podman_runtime.remote_path }}"
+        dest: "{{ guardian_remote_repo_root }}/bootstrap/podman-debs/{{ guardian_podman_runtime.digest }}"
         remote_src: true
-        mode: "0644"
-      loop:
-        - policy.json
-        - registries.conf
+        creates: "{{ guardian_remote_repo_root }}/bootstrap/podman-debs/{{ guardian_podman_runtime.digest }}/podman_4.9.3+ds1-1ubuntu0.2_amd64.deb"
 
-    - name: Configure podman engine for the pinned prefix
-      ansible.builtin.copy:
-        dest: /etc/containers/containers.conf
-        mode: "0644"
-        content: |
-          [engine]
-          helper_binaries_dir = ["{{ guardian_podman_prefix }}/usr/lib/podman"]
-          conmon_path = ["{{ guardian_podman_prefix }}/usr/bin/conmon"]
-          init_path = "{{ guardian_podman_prefix }}/usr/bin/catatonit"
-          runtime = "crun"
-
-          [engine.runtimes]
-          crun = ["{{ guardian_podman_prefix }}/usr/bin/crun"]
-
-          [network]
-          network_backend = "cni"
-          cni_plugin_dirs = ["{{ guardian_podman_prefix }}/usr/lib/cni"]
-
-    - name: Configure podman storage
-      ansible.builtin.copy:
-        dest: /etc/containers/storage.conf
-        mode: "0644"
-        content: |
-          [storage]
-          driver = "overlay"
-          graphroot = "/var/lib/containers/storage"
-          runroot = "/run/containers/storage"
-
-    - name: Configure podman CNI network
-      ansible.builtin.copy:
-        dest: /etc/cni/net.d/87-podman.conflist
-        mode: "0644"
-        content: |
-          {
-            "cniVersion": "0.4.0",
-            "name": "podman",
-            "plugins": [
-              {"type": "bridge", "bridge": "cni-podman0", "isGateway": true, "ipMasq": true, "ipam": {"type": "host-local", "routes": [{"dst": "0.0.0.0/0"}], "ranges": [[{"subnet": "10.88.0.0/16", "gateway": "10.88.0.1"}]]}},
-              {"type": "portmap", "capabilities": {"portMappings": true}},
-              {"type": "firewall"},
-              {"type": "tuning"}
-            ]
-          }
-
-    - name: Configure podman API socket unit
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/podman.socket
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Verself Podman API Socket
-
-          [Socket]
-          ListenStream=/run/podman/podman.sock
-          SocketMode=0660
-
-          [Install]
-          WantedBy=sockets.target
-
-    - name: Configure podman API service unit
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/podman.service
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Verself Podman API Service
-          Requires=podman.socket
-          After=podman.socket
-
-          [Service]
-          Type=exec
-          KillMode=process
-          Environment=LD_LIBRARY_PATH={{ guardian_podman_prefix }}/usr/lib/x86_64-linux-gnu:{{ guardian_podman_prefix }}/usr/lib
-          Environment=PATH={{ guardian_podman_prefix }}/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          ExecStart={{ guardian_podman_prefix }}/usr/bin/podman system service
-
-    - name: Reload systemd for podman
-      ansible.builtin.systemd:
-        daemon_reload: true
+    # Offline install: the closure is complete against the noble base, so dpkg
+    # needs no archive fetch. dpkg owns placement, ldconfig, /usr/libexec/podman,
+    # the stock podman.socket/.service unit, and the stock container config
+    # (/usr/share/containers/containers.conf + /etc/containers/{policy,registries}).
+    - name: Install pinned podman closure offline
+      ansible.builtin.shell:
+        cmd: dpkg -i ./*.deb || dpkg --configure -a
+        chdir: "{{ guardian_remote_repo_root }}/bootstrap/podman-debs/{{ guardian_podman_runtime.digest }}"
+      changed_when: true
 
     - name: Ensure podman API socket is started
       ansible.builtin.systemd:

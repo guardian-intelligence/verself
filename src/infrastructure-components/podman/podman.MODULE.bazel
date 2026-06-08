@@ -1,9 +1,9 @@
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
 # Pinned podman runtime closure (Ubuntu 24.04 noble), resolved against a clean
-# base so disaster recovery works on a minimal host. Extracted into a self-
-# contained prefix by //src/infrastructure-components/podman:runtime_artifact;
-# never apt-installed from the archive at preflight time.
+# base so disaster recovery works on a minimal host. Bundled as the .deb files
+# by //src/infrastructure-components/podman:runtime_artifact and installed offline
+# with `dpkg -i ./*.deb`; never apt-installed from the archive at preflight time.
 
 http_file(
     name = "podman_deb_catatonit",

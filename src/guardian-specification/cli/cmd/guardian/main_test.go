@@ -677,12 +677,12 @@ printf 'ansible ran\n' > ansible-ran
 	if out, err := exec.Command("tar", "-C", ansibleStage, "-cf", ansibleRuntime, ".").CombinedOutput(); err != nil {
 		t.Fatalf("tar ansible runtime: %v: %s", err, out)
 	}
-	podmanRuntime := filepath.Join(bazelOut, "src", "infrastructure-components", "podman", "podman-runtime.tar")
+	podmanRuntime := filepath.Join(bazelOut, "src", "infrastructure-components", "podman", "podman-debs.tar")
 	if err := os.MkdirAll(filepath.Dir(podmanRuntime), 0o755); err != nil {
-		t.Fatalf("mkdir podman runtime dir: %v", err)
+		t.Fatalf("mkdir podman debs dir: %v", err)
 	}
-	if err := os.WriteFile(podmanRuntime, []byte("podman runtime\n"), 0o644); err != nil {
-		t.Fatalf("write podman runtime: %v", err)
+	if err := os.WriteFile(podmanRuntime, []byte("podman debs\n"), 0o644); err != nil {
+		t.Fatalf("write podman debs: %v", err)
 	}
 	rsyncPath := filepath.Join(bazelOut, "src", "guardian-specification", "tools", "rsync")
 	if err := os.MkdirAll(filepath.Dir(rsyncPath), 0o755); err != nil {

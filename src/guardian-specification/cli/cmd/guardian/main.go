@@ -43,15 +43,14 @@ const (
 
 	openBaoRuntimeTargetPath = "bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar"
 	nomadRuntimeTargetPath   = "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
-	podmanRuntimeTargetPath  = "bazel-bin/src/infrastructure-components/podman/podman-runtime.tar"
+	podmanRuntimeTargetPath  = "bazel-bin/src/infrastructure-components/podman/podman-debs.tar"
 	ansibleRuntimeTargetPath = "bazel-bin/src/guardian-specification/ansible/runtime/ansible-runtime.tar"
 	rsyncTargetPath          = "bazel-bin/src/guardian-specification/tools/rsync"
 
 	// Host prerequisites installed from pinned artifacts instead of the Ubuntu
 	// archive: rsync is seeded over ssh before the first rsync upload, and the
-	// podman runtime closure is extracted into a self-contained prefix.
+	// pinned podman .deb closure is installed offline with dpkg.
 	remoteRsyncPath = "/opt/verself/bin/rsync"
-	podmanPrefix    = "/opt/verself/podman"
 )
 
 type guardianDocument struct {
@@ -1244,7 +1243,6 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		"guardian_openbao_runtime":        openBaoRuntime,
 		"guardian_nomad_runtime":          nomadRuntime,
 		"guardian_podman_runtime":         podmanRuntime,
-		"guardian_podman_prefix":          podmanPrefix,
 		"guardian_remote_rsync":           remoteRsyncPath,
 		"guardian_nomad_jobs":             nomadInputs,
 		"guardian_nomad_common_var_args":  nomadCommonVarArgs(remote.RepoRoot, doc.Compiled.Fly.Metadata.Name),
