@@ -39,8 +39,19 @@
     - bootstrap
     - spire
     - identity
+  pre_tasks:
+    - name: Assert SPIRE identity registry input
+      ansible.builtin.assert:
+        that:
+          - spire_registrations_file is defined
+          - spire_registrations_file | length > 0
+        fail_msg: "site.yml requires spire_registrations_file from Bazel."
   roles:
     - role: spire
+      tags:
+        - spire
+        - identity
+    - role: spire_registrations
       tags:
         - spire
         - identity

@@ -343,14 +343,11 @@
     mode: "0644"
   vars:
     spire_agent_join_token_exec: >-
-      umask 077;
-      {{ spire_bin_dir }}/spire-server token generate
-      -socketPath {{ spire_server_socket_path }}
-      -spiffeID {{ spire_agent_id }}
-      -ttl 600
-      -output json
-      | jq -r .value
-      > /run/spire-agent/private/join-token
+      set -eu; umask 077; for attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+      if {{ spire_bin_dir }}/spire-server token generate -socketPath {{ spire_server_socket_path }} -spiffeID {{ spire_agent_id }} -ttl 600 -output json | jq -er .value > /run/spire-agent/private/join-token.tmp; then
+      mv /run/spire-agent/private/join-token.tmp /run/spire-agent/private/join-token; exit 0; fi;
+      sleep 1; done;
+      exit 1
   notify: restart spire-agent
 
 - name: Apply SPIRE unit changes before proceeding

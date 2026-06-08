@@ -18,6 +18,7 @@ load(
 
 _SITE_BOOTSTRAP_TARGET = "//src/tools/deployment/cmd/site-bootstrap:site-bootstrap"
 _PREFLIGHT_TOOLS_TARGET = "//src/tools/site-preflight:preflight_tools_artifact"
+_SPIRE_IDENTITY_REGISTRY_TARGET = "//src/infrastructure-components/spire:identity_registry"
 
 def _abs(ctx, path):
     if path == "":
@@ -152,6 +153,9 @@ def _converge_host_impl(ctx):
     preflight_tools = bazel_output_file(ctx, _PREFLIGHT_TOOLS_TARGET)
     if preflight_tools == "":
         return 1
+    spire_identity_registry = bazel_output_file(ctx, _SPIRE_IDENTITY_REGISTRY_TARGET)
+    if spire_identity_registry == "":
+        return 1
     playbook_args = [
         "-i",
         ws_path(ctx, _default_inventory(site)),
@@ -160,6 +164,8 @@ def _converge_host_impl(ctx):
         "verself_site=" + site,
         "-e",
         "verself_preflight_tools_artifact=" + preflight_tools,
+        "-e",
+        "spire_registrations_file=" + spire_identity_registry,
         "-e",
         "verself_openbao_site_root_key_file=" + _abs(ctx, site_root_key),
     ]

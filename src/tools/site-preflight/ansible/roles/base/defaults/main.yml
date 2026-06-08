@@ -25,6 +25,8 @@ base_nomad_runtime_users:
     home: /var/lib/github_integration_service
   - name: governance_service
     home: /var/lib/governance-service
+  - name: haproxy
+    home: /var/lib/haproxy
   - name: iam_service
     home: /var/lib/iam_service
   - name: nats
