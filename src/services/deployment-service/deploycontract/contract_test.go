@@ -300,6 +300,58 @@ func TestValidateRepoRejectsToolLayerDeploymentEngine(t *testing.T) {
 	}
 }
 
+func TestValidateRepoRejectsNomadRuntimeUserMissingFromPreflight(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "example-service" {
+  group "example-service" {
+    task "server" {
+      user = "example_service"
+    }
+  }
+}
+`)
+	write(t, root, "src/tools/site-preflight/ansible/roles/base/defaults/main.yml", `
+base_nomad_runtime_users: []
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), `missing Nomad runtime user "example_service" required by src/services/example-service/nomad.hcl`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRepoAcceptsNomadRuntimeUsersDeclaredInPreflight(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "example-service" {
+  group "example-service" {
+    task "setup" {
+      user = "root"
+    }
+    task "server" {
+      user = "example_service"
+    }
+    task "postgres" {
+      user = "postgres"
+    }
+  }
+}
+`)
+	write(t, root, "src/tools/site-preflight/ansible/roles/base/defaults/main.yml", `
+base_nomad_runtime_users:
+  - name: example_service
+    home: /var/lib/example_service
+`)
+
+	if _, err := ValidateRepo(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func write(t *testing.T, root, rel, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))
