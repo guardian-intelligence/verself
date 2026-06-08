@@ -1,6 +1,9 @@
 filegroup(
     name = "examples",
-    srcs = ["gamma.cue"],
+    srcs = [
+        "facts.cue",
+        "gamma.cue",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -14,6 +17,7 @@ filegroup(
         "//src/infrastructure-components/openbao:runtime_artifact",
         "//src/infrastructure-components/podman:runtime_artifact",
         "//src/infrastructure-components/postgresql:fly_artifacts",
+        "//src/infrastructure-components/zot:fly_artifacts",
         "//src/integrations/cloudflare/control-plane:fly_artifacts",
         "//src/tools/dev/binaries:uv_tools",
     ],

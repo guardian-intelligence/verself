@@ -25,7 +25,6 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -166,7 +165,7 @@ func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
 	fs.StringVar(&cfg.action, "action", "verify-account-admin", "Action: recover, import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
-	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and site vars.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and site facts.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")
@@ -1425,37 +1424,24 @@ func reconcileDNSDesired(ctx context.Context, cfg config, accountAdmin r2control
 }
 
 func siteDNSZones(cfg config) ([]string, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
-	body, err := os.ReadFile(path)
+	facts, err := loadSiteFacts(cfg.repoRoot, cfg.site)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	var siteVars struct {
-		VerselfDomain         string `yaml:"verself_domain"`
-		CompanyDomain         string `yaml:"company_domain"`
-		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
-		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
-		Records               []struct {
-			Zone string `yaml:"zone"`
-		} `yaml:"cloudflare_dns_records"`
-	}
-	if err := yaml.Unmarshal(body, &siteVars); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
+		return nil, err
 	}
 	zoneBySelector := map[string]string{
-		"product": firstNonEmpty(siteVars.CloudflareProductZone, siteVars.VerselfDomain),
-		"company": firstNonEmpty(siteVars.CloudflareCompanyZone, siteVars.CompanyDomain),
+		"product": facts.productZone,
+		"company": facts.companyZone,
 	}
 	seen := map[string]struct{}{}
 	out := []string{}
-	for _, record := range siteVars.Records {
+	for _, record := range facts.dnsRecords {
 		selector := strings.TrimSpace(record.Zone)
 		zone, ok := zoneBySelector[selector]
 		if !ok {
-			return nil, fmt.Errorf("%s: unknown cloudflare_dns_records[].zone %q", path, selector)
+			return nil, fmt.Errorf("%s: unknown cloudflare.dnsRecords[].zone %q", facts.path, selector)
 		}
-		if zone == "" || strings.Contains(zone, "{{") {
-			return nil, fmt.Errorf("%s: cloudflare DNS zone selector %q resolved to an invalid zone name", path, selector)
+		if zone == "" {
+			return nil, fmt.Errorf("%s: cloudflare DNS zone selector %q resolved to an invalid zone name", facts.path, selector)
 		}
 		if _, ok := seen[zone]; ok {
 			continue
@@ -1464,7 +1450,7 @@ func siteDNSZones(cfg config) ([]string, error) {
 		out = append(out, zone)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%s declares no cloudflare_dns_records", path)
+		return nil, fmt.Errorf("%s declares no cloudflare.dnsRecords", facts.path)
 	}
 	sort.Strings(out)
 	return out, nil
@@ -1507,29 +1493,13 @@ func (d dnsDesiredState) byZone(zone string) []dnsDesiredRecord {
 }
 
 func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
-	body, err := os.ReadFile(path)
+	facts, err := loadSiteFacts(cfg.repoRoot, cfg.site)
 	if err != nil {
-		return dnsDesiredState{}, fmt.Errorf("read %s: %w", path, err)
+		return dnsDesiredState{}, err
 	}
-	var siteVars struct {
-		VerselfDomain         string `yaml:"verself_domain"`
-		CompanyDomain         string `yaml:"company_domain"`
-		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
-		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
-		BareMetalPublicIPv4   string `yaml:"bare_metal_public_ipv4"`
-		Records               []struct {
-			Kind   string `yaml:"kind"`
-			Record string `yaml:"record"`
-			Zone   string `yaml:"zone"`
-		} `yaml:"cloudflare_dns_records"`
-	}
-	if err := yaml.Unmarshal(body, &siteVars); err != nil {
-		return dnsDesiredState{}, fmt.Errorf("decode %s: %w", path, err)
-	}
-	verself := strings.TrimSpace(siteVars.VerselfDomain)
-	company := strings.TrimSpace(siteVars.CompanyDomain)
-	publicIP := strings.TrimSpace(siteVars.BareMetalPublicIPv4)
+	verself := strings.TrimSpace(facts.productDomain)
+	company := strings.TrimSpace(facts.companyDomain)
+	publicIP := strings.TrimSpace(facts.publicIPv4)
 	if publicIP == "" || publicIP == "0.0.0.0" {
 		inventoryPath := cfg.dnsInventory
 		if strings.TrimSpace(inventoryPath) == "" {
@@ -1541,29 +1511,27 @@ func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
 		}
 	}
 	if verself == "" || company == "" || publicIP == "" {
-		return dnsDesiredState{}, fmt.Errorf("%s: missing verself_domain, company_domain, or site public IP", path)
+		return dnsDesiredState{}, fmt.Errorf("%s: missing domains.product, domains.company, or site public IP", facts.path)
 	}
-	productZone := firstNonEmpty(siteVars.CloudflareProductZone, verself)
-	companyZone := firstNonEmpty(siteVars.CloudflareCompanyZone, company)
 	seen := map[string]struct{}{}
 	out := dnsDesiredState{}
-	for _, record := range siteVars.Records {
+	for _, record := range facts.dnsRecords {
 		publicDomain := ""
 		hostedZone := ""
 		switch strings.TrimSpace(record.Zone) {
 		case "product":
 			publicDomain = verself
-			hostedZone = productZone
+			hostedZone = facts.productZone
 		case "company":
 			publicDomain = company
-			hostedZone = companyZone
+			hostedZone = facts.companyZone
 		default:
-			return dnsDesiredState{}, fmt.Errorf("%s: unknown cloudflare_dns_records[].zone %q", path, record.Zone)
+			return dnsDesiredState{}, fmt.Errorf("%s: unknown cloudflare.dnsRecords[].zone %q", facts.path, record.Zone)
 		}
 		fqdn := publicFQDN(publicDomain, record.Record)
 		relativeRecord, err := recordNameForHostedZone(fqdn, hostedZone)
 		if err != nil {
-			return dnsDesiredState{}, fmt.Errorf("%s: %w", path, err)
+			return dnsDesiredState{}, fmt.Errorf("%s: %w", facts.path, err)
 		}
 		key := strings.TrimSpace(hostedZone) + "|" + fqdn
 		if _, ok := seen[key]; ok {
@@ -1580,7 +1548,7 @@ func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
 		})
 	}
 	if len(out.records) == 0 {
-		return dnsDesiredState{}, fmt.Errorf("%s declares no cloudflare_dns_records", path)
+		return dnsDesiredState{}, fmt.Errorf("%s declares no cloudflare.dnsRecords", facts.path)
 	}
 	return out, nil
 }

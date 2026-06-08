@@ -50,7 +50,7 @@ the `wg-ops` tunnel at `10.66.66.1:2222`.
 
 `aspect operator device --site=prod` configures a checkout to use the native SSH
 route. It derives the Pomerium access host from
-`src/sites/<site>/vars.yml`, writes the authored per-site inventory at
+`src/guardian-specification/examples/<site>/facts.cue`, writes the authored per-site inventory at
 `src/sites/<site>/inventory.ini`, and ensures a default OpenSSH key exists
 at `~/.ssh/id_ed25519`.
 

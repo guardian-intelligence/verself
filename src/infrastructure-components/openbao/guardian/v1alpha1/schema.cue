@@ -71,6 +71,26 @@ package v1alpha1
 	}
 }
 
+#NomadWorkloadRole: {
+	apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+	kind:       "NomadWorkloadRole"
+	metadata:   #Metadata
+	spec: {
+		role:        #NonEmptyString
+		namespace:   *"default" | #NonEmptyString
+		jobID:       #NonEmptyString
+		audience:    *"vault.io" | #NonEmptyString
+		tokenPeriod: *"30m" | #NonEmptyString
+		grants: [...{
+			secretPathRef: #ObjectRef & {
+				apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+				kind:       "SecretPath"
+			}
+			capabilities: [...("create" | "read" | "update" | "delete" | "list")]
+		}]
+	}
+}
+
 #PGPRecipient: {
 	apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 	kind:       "PGPRecipient"

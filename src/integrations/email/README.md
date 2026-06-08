@@ -38,27 +38,17 @@ Email Routing zone. Resend keeps its records on subdomains — DKIM on
 includes both providers. DMARC at the apex is `p=reject`; alignment holds
 through Resend's DKIM signature.
 
-`resend_sending_domains` in the site vars describes the sending domains.
+`email.resendSendingDomains` in the site facts describes the sending domains.
 Provider-side domain verification is controller/operator setup. Runtime Resend
 sending credentials are created by `email-service` after site OpenBao is
 available.
 
 ## Provisioning
 
-```
-ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
-ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
-  ansible-playbook -i src/sites/prod/inventory.ini \
-    -e verself_site=prod src/integrations/email/provision-email-domains.yml
-```
-
-The playbook registers and verifies every Resend sending domain, then requests
-Cloudflare Email Routing reconciliation for the operator mailboxes. It runs on
-the controller against Resend and the Cloudflare integration API and is
-idempotent. The controller process must supply `resend_full_access_api_key`;
-Cloudflare authority is resolved by `cloudflare-integration-service` through
-`secrets-service`. The playbook does not create or deliver the runtime Resend
-sending key.
+Cloudflare integration owns Email Routing reconciliation for the operator
+mailboxes. `email-service` owns Resend runtime sender credentials after site
+OpenBao is available. Provider evidence must be emitted by the owning
+integration or service.
 
 ### Cloudflare Authority
 

@@ -51,10 +51,6 @@ const (
 	operatorImportTokenUses = 20
 	nomadJWTAuthPath        = "jwt-nomad"
 	nomadJWKSURL            = "http://127.0.0.1:4646/.well-known/jwks.json"
-	nomadWorkloadAudience   = "vault.io"
-	cloudflareRecoveryRole  = "cloudflare-integration-recovery"
-	postgresqlRuntimeRole   = "postgresql-runtime"
-	postgresqlJobID         = "postgresql"
 )
 
 type config struct {
@@ -83,6 +79,7 @@ type config struct {
 	resourceName     string
 	pgpKeyDir        string
 	secretPaths      []openBaoSecretPathSpec
+	nomadRoles       []openBaoNomadWorkloadRoleSpec
 }
 
 type stringList []string
@@ -506,6 +503,22 @@ type openBaoSecretPathSpec struct {
 	ProducerRef *objectRef           `json:"producerRef"`
 }
 
+type openBaoNomadWorkloadRoleSpec struct {
+	Name        string
+	Role        string                  `json:"role"`
+	Namespace   string                  `json:"namespace"`
+	JobID       string                  `json:"jobID"`
+	Audience    string                  `json:"audience"`
+	TokenPeriod string                  `json:"tokenPeriod"`
+	Grants      []openBaoNomadGrantSpec `json:"grants"`
+}
+
+type openBaoNomadGrantSpec struct {
+	SecretPathRef objectRef `json:"secretPathRef"`
+	Capabilities  []string  `json:"capabilities"`
+	path          string
+}
+
 type openBaoGenerateSpec struct {
 	Bytes    int    `json:"bytes"`
 	Encoding string `json:"encoding"`
@@ -593,6 +606,11 @@ func applyResourceGraphConfig(cfg config) (config, error) {
 		return config{}, err
 	}
 	cfg.secretPaths = secretPaths
+	nomadRoles, err := loadOpenBaoNomadWorkloadRoles(resources, secretPaths)
+	if err != nil {
+		return config{}, err
+	}
+	cfg.nomadRoles = nomadRoles
 	if spec.Snapshots.Restore != nil {
 		cfg.snapshotPath = spec.Snapshots.Restore.SnapshotPath
 		cfg.snapshotManifest = spec.Snapshots.Restore.ManifestPath
@@ -693,6 +711,93 @@ func validateSecretPath(spec openBaoSecretPathSpec) error {
 		return errors.New("spec.source must be generated, producedBy, or operatorImport")
 	}
 	return nil
+}
+
+func loadOpenBaoNomadWorkloadRoles(resources map[string]guardianResource, paths []openBaoSecretPathSpec) ([]openBaoNomadWorkloadRoleSpec, error) {
+	pathsByName := map[string]openBaoSecretPathSpec{}
+	for _, path := range paths {
+		pathsByName[path.Name] = path
+	}
+	var roles []openBaoNomadWorkloadRoleSpec
+	for _, resource := range resources {
+		if resource.APIVersion != "openbao.guardianintelligence.org/v1alpha1" || resource.Kind != "NomadWorkloadRole" {
+			continue
+		}
+		var spec openBaoNomadWorkloadRoleSpec
+		decoder := json.NewDecoder(bytes.NewReader(resource.Spec))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&spec); err != nil {
+			return nil, fmt.Errorf("decode NomadWorkloadRole %q: %w", resource.Metadata.Name, err)
+		}
+		spec.Name = resource.Metadata.Name
+		if err := resolveNomadWorkloadRole(&spec, pathsByName); err != nil {
+			return nil, fmt.Errorf("NomadWorkloadRole %q: %w", resource.Metadata.Name, err)
+		}
+		roles = append(roles, spec)
+	}
+	sort.Slice(roles, func(i, j int) bool {
+		return roles[i].Role < roles[j].Role
+	})
+	return roles, nil
+}
+
+func resolveNomadWorkloadRole(spec *openBaoNomadWorkloadRoleSpec, pathsByName map[string]openBaoSecretPathSpec) error {
+	spec.Role = strings.TrimSpace(spec.Role)
+	spec.Namespace = defaultIfEmpty(spec.Namespace, "default")
+	spec.JobID = strings.TrimSpace(spec.JobID)
+	spec.Audience = defaultIfEmpty(spec.Audience, "vault.io")
+	spec.TokenPeriod = defaultIfEmpty(spec.TokenPeriod, "30m")
+	if spec.Role == "" || spec.JobID == "" {
+		return errors.New("spec.role and spec.jobID are required")
+	}
+	if len(spec.Grants) == 0 {
+		return errors.New("spec.grants must not be empty")
+	}
+	for i := range spec.Grants {
+		grant := &spec.Grants[i]
+		if grant.SecretPathRef.APIVersion != "openbao.guardianintelligence.org/v1alpha1" || grant.SecretPathRef.Kind != "SecretPath" || strings.TrimSpace(grant.SecretPathRef.Name) == "" {
+			return fmt.Errorf("spec.grants[%d].secretPathRef must target openbao.guardianintelligence.org/v1alpha1/SecretPath", i)
+		}
+		path, ok := pathsByName[grant.SecretPathRef.Name]
+		if !ok {
+			return fmt.Errorf("spec.grants[%d].secretPathRef.name=%q does not match a SecretPath", i, grant.SecretPathRef.Name)
+		}
+		grant.path = strings.Trim(strings.TrimSpace(path.Path), "/")
+		capabilities, err := normalizeNomadGrantCapabilities(grant.Capabilities)
+		if err != nil {
+			return fmt.Errorf("spec.grants[%d].capabilities: %w", i, err)
+		}
+		grant.Capabilities = capabilities
+	}
+	return nil
+}
+
+func normalizeNomadGrantCapabilities(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, errors.New("must not be empty")
+	}
+	allowed := map[string]struct{}{
+		"create": {},
+		"read":   {},
+		"update": {},
+		"delete": {},
+		"list":   {},
+	}
+	seen := map[string]struct{}{}
+	var out []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if _, ok := allowed[value]; !ok {
+			return nil, fmt.Errorf("%q is not an allowed OpenBao KV capability", value)
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func secretPathMount(path string) (string, error) {
@@ -1122,7 +1227,7 @@ func bootstrapOpenBaoRootService(ctx context.Context, cfg config, client openBao
 		return nil, err
 	}
 	if err := retryOpenBaoBootstrapStep(ctx, "ensure Nomad workload auth", func() error {
-		return ensureNomadWorkloadAuth(ctx, client, rootToken, cfg.secretPaths)
+		return ensureNomadWorkloadAuth(ctx, client, rootToken, cfg.nomadRoles)
 	}); err != nil {
 		return nil, err
 	}
@@ -1224,24 +1329,8 @@ func retryOpenBaoBootstrapStep(ctx context.Context, label string, fn func() erro
 	}
 }
 
-func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token string, paths []openBaoSecretPathSpec) error {
-	policies := map[string]struct {
-		jobID  string
-		policy string
-	}{}
-	if policy := cloudflareRecoveryPolicy(paths); strings.TrimSpace(policy) != "" {
-		policies[cloudflareRecoveryRole] = struct {
-			jobID  string
-			policy string
-		}{jobID: cloudflareRecoveryRole, policy: policy}
-	}
-	if policy := postgresqlRuntimePolicy(paths); strings.TrimSpace(policy) != "" {
-		policies[postgresqlRuntimeRole] = struct {
-			jobID  string
-			policy string
-		}{jobID: postgresqlJobID, policy: policy}
-	}
-	if len(policies) == 0 {
+func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token string, roles []openBaoNomadWorkloadRoleSpec) error {
+	if len(roles) == 0 {
 		return nil
 	}
 	if err := ensureJWTAuthMethod(ctx, client, token, nomadJWTAuthPath); err != nil {
@@ -1253,23 +1342,61 @@ func ensureNomadWorkloadAuth(ctx context.Context, client openBaoClient, token st
 	}); err != nil {
 		return fmt.Errorf("configure OpenBao Nomad JWT auth: %w", err)
 	}
-	for _, roleName := range sortedNomadPolicyNames(policies) {
-		policy := policies[roleName]
-		if err := client.WritePolicy(ctx, token, roleName, policy.policy); err != nil {
-			return fmt.Errorf("write %s policy: %w", roleName, err)
+	for _, role := range roles {
+		policy := nomadWorkloadPolicy(role)
+		if err := client.WritePolicy(ctx, token, role.Role, policy); err != nil {
+			return fmt.Errorf("write %s policy: %w", role.Role, err)
 		}
-		if err := client.WriteJWTRole(ctx, token, nomadJWTAuthPath, roleName, nomadJWTWorkloadRole(roleName, policy.jobID)); err != nil {
-			return fmt.Errorf("write OpenBao Nomad JWT role %s: %w", roleName, err)
+		if err := client.WriteJWTRole(ctx, token, nomadJWTAuthPath, role.Role, nomadJWTWorkloadRole(role)); err != nil {
+			return fmt.Errorf("write OpenBao Nomad JWT role %s: %w", role.Role, err)
 		}
 	}
 	return nil
 }
 
-func nomadJWTWorkloadRole(roleName string, jobID string) openBaoJWTRole {
+func nomadWorkloadPolicy(role openBaoNomadWorkloadRoleSpec) string {
+	type grant struct {
+		path         string
+		capabilities []string
+	}
+	grantsByPath := map[string]map[string]struct{}{}
+	for _, grant := range role.Grants {
+		if grantsByPath[grant.path] == nil {
+			grantsByPath[grant.path] = map[string]struct{}{}
+		}
+		for _, capability := range grant.Capabilities {
+			grantsByPath[grant.path][capability] = struct{}{}
+		}
+	}
+	var grants []grant
+	for path, capabilities := range grantsByPath {
+		grants = append(grants, grant{
+			path:         path,
+			capabilities: sortedMapKeys(capabilities),
+		})
+	}
+	sort.Slice(grants, func(i, j int) bool {
+		return grants[i].path < grants[j].path
+	})
+	var b strings.Builder
+	for _, grant := range grants {
+		fmt.Fprintf(&b, "path %q {\n  capabilities = [", grant.path)
+		for i, capability := range grant.capabilities {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%q", capability)
+		}
+		b.WriteString("]\n}\n")
+	}
+	return b.String()
+}
+
+func nomadJWTWorkloadRole(role openBaoNomadWorkloadRoleSpec) openBaoJWTRole {
 	return openBaoJWTRole{
 		RoleType:             "jwt",
-		BoundAudiences:       []string{nomadWorkloadAudience},
-		BoundClaims:          map[string]string{"nomad_namespace": "default", "nomad_job_id": jobID},
+		BoundAudiences:       []string{role.Audience},
+		BoundClaims:          map[string]string{"nomad_namespace": role.Namespace, "nomad_job_id": role.JobID},
 		UserClaim:            "/nomad_job_id",
 		UserClaimJSONPointer: true,
 		ClaimMappings: map[string]string{
@@ -1278,19 +1405,10 @@ func nomadJWTWorkloadRole(roleName string, jobID string) openBaoJWTRole {
 			"nomad_task":      "nomad_task",
 		},
 		TokenType:           "service",
-		TokenPolicies:       []string{roleName},
-		TokenPeriod:         "30m",
+		TokenPolicies:       []string{role.Role},
+		TokenPeriod:         role.TokenPeriod,
 		TokenExplicitMaxTTL: 0,
 	}
-}
-
-func sortedNomadPolicyNames[T any](values map[string]T) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func ensureJWTAuthMethod(ctx context.Context, client openBaoClient, token string, path string) error {
@@ -1342,55 +1460,6 @@ func ensureSecretPathMounts(ctx context.Context, client openBaoClient, token str
 		}
 	}
 	return nil
-}
-
-func cloudflareRecoveryPolicy(paths []openBaoSecretPathSpec) string {
-	readOnly := map[string]struct{}{}
-	write := map[string]struct{}{}
-	for _, path := range paths {
-		trimmed := strings.Trim(strings.TrimSpace(path.Path), "/")
-		if trimmed == "" {
-			continue
-		}
-		if path.Source == "operatorImport" && trimmed == "kv-controller/data/integrations/cloudflare/account-admin" {
-			readOnly[trimmed] = struct{}{}
-			continue
-		}
-		if path.Source == "producedBy" && path.ProducerRef != nil &&
-			path.ProducerRef.APIVersion == "cloudflare.guardianintelligence.org/v1alpha1" &&
-			path.ProducerRef.Kind == "CloudflareControlPlane" {
-			write[trimmed] = struct{}{}
-		}
-	}
-	var b strings.Builder
-	for _, path := range sortedMapKeys(readOnly) {
-		if _, writable := write[path]; writable {
-			continue
-		}
-		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"read\"]\n}\n", path)
-	}
-	for _, path := range sortedMapKeys(write) {
-		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"create\", \"update\", \"read\"]\n}\n", path)
-	}
-	return b.String()
-}
-
-func postgresqlRuntimePolicy(paths []openBaoSecretPathSpec) string {
-	readOnly := map[string]struct{}{}
-	for _, path := range paths {
-		trimmed := strings.Trim(strings.TrimSpace(path.Path), "/")
-		switch {
-		case path.Name == "cloudflare.r2.recovery" && trimmed != "":
-			readOnly[trimmed] = struct{}{}
-		case path.Name == "postgresql.pgbackrest.cipher_pass" && trimmed != "":
-			readOnly[trimmed] = struct{}{}
-		}
-	}
-	var b strings.Builder
-	for _, path := range sortedMapKeys(readOnly) {
-		fmt.Fprintf(&b, "path %q {\n  capabilities = [\"read\"]\n}\n", path)
-	}
-	return b.String()
 }
 
 func sortedMapKeys(values map[string]struct{}) []string {

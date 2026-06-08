@@ -8,7 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/cuecontext"
 )
 
 type Model struct {
@@ -33,61 +34,51 @@ type Model struct {
 }
 
 func Load(repoRoot, site string) (Model, error) {
-	path := filepath.Join(repoRoot, "src", "sites", site, "vars.yml")
+	path := filepath.Join(repoRoot, "src", "guardian-specification", "examples", site, "facts.cue")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return Model{}, fmt.Errorf("read %s: %w", path, err)
 	}
-	values := map[string]any{}
-	if err := yaml.Unmarshal(body, &values); err != nil {
-		return Model{}, fmt.Errorf("decode %s: %w", path, err)
-	}
-	required := map[string]string{}
-	for _, key := range []string{"verself_site", "verself_domain", "company_domain", "spire_trust_domain", "verself_installation_id"} {
-		value := resolveString(values, key)
-		if value == "" {
-			return Model{}, fmt.Errorf("%s: %s is required", path, key)
-		}
-		required[key] = value
+	ctx := cuecontext.New()
+	value := ctx.CompileBytes(body, cue.Filename(path)).FillPath(cue.ParsePath("site"), site)
+	if err := value.Validate(cue.Concrete(true)); err != nil {
+		return Model{}, fmt.Errorf("%s: site facts must be concrete: %w", path, err)
 	}
 	model := Model{
-		Site:              required["verself_site"],
-		ProductDomain:     required["verself_domain"],
-		CompanyDomain:     required["company_domain"],
-		SpiffeTrustDomain: required["spire_trust_domain"],
-		InstallationID:    required["verself_installation_id"],
+		Site:              mustLookupString(value, path, cue.ParsePath("site"), "site"),
+		ProductDomain:     mustLookupString(value, path, cue.ParsePath("domains.product"), "domains.product"),
+		CompanyDomain:     mustLookupString(value, path, cue.ParsePath("domains.company"), "domains.company"),
+		SpiffeTrustDomain: mustLookupString(value, path, cue.ParsePath("spiffe.trustDomain"), "spiffe.trustDomain"),
+		InstallationID:    mustLookupString(value, path, cue.ParsePath("installationID"), "installationID"),
 		Domains:           map[string]string{},
 	}
+	if err := lookupError(value); err != nil {
+		return Model{}, err
+	}
 	if model.Site != site {
-		return Model{}, fmt.Errorf("%s: verself_site=%q does not match selected site %q", path, model.Site, site)
+		return Model{}, fmt.Errorf("%s: site=%q does not match selected site %q", path, model.Site, site)
 	}
-	if err := validateDNSName("verself_domain", model.ProductDomain); err != nil {
+	if err := validateDNSName("domains.product", model.ProductDomain); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := validateDNSName("company_domain", model.CompanyDomain); err != nil {
+	if err := validateDNSName("domains.company", model.CompanyDomain); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := validateDNSName("spire_trust_domain", model.SpiffeTrustDomain); err != nil {
+	if err := validateDNSName("spiffe.trustDomain", model.SpiffeTrustDomain); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
-	zitadel := resolveString(values, "zitadel_domain")
-	if zitadel == "" {
-		zitadel = model.ProductDomain
-	}
-	model.ZitadelDomain = zitadel
-	if err := validateDNSName("zitadel_domain", model.ZitadelDomain); err != nil {
+	model.ZitadelDomain = model.ProductDomain
+	if err := validateDNSName("domains.product", model.ZitadelDomain); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
 	for _, key := range domainKeys() {
-		domain := resolveString(values, key+"_domain")
-		if domain == "" {
-			subdomain := resolveString(values, key+"_subdomain")
-			if subdomain != "" {
-				domain = subdomain + "." + model.ProductDomain
-			}
+		subdomain := lookupOptionalString(value, cue.MakePath(cue.Str("serviceSubdomains"), cue.Str(key)))
+		domain := ""
+		if subdomain != "" {
+			domain = subdomain + "." + model.ProductDomain
 		}
 		if domain != "" {
-			if err := validateDNSName(key+"_domain", domain); err != nil {
+			if err := validateDNSName("serviceSubdomains."+key, domain); err != nil {
 				return Model{}, fmt.Errorf("%s: %w", path, err)
 			}
 			model.Domains[key] = domain
@@ -96,65 +87,71 @@ func Load(repoRoot, site string) (Model, error) {
 	model.Domains["product"] = model.ProductDomain
 	model.Domains["company"] = model.CompanyDomain
 	model.Domains["zitadel"] = model.ZitadelDomain
-	model.GitHubAppID = resolveString(values, "github_integration_service_github_app_id")
-	model.GitHubAppSlug = resolveString(values, "github_integration_service_github_app_slug")
-	model.GitHubOAuthClientID = resolveString(values, "github_integration_service_github_app_client_id")
-	model.GitHubAppSettingsURL = resolveString(values, "github_integration_service_github_app_settings_url")
-	model.GitHubRunnerClassPrefix = resolveString(values, "github_integration_service_github_runner_class_prefix")
-	model.DeployGitHubRepos = resolveString(values, "deployment_github_allowed_repositories")
-	model.DeployGitHubRefs = resolveString(values, "deployment_github_allowed_refs")
-	model.DeployGitHubWorkflows = resolveString(values, "deployment_github_allowed_workflow_refs")
-	model.DeployRepoURL = resolveString(values, "deployment_repo_url")
-	model.ObjectStorageS3Endpoint = resolveString(values, "object_storage_s3_endpoint")
+	model.GitHubAppID = lookupOptionalString(value, cue.ParsePath("githubIntegration.appID"))
+	model.GitHubAppSlug = lookupOptionalString(value, cue.ParsePath("githubIntegration.appSlug"))
+	model.GitHubOAuthClientID = lookupOptionalString(value, cue.ParsePath("githubIntegration.oauthClientID"))
+	model.GitHubAppSettingsURL = lookupOptionalString(value, cue.ParsePath("githubIntegration.appSettingsURL"))
+	model.GitHubRunnerClassPrefix = lookupOptionalString(value, cue.ParsePath("githubIntegration.runnerClassPrefix"))
+	model.DeployGitHubRepos = lookupOptionalString(value, cue.ParsePath("deployment.githubAllowedRepositories"))
+	model.DeployGitHubRefs = lookupOptionalString(value, cue.ParsePath("deployment.githubAllowedRefs"))
+	model.DeployGitHubWorkflows = lookupOptionalString(value, cue.ParsePath("deployment.githubAllowedWorkflowRefs"))
+	model.DeployRepoURL = lookupOptionalString(value, cue.ParsePath("deployment.repoURL"))
+	model.ObjectStorageS3Endpoint = mustLookupString(value, path, cue.ParsePath("objectStorage.s3Endpoint"), "objectStorage.s3Endpoint")
 	if err := validateHTTPSURL("object_storage_s3_endpoint", model.ObjectStorageS3Endpoint); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
-	model.ObjectStorageDeploymentArtifactsBucket = resolveString(values, "object_storage_deployment_artifacts_bucket")
+	model.ObjectStorageDeploymentArtifactsBucket = mustLookupString(value, path, cue.ParsePath("objectStorage.deploymentArtifactsBucket"), "objectStorage.deploymentArtifactsBucket")
 	if !isS3BucketName(model.ObjectStorageDeploymentArtifactsBucket) {
 		return Model{}, fmt.Errorf("%s: object_storage_deployment_artifacts_bucket must be a valid lowercase S3 bucket name", path)
 	}
 	return model, nil
 }
 
-func resolveString(values map[string]any, key string) string {
-	raw, ok := values[key]
-	if !ok {
+func mustLookupString(root cue.Value, file string, path cue.Path, label string) string {
+	value := root.LookupPath(path)
+	text, err := value.String()
+	if err != nil || strings.TrimSpace(text) == "" {
 		return ""
 	}
-	value, ok := raw.(string)
-	if !ok {
-		return fmt.Sprint(raw)
-	}
-	return resolveTemplate(value, values)
+	return strings.TrimSpace(text)
 }
 
-func resolveTemplate(value string, values map[string]any) string {
-	out := value
-	for i := 0; i < 8; i++ {
-		next := out
-		for key, raw := range values {
-			rawString, ok := raw.(string)
-			if !ok {
-				continue
-			}
-			if strings.Contains(rawString, "{{") {
-				continue
-			}
-			next = strings.ReplaceAll(next, "{{ "+key+" }}", rawString)
-			next = strings.ReplaceAll(next, "{{"+key+"}}", rawString)
-		}
-		if next == out {
-			break
-		}
-		out = next
-	}
-	out = strings.TrimSpace(out)
-	out = strings.TrimPrefix(out, "\"")
-	out = strings.TrimSuffix(out, "\"")
-	if strings.Contains(out, "{{") || strings.Contains(out, "}}") {
+func lookupOptionalString(root cue.Value, path cue.Path) string {
+	value := root.LookupPath(path)
+	if !value.Exists() {
 		return ""
 	}
-	return out
+	text, err := value.String()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func lookupError(root cue.Value) error {
+	required := map[string]cue.Path{
+		"site":                     cue.ParsePath("site"),
+		"domains.product":          cue.ParsePath("domains.product"),
+		"domains.company":          cue.ParsePath("domains.company"),
+		"spiffe.trustDomain":       cue.ParsePath("spiffe.trustDomain"),
+		"installationID":           cue.ParsePath("installationID"),
+		"objectStorage.s3Endpoint": cue.ParsePath("objectStorage.s3Endpoint"),
+		"objectStorage.deploymentArtifactsBucket": cue.ParsePath("objectStorage.deploymentArtifactsBucket"),
+	}
+	for label, path := range required {
+		value := root.LookupPath(path)
+		if !value.Exists() {
+			return fmt.Errorf("%s is required", label)
+		}
+		text, err := value.String()
+		if err != nil {
+			return fmt.Errorf("%s must be a string: %w", label, err)
+		}
+		if strings.TrimSpace(text) == "" {
+			return fmt.Errorf("%s is required", label)
+		}
+	}
+	return nil
 }
 
 func validateDNSName(field, value string) error {

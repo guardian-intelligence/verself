@@ -40,6 +40,11 @@ resources: [
 						varsPath: "bazel-bin/src/integrations/cloudflare/control-plane/nomad.vars.hcl"
 					},
 					{
+						name: "zot"
+						path: "src/infrastructure-components/zot/nomad.hcl"
+						varsPath: "bazel-bin/src/infrastructure-components/zot/nomad.vars.hcl"
+					},
+					{
 						name: "postgresql"
 						path: "src/infrastructure-components/postgresql/nomad.hcl"
 						varsPath: "bazel-bin/src/infrastructure-components/postgresql/nomad.vars.hcl"
@@ -660,19 +665,16 @@ resources: [
 		kind:       "ZotRegistry"
 		metadata: name: "zot"
 		spec: {
-			runtimeArtifact: "bazel-bin/src/infrastructure-components/zot/zot-runtime.tar"
-			runtimeRoot:     "/var/lib/zot/runtime"
-			configPath:      "/etc/zot/config.json"
-			storageDir:      "/var/lib/zot/storage"
-			htpasswdPath:    "/etc/zot/htpasswd"
-			reportPath:      "/run/verself/recovery/zot/report.json"
-			user:            "zot"
-			group:           "zot"
-			host:            "127.0.0.1"
-			port:            5080
-			realm:           "verself-artifacts"
-			logLevel:        "info"
-			publisherUser:   "artifact-publisher"
+			// Ephemeral derived state under /alloc; regenerated each alloc.
+			configPath:   "/alloc/config/config.json"
+			htpasswdPath: "/alloc/config/htpasswd"
+			// Durable registry blob/manifest store; host bind-mount that survives alloc GC.
+			storageDir:    "/var/lib/zot/storage"
+			host:          "127.0.0.1"
+			port:          5080
+			realm:         "verself-artifacts"
+			logLevel:      "info"
+			publisherUser: "artifact-publisher"
 		}
 	},
 	{
@@ -1494,6 +1496,20 @@ resources: [
 	{
 		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
 		kind:       "SecretPath"
+		metadata: name: "zot.publisher.password"
+		spec: {
+			path:   "kv-runtime/data/secret/org/zot.publisher.password"
+			key:    "value"
+			source: "generated"
+			generate: {
+				bytes:    32
+				encoding: "base64url"
+			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "SecretPath"
 		metadata: name: "iam-service.email_identity.hmac_key"
 		spec: {
 			path:   "kv-runtime/data/secret/org/iam-service.email_identity.hmac_key"
@@ -1972,6 +1988,111 @@ resources: [
 				kind:       "ZitadelAuthControlPlane"
 				name:       "auth-control-plane"
 			}
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "NomadWorkloadRole"
+		metadata: name: "cloudflare-integration-recovery"
+		spec: {
+			role:  "cloudflare-integration-recovery"
+			jobID: "cloudflare-integration-recovery"
+			grants: [
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "cloudflare.account-admin"
+					}
+					capabilities: ["read"]
+				},
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "cloudflare.r2.recovery"
+					}
+					capabilities: ["create", "read", "update"]
+				},
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.admin_access_key_id"
+					}
+					capabilities: ["create", "read", "update"]
+				},
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.admin_secret_access_key"
+					}
+					capabilities: ["create", "read", "update"]
+				},
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.proxy_access_key_id"
+					}
+					capabilities: ["create", "read", "update"]
+				},
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "object-storage-service.r2.proxy_secret_access_key"
+					}
+					capabilities: ["create", "read", "update"]
+				},
+			]
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "NomadWorkloadRole"
+		metadata: name: "postgresql-runtime"
+		spec: {
+			role:  "postgresql-runtime"
+			jobID: "postgresql"
+			grants: [
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "cloudflare.r2.recovery"
+					}
+					capabilities: ["read"]
+				},
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "postgresql.pgbackrest.cipher_pass"
+					}
+					capabilities: ["read"]
+				},
+			]
+		}
+	},
+	{
+		apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+		kind:       "NomadWorkloadRole"
+		metadata: name: "zot-runtime"
+		spec: {
+			role:  "zot-runtime"
+			jobID: "zot"
+			grants: [
+				{
+					secretPathRef: {
+						apiVersion: "openbao.guardianintelligence.org/v1alpha1"
+						kind:       "SecretPath"
+						name:       "zot.publisher.password"
+					}
+					capabilities: ["read"]
+				},
+			]
 		}
 	},
 	{

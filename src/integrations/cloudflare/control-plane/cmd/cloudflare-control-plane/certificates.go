@@ -22,7 +22,6 @@ import (
 
 	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 	"golang.org/x/crypto/acme"
-	"gopkg.in/yaml.v3"
 )
 
 const letsEncryptProductionDirectoryURL = "https://acme-v02.api.letsencrypt.org/directory"
@@ -141,29 +140,19 @@ func loadSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error)
 	if hasExplicitTLSConfig(cfg) {
 		return explicitSiteTLSCertificates(cfg)
 	}
-	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
-	body, err := os.ReadFile(path)
+	facts, err := loadSiteFacts(cfg.repoRoot, cfg.site)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, nil, err
 	}
-	var siteVars struct {
-		VerselfDomain         string `yaml:"verself_domain"`
-		CompanyDomain         string `yaml:"company_domain"`
-		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
-		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
-	}
-	if err := yaml.Unmarshal(body, &siteVars); err != nil {
-		return nil, nil, fmt.Errorf("decode %s: %w", path, err)
-	}
-	verselfDomain := cleanDNSName(siteVars.VerselfDomain)
-	companyDomain := cleanDNSName(siteVars.CompanyDomain)
-	productZone := cleanDNSName(firstNonEmpty(siteVars.CloudflareProductZone, siteVars.VerselfDomain))
-	companyZone := cleanDNSName(firstNonEmpty(siteVars.CloudflareCompanyZone, siteVars.CompanyDomain))
+	verselfDomain := cleanDNSName(facts.productDomain)
+	companyDomain := cleanDNSName(facts.companyDomain)
+	productZone := cleanDNSName(facts.productZone)
+	companyZone := cleanDNSName(facts.companyZone)
 	if verselfDomain == "" || productZone == "" {
-		return nil, nil, fmt.Errorf("%s: verself_domain and cloudflare_product_zone are required for TLS certificate issuance", path)
+		return nil, nil, fmt.Errorf("%s: domains.product and cloudflare.productZone are required for TLS certificate issuance", facts.path)
 	}
 	if companyDomain == "" || companyZone == "" {
-		return nil, nil, fmt.Errorf("%s: company_domain and cloudflare_company_zone are required for TLS certificate issuance", path)
+		return nil, nil, fmt.Errorf("%s: domains.company and cloudflare.companyZone are required for TLS certificate issuance", facts.path)
 	}
 	certificates := []siteTLSCertificate{
 		{

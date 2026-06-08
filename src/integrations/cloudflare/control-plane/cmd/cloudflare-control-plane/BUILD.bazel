@@ -12,6 +12,7 @@ go_library(
         "recovery.go",
         "recovery_config.go",
         "site.go",
+        "site_facts.go",
     ],
     importpath = "github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane",
     visibility = ["//visibility:private"],
@@ -19,6 +20,8 @@ go_library(
         "//src/integrations/cloudflare/control-plane/r2control",
         "@com_github_protonmail_go_crypto//openpgp",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_cuelang_go//cue",
+        "@org_cuelang_go//cue/cuecontext",
         "@org_golang_x_crypto//acme",
     ],
 )

@@ -93,7 +93,7 @@ S0 repo_metadata_only
 
 | State | Meaning | Secret location | Exit transition |
 | --- | --- | --- | --- |
-| `S0 repo_metadata_only` | Catalog, site vars, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
+| `S0 repo_metadata_only` | Catalog, site facts, provider resource declarations, and tfvars exist. | No plaintext secrets in repo. | User or privileged agent starts a bootstrap session. |
 | `S1 stripe_authenticated` | The operator or agent has authenticated Stripe CLI/Projects locally. | Stripe config on the principal's machine only. | Initialize or select the site provider project. |
 | `S2 provider_root_credentials_available` | Latitude, Cloudflare, and other pre-host API keys are acquired. | Operator session memory until imported. | Import catalog-approved root credentials. |
 | `S3 controller_openbao_imported` | Root credentials and provider-project handoff values are stored in a controller OpenBao namespace for the target site. | Controller OpenBao. | Provisioning reads short-lived credentials from OpenBao. |
@@ -387,7 +387,7 @@ variable exported by `stripe projects env --pull`:
 4. Add the consumer declaration.
 
    Runtime service credentials belong in the owning component CRD and site
-   graph. Public provider variables belong in site vars or generated service
+   graph. Public provider variables belong in site facts or generated service
    config, never in ad hoc Nomad literals when they vary by environment.
    Bootstrap and operator-access host files are named bootstrap/access-plane
    state, not runtime credential declarations.
@@ -491,7 +491,7 @@ The catalog validator should run in CI and before `guardian fly`.
 - Every OpenBao target name has exactly one owner-local consumer declaration.
 - Every credential projection has a declared path, group, mode, consumer, and
   rotation path.
-- Every site-specific Nomad literal is represented as site vars or a
+- Every site-specific Nomad literal is represented as site facts or a
   cataloged variable.
 - `prod`, `gamma`, and `dev` provider resource IDs do not match unless the
   catalog marks the value as intentionally shared.
