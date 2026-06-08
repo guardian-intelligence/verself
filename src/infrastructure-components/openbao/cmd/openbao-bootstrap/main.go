@@ -156,13 +156,14 @@ func run(ctx context.Context, cfg config) error {
 			}
 		}
 	}
-	if rootToken != "" {
-		if err := configureWorkloadIdentity(ctx, cfg, rootToken); err != nil {
-			return err
+	if rootToken == "" {
+		rootToken, err = generateTemporaryRootToken(ctx, cfg)
+		if err != nil {
+			return fmt.Errorf("generate temporary root token for workload identity reconciliation: %w", err)
 		}
-		if err := revokeRootToken(ctx, cfg, rootToken); err != nil {
-			return err
-		}
+	}
+	if err := configureAndRevokeRootToken(ctx, cfg, rootToken); err != nil {
+		return err
 	}
 	return nil
 }
@@ -310,6 +311,18 @@ func revokeRootToken(ctx context.Context, cfg config, rootToken string) error {
 	cmd.Env = baoEnv(cfg, rootToken)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("revoke OpenBao bootstrap root token: %w: %s", err, sanitizeCommandOutput(out))
+	}
+	return nil
+}
+
+func configureAndRevokeRootToken(ctx context.Context, cfg config, rootToken string) (err error) {
+	defer func() {
+		if revokeErr := revokeRootToken(ctx, cfg, rootToken); err == nil && revokeErr != nil {
+			err = revokeErr
+		}
+	}()
+	if err := configureWorkloadIdentity(ctx, cfg, rootToken); err != nil {
+		return err
 	}
 	return nil
 }
@@ -474,17 +487,28 @@ func generateRootToken(ctx context.Context, cfg config) error {
 	if cfg.rootTokenOutputFile == "" {
 		return errors.New("--root-token-output-file is required for action=generate-root-token")
 	}
-	keys, err := recoveryUnsealKeys(cfg)
+	token, err := generateTemporaryRootToken(ctx, cfg)
 	if err != nil {
 		return err
+	}
+	if err := writeSecretFile(cfg.rootTokenOutputFile, token); err != nil {
+		return err
+	}
+	return nil
+}
+
+func generateTemporaryRootToken(ctx context.Context, cfg config) (string, error) {
+	keys, err := recoveryUnsealKeys(cfg)
+	if err != nil {
+		return "", err
 	}
 	otpOut, err := baoOutput(ctx, cfg, "", "operator", "generate-root", "-generate-otp")
 	if err != nil {
-		return err
+		return "", err
 	}
 	otp := strings.TrimSpace(string(otpOut))
 	if otp == "" {
-		return errors.New("bao operator generate-root -generate-otp returned an empty OTP")
+		return "", errors.New("bao operator generate-root -generate-otp returned an empty OTP")
 	}
 	started := false
 	defer func() {
@@ -496,51 +520,48 @@ func generateRootToken(ctx context.Context, cfg config) error {
 	}()
 	initOut, err := baoOutput(ctx, cfg, "", "operator", "generate-root", "-init", "-otp="+otp, "-format=json")
 	if err != nil {
-		return err
+		return "", err
 	}
 	started = true
 	status, err := decodeGenerateRootStatus(initOut)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if strings.TrimSpace(status.Nonce) == "" {
-		return errors.New("bao operator generate-root init did not return a nonce")
+		return "", errors.New("bao operator generate-root init did not return a nonce")
 	}
 	required := status.Required
 	if required <= 0 {
 		required = cfg.threshold
 	}
 	if len(keys) < required {
-		return fmt.Errorf("generate-root requires %d unseal keys, got %d", required, len(keys))
+		return "", fmt.Errorf("generate-root requires %d unseal keys, got %d", required, len(keys))
 	}
 	encoded := firstNonEmpty(status.EncodedRootToken, status.EncodedToken)
 	for i := 0; encoded == "" && i < required; i++ {
 		out, err := baoOutput(ctx, cfg, keys[i], "operator", "generate-root", "-nonce="+status.Nonce, "-otp="+otp, "-format=json", "-")
 		if err != nil {
-			return err
+			return "", err
 		}
 		status, err = decodeGenerateRootStatus(out)
 		if err != nil {
-			return err
+			return "", err
 		}
 		encoded = firstNonEmpty(status.EncodedRootToken, status.EncodedToken)
 	}
 	if encoded == "" {
-		return errors.New("bao operator generate-root did not return an encoded token after threshold keys")
+		return "", errors.New("bao operator generate-root did not return an encoded token after threshold keys")
 	}
 	tokenOut, err := baoOutput(ctx, cfg, encoded, "operator", "generate-root", "-decode=-", "-otp="+otp)
 	if err != nil {
-		return err
+		return "", err
 	}
 	token := strings.TrimSpace(string(tokenOut))
 	if token == "" {
-		return errors.New("bao operator generate-root decode returned an empty token")
-	}
-	if err := writeSecretFile(cfg.rootTokenOutputFile, token); err != nil {
-		return err
+		return "", errors.New("bao operator generate-root decode returned an empty token")
 	}
 	started = false
-	return nil
+	return token, nil
 }
 
 func recoveryUnsealKeys(cfg config) ([]string, error) {
