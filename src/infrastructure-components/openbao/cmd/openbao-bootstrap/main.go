@@ -626,44 +626,26 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	api := func(method, path string, body any, expected ...int) (map[string]any, error) {
 		return apiRequest(ctx, client, cfg.addr, rootToken, method, path, body, expected...)
 	}
-	mounts, err := api(http.MethodGet, "sys/mounts", nil, http.StatusOK)
-	if err != nil {
+	if err := ensureMount(api, "kv-runtime", map[string]any{
+		"type":    "kv",
+		"options": map[string]any{"version": "2"},
+	}); err != nil {
 		return err
 	}
-	if _, ok := dataMap(mounts)["kv-runtime/"]; !ok {
-		if _, err := api(http.MethodPost, "sys/mounts/kv-runtime", map[string]any{
-			"type":    "kv",
-			"options": map[string]any{"version": "2"},
-		}, http.StatusNoContent); err != nil {
-			return err
-		}
-	}
-	if _, ok := dataMap(mounts)["kv-controller/"]; !ok {
-		if _, err := api(http.MethodPost, "sys/mounts/kv-controller", map[string]any{
-			"type":    "kv",
-			"options": map[string]any{"version": "2"},
-		}, http.StatusNoContent); err != nil {
-			return err
-		}
-	}
-	if _, ok := dataMap(mounts)["transit/"]; !ok {
-		if _, err := api(http.MethodPost, "sys/mounts/transit", map[string]any{
-			"type": "transit",
-		}, http.StatusNoContent); err != nil {
-			return err
-		}
-	}
-	auth, err := api(http.MethodGet, "sys/auth", nil, http.StatusOK)
-	if err != nil {
+	if err := ensureMount(api, "kv-controller", map[string]any{
+		"type":    "kv",
+		"options": map[string]any{"version": "2"},
+	}); err != nil {
 		return err
 	}
-	if _, ok := dataMap(auth)["jwt-nomad/"]; !ok {
-		if _, err := api(http.MethodPost, "sys/auth/jwt-nomad", map[string]any{
-			"type":        "jwt",
-			"description": "Verself Nomad workload identity auth",
-		}, http.StatusNoContent); err != nil {
-			return err
-		}
+	if err := ensureMount(api, "transit", map[string]any{"type": "transit"}); err != nil {
+		return err
+	}
+	if err := ensureAuth(api, "jwt-nomad", map[string]any{
+		"type":        "jwt",
+		"description": "Verself Nomad workload identity auth",
+	}); err != nil {
+		return err
 	}
 	if _, err := api(http.MethodPost, "auth/jwt-nomad/config", map[string]any{
 		"jwks_url":           "http://127.0.0.1:4646/.well-known/jwks.json",
@@ -672,6 +654,26 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 		return err
 	}
 	return nil
+}
+
+type openBaoAPI func(method, path string, body any, expected ...int) (map[string]any, error)
+
+func ensureMount(api openBaoAPI, name string, body map[string]any) error {
+	if _, err := api(http.MethodPost, "sys/mounts/"+name, body, http.StatusNoContent); err != nil && !isOpenBaoPathInUse(err) {
+		return err
+	}
+	return nil
+}
+
+func ensureAuth(api openBaoAPI, name string, body map[string]any) error {
+	if _, err := api(http.MethodPost, "sys/auth/"+name, body, http.StatusNoContent); err != nil && !isOpenBaoPathInUse(err) {
+		return err
+	}
+	return nil
+}
+
+func isOpenBaoPathInUse(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "path is already in use")
 }
 
 func apiClient(cfg config) (*http.Client, error) {
@@ -735,14 +737,6 @@ func apiRequest(ctx context.Context, client *http.Client, addr, token, method, p
 		}
 	}
 	return nil, fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
-}
-
-func dataMap(response map[string]any) map[string]any {
-	data, ok := response["data"].(map[string]any)
-	if !ok {
-		return map[string]any{}
-	}
-	return data
 }
 
 func firstNonEmpty(values ...string) string {

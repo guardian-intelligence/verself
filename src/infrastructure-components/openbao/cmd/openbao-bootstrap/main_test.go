@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,5 +100,14 @@ func TestWriteSecretFileUsesPrivateMode(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %o", info.Mode().Perm())
+	}
+}
+
+func TestOpenBaoPathInUseDetection(t *testing.T) {
+	if !isOpenBaoPathInUse(errors.New(`openbao POST sys/auth/jwt-nomad status 400: {"errors":["path is already in use at jwt-nomad/"]}`)) {
+		t.Fatal("expected path-in-use error to be idempotent")
+	}
+	if isOpenBaoPathInUse(errors.New(`openbao POST sys/auth/jwt-nomad status 403: permission denied`)) {
+		t.Fatal("permission errors must not be treated as convergence")
 	}
 }
