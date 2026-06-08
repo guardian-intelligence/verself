@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -89,6 +90,9 @@ func Run(ctx context.Context, opts Options, fn func(*Runtime) error) error {
 func Init(ctx context.Context, opts Options) (*Runtime, error) {
 	if opts.ServiceName == "" {
 		return nil, errors.New("operator runtime: ServiceName is required")
+	}
+	if operatorUseRecoveryEnv() {
+		opts.UseRecovery = true
 	}
 	site := opts.Site
 	if site == "" {
@@ -259,5 +263,14 @@ func (rt *Runtime) TraceID() string {
 }
 
 func InventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
+	return filepath.Join(repoRoot, "src", "sites", site, "inventory.ini")
+}
+
+func operatorUseRecoveryEnv() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("VERSELF_OPERATOR_SSH_TRANSPORT"))) {
+	case "recovery", "wireguard", "wg":
+		return true
+	default:
+		return false
+	}
 }

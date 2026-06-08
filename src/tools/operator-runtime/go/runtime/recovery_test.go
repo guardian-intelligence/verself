@@ -68,6 +68,25 @@ func TestRecoveryAbsentWhenNotDeclared(t *testing.T) {
 	}
 }
 
+func TestResolveInfraTargetUsesRecoveryEnvironment(t *testing.T) {
+	root := t.TempDir()
+	inventory := filepath.Join(root, "src", "sites", "prod", "inventory.ini")
+	if err := os.MkdirAll(filepath.Dir(inventory), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(inventory, []byte(recoveryInventory), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VERSELF_OPERATOR_SSH_TRANSPORT", "recovery")
+	target, err := resolveInfraTarget(root, "prod", Options{UseRecovery: operatorUseRecoveryEnv()})
+	if err != nil {
+		t.Fatalf("resolveInfraTarget: %v", err)
+	}
+	if target.Host != "10.66.66.1" || target.User != "ubuntu" {
+		t.Fatalf("target = %q@%q, want ubuntu@10.66.66.1", target.User, target.Host)
+	}
+}
+
 func TestFindSignInURL(t *testing.T) {
 	url := findSignInURL("Please sign in to continue", "https://access.verself.sh/.pomerium/sign_in?user_code=abc", "")
 	if url != "https://access.verself.sh/.pomerium/sign_in?user_code=abc" {

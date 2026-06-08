@@ -28,7 +28,7 @@ type cloudflareAccountConfig struct {
 }
 
 func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
-	path := filepath.Join(repoRoot, "src", "host", "sites", site, "site.json")
+	path := filepath.Join(repoRoot, "src", "sites", site, "site.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return siteArtifactConfig{}, fmt.Errorf("read %s: %w", path, err)

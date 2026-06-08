@@ -25,5 +25,5 @@ func siteVarsPath(repoRoot, site string) string {
 	if site == "" {
 		site = "prod"
 	}
-	return filepath.Join(repoRoot, "src", "host", "sites", site, "vars.yml")
+	return filepath.Join(repoRoot, "src", "sites", site, "vars.yml")
 }

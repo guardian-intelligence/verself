@@ -291,7 +291,7 @@ func parseConfigAt(args []string, now time.Time) (config, error) {
 		cfg.repoRoot = wd
 	}
 	if cfg.substrateRoot == "" {
-		cfg.substrateRoot = filepath.Join(cfg.repoRoot, "src", "host")
+		cfg.substrateRoot = filepath.Join(cfg.repoRoot, "src", "tools", "site-preflight")
 	}
 	if cfg.site == "" {
 		cfg.site = opruntime.DefaultSite

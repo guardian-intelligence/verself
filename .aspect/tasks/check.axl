@@ -38,6 +38,8 @@ def _source_boundary(ctx):
     bad_terms = [
         "//src/" + "host",
         "src/" + "host",
+        "\"src\", \"" + "host\"",
+        "\"host\", \"" + "sites\"",
         "HOST" + "_CONFIGURATION_DIR",
         "host_" + "tools",
         "host_" + "tool",
