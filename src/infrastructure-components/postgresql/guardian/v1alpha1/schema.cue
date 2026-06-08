@@ -23,8 +23,6 @@ package v1alpha1
 	kind:       "PostgreSQLCluster"
 	metadata:   #Metadata
 	spec: {
-		runtimeArtifact:              #RepoPath
-		runtimeRoot:                  #AbsolutePath
 		dataDir:                      #AbsolutePath
 		configDir:                    #AbsolutePath
 		logDir:                       #AbsolutePath

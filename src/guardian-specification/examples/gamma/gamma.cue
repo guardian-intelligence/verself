@@ -326,8 +326,6 @@ resources: [
 		kind:       "PostgreSQLCluster"
 		metadata: name: "postgresql"
 		spec: {
-			runtimeArtifact: "bazel-bin/src/infrastructure-components/postgresql/postgresql_runtime.tar"
-			runtimeRoot:     "/var/lib/postgresql/runtime"
 			dataDir:         "/var/lib/postgresql/16/verself"
 			configDir:       "/etc/postgresql/verself"
 			logDir:          "/var/log/postgresql"

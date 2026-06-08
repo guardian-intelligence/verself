@@ -113,6 +113,18 @@ use_repo(
     "zot_tools",
 )
 
+# First libc-bearing OCI base in the repo: postgres/pgbackrest are dynamically
+# linked, so the scratch+static-Go image pattern does not apply. Pinned by the
+# ubuntu:24.04 multi-arch index digest; linux/amd64 is the only fleet platform.
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "ubuntu_noble_base",
+    digest = "sha256:786a8b558f7be160c6c8c4a54f9a57274f3b4fb1491cf65146521ae77ff1dc54",
+    image = "docker.io/library/ubuntu",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "ubuntu_noble_base", "ubuntu_noble_base_linux_amd64")
+
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     rustfmt_version = "1.95.0",

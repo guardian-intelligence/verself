@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -59,7 +61,7 @@ func run(args []string) error {
 	case actionPlan:
 		return printPlan(cfg.planFacts)
 	case actionInfo:
-		return runPgBackRest(cfg, []string{"info", "--output=json"})
+		return runPgBackRestInfo(cfg)
 	case actionCheck:
 		return runPgBackRest(cfg, []string{"check"})
 	case actionStanzaCreate:
@@ -202,6 +204,33 @@ func runPgBackRest(cfg config, commandArgs []string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Env = commandEnv(cfg)
 	return cmd.Run()
+}
+
+// runPgBackRestInfo captures pgBackRest's JSON stdout and replaces invalid
+// UTF-8 bytes before forwarding. pgBackRest can emit a non-UTF-8 byte inside
+// backup metadata (observed 0xc5), which crashes strict-UTF-8 JSON consumers.
+// Scoped to info so other actions keep raw passthrough.
+func runPgBackRestInfo(cfg config) error {
+	binary := filepath.Join(cfg.runtimeRoot, "usr/bin/pgbackrest")
+	if err := requireExecutable(binary); err != nil {
+		return err
+	}
+	args := commonPgBackRestArgs(cfg, actionUsesProcessMax(cfg.action))
+	args = append(args, "info", "--output=json")
+	cmd := exec.Command(binary, args...)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = commandEnv(cfg)
+	runErr := cmd.Run()
+	if _, err := io.WriteString(os.Stdout, sanitizeUTF8(stdout.String())); err != nil {
+		return err
+	}
+	return runErr
+}
+
+func sanitizeUTF8(s string) string {
+	return strings.ToValidUTF8(s, "�")
 }
 
 func commonPgBackRestArgs(cfg config, includeProcessMax bool) []string {
