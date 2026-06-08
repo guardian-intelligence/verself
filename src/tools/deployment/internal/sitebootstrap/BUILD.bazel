@@ -11,6 +11,7 @@ go_library(
     visibility = ["//src/tools/deployment:__subpackages__"],
     deps = [
         "//src/services/deployment-service/deployengine",
+        "//src/tools/operator-runtime/go/runtime",
         "@org_golang_x_crypto//ssh",
     ],
 )

@@ -20,7 +20,7 @@ func TestBootstrapDeployReadsInventoryBeforeRemoteAccess(t *testing.T) {
 		RepoRoot:      root,
 		InventoryPath: filepath.Join(root, "missing-inventory.ini"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "read inventory") {
+	if err == nil || !strings.Contains(err.Error(), "open inventory") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -57,13 +57,23 @@ func TestLocalArtifactUploadPathWritesBody(t *testing.T) {
 	}
 }
 
-func TestSCPCommandUsesUppercasePortFlag(t *testing.T) {
-	cmd := scpCommand(context.Background(), inventoryTarget{Host: "2001:db8::1", User: "ubuntu", Port: 2222}, "/tmp/local", "/tmp/remote")
-	args := strings.Join(cmd.Args, "\n")
-	for _, want := range []string{"-P", "2222", "ubuntu@[2001:db8::1]:/tmp/remote"} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("scp args missing %q:\n%s", want, args)
-		}
+func TestLoadBootstrapInventoryTargetUsesRecoveryTransport(t *testing.T) {
+	root := t.TempDir()
+	inventory := filepath.Join(root, "inventory.ini")
+	if err := os.WriteFile(inventory, []byte(`[infra]
+node-1 ansible_host=access.example.test verself_recovery_ssh_host=10.66.66.1 verself_recovery_ssh_port=2222
+
+[all:vars]
+ansible_user=ubuntu@example
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target, err := loadBootstrapInventoryTarget(inventory, "recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Host != "10.66.66.1" || target.User != "ubuntu@example" || target.Port != 2222 {
+		t.Fatalf("target = %s@%s:%d", target.User, target.Host, target.Port)
 	}
 }
 
