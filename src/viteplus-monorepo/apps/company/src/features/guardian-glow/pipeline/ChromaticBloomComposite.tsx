@@ -68,10 +68,6 @@ const chromaticBloomCompositeShader = /* glsl */ `
     return inner * 0.68 + outer * 0.32;
   }
 
-  float softRaySeedAt(vec2 uv) {
-    return blurExtract(uv, max(uBlurRadius * 1.1, 8.0));
-  }
-
   vec3 chromaticBloomAt(vec2 uv) {
     vec2 redOffset = texelSize.xy * uAberrationPx * vec2(-0.72, 0.46);
     vec2 blueOffset = texelSize.xy * uAberrationPx * vec2(0.9, -0.58);
@@ -84,35 +80,24 @@ const chromaticBloomCompositeShader = /* glsl */ `
   float radialRaysAt(vec2 uv) {
     vec2 delta = uv - uEclipseUv;
     float distanceFromSource = length(delta);
-    vec2 direction = delta / max(distanceFromSource, 0.0001);
-    float stepPixels = max(uBlurRadius * (0.72 + clamp(uRayLength, 0.01, 1.8) * 3.2), 4.0);
+    vec2 stepVector = delta * clamp(uRayLength, 0.01, 2.5) / 28.0;
+    vec2 sampleUv = uv;
+    float decay = 1.0;
     float sum = 0.0;
-    float weightSum = 0.0;
 
-    for (int i = 0; i < 8; i += 1) {
-      float t = float(i) / 7.0;
-      vec2 sampleUv = uv - direction * texelSize.xy * stepPixels * float(i);
-      float sampleDistance = length(sampleUv - uEclipseUv);
-      float seedBand =
-        smoothstep(0.03, 0.12, sampleDistance) *
-        (1.0 - smoothstep(0.42, 0.82, sampleDistance));
-      float sampleWeight = pow(1.0 - t, 1.8) * seedBand;
-      float seed = extractBrightAt(sampleUv);
-
-      sum += seed * sampleWeight;
-      weightSum += sampleWeight;
+    for (int i = 0; i < 28; i += 1) {
+      sampleUv -= stepVector;
+      sum += extractAt(sampleUv) * decay;
+      decay *= 0.91;
     }
 
-    float shaft = sum / max(weightSum, 0.001);
-    float localCorona = softRaySeedAt(uv) * (1.0 - smoothstep(0.48, 0.92, distanceFromSource));
-    float nearSourceGate = smoothstep(0.012, 0.08, distanceFromSource);
-    float farSourceGate = 1.0 - smoothstep(0.64, 1.02, distanceFromSource);
-    float scatter = pow(max(shaft, 0.0), 1.1) * 0.12 + pow(max(localCorona, 0.0), 0.86) * 0.52;
-    return scatter * nearSourceGate * farSourceGate * uRayIntensity;
+    float nearSourceGate = smoothstep(0.018, 0.18, distanceFromSource);
+    float farSourceGate = 1.0 - smoothstep(0.78, 1.18, distanceFromSource);
+    return sum * nearSourceGate * farSourceGate * uRayIntensity * 0.052;
   }
 
   vec3 radialRayColor(float ray) {
-    return ray * vec3(1.02, 0.92, 0.72);
+    return ray * vec3(1.08, 0.98, 0.76);
   }
 
   void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
