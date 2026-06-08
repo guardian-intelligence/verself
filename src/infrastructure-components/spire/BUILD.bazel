@@ -1,0 +1,73 @@
+load("//src/tools/deployment/spire:identity.bzl", "spire_identity_registry")
+
+package(default_visibility = ["//visibility:public"])
+
+genrule(
+    name = "spire_server_bin",
+    srcs = ["@spire_tool_spire//file"],
+    outs = ["spire-server"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @spire_tool_spire//file)" -C "$$tmp" --strip-components=1
+install -m 0755 "$$tmp/bin/spire-server" "$@"
+""",
+)
+
+genrule(
+    name = "spire_agent_bin",
+    srcs = ["@spire_tool_spire//file"],
+    outs = ["spire-agent"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @spire_tool_spire//file)" -C "$$tmp" --strip-components=1
+install -m 0755 "$$tmp/bin/spire-agent" "$@"
+""",
+)
+
+spire_identity_registry(
+    name = "identity_registry",
+    identities = [
+        "//src/infrastructure-components/clickhouse:spiffe_identity_operator",
+        "//src/infrastructure-components/clickhouse:spiffe_identity_server",
+        "//src/infrastructure-components/nats:spiffe_identity",
+        "//src/infrastructure-components/nomad-observer:spiffe_identity",
+        "//src/infrastructure-components/otelcol:spiffe_identity",
+        "//src/infrastructure-components/temporal-platform:spiffe_identity_server",
+        "//src/integrations/cloudflare/r2-control-plane:spiffe_identity",
+        "//src/services/analytics-service:spiffe_identity",
+        "//src/services/billing-service:spiffe_identity",
+        "//src/services/deployment-service:spiffe_identity",
+        "//src/services/distribution-service:spiffe_identity",
+        "//src/services/governance-service:spiffe_identity",
+        "//src/services/github-integration-service:spiffe_identity",
+        "//src/services/iam-service:spiffe_identity",
+        "//src/services/email-service:spiffe_identity",
+        "//src/services/notifications-service:spiffe_identity",
+        "//src/services/object-storage-service:spiffe_identity_admin",
+        "//src/services/object-storage-service:spiffe_identity_service",
+        "//src/services/profile-service:spiffe_identity",
+        "//src/services/projects-service:spiffe_identity",
+        "//src/services/sandbox-rental-service:spiffe_identity",
+        "//src/services/secrets-service:spiffe_identity",
+        "//src/services/source-code-hosting-service:spiffe_identity",
+        "//src/tools/operator/cmd/agent-mail:spiffe_identity",
+    ],
+)
+
+filegroup(
+    name = "role_sources",
+    srcs = glob([
+        "handlers/**",
+        "tasks/**",
+        "templates/**",
+    ]),
+)
+
+filegroup(
+    name = "registration_sources",
+    srcs = glob(["ansible/spire_registrations/**"]),
+)

@@ -117,8 +117,8 @@ filegroup(
         allow_empty = True,
     ),
     visibility = [
-        "//src/host:__pkg__",
         "//src/infrastructure-components:__pkg__",
+        "//src/tools/site-preflight:__pkg__",
     ],
 )
 
@@ -173,4 +173,14 @@ nomad_component(
     job_id = "haproxy-upstreams",
     job_spec = "nomad.hcl",
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
+)
+
+go_test(
+    name = "haproxy_test",
+    srcs = ["frontend_policy_test.go"],
+    data = [
+        "nomad.hcl",
+        "templates/haproxy.cfg.j2",
+        "templates/nomad-upstreams.cfg.j2",
+    ],
 )

@@ -16,7 +16,7 @@ spire_identity(
     key = "cloudflare_r2_control_plane.default",
     path = "/svc/cloudflare-r2-control-plane",
     user = "cloudflare_r2_control_plane",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

@@ -16,7 +16,7 @@ spire_identity(
     key = "deployment_service.default",
     path = "/svc/deployment-service",
     user = "deployment_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

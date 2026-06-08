@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -202,6 +203,7 @@ func run(ctx context.Context, cfg config) error {
 
 	nomadConfig := api.DefaultConfig()
 	nomadConfig.Address = cfg.nomadAddr
+	nomadConfig.HttpClient = nomadHTTPClient()
 	nomadClient, err := api.NewClient(nomadConfig)
 	if err != nil {
 		return fmt.Errorf("nomad client: %w", err)
@@ -226,6 +228,14 @@ func run(ctx context.Context, cfg config) error {
 	go obs.heartbeat(ctx)
 
 	return obs.streamLoop(ctx)
+}
+
+func nomadHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxConnsPerHost = 16
+	transport.MaxIdleConns = 16
+	transport.MaxIdleConnsPerHost = 4
+	return &http.Client{Transport: transport}
 }
 
 func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) error {
@@ -380,7 +390,8 @@ func (o *observer) streamLoop(ctx context.Context) error {
 	var nextIndex uint64
 	backoff := time.Second
 	for ctx.Err() == nil {
-		streamCtx, span := o.tracer.Start(ctx, "nomad_observer.event_stream",
+		streamBaseCtx, streamCancel := context.WithCancel(ctx)
+		streamCtx, span := o.tracer.Start(streamBaseCtx, "nomad_observer.event_stream",
 			trace.WithAttributes(
 				attribute.String("nomad.namespace", o.cfg.namespace),
 				attribute.Int64("nomad.stream.index", int64(nextIndex)),
@@ -397,6 +408,7 @@ func (o *observer) streamLoop(ctx context.Context) error {
 				slog.Uint64("nomad.stream.index", nextIndex),
 				slog.String("error", err.Error()),
 			)
+			streamCancel()
 			if !sleepContext(ctx, backoff) {
 				return ctx.Err()
 			}
@@ -433,6 +445,7 @@ func (o *observer) streamLoop(ctx context.Context) error {
 			}
 		}
 		span.End()
+		streamCancel()
 		if !sleepContext(ctx, backoff) {
 			return ctx.Err()
 		}

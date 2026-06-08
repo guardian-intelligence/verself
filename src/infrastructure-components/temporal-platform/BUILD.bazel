@@ -61,7 +61,7 @@ spire_identity(
     path = "/svc/temporal-server",
     restart_units = ["temporal-server"],
     user = "temporal_server",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

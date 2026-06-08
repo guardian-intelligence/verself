@@ -97,7 +97,7 @@ func configureOperatorDevice(opts deviceOptions) error {
 		Alias:     strings.TrimSpace(ops.BareMetalHostAlias),
 		Access:    accessHost,
 		SSHRoute:  route,
-		Inventory: filepath.Join(repoRoot, "src", "host", "sites", opts.site, "inventory.ini"),
+		Inventory: filepath.Join(repoRoot, "src", "sites", opts.site, "inventory.ini"),
 		KeyPath:   filepath.Join(home, ".ssh", defaultSSHKeyName),
 		PubPath:   filepath.Join(home, ".ssh", defaultSSHKeyName+".pub"),
 	}

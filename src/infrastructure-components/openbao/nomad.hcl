@@ -118,7 +118,6 @@ os.chmod(hosts, 0o640)
 
 config = pathlib.Path("/etc/openbao/openbao.hcl")
 config.write_text("""ui = false
-disable_mlock = true
 
 api_addr = "https://127.0.0.1:8200"
 cluster_addr = "https://127.0.0.1:8201"
@@ -217,7 +216,7 @@ PY
       }
 
       config {
-        command = "local/bin/openbao-bootstrap"
+        command = "local/bin/openbao-up"
         args = [
           "--bao=local/bin/bao",
           "--state-dir=/var/lib/verself/bootstrap/openbao",

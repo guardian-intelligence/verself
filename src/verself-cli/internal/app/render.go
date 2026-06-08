@@ -64,7 +64,7 @@ func renderBootstrap(store *Store, company CompanyRecord, opts RenderOptions) (B
 }
 
 func writeRenderedFiles(store *Store, company CompanyRecord, repoRoot string, force bool) error {
-	siteVarsPath := filepath.Join(repoRoot, "src", "host", "sites", company.Site, "vars.yml")
+	siteVarsPath := filepath.Join(repoRoot, "src", "sites", company.Site, "vars.yml")
 	siteVars, err := renderSiteVars(siteVarsPath, company)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ func writeRenderedFiles(store *Store, company CompanyRecord, repoRoot string, fo
 	files := map[string][]byte{
 		filepath.Join(repoRoot, ".verself", "bootstrap", "manifest.yaml"): []byte(renderManifest(company)),
 		siteVarsPath: []byte(siteVars),
-		filepath.Join(repoRoot, "src", "host", "sites", company.Site, "provisioning.tfvars.json.template"): []byte(renderProvisioningTemplate(company)),
+		filepath.Join(repoRoot, "src", "sites", company.Site, "provisioning.tfvars.json.template"): []byte(renderProvisioningTemplate(company)),
 		filepath.Join(repoRoot, "README.md"): []byte(renderREADME(company)),
 	}
 	for path, data := range files {

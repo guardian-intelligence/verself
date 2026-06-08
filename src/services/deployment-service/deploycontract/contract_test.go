@@ -126,7 +126,7 @@ openbao_runtime_secret_declarations:
 
 func TestValidateRepoRejectsMissingFirstPartyDeployWorkflow(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main
@@ -144,7 +144,7 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 func TestValidateRepoAcceptsExistingFirstPartyDeployWorkflow(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, ".github/workflows/gamma-deploy.yml", gammaDeployWorkflow())
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main
@@ -158,7 +158,7 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 func TestValidateRepoRejectsExternalActionInDeployWorkflow(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, ".github/workflows/gamma-deploy.yml", strings.Replace(gammaDeployWorkflow(), "guardian-intelligence/verself/.github/actions/checkout@main", "actions/checkout@v4", 1))
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main
@@ -176,7 +176,7 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 func TestValidateRepoRejectsBroadDeployWorkflowPermissions(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, ".github/workflows/gamma-deploy.yml", strings.Replace(gammaDeployWorkflow(), "contents: read", "contents: write", 1))
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main
@@ -196,7 +196,7 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 func TestValidateRepoRejectsDeployWorkflowWithoutRepoRefGuard(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, ".github/workflows/gamma-deploy.yml", strings.Replace(gammaDeployWorkflow(), "    if: github.repository == 'guardian-intelligence/verself' && github.ref == 'refs/heads/main'\n", "", 1))
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main
@@ -213,7 +213,7 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 
 func TestValidateRepoRejectsPartialGitHubDeployAuth(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 `)
@@ -229,7 +229,7 @@ deployment_github_allowed_refs: refs/heads/main
 
 func TestValidateRepoRejectsGitHubDeployWorkflowOutsideAllowedRepoAndRef(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: attacker/verself/.github/workflows/gamma-deploy.yml@refs/heads/dev
@@ -248,7 +248,7 @@ deployment_github_allowed_workflow_refs: attacker/verself/.github/workflows/gamm
 
 func TestValidateRepoRejectsNestedGitHubDeployWorkflowPath(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "src/host/sites/gamma/vars.yml", `
+	write(t, root, "src/sites/gamma/vars.yml", `
 deployment_github_allowed_repositories: guardian-intelligence/verself
 deployment_github_allowed_refs: refs/heads/main
 deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/workflows/nested/gamma-deploy.yml@refs/heads/main
@@ -297,6 +297,58 @@ func TestValidateRepoRejectsToolLayerDeploymentEngine(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "normal deployment runtime code must live under src/services/deployment-service") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRepoRejectsNomadRuntimeUserMissingFromPreflight(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "example-service" {
+  group "example-service" {
+    task "server" {
+      user = "example_service"
+    }
+  }
+}
+`)
+	write(t, root, "src/tools/site-preflight/ansible/roles/base/defaults/main.yml", `
+base_nomad_runtime_users: []
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), `missing Nomad runtime user "example_service" required by src/services/example-service/nomad.hcl`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRepoAcceptsNomadRuntimeUsersDeclaredInPreflight(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "example-service" {
+  group "example-service" {
+    task "setup" {
+      user = "root"
+    }
+    task "server" {
+      user = "example_service"
+    }
+    task "postgres" {
+      user = "postgres"
+    }
+	}
+}
+`)
+	write(t, root, "src/tools/site-preflight/ansible/roles/base/defaults/main.yml", `
+base_nomad_runtime_users:
+  - name: example_service
+    home: /var/lib/example_service
+`)
+
+	if _, err := ValidateRepo(root); err != nil {
+		t.Fatal(err)
 	}
 }
 

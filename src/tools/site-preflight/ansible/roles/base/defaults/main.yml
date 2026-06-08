@@ -1,0 +1,63 @@
+---
+base_legacy_component_systemd_units:
+  - openbao.service
+
+# Direct Nomad task users that must exist before deployment submission.
+# root/nobody are OS defaults; postgres is created by the PostgreSQL prestart task.
+base_nomad_runtime_users:
+  - name: analytics_service
+    home: /var/lib/analytics_service
+  - name: billing
+    home: /var/lib/billing
+  - name: clickhouse_operator
+    home: /var/lib/clickhouse-operator
+  - name: cloudflare_r2_control_plane
+    home: /var/lib/cloudflare_r2_control_plane
+  - name: company
+    home: /var/lib/company
+  - name: deployment_service
+    home: /var/lib/verself/deployment-service
+  - name: distribution_service
+    home: /var/lib/distribution_service
+  - name: email_service
+    home: /var/lib/email_service
+  - name: github_integration_service
+    home: /var/lib/github_integration_service
+  - name: governance_service
+    home: /var/lib/governance-service
+  - name: haproxy
+    home: /var/lib/haproxy
+  - name: iam_service
+    home: /var/lib/iam_service
+  - name: nats
+    home: /var/lib/nats
+  - name: nomad_observer
+    home: /var/lib/nomad_observer
+  - name: notifications_service
+    home: /var/lib/notifications_service
+  - name: object_storage_admin
+    home: /var/lib/object_storage_admin
+  - name: object_storage_service
+    home: /var/lib/object_storage_service
+  - name: openbao
+    home: /var/lib/openbao
+  - name: otelcol
+    home: /var/lib/otelcol
+  - name: profile_service
+    home: /var/lib/profile_service
+  - name: projects_service
+    home: /var/lib/projects_service
+  - name: sandbox_rental
+    home: /var/lib/verself/sandbox-rental
+  - name: secrets_service
+    home: /var/lib/secrets_service
+  - name: source_code_hosting_service
+    home: /var/lib/source_code_hosting_service
+  - name: spicedb
+    home: /var/lib/spicedb
+  - name: stalwart
+    home: /var/lib/stalwart
+  - name: temporal_server
+    home: /var/lib/temporal
+  - name: verself-web
+    home: /var/lib/verself-web

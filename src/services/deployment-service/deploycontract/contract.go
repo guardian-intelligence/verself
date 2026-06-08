@@ -22,6 +22,7 @@ var (
 	durationRE  = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
 	siteNameRE  = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	apiKeyRE    = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	taskUserRE  = regexp.MustCompile(`(?m)^      user\s*=\s*"([^"]+)"`)
 	allowedRoot = map[string]bool{
 		"src/infrastructure-components": true,
 		"src/integrations":              true,
@@ -99,6 +100,15 @@ type githubWorkflowStep struct {
 	Run  string `yaml:"run"`
 }
 
+type sitePreflightBaseDefaults struct {
+	BaseNomadRuntimeUsers []sitePreflightRuntimeUser `yaml:"base_nomad_runtime_users"`
+}
+
+type sitePreflightRuntimeUser struct {
+	Name string `yaml:"name"`
+	Home string `yaml:"home"`
+}
+
 func ValidateRepo(root string) (Report, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
@@ -136,6 +146,7 @@ func ValidateRepo(root string) (Report, error) {
 	if err := v.walkNomadSpecs(); err != nil {
 		return Report{}, err
 	}
+	v.validatePreflightNomadRuntimeUsers()
 	if len(v.errs) > 0 {
 		sort.Slice(v.errs, func(i, j int) bool {
 			if v.errs[i].Path != v.errs[j].Path {
@@ -149,11 +160,11 @@ func ValidateRepo(root string) (Report, error) {
 }
 
 func (v *Validator) walkSiteVars() error {
-	root := filepath.Join(v.root, "src", "host", "sites")
+	root := filepath.Join(v.root, "src", "sites")
 	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("stat src/host/sites: %w", err)
+		return fmt.Errorf("stat src/sites: %w", err)
 	}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -378,8 +389,8 @@ func deploymentRunMatches(run, site string) bool {
 
 func siteNameFromVarsRel(rel string) string {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
-	if len(parts) >= 4 && parts[0] == "src" && parts[1] == "host" && parts[2] == "sites" {
-		return parts[3]
+	if len(parts) >= 3 && parts[0] == "src" && parts[1] == "sites" {
+		return parts[2]
 	}
 	return ""
 }
@@ -624,6 +635,103 @@ func (v *Validator) walkNomadSpecs() error {
 		return fmt.Errorf("walk src nomad specs: %w", err)
 	}
 	return nil
+}
+
+func (v *Validator) validatePreflightNomadRuntimeUsers() {
+	required, err := v.collectDirectNomadRuntimeUsers()
+	if err != nil {
+		v.add("src", "collect Nomad runtime users: "+err.Error())
+		return
+	}
+	if len(required) == 0 {
+		return
+	}
+	rel := "src/tools/site-preflight/ansible/roles/base/defaults/main.yml"
+	path := filepath.Join(v.root, filepath.FromSlash(rel))
+	var defaults sitePreflightBaseDefaults
+	if !v.decodePreflightBaseDefaults(rel, path, &defaults) {
+		return
+	}
+	declared := map[string]string{}
+	for _, runtimeUser := range defaults.BaseNomadRuntimeUsers {
+		name := strings.TrimSpace(runtimeUser.Name)
+		home := strings.TrimSpace(runtimeUser.Home)
+		if name == "" {
+			v.add(rel, "base_nomad_runtime_users entry has empty name")
+			continue
+		}
+		if home == "" {
+			v.add(rel, fmt.Sprintf("base_nomad_runtime_users entry %q has empty home", name))
+		}
+		if previous, ok := declared[name]; ok {
+			v.add(rel, fmt.Sprintf("base_nomad_runtime_users entry %q duplicates %s", name, previous))
+			continue
+		}
+		declared[name] = home
+	}
+	for user, source := range required {
+		if _, ok := declared[user]; !ok {
+			v.add(rel, fmt.Sprintf("missing Nomad runtime user %q required by %s", user, source))
+		}
+	}
+}
+
+func (v *Validator) collectDirectNomadRuntimeUsers() (map[string]string, error) {
+	required := map[string]string{}
+	root := filepath.Join(v.root, "src")
+	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
+		return required, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("stat src: %w", err)
+	}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !isRuntimeUserNomadSpec(filepath.Base(path)) {
+			return nil
+		}
+		rel := v.rel(path)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			v.add(rel, "read: "+err.Error())
+			return nil
+		}
+		for _, match := range taskUserRE.FindAllStringSubmatch(string(body), -1) {
+			if len(match) != 2 {
+				continue
+			}
+			user := strings.TrimSpace(match[1])
+			if user == "" || user == "root" || user == "nobody" || user == "postgres" {
+				continue
+			}
+			if _, ok := required[user]; !ok {
+				required[user] = rel
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk src nomad specs: %w", err)
+	}
+	return required, nil
+}
+
+func (v *Validator) decodePreflightBaseDefaults(rel, path string, out *sitePreflightBaseDefaults) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		v.add(rel, "read: "+err.Error())
+		return false
+	}
+	if err := yaml.Unmarshal(body, out); err != nil {
+		v.add(rel, "decode yaml: "+err.Error())
+		return false
+	}
+	return true
+}
+
+func isRuntimeUserNomadSpec(name string) bool {
+	return name == "nomad.hcl" || strings.HasSuffix(name, ".nomad.hcl")
 }
 
 func (v *Validator) validateDeployFile(rel, path string) {

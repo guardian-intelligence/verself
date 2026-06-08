@@ -28,13 +28,13 @@ const (
 )
 
 type deployInputs struct {
-	SHA                string
-	DeployRunKey       string
-	SiteCfg            siteConfig
-	SiteModel          siteconfig.Model
-	Components         []nomadComponentDescriptor
-	Artifacts          []deploymodel.Artifact
-	Bindings           map[string]artifactBinding
+	SHA          string
+	DeployRunKey string
+	SiteCfg      siteConfig
+	SiteModel    siteconfig.Model
+	Components   []nomadComponentDescriptor
+	Artifacts    []deploymodel.Artifact
+	Bindings     map[string]artifactBinding
 }
 
 type siteConfig struct {
@@ -141,7 +141,7 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 }
 
 func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
-	path := filepath.Join(repoRoot, "src", "host", "sites", site, "site.json")
+	path := filepath.Join(repoRoot, "src", "sites", site, "site.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return siteConfig{}, fmt.Errorf("read %s: %w", path, err)

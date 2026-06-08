@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -23,6 +24,8 @@ func run(args []string) error {
 		return fmt.Errorf("usage: site-bootstrap bootstrap-deploy|inventory-write|root-handoff")
 	}
 	switch args[0] {
+	case "artifact-server":
+		return artifactServer(args[1:])
 	case "bootstrap-deploy":
 		return bootstrapDeploy(args[1:])
 	case "inventory-write":
@@ -32,6 +35,31 @@ func run(args []string) error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func artifactServer(args []string) error {
+	fs := flag.NewFlagSet("artifact-server", flag.ContinueOnError)
+	root := fs.String("root", "", "Artifact directory to serve.")
+	listen := fs.String("listen", "127.0.0.1:18733", "Loopback listen address.")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *root == "" {
+		return fmt.Errorf("artifact-server requires --root")
+	}
+	info, err := os.Stat(*root)
+	if err != nil {
+		return fmt.Errorf("stat artifact root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("artifact root %s is not a directory", *root)
+	}
+	server := &http.Server{
+		Addr:              *listen,
+		Handler:           http.FileServer(http.Dir(*root)),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return server.ListenAndServe()
 }
 
 func bootstrapDeploy(args []string) error {
@@ -142,7 +170,7 @@ func rootHandoff(args []string) error {
 }
 
 func defaultInventoryPath(site string) string {
-	return filepath.Join("src", "host", "sites", site, "inventory.ini")
+	return filepath.Join("src", "sites", site, "inventory.ini")
 }
 
 func defaultHomePath(rel string) string {

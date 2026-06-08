@@ -124,7 +124,7 @@ func cloudflareProviderClient(cfg config) (*r2control.CloudflareAPIClient, error
 	}
 	token := strings.TrimSpace(string(body))
 	if token == "" {
-		return nil, fmt.Errorf("Cloudflare API token file is empty")
+		return nil, fmt.Errorf("cloudflare API token file is empty")
 	}
 	return r2control.NewCloudflareAPIClient(token, cfg.timeout)
 }
@@ -133,7 +133,7 @@ func loadSiteTLSCertificates(cfg config) ([]siteTLSCertificate, []string, error)
 	if hasExplicitTLSConfig(cfg) {
 		return explicitSiteTLSCertificates(cfg)
 	}
-	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s: %w", path, err)

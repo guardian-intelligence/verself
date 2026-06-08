@@ -18,7 +18,7 @@ func TestRunSubmitsToDeploymentServiceHTTPBoundary(t *testing.T) {
 	const sha = "0123456789abcdef0123456789abcdef01234567"
 	repoRoot := t.TempDir()
 	writeRunTestCloudflareAccountConfig(t, repoRoot)
-	writeRunTestFile(t, repoRoot, "src/host/sites/gamma/vars.yml", `
+	writeRunTestFile(t, repoRoot, "src/sites/gamma/vars.yml", `
 verself_site: gamma
 verself_domain: gamma.verself.test
 company_domain: gamma.guardianintelligence.test

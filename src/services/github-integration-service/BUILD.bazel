@@ -38,7 +38,7 @@ spire_identity(
     key = "github_integration_service.default",
     path = "/svc/github-integration-service",
     user = "github_integration_service",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

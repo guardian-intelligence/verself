@@ -45,7 +45,7 @@ spire_identity(
     path = "/svc/nats",
     restart_units = [],
     user = "nats",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 nomad_component(

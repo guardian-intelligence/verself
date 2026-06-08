@@ -1,0 +1,96 @@
+---
+- name: "Site preflight foundation"
+  hosts: all
+  become: true
+  gather_facts: true
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - foundation
+  pre_tasks:
+    - name: Assert preflight tools artifact input
+      ansible.builtin.assert:
+        that:
+          - verself_preflight_tools_artifact is defined
+          - verself_preflight_tools_artifact | length > 0
+        fail_msg: "site.yml requires verself_preflight_tools_artifact from Bazel."
+
+    - name: Install Verself preflight tools
+      ansible.builtin.unarchive:
+        src: "{{ verself_preflight_tools_artifact }}"
+        dest: /
+        owner: root
+        group: root
+        mode: "0755"
+  roles:
+    - role: base
+      tags:
+        - base
+        - packages
+
+- name: "SPIRE bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - spire
+    - identity
+  pre_tasks:
+    - name: Assert SPIRE identity registry input
+      ansible.builtin.assert:
+        that:
+          - spire_registrations_file is defined
+          - spire_registrations_file | length > 0
+        fail_msg: "site.yml requires spire_registrations_file from Bazel."
+  roles:
+    - role: spire
+      tags:
+        - spire
+        - identity
+    - role: spire_registrations
+      tags:
+        - spire
+        - identity
+
+- name: "HAProxy edge bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - edge
+    - haproxy
+  pre_tasks:
+    - name: Assert HAProxy host artifact input
+      ansible.builtin.assert:
+        that:
+          - haproxy_host_install_artifact is defined
+          - haproxy_host_install_artifact | length > 0
+        fail_msg: "site.yml requires haproxy_host_install_artifact from Bazel."
+  roles:
+    - role: haproxy
+      tags:
+        - edge
+        - haproxy
+
+- name: "Nomad bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - nomad
+    - scheduler
+  roles:
+    - role: nomad
+      tags:
+        - nomad
+        - scheduler

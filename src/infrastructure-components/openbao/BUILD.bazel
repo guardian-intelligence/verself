@@ -19,11 +19,11 @@ pkg_tar(
     out = "openbao-runtime.tar",
     files = {
         ":bao_bin": "bin/bao",
-        "//src/infrastructure-components/openbao/cmd/openbao-bootstrap:openbao-bootstrap": "bin/openbao-bootstrap",
+        "//src/infrastructure-components/openbao/cmd/openbao-up:openbao-up": "bin/openbao-up",
     },
     modes = {
         "bin/bao": "0755",
-        "bin/openbao-bootstrap": "0755",
+        "bin/openbao-up": "0755",
     },
     visibility = ["//visibility:public"],
 )

@@ -8,23 +8,24 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/verself/deployment-service/deployengine"
+	opruntime "github.com/verself/operator-runtime/runtime"
 )
 
 const (
 	defaultNomadRemoteAddr   = "127.0.0.1:4646"
 	bootstrapArtifactRoot    = "/var/lib/verself/bootstrap/artifacts"
+	bootstrapArtifactServer  = "/opt/verself/bootstrap/bin/site-bootstrap"
+	bootstrapArtifactUnit    = "/etc/systemd/system/verself-bootstrap-artifacts.service"
+	bootstrapArtifactHTTP    = "http://127.0.0.1:18733"
 	openBaoRootKeyPath       = "/etc/verself/bootstrap/openbao-root.key"
 	bootstrapRemoteTmpPrefix = "/tmp/verself-bootstrap-artifacts-"
 )
@@ -38,23 +39,10 @@ type BootstrapDeployOptions struct {
 	Timeout       time.Duration
 }
 
-type inventoryTarget struct {
-	Host         string
-	User         string
-	Port         int
-	RecoveryHost string
-	RecoveryUser string
-	RecoveryPort int
-}
-
-type childProcess struct {
-	cmd  *exec.Cmd
-	done chan error
-}
-
 type remoteBootstrapArtifactPublisher struct {
-	target inventoryTarget
-	root   string
+	ssh     *opruntime.SSHClient
+	root    string
+	baseURL string
 }
 
 func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err error) {
@@ -75,24 +63,33 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err != nil {
 		return err
 	}
-	nomadPort, err := freeLoopbackPort()
-	if err != nil {
-		return err
-	}
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
-	if err := checkRemoteOpenBaoRootKey(ctx, target); err != nil {
+	sshClient, err := opruntime.DialSSH(ctx, opruntime.SSHOptions{
+		User:           target.User,
+		Host:           target.Host,
+		PortCandidates: target.SSHPorts(),
+	})
+	if err != nil {
+		return fmt.Errorf("bootstrap SSH connect: %w", err)
+	}
+	defer func() { err = errors.Join(err, sshClient.Close()) }()
+	if err := checkRemoteOpenBaoRootKey(ctx, sshClient); err != nil {
 		return err
 	}
 
-	sshCmd := startNomadTunnel(ctx, target, nomadPort)
-	sshProc, err := startChildProcess(sshCmd)
+	nomadForward, err := sshClient.Forward(ctx, "nomad", defaultNomadRemoteAddr)
 	if err != nil {
 		return fmt.Errorf("start Nomad recovery tunnel: %w", err)
 	}
-	defer stopChildProcess(cancel, sshProc)
-	if err := waitHTTP(ctx, "http://127.0.0.1:"+strconv.Itoa(nomadPort)+"/v1/status/leader", http.StatusOK, sshProc.done); err != nil {
+	defer func() { err = errors.Join(err, nomadForward.Close()) }()
+	nomadAddr := "http://" + nomadForward.ListenAddr
+	if err := waitHTTP(ctx, nomadAddr+"/v1/status/leader", http.StatusOK, nil); err != nil {
 		return fmt.Errorf("nomad tunnel readiness: %w", err)
+	}
+	artifactBaseURL, err := ensureRemoteBootstrapArtifactServer(ctx, sshClient, bootstrapArtifactRoot)
+	if err != nil {
+		return err
 	}
 
 	deployRunKey, err := randomPrefixedID("bootstrap")
@@ -104,9 +101,9 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 		SHA:               opts.SHA,
 		DeployRunKey:      deployRunKey,
 		RepoRoot:          opts.RepoRoot,
-		ArtifactPublisher: remoteBootstrapArtifactPublisher{target: target, root: bootstrapArtifactRoot},
-		NomadAddr:         "http://127.0.0.1:" + strconv.Itoa(nomadPort),
-		TaskUserResolver:  remoteTaskUserResolver(target),
+		ArtifactPublisher: remoteBootstrapArtifactPublisher{ssh: sshClient, root: bootstrapArtifactRoot, baseURL: artifactBaseURL},
+		NomadAddr:         nomadAddr,
+		TaskUserResolver:  remoteTaskUserResolver(sshClient),
 	})
 	if err != nil {
 		return err
@@ -148,14 +145,18 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 		if err != nil {
 			return deployengine.ArtifactPublishResult{}, err
 		}
-		if err := copyLocalFileToRemote(ctx, p.target, localPath, remoteTmp); err != nil {
+		if err := copyLocalFileToRemote(ctx, p.ssh, localPath, remoteTmp); err != nil {
 			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
 		}
 		remoteFile := remoteArtifactFile(root, req.Site, req.SHA, artifact)
-		if err := installRemoteArtifact(ctx, p.target, remoteTmp, remoteFile); err != nil {
+		if err := installRemoteArtifact(ctx, p.ssh, remoteTmp, remoteFile); err != nil {
 			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
 		}
-		sources[output] = (&url.URL{Scheme: "file", Path: remoteFile}).String()
+		source, err := remoteArtifactGetterSource(p.baseURL, root, remoteFile)
+		if err != nil {
+			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
+		}
+		sources[output] = source
 	}
 	return deployengine.ArtifactPublishResult{GetterSources: sources}, nil
 }
@@ -240,6 +241,20 @@ func remoteArtifactFile(root, site, sha string, artifact deployengine.ArtifactPu
 	return path.Join(root, safeRemoteArtifactName(site), safeRemoteArtifactName(sha), name+"-"+safeRemoteArtifactName(artifact.Output)+".tar")
 }
 
+func remoteArtifactGetterSource(baseURL, root, remoteFile string) (string, error) {
+	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid bootstrap artifact base URL %q", baseURL)
+	}
+	root = strings.TrimRight(root, "/")
+	rel, ok := strings.CutPrefix(remoteFile, root+"/")
+	if !ok || rel == "" {
+		return "", fmt.Errorf("remote artifact %s is outside bootstrap root %s", remoteFile, root)
+	}
+	parsed.Path = path.Join(parsed.Path, rel)
+	return parsed.String(), nil
+}
+
 func safeRemoteArtifactName(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -260,60 +275,126 @@ func safeRemoteArtifactName(value string) string {
 	return out
 }
 
-func copyLocalFileToRemote(ctx context.Context, target inventoryTarget, localPath, remotePath string) error {
-	cmd := scpCommand(ctx, target, localPath, remotePath)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("copy artifact over SSH: %w: %s", err, strings.TrimSpace(string(output)))
+func ensureRemoteBootstrapArtifactServer(ctx context.Context, sshClient *opruntime.SSHClient, root string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve site-bootstrap executable: %w", err)
+	}
+	if _, err := sshClient.Exec(ctx, "sudo -n install -d -o root -g root -m 0755 "+shellQuote(root)); err != nil {
+		return "", fmt.Errorf("create bootstrap artifact root: %w", err)
+	}
+	remoteTmp, err := remoteTempArtifactPath("site-bootstrap")
+	if err != nil {
+		return "", err
+	}
+	if err := copyLocalFileToRemote(ctx, sshClient, exe, remoteTmp); err != nil {
+		return "", fmt.Errorf("upload bootstrap artifact server: %w", err)
+	}
+	if err := installRemoteFile(ctx, sshClient, remoteTmp, bootstrapArtifactServer, "0755"); err != nil {
+		return "", fmt.Errorf("install bootstrap artifact server: %w", err)
+	}
+	unit := bootstrapArtifactServerUnit(root)
+	if err := writeRemoteRootFile(ctx, sshClient, bootstrapArtifactUnit, unit, "0644"); err != nil {
+		return "", fmt.Errorf("install bootstrap artifact systemd unit: %w", err)
+	}
+	command := strings.Join([]string{
+		"sudo -n systemctl daemon-reload",
+		"sudo -n systemctl enable --now verself-bootstrap-artifacts.service",
+		"sudo -n systemctl restart verself-bootstrap-artifacts.service",
+	}, "; ")
+	if _, err := sshClient.Exec(ctx, command); err != nil {
+		return "", fmt.Errorf("start bootstrap artifact server: %w", err)
+	}
+	forward, err := sshClient.Forward(ctx, "bootstrap-artifacts", strings.TrimPrefix(bootstrapArtifactHTTP, "http://"))
+	if err != nil {
+		return "", fmt.Errorf("open bootstrap artifact readiness tunnel: %w", err)
+	}
+	defer func() { _ = forward.Close() }()
+	if err := waitHTTP(ctx, "http://"+forward.ListenAddr+"/", http.StatusOK, nil); err != nil {
+		return "", fmt.Errorf("bootstrap artifact server readiness: %w", err)
+	}
+	return bootstrapArtifactHTTP, nil
+}
+
+func bootstrapArtifactServerUnit(root string) string {
+	return `[Unit]
+Description=Verself bootstrap artifact server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=` + bootstrapArtifactServer + ` artifact-server --root=` + root + ` --listen=` + strings.TrimPrefix(bootstrapArtifactHTTP, "http://") + `
+Restart=always
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=` + root + `
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target
+`
+}
+
+func copyLocalFileToRemote(ctx context.Context, sshClient *opruntime.SSHClient, localPath, remotePath string) error {
+	local, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("open artifact %s: %w", localPath, err)
+	}
+	defer func() { _ = local.Close() }()
+	remoteWord, err := opruntime.ShellWord(remotePath)
+	if err != nil {
+		return err
+	}
+	if err := sshClient.Run(ctx, "sudo -n /usr/bin/tee "+remoteWord+" >/dev/null", local, io.Discard, os.Stderr); err != nil {
+		return fmt.Errorf("copy artifact over SSH: %w", err)
 	}
 	return nil
 }
 
-func installRemoteArtifact(ctx context.Context, target inventoryTarget, remoteTmp, remoteFile string) error {
-	command := "tmp=" + shellQuote(remoteTmp) + "; dest=" + shellQuote(remoteFile) + "; trap 'rm -f \"$tmp\"' EXIT; sudo -n install -D -o root -g root -m 0644 \"$tmp\" \"$dest\"; sudo -n test -s \"$dest\""
-	cmd := sshCommand(ctx, target, command)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("install remote artifact: %w: %s", err, strings.TrimSpace(string(output)))
+func writeRemoteRootFile(ctx context.Context, sshClient *opruntime.SSHClient, remotePath, content, mode string) error {
+	remoteTmp, err := remoteTempArtifactPath(path.Base(remotePath))
+	if err != nil {
+		return err
+	}
+	tmpWord, err := opruntime.ShellWord(remoteTmp)
+	if err != nil {
+		return err
+	}
+	if err := sshClient.Run(ctx, "sudo -n /usr/bin/tee "+tmpWord+" >/dev/null", strings.NewReader(content), io.Discard, os.Stderr); err != nil {
+		return fmt.Errorf("copy remote file over SSH: %w", err)
+	}
+	return installRemoteFile(ctx, sshClient, remoteTmp, remotePath, mode)
+}
+
+func installRemoteArtifact(ctx context.Context, sshClient *opruntime.SSHClient, remoteTmp, remoteFile string) error {
+	return installRemoteFile(ctx, sshClient, remoteTmp, remoteFile, "0644")
+}
+
+func installRemoteFile(ctx context.Context, sshClient *opruntime.SSHClient, remoteTmp, remoteFile, mode string) error {
+	command := "tmp=" + shellQuote(remoteTmp) + "; dest=" + shellQuote(remoteFile) + "; trap 'rm -f \"$tmp\"' EXIT; sudo -n install -D -o root -g root -m " + shellQuote(mode) + " \"$tmp\" \"$dest\"; sudo -n test -s \"$dest\""
+	if _, err := sshClient.Exec(ctx, command); err != nil {
+		return fmt.Errorf("install remote file: %w", err)
 	}
 	return nil
 }
 
-func scpCommand(ctx context.Context, target inventoryTarget, localPath, remotePath string) *exec.Cmd {
-	args := []string{
-		"-o", "BatchMode=yes",
-		"-o", "IdentitiesOnly=yes",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=2",
-	}
-	if target.Port != 0 {
-		args = append(args, "-P", strconv.Itoa(target.Port))
-	}
-	args = append(args, localPath, scpTarget(target, remotePath))
-	cmd := exec.CommandContext(ctx, "scp", args...)
-	return cmd
-}
-
-func scpTarget(target inventoryTarget, remotePath string) string {
-	host := target.Host
-	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
-		host = "[" + host + "]"
-	}
-	return target.User + "@" + host + ":" + remotePath
-}
-
-func remoteTaskUserResolver(target inventoryTarget) deployengine.TaskUserResolver {
+func remoteTaskUserResolver(sshClient *opruntime.SSHClient) deployengine.TaskUserResolver {
 	return func(ctx context.Context, name string) (deployengine.TaskUserIdentity, error) {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			return deployengine.TaskUserIdentity{}, errors.New("task user is required")
 		}
-		cmd := sshCommand(ctx, target, "getent passwd "+shellQuote(name))
-		output, err := cmd.CombinedOutput()
+		output, err := sshClient.Exec(ctx, "getent passwd "+shellQuote(name))
 		if err != nil {
-			detail := strings.TrimSpace(string(output))
-			if detail != "" {
-				detail = ": " + detail
-			}
-			return deployengine.TaskUserIdentity{}, fmt.Errorf("lookup remote task user %q%s: %w", name, detail, err)
+			return deployengine.TaskUserIdentity{}, fmt.Errorf("lookup remote task user %q: %w", name, err)
 		}
 		return parseRemotePasswdEntry(name, string(output))
 	}
@@ -368,36 +449,9 @@ func normalizeBootstrapDeployOptions(opts BootstrapDeployOptions) BootstrapDeplo
 	return opts
 }
 
-func startNomadTunnel(ctx context.Context, target inventoryTarget, localPort int) *exec.Cmd {
-	remote := defaultNomadRemoteAddr
-	forward := "127.0.0.1:" + strconv.Itoa(localPort) + ":" + remote
-	addr := target.User + "@" + target.Host
-	args := []string{
-		"-N",
-		"-L", forward,
-		"-o", "ExitOnForwardFailure=yes",
-		"-o", "IdentitiesOnly=yes",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=2",
-	}
-	if target.Port != 0 {
-		args = append(args, "-p", strconv.Itoa(target.Port))
-	}
-	args = append(args, addr)
-	cmd := exec.CommandContext(ctx, "ssh", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd
-}
-
-func checkRemoteOpenBaoRootKey(ctx context.Context, target inventoryTarget) error {
-	cmd := sshCommand(ctx, target, openBaoRootKeyPreflightCommand())
-	if output, err := cmd.CombinedOutput(); err != nil {
-		detail := strings.TrimSpace(string(output))
-		if detail != "" {
-			detail = ": " + detail
-		}
-		return fmt.Errorf("bootstrap deploy requires the OpenBao site root key on the host at %s; rerun host convergence with the site root key first%s", openBaoRootKeyPath, detail)
+func checkRemoteOpenBaoRootKey(ctx context.Context, sshClient *opruntime.SSHClient) error {
+	if _, err := sshClient.Exec(ctx, openBaoRootKeyPreflightCommand()); err != nil {
+		return fmt.Errorf("bootstrap deploy requires the OpenBao site root key on the host at %s; rerun host convergence with the site root key first: %w", openBaoRootKeyPath, err)
 	}
 	return nil
 }
@@ -405,47 +459,6 @@ func checkRemoteOpenBaoRootKey(ctx context.Context, target inventoryTarget) erro
 func openBaoRootKeyPreflightCommand() string {
 	path := shellQuote(openBaoRootKeyPath)
 	return "sudo -n test -s " + path + " && test \"$(sudo -n stat -c '%a' " + path + ")\" = 600"
-}
-
-func sshCommand(ctx context.Context, target inventoryTarget, remoteCommand string) *exec.Cmd {
-	addr := target.User + "@" + target.Host
-	args := []string{
-		"-o", "BatchMode=yes",
-		"-o", "IdentitiesOnly=yes",
-		"-o", "ServerAliveInterval=15",
-		"-o", "ServerAliveCountMax=2",
-	}
-	if target.Port != 0 {
-		args = append(args, "-p", strconv.Itoa(target.Port))
-	}
-	args = append(args, addr, remoteCommand)
-	cmd := exec.CommandContext(ctx, "ssh", args...)
-	return cmd
-}
-
-func startChildProcess(cmd *exec.Cmd) (*childProcess, error) {
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-		close(done)
-	}()
-	return &childProcess{cmd: cmd, done: done}, nil
-}
-
-func stopChildProcess(cancel context.CancelFunc, proc *childProcess) {
-	cancel()
-	if proc == nil || proc.cmd == nil || proc.cmd.Process == nil {
-		return
-	}
-	select {
-	case <-proc.done:
-	case <-time.After(3 * time.Second):
-		_ = proc.cmd.Process.Kill()
-		<-proc.done
-	}
 }
 
 func waitHTTP(ctx context.Context, url string, want int, processDone <-chan error) error {
@@ -469,10 +482,12 @@ func waitHTTP(ctx context.Context, url string, want int, processDone <-chan erro
 		}
 		select {
 		case err, ok := <-processDone:
-			if ok && err != nil {
-				return fmt.Errorf("child process exited before readiness: %w", err)
+			if processDone != nil {
+				if ok && err != nil {
+					return fmt.Errorf("child process exited before readiness: %w", err)
+				}
+				return fmt.Errorf("child process exited before readiness")
 			}
-			return fmt.Errorf("child process exited before readiness")
 		case <-ctx.Done():
 			if lastErr != nil {
 				return fmt.Errorf("%w: %v", ctx.Err(), lastErr)
@@ -483,15 +498,6 @@ func waitHTTP(ctx context.Context, url string, want int, processDone <-chan erro
 	}
 }
 
-func freeLoopbackPort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = ln.Close() }()
-	return ln.Addr().(*net.TCPAddr).Port, nil
-}
-
 func randomPrefixedID(prefix string) (string, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
@@ -500,120 +506,24 @@ func randomPrefixedID(prefix string) (string, error) {
 	return prefix + "_" + hex.EncodeToString(raw), nil
 }
 
-func loadBootstrapInventoryTarget(path, transport string) (inventoryTarget, error) {
-	target, err := readInventoryTarget(path)
+func loadBootstrapInventoryTarget(path, transport string) (opruntime.InventoryTarget, error) {
+	target, err := opruntime.LoadInfraTarget(path)
 	if err != nil {
-		return inventoryTarget{}, err
+		return opruntime.InventoryTarget{}, err
 	}
 	switch strings.ToLower(strings.TrimSpace(transport)) {
 	case "recovery", "wireguard", "wg":
-		if target.RecoveryHost == "" {
-			return inventoryTarget{}, fmt.Errorf("inventory %s has no verself_recovery_ssh_host for recovery bootstrap deploy", path)
+		recovery, ok := target.Recovery()
+		if !ok {
+			return opruntime.InventoryTarget{}, fmt.Errorf("inventory %s has no verself_recovery_ssh_host for recovery bootstrap deploy", path)
 		}
-		user := target.RecoveryUser
-		if user == "" {
-			user = target.User
+		if recovery.User == "" {
+			recovery.User = target.User
 		}
-		return inventoryTarget{Host: target.RecoveryHost, User: user, Port: target.RecoveryPort}, nil
+		return recovery, nil
 	case "inventory", "pomerium":
-		return inventoryTarget{Host: target.Host, User: target.User, Port: target.Port}, nil
+		return target, nil
 	default:
-		return inventoryTarget{}, fmt.Errorf("ssh transport must be recovery or inventory, got %q", transport)
+		return opruntime.InventoryTarget{}, fmt.Errorf("ssh transport must be recovery or inventory, got %q", transport)
 	}
-}
-
-func readInventoryTarget(path string) (inventoryTarget, error) {
-	body, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return inventoryTarget{}, fmt.Errorf("read inventory %s: %w", path, err)
-	}
-	section := ""
-	ansibleUser := ""
-	var target *inventoryTarget
-	for _, rawLine := range strings.Split(string(body), "\n") {
-		line := strings.TrimSpace(stripInventoryComment(rawLine))
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = strings.TrimSpace(line[1 : len(line)-1])
-			continue
-		}
-		fields := strings.Fields(line)
-		if strings.HasSuffix(section, ":vars") {
-			for _, field := range fields {
-				key, value, ok := splitInventoryKV(field)
-				if ok && key == "ansible_user" {
-					ansibleUser = value
-				}
-			}
-			continue
-		}
-		if section != "infra" || target != nil || len(fields) == 0 || strings.Contains(fields[0], "=") {
-			continue
-		}
-		current := inventoryTarget{Host: fields[0]}
-		for _, field := range fields[1:] {
-			key, value, ok := splitInventoryKV(field)
-			if !ok {
-				continue
-			}
-			switch key {
-			case "ansible_host":
-				current.Host = value
-			case "ansible_user":
-				current.User = value
-			case "ansible_port":
-				port, err := parseInventoryPort(value)
-				if err != nil {
-					return inventoryTarget{}, err
-				}
-				current.Port = port
-			case "verself_recovery_ssh_host":
-				current.RecoveryHost = value
-			case "verself_recovery_ssh_user":
-				current.RecoveryUser = value
-			case "verself_recovery_ssh_port":
-				port, err := parseInventoryPort(value)
-				if err != nil {
-					return inventoryTarget{}, err
-				}
-				current.RecoveryPort = port
-			}
-		}
-		target = &current
-	}
-	if target == nil {
-		return inventoryTarget{}, fmt.Errorf("inventory %s has no [infra] host", path)
-	}
-	if target.User == "" {
-		target.User = ansibleUser
-	}
-	if target.User == "" {
-		return inventoryTarget{}, fmt.Errorf("inventory %s has no SSH user", path)
-	}
-	return *target, nil
-}
-
-func parseInventoryPort(value string) (int, error) {
-	port, err := strconv.Atoi(value)
-	if err != nil || port <= 0 || port > 65535 {
-		return 0, fmt.Errorf("invalid inventory port %q", value)
-	}
-	return port, nil
-}
-
-func stripInventoryComment(line string) string {
-	if idx := strings.IndexByte(line, '#'); idx >= 0 {
-		return line[:idx]
-	}
-	return line
-}
-
-func splitInventoryKV(field string) (string, string, bool) {
-	key, value, ok := strings.Cut(field, "=")
-	if !ok {
-		return "", "", false
-	}
-	return strings.TrimSpace(key), strings.Trim(strings.TrimSpace(value), "\"'`"), true
 }

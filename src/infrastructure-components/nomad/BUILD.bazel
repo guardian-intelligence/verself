@@ -1,0 +1,25 @@
+package(default_visibility = ["//visibility:public"])
+
+genrule(
+    name = "nomad_bin",
+    srcs = ["@nomad_tool_nomad//file"],
+    outs = ["nomad"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+unzip -q "$(location @nomad_tool_nomad//file)" -d "$$tmp"
+install -m 0755 "$$tmp/nomad" "$@"
+""",
+)
+
+filegroup(
+    name = "role_sources",
+    srcs = glob([
+        "defaults/**",
+        "handlers/**",
+        "meta/**",
+        "tasks/**",
+        "templates/**",
+    ]),
+)

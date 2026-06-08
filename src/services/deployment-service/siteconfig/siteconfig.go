@@ -90,7 +90,7 @@ func LoadCloudflareProvider(repoRoot string) (CloudflareProvider, error) {
 }
 
 func Load(repoRoot, site string) (Model, error) {
-	path := filepath.Join(repoRoot, "src", "host", "sites", site, "vars.yml")
+	path := filepath.Join(repoRoot, "src", "sites", site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return Model{}, fmt.Errorf("read %s: %w", path, err)

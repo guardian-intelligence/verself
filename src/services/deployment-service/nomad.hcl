@@ -81,7 +81,7 @@ job "deployment-service" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "deployment-service"
-        PATH = "/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        PATH = "$${NOMAD_TASK_DIR}/bin:/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         TMPDIR = "/var/lib/verself/deployment-service/tmp"
         USER = "deployment_service"

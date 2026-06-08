@@ -157,7 +157,7 @@ func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
 	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
-	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/sites/<site>/site.json.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")
@@ -172,7 +172,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.runtimeOpenBaoAddr, "runtime-openbao-addr", "", "Runtime OpenBao address for service-required secret projection. Defaults to --openbao-addr.")
 	fs.StringVar(&cfg.runtimeOpenBaoCACertFile, "runtime-openbao-ca-cert", "", "Runtime OpenBao CA certificate file. Defaults to --openbao-ca-cert, BAO_CACERT, or VAULT_CACERT.")
 	fs.StringVar(&cfg.runtimeOpenBaoTokenFile, "runtime-openbao-token-file", "", "File containing the runtime OpenBao token. Defaults to --openbao-token-file.")
-	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
+	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
 	fs.StringVar(&cfg.provider, "provider", "", "External provider for direct public-edge operations. Supported value: cloudflare.")
@@ -1158,7 +1158,7 @@ func reconcileDNS(ctx context.Context, cfg config) error {
 }
 
 func siteDNSZones(cfg config) ([]string, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
@@ -1240,7 +1240,7 @@ func (d dnsDesiredState) byZone(zone string) []dnsDesiredRecord {
 }
 
 func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
+	path := filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "vars.yml")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return dnsDesiredState{}, fmt.Errorf("read %s: %w", path, err)
@@ -1266,7 +1266,7 @@ func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
 	if publicIP == "" || publicIP == "0.0.0.0" {
 		inventoryPath := cfg.dnsInventory
 		if strings.TrimSpace(inventoryPath) == "" {
-			inventoryPath = filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "inventory.ini")
+			inventoryPath = filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "inventory.ini")
 		}
 		publicIP, err = inventoryInfraHost(inventoryPath)
 		if err != nil {
