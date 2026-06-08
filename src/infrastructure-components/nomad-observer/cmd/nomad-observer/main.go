@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -202,6 +203,7 @@ func run(ctx context.Context, cfg config) error {
 
 	nomadConfig := api.DefaultConfig()
 	nomadConfig.Address = cfg.nomadAddr
+	nomadConfig.HttpClient = nomadHTTPClient()
 	nomadClient, err := api.NewClient(nomadConfig)
 	if err != nil {
 		return fmt.Errorf("nomad client: %w", err)
@@ -226,6 +228,14 @@ func run(ctx context.Context, cfg config) error {
 	go obs.heartbeat(ctx)
 
 	return obs.streamLoop(ctx)
+}
+
+func nomadHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxConnsPerHost = 16
+	transport.MaxIdleConns = 16
+	transport.MaxIdleConnsPerHost = 4
+	return &http.Client{Transport: transport}
 }
 
 func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) error {
