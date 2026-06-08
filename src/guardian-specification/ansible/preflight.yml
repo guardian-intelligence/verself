@@ -267,6 +267,23 @@
         dest: "{{ guardian_podman_prefix }}"
         remote_src: true
 
+    # podman/crun/conmon are dynamically linked against prefix-only libs (libyajl,
+    # libgpgme, ...); podman does not propagate LD_LIBRARY_PATH to the crun it
+    # spawns, so register the prefix lib dirs in the host ld cache instead.
+    - name: Register podman prefix libraries in the loader cache
+      ansible.builtin.copy:
+        dest: /etc/ld.so.conf.d/verself-podman.conf
+        mode: "0644"
+        content: |
+          {{ guardian_podman_prefix }}/usr/lib/x86_64-linux-gnu
+          {{ guardian_podman_prefix }}/usr/lib
+
+    - name: Refresh the loader cache
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/ldconfig
+      changed_when: true
+
     - name: Stop podman before reconfiguring from the pinned prefix
       ansible.builtin.systemd:
         name: "{{ item }}"
@@ -330,6 +347,7 @@
           [engine]
           helper_binaries_dir = ["{{ guardian_podman_prefix }}/usr/lib/podman"]
           conmon_path = ["{{ guardian_podman_prefix }}/usr/bin/conmon"]
+          init_path = "{{ guardian_podman_prefix }}/usr/bin/catatonit"
           runtime = "crun"
 
           [engine.runtimes]
@@ -394,6 +412,7 @@
           Type=exec
           KillMode=process
           Environment=LD_LIBRARY_PATH={{ guardian_podman_prefix }}/usr/lib/x86_64-linux-gnu:{{ guardian_podman_prefix }}/usr/lib
+          Environment=PATH={{ guardian_podman_prefix }}/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
           ExecStart={{ guardian_podman_prefix }}/usr/bin/podman system service
 
     - name: Reload systemd for podman

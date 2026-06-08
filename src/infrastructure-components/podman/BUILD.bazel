@@ -6,6 +6,7 @@ genrule(
     name = "runtime_artifact",
     srcs = [
         "@podman_deb_adduser//file",
+        "@podman_deb_catatonit//file",
         "@podman_deb_conmon//file",
         "@podman_deb_containernetworking_plugins//file",
         "@podman_deb_crun//file",
