@@ -1,4 +1,3 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//src/infrastructure-components/spire:identity.bzl", "spire_identity_registry")
 
@@ -8,24 +7,6 @@ filegroup(
     name = "guardian_crd",
     srcs = glob(["guardian/**/*.cue"]),
     visibility = ["//visibility:public"],
-)
-
-go_library(
-    name = "spire-recover_lib",
-    srcs = ["cmd/spire-recover/main.go"],
-    importpath = "github.com/verself/infrastructure-components/spire/cmd/spire-recover",
-    visibility = ["//visibility:private"],
-)
-
-go_binary(
-    name = "spire-recover",
-    embed = [":spire-recover_lib"],
-)
-
-go_test(
-    name = "spire-recover_test",
-    srcs = ["cmd/spire-recover/main_test.go"],
-    embed = [":spire-recover_lib"],
 )
 
 genrule(
@@ -58,9 +39,9 @@ pkg_tar(
     name = "runtime_artifact",
     out = "spire-runtime.tar",
     files = {
-        ":spire-recover": "bin/spire-recover",
         ":spire_agent_bin": "bin/spire-agent",
         ":spire_server_bin": "bin/spire-server",
+        "//src/infrastructure-components/spire/cmd/spire-recover": "bin/spire-recover",
     },
     modes = {
         "bin/spire-recover": "0755",
