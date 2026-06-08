@@ -78,11 +78,10 @@ host    all       all   ::1/128      scram-sha-256
 PGHBA
 
 # Postgres only seeds bootstrap auth; services own later access changes.
-if [ ! -e /etc/postgresql/verself/pg_ident.conf ]; then
-  cat >/etc/postgresql/verself/pg_ident.conf <<PGIDENT
+cat >/etc/postgresql/verself/pg_ident.conf <<PGIDENT
 verself_services      postgres            postgres
+verself_services      deployment_service  deployment_service
 PGIDENT
-fi
 
 chown postgres:postgres /etc/postgresql/verself/postgresql.conf /etc/postgresql/verself/pg_hba.conf /etc/postgresql/verself/pg_ident.conf
 chmod 0600 /etc/postgresql/verself/postgresql.conf /etc/postgresql/verself/pg_hba.conf /etc/postgresql/verself/pg_ident.conf
@@ -102,6 +101,61 @@ if [ ! -s /var/lib/postgresql/16/verself/PG_VERSION ]; then
     -L "$runtime/usr/share/postgresql/16" \
     --pwfile="$pwfile"
 fi
+EOH
+        ]
+      }
+
+      env {
+        LD_LIBRARY_PATH = "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/x86_64-linux-gnu:$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/usr/lib/postgresql/16/lib"
+        VERSELF_POSTGRESQL_RUNTIME = "verself-artifact://postgresql-runtime"
+      }
+
+      resources {
+        cpu = 100
+        memory = 128
+      }
+    }
+
+    task "bootstrap" {
+      driver = "raw_exec"
+      user = "postgres"
+
+      lifecycle {
+        hook = "poststart"
+        sidecar = false
+      }
+
+      config {
+        command = "/bin/bash"
+        args = ["-euo", "pipefail", "-c", <<EOH
+runtime="$(realpath "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql")"
+export LD_LIBRARY_PATH="$runtime/usr/lib/x86_64-linux-gnu:$runtime/usr/lib/postgresql/16/lib"
+
+ready=0
+for _ in $(seq 1 30); do
+  if "$runtime/usr/lib/postgresql/16/bin/pg_isready" -h /var/run/postgresql -U postgres >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+if [ "$ready" != "1" ]; then
+  echo "postgresql bootstrap: server did not become ready" >&2
+  exit 1
+fi
+
+"$runtime/usr/lib/postgresql/16/bin/psql" -h /var/run/postgresql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'deployment_service') THEN
+    CREATE ROLE deployment_service LOGIN;
+  END IF;
+END
+$$;
+
+SELECT 'CREATE DATABASE deployment_service OWNER deployment_service'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'deployment_service')\gexec
+SQL
 EOH
         ]
       }
