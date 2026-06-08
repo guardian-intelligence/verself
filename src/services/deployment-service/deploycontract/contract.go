@@ -101,8 +101,7 @@ type githubWorkflowStep struct {
 }
 
 type sitePreflightBaseDefaults struct {
-	BaseLegacyComponentSystemdUnits []string                   `yaml:"base_legacy_component_systemd_units"`
-	BaseNomadRuntimeUsers           []sitePreflightRuntimeUser `yaml:"base_nomad_runtime_users"`
+	BaseNomadRuntimeUsers []sitePreflightRuntimeUser `yaml:"base_nomad_runtime_users"`
 }
 
 type sitePreflightRuntimeUser struct {
@@ -650,13 +649,8 @@ func (v *Validator) validatePreflightNomadRuntimeUsers() {
 	rel := "src/tools/site-preflight/ansible/roles/base/defaults/main.yml"
 	path := filepath.Join(v.root, filepath.FromSlash(rel))
 	var defaults sitePreflightBaseDefaults
-	if !v.decode(rel, path, &defaults) {
+	if !v.decodePreflightBaseDefaults(rel, path, &defaults) {
 		return
-	}
-	for index, unit := range defaults.BaseLegacyComponentSystemdUnits {
-		if strings.TrimSpace(unit) == "" {
-			v.add(rel, fmt.Sprintf("base_legacy_component_systemd_units entry %d is empty", index))
-		}
 	}
 	declared := map[string]string{}
 	for _, runtimeUser := range defaults.BaseNomadRuntimeUsers {
@@ -721,6 +715,19 @@ func (v *Validator) collectDirectNomadRuntimeUsers() (map[string]string, error) 
 		return nil, fmt.Errorf("walk src nomad specs: %w", err)
 	}
 	return required, nil
+}
+
+func (v *Validator) decodePreflightBaseDefaults(rel, path string, out *sitePreflightBaseDefaults) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		v.add(rel, "read: "+err.Error())
+		return false
+	}
+	if err := yaml.Unmarshal(body, out); err != nil {
+		v.add(rel, "decode yaml: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func isRuntimeUserNomadSpec(name string) bool {

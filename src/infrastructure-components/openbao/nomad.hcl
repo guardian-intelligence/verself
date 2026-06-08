@@ -216,7 +216,7 @@ PY
       }
 
       config {
-        command = "local/bin/openbao-bootstrap"
+        command = "local/bin/openbao-up"
         args = [
           "--bao=local/bin/bao",
           "--state-dir=/var/lib/verself/bootstrap/openbao",

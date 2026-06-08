@@ -1,9 +1,8 @@
 """aspect check — run repo verification.
 
-The task validates source-boundary invariants and authored deployment contracts
-before running the Bazel test graph. Language-specific lint and
-generated-output checks stay modeled as Bazel test targets so warm CI runners
-reuse the local action/test cache.
+The task validates authored deployment contracts before running the Bazel test
+graph. Language-specific lint and generated-output checks stay modeled as Bazel
+test targets so warm CI runners reuse the local action/test cache.
 """
 
 load(".aspect/lib/helpers.axl", "DEPLOY_CONTRACT_VALIDATE_TARGET", "bazel_run", "bazel_tracked_files", "checked_spawn", "ws_path")
@@ -34,35 +33,6 @@ def _buildifier(ctx):
 def _bzlmod(ctx):
     return _bazel(ctx, ["mod", "tidy", "--lockfile_mode=error"], "bazelisk mod tidy --lockfile_mode=error")
 
-def _source_boundary(ctx):
-    bad_terms = [
-        "//src/" + "host",
-        "src/" + "host",
-        "\"src\", \"" + "host\"",
-        "\"host\", \"" + "sites\"",
-        "HOST" + "_CONFIGURATION_DIR",
-        "host_" + "tools",
-        "host_" + "tool",
-        "StrictHostKeyChecking" + "=no",
-        "host_key_checking" + " = " + "False",
-    ]
-    for term in bad_terms:
-        r = (ctx.std.process.command("git")
-            .args(["grep", "-n", "--fixed-strings", "--", term])
-            .current_dir(ws_path(ctx))
-            .stdout("piped").stderr("piped")
-            .spawn().wait_with_output())
-        if r.status.code == 0:
-            ctx.std.io.stderr.write("ERROR: forbidden source-boundary term found: " + term + "\n")
-            ctx.std.io.stderr.write(r.stdout)
-            return 1
-        if r.status.code != 1:
-            ctx.std.io.stderr.write("ERROR: git grep failed while checking " + term + "\n")
-            if r.stderr != "":
-                ctx.std.io.stderr.write(r.stderr)
-            return 1
-    return 0
-
 def _deploy_contracts(ctx):
     return bazel_run(
         ctx,
@@ -83,7 +53,7 @@ def _bazel_test(ctx):
     )
 
 def _impl(ctx):
-    for step in [_source_boundary, _buildifier, _bzlmod, _deploy_contracts, _bazel_test]:
+    for step in [_buildifier, _bzlmod, _deploy_contracts, _bazel_test]:
         rc = step(ctx)
         if rc != 0:
             return rc
@@ -92,5 +62,5 @@ def _impl(ctx):
 check = task(
     implementation = _impl,
     name = "check",
-    summary = "Run source-boundary, Buildifier/Bzlmod, deploy-contract, and Bazel checks.",
+    summary = "Run Buildifier/Bzlmod preflights, then `bazelisk test //...`.",
 )

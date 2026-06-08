@@ -97,7 +97,7 @@ type wrappedKey struct {
 }
 
 func main() {
-	fs := flag.NewFlagSet("openbao-bootstrap", flag.ExitOnError)
+	fs := flag.NewFlagSet("openbao-up", flag.ExitOnError)
 	cfg := config{}
 	fs.StringVar(&cfg.action, "action", "bootstrap", "action: bootstrap or generate-root-token")
 	fs.StringVar(&cfg.bao, "bao", "bao", "bao binary path")
@@ -110,13 +110,13 @@ func main() {
 	fs.StringVar(&cfg.rootTokenOutputFile, "root-token-output-file", "", "0600 file to receive a generated temporary root token")
 	fs.Var(&cfg.unsealKeyFiles, "unseal-key-file", "unseal key file for action=generate-root-token; repeat to satisfy the threshold")
 	if err := fs.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "openbao-bootstrap: %v\n", err)
+		fmt.Fprintf(os.Stderr, "openbao-up: %v\n", err)
 		os.Exit(2)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	if err := run(ctx, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "openbao-bootstrap: %v\n", err)
+		fmt.Fprintf(os.Stderr, "openbao-up: %v\n", err)
 		os.Exit(1)
 	}
 }
