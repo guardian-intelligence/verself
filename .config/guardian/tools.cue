@@ -1,18 +1,10 @@
+// Guardian tool catalog. Each entry names the executable `guardian run <tool>`
+// resolves from the tool root (<root>/<name>/bin/<executable>): the golden image
+// closure at $GUARDIAN_TOOLS_ROOT, or the Bazel-materialized dev root under
+// .verself/tools/root. The upstream pin (url + sha256) lives once in the Bazel
+// module graph (//src/guardian-specification:guardian_tools.MODULE.bazel), never
+// restated here.
 tools: bazel: platforms: {
-	"linux/amd64": {
-		ref:        "oci.verself.sh/tools/bazel@sha256:a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f"
-		executable: "bazel"
-		admission:  "admitted"
-		mirrors: [
-			"https://releases.bazel.build/9.1.0/release/bazel-9.1.0-linux-x86_64",
-		]
-	}
-	"darwin/arm64": {
-		ref:        "oci.verself.sh/tools/bazel@sha256:084a1784fa8f0dcae77fb4e88faa15048d8149a36c947ce198508bffb060e1bb"
-		executable: "bazel"
-		admission:  "admitted"
-		mirrors: [
-			"https://releases.bazel.build/9.1.0/release/bazel-9.1.0-darwin-arm64",
-		]
-	}
+	"linux/amd64": executable:  "bazel"
+	"darwin/arm64": executable: "bazel"
 }

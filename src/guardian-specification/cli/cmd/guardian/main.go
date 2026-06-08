@@ -269,9 +269,10 @@ func runTool(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runBazelBuildTool(context.Background(), tool, toolArgs, workspaceRoot, stdout, stderr)
 	}
 	return toolrun.Exec(context.Background(), tool, toolArgs, toolrun.Options{
-		WorkDir: workspaceRoot,
-		Stdout:  stdout,
-		Stderr:  stderr,
+		WorkspaceRoot: workspaceRoot,
+		WorkDir:       workspaceRoot,
+		Stdout:        stdout,
+		Stderr:        stderr,
 	})
 }
 
@@ -294,9 +295,10 @@ func runBazelBuildTool(ctx context.Context, tool toolcatalog.ResolvedTool, args 
 		bazelArgs = append(bazelArgs, "--build_event_json_file="+bepPath)
 	}
 	code := toolrun.Exec(ctx, tool, bazelArgs, toolrun.Options{
-		WorkDir: workspaceRoot,
-		Stdout:  stdout,
-		Stderr:  stderr,
+		WorkspaceRoot: workspaceRoot,
+		WorkDir:       workspaceRoot,
+		Stdout:        stdout,
+		Stderr:        stderr,
 	})
 	if code != 0 {
 		return code
@@ -386,7 +388,7 @@ func resolveAndEnsureTool(commandName string, toolName string, stderr io.Writer)
 		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
 		return toolWhichResult{}, 1
 	}
-	path, err := toolrun.EnsureExecutable(context.Background(), tool, toolrun.Options{WorkDir: workspaceRoot, Stderr: stderr})
+	resolution, err := toolrun.Locate(tool, toolrun.Options{WorkspaceRoot: workspaceRoot, Stderr: stderr})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "%s: %v\n", commandName, err)
 		return toolWhichResult{}, 1
@@ -394,10 +396,9 @@ func resolveAndEnsureTool(commandName string, toolName string, stderr io.Writer)
 	return toolWhichResult{
 		Tool:       tool.Name,
 		Platform:   tool.Platform,
-		Ref:        tool.Ref,
-		Digest:     tool.Digest,
-		Admission:  tool.Admission,
-		Executable: path,
+		Root:       resolution.Root,
+		Source:     resolution.Source,
+		Executable: resolution.Executable,
 		Status:     "present",
 	}, 0
 }
@@ -467,9 +468,8 @@ type toolListResult struct {
 type toolWhichResult struct {
 	Tool       string `json:"tool" yaml:"tool" toml:"tool" toon:"tool"`
 	Platform   string `json:"platform" yaml:"platform" toml:"platform" toon:"platform"`
-	Ref        string `json:"ref" yaml:"ref" toml:"ref" toon:"ref"`
-	Digest     string `json:"digest" yaml:"digest" toml:"digest" toon:"digest"`
-	Admission  string `json:"admission" yaml:"admission" toml:"admission" toon:"admission"`
+	Root       string `json:"root" yaml:"root" toml:"root" toon:"root"`
+	Source     string `json:"source" yaml:"source" toml:"source" toon:"source"`
 	Executable string `json:"executable" yaml:"executable" toml:"executable" toon:"executable"`
 	Status     string `json:"status" yaml:"status" toml:"status" toon:"status"`
 }
@@ -497,8 +497,8 @@ func parseRunFlags(args []string, stderr io.Writer) (runOptions, []string, []str
 	fs.StringVar(&opts.Output, "output", "yaml", "output format: yaml | json | toml | toon")
 	fs.StringVar(&opts.BinDir, "bin-dir", "", "directory for Guardian tool shims")
 	fs.BoolVar(&opts.List, "list", false, "list catalog tools available on the current platform")
-	fs.BoolVar(&opts.Which, "which", false, "print the verified cached executable path for the tool")
-	fs.BoolVar(&opts.Verify, "verify", false, "verify digest, admission, and executable availability for the tool")
+	fs.BoolVar(&opts.Which, "which", false, "print the resolved tool-root executable path for the tool")
+	fs.BoolVar(&opts.Verify, "verify", false, "verify the tool is present and executable in the resolved tool root")
 	fs.BoolVar(&opts.InstallShims, "install-shims", false, "install Guardian tool shims into --bin-dir")
 	fs.BoolVar(&opts.Help, "h", false, "show help for guardian run")
 	fs.BoolVar(&opts.Help, "help", false, "show help for guardian run")

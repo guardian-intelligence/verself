@@ -1,3 +1,5 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
 package(default_visibility = ["//visibility:public"])
 
 genrule(
@@ -11,4 +13,28 @@ trap 'rm -rf "$$tmp"' EXIT
 dpkg-deb -x "$(location @guardian_specification_rsync_deb//file)" "$$tmp"
 install -m 0755 "$$tmp/usr/bin/rsync" "$@"
 """,
+)
+
+genrule(
+    name = "bazel_bin",
+    srcs = ["@guardian_tool_bazel//file"],
+    outs = ["bazel"],
+    cmd = "install -m 0755 $(location @guardian_tool_bazel//file) $@",
+)
+
+# The Guardian tool root: one content-addressed layer per tool laid out at
+# <name>/bin/<exe>, the convention `guardian run` resolves against. The golden
+# image extracts this into /opt/guardian/tools; `aspect dev install` extracts it
+# into .verself/tools/root via stage-zero bazel. As the catalog grows to the full
+# closure, tools are added here as additional files entries.
+pkg_tar(
+    name = "tools_root",
+    out = "guardian-tools-root.tar",
+    files = {
+        ":bazel_bin": "bazel/bin/bazel",
+    },
+    modes = {
+        "bazel/bin/bazel": "0755",
+    },
+    visibility = ["//visibility:public"],
 )

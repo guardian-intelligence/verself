@@ -353,7 +353,9 @@ func TestRunInstallShimsUsesRunFlag(t *testing.T) {
 func TestRunVerifyUsesToolFlag(t *testing.T) {
 	dir, _ := writeTestCUEDocument(t)
 	writeExecutableTestToolCatalog(t, dir)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "xdg-cache"))
+	// Clear any inherited GUARDIAN_TOOLS_ROOT so resolution uses the workspace
+	// tool root this helper materialized.
+	t.Setenv("GUARDIAN_TOOLS_ROOT", "")
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -368,8 +370,8 @@ func TestRunVerifyUsesToolFlag(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("decode tool verify: %v\n%s", err, stdout.String())
 	}
-	if result.Tool != "bazel" || result.Status != "ready" {
-		t.Fatalf("verify result = %#v, want bazel ready", result)
+	if result.Tool != "bazel" || result.Status != "ready" || result.Source != "workspace" {
+		t.Fatalf("verify result = %#v, want bazel ready from workspace", result)
 	}
 	if _, err := os.Stat(result.Executable); err != nil {
 		t.Fatalf("verified executable missing: %v", err)
@@ -488,40 +490,22 @@ func writeTestToolCatalog(t *testing.T, dir string) {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("mkdir guardian config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "tools.cue"), []byte(`tools: bazel: platforms: "linux/amd64": {
-	ref: "oci.verself.sh/tools/bazel@sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	executable: "bazel"
-	admission: "admitted"
-}
-`), 0o644); err != nil {
+	catalog := fmt.Sprintf("tools: bazel: platforms: %q: executable: \"bazel\"\n", runtime.GOOS+"/"+runtime.GOARCH)
+	if err := os.WriteFile(filepath.Join(configDir, "tools.cue"), []byte(catalog), 0o644); err != nil {
 		t.Fatalf("write tool catalog: %v", err)
 	}
 }
 
 func writeExecutableTestToolCatalog(t *testing.T, dir string) {
 	t.Helper()
-	toolPath := filepath.Join(dir, "mirror-bazel")
+	writeTestToolCatalog(t, dir)
+	toolBin := filepath.Join(dir, ".verself", "tools", "root", "bazel", "bin", "bazel")
+	if err := os.MkdirAll(filepath.Dir(toolBin), 0o755); err != nil {
+		t.Fatalf("mkdir tool root: %v", err)
+	}
 	body := []byte("#!/bin/sh\nprintf 'fake bazel: %s\\n' \"$*\"\n")
-	if err := os.WriteFile(toolPath, body, 0o755); err != nil {
-		t.Fatalf("write mirror tool: %v", err)
-	}
-	sum := sha256.Sum256(body)
-	digest := "sha256:" + hex.EncodeToString(sum[:])
-	configDir := filepath.Join(dir, ".config", "guardian")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatalf("mkdir guardian config: %v", err)
-	}
-	ref := "oci.verself.sh/tools/bazel@" + digest
-	mirror := "file://" + filepath.ToSlash(toolPath)
-	catalog := fmt.Sprintf(`tools: bazel: platforms: %q: {
-	ref: %q
-	executable: "bazel"
-	admission: "admitted"
-	mirrors: [%q]
-}
-`, runtime.GOOS+"/"+runtime.GOARCH, ref, mirror)
-	if err := os.WriteFile(filepath.Join(configDir, "tools.cue"), []byte(catalog), 0o644); err != nil {
-		t.Fatalf("write executable tool catalog: %v", err)
+	if err := os.WriteFile(toolBin, body, 0o755); err != nil {
+		t.Fatalf("write tool root bazel: %v", err)
 	}
 }
 

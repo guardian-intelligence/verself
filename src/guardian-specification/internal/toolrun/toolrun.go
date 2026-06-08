@@ -2,13 +2,9 @@ package toolrun
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,66 +13,64 @@ import (
 	"github.com/verself/guardian-specification/internal/toolcatalog"
 )
 
+// ToolsRootEnv names the environment variable the golden Guardian image injects
+// to point at its self-contained tool closure (/opt/guardian/tools). When unset,
+// the resolver uses the workspace-local root that `aspect dev install`
+// materializes. These are two explicit, declared locations — not a network-fetch
+// fallback. A requested tool that is absent under the resolved root fails loud.
+const ToolsRootEnv = "GUARDIAN_TOOLS_ROOT"
+
+// workspaceToolsRootRel is the canonical in-repo tool root for development. The
+// stage-zero `aspect dev install` path lays the catalog's tool closure here so a
+// single resolution code path serves both the deployed image and a dev checkout.
+const workspaceToolsRootRel = ".verself/tools/root"
+
 type Options struct {
-	CacheRoot string
-	WorkDir   string
-	Stdout    io.Writer
-	Stderr    io.Writer
+	WorkspaceRoot string
+	WorkDir       string
+	Stdout        io.Writer
+	Stderr        io.Writer
 }
 
-func EnsureExecutable(ctx context.Context, tool toolcatalog.ResolvedTool, opts Options) (string, error) {
-	if tool.Admission != "admitted" {
-		return "", fmt.Errorf("guardian: tool %q digest %s is not admitted", tool.Name, tool.Digest)
-	}
-	cacheRoot, err := cacheRoot(opts.CacheRoot)
+// Resolution is the located, executable tool inside the resolved tool root.
+type Resolution struct {
+	Root       string
+	Executable string
+	// Source is "image" when GUARDIAN_TOOLS_ROOT is set, "workspace" otherwise.
+	// Integrity of the bytes is anchored to the cosign-verified image manifest
+	// digest (verified once at materialization), not to a per-invocation re-hash
+	// of every binary — re-hashing bazel-sized executables on every `guardian
+	// run` would defeat the latency win the image exists to provide.
+	Source string
+}
+
+// Locate resolves a catalog tool to its on-disk executable inside the tool root.
+func Locate(tool toolcatalog.ResolvedTool, opts Options) (Resolution, error) {
+	root, source, err := toolsRoot(opts.WorkspaceRoot)
 	if err != nil {
-		return "", err
+		return Resolution{}, err
 	}
-	path := executablePath(cacheRoot, tool)
-	if ok, err := verifyFileDigest(path, tool.Digest); err != nil {
-		return "", err
-	} else if ok {
-		return path, nil
-	}
-	if len(tool.Mirrors) == 0 {
-		return "", fmt.Errorf("guardian: tool %q digest %s is absent from cache and has no mirrors", tool.Name, tool.Digest)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", fmt.Errorf("create tool cache: %w", err)
-	}
-	tmp := path + ".tmp." + fmt.Sprint(os.Getpid())
-	defer func() { _ = os.Remove(tmp) }()
-	var last error
-	for _, mirror := range tool.Mirrors {
-		if err := fetchMirror(ctx, mirror, tmp); err != nil {
-			last = err
-			continue
+	path := filepath.Join(root, tool.Name, "bin", tool.Executable)
+	info, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Resolution{}, fmt.Errorf("guardian: tool %q is absent from the tool root %s (expected %s); run `aspect dev install --install-shims` to materialize the dev tool root, or set %s to the golden image tool root", tool.Name, root, path, ToolsRootEnv)
 		}
-		if ok, err := verifyFileDigest(tmp, tool.Digest); err != nil {
-			last = err
-			continue
-		} else if !ok {
-			last = fmt.Errorf("mirror %s did not match %s", mirror, tool.Digest)
-			continue
-		}
-		if err := os.Chmod(tmp, 0o755); err != nil {
-			return "", fmt.Errorf("chmod cached tool: %w", err)
-		}
-		if err := os.Rename(tmp, path); err != nil {
-			return "", fmt.Errorf("promote cached tool: %w", err)
-		}
-		return path, nil
+		return Resolution{}, fmt.Errorf("stat tool %q: %w", tool.Name, err)
 	}
-	return "", fmt.Errorf("guardian: fetch tool %q: %w", tool.Name, last)
+	if info.IsDir() || info.Mode()&0o111 == 0 {
+		return Resolution{}, fmt.Errorf("guardian: tool %q at %s is not an executable file", tool.Name, path)
+	}
+	return Resolution{Root: root, Executable: path, Source: source}, nil
 }
 
 func Exec(ctx context.Context, tool toolcatalog.ResolvedTool, args []string, opts Options) int {
-	executable, err := EnsureExecutable(ctx, tool, opts)
+	resolution, err := Locate(tool, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(opts.Stderr, "%v\n", err)
 		return 1
 	}
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := exec.CommandContext(ctx, resolution.Executable, args...)
 	cmd.Dir = opts.WorkDir
 	cmd.Env = os.Environ()
 	cmd.Stdout = opts.Stdout
@@ -93,97 +87,15 @@ func Exec(ctx context.Context, tool toolcatalog.ResolvedTool, args []string, opt
 	return 1
 }
 
-func cacheRoot(override string) (string, error) {
-	if strings.TrimSpace(override) != "" {
-		return override, nil
-	}
-	if value := os.Getenv("XDG_CACHE_HOME"); strings.TrimSpace(value) != "" {
+func toolsRoot(workspaceRoot string) (string, string, error) {
+	if value := strings.TrimSpace(os.Getenv(ToolsRootEnv)); value != "" {
 		if !filepath.IsAbs(value) {
-			return "", fmt.Errorf("XDG_CACHE_HOME must be absolute: %s", value)
+			return "", "", fmt.Errorf("%s must be absolute: %s", ToolsRootEnv, value)
 		}
-		return filepath.Join(value, "guardian", "tools"), nil
+		return value, "image", nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
+	if strings.TrimSpace(workspaceRoot) == "" {
+		return "", "", fmt.Errorf("guardian: tool root is undetermined: set %s or run inside a Guardian workspace", ToolsRootEnv)
 	}
-	return filepath.Join(home, ".cache", "guardian", "tools"), nil
-}
-
-func executablePath(cacheRoot string, tool toolcatalog.ResolvedTool) string {
-	hexDigest := strings.TrimPrefix(tool.Digest, "sha256:")
-	return filepath.Join(cacheRoot, "sha256", hexDigest, "bin", tool.Executable)
-}
-
-func verifyFileDigest(path string, digest string) (bool, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, fmt.Errorf("open cached tool: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return false, fmt.Errorf("hash cached tool: %w", err)
-	}
-	observed := "sha256:" + hex.EncodeToString(hash.Sum(nil))
-	return observed == digest, nil
-}
-
-func fetchMirror(ctx context.Context, mirror string, dst string) error {
-	parsed, err := url.Parse(mirror)
-	if err != nil {
-		return fmt.Errorf("parse mirror %q: %w", mirror, err)
-	}
-	switch parsed.Scheme {
-	case "file":
-		return copyFile(parsed.Path, dst)
-	case "https":
-		return fetchHTTPS(ctx, mirror, dst)
-	default:
-		return fmt.Errorf("unsupported mirror scheme %q", parsed.Scheme)
-	}
-}
-
-func fetchHTTPS(ctx context.Context, mirror string, dst string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mirror, nil)
-	if err != nil {
-		return fmt.Errorf("create mirror request: %w", err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("download mirror: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download mirror returned HTTP %d", resp.StatusCode)
-	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
-	if err != nil {
-		return fmt.Errorf("create cached tool temp: %w", err)
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		return fmt.Errorf("write cached tool temp: %w", err)
-	}
-	return nil
-}
-
-func copyFile(src string, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open mirror file: %w", err)
-	}
-	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
-	if err != nil {
-		return fmt.Errorf("create cached tool temp: %w", err)
-	}
-	defer func() { _ = out.Close() }()
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("write cached tool temp: %w", err)
-	}
-	return nil
+	return filepath.Join(workspaceRoot, filepath.FromSlash(workspaceToolsRootRel)), "workspace", nil
 }

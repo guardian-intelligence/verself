@@ -26,21 +26,20 @@ type Tool struct {
 	Platforms map[string]PlatformTool `json:"platforms" yaml:"platforms" toml:"platforms" toon:"platforms"`
 }
 
+// PlatformTool is the per-platform catalog entry. The resolver needs only the
+// executable basename: the tool's bytes are carried by the golden image (or the
+// Bazel-materialized dev root) and located by convention at
+// <root>/<name>/bin/<executable>. The upstream pin (url + sha256 / OCI digest)
+// lives in the Bazel module graph, not here, so a digest is never authored in
+// two places.
 type PlatformTool struct {
-	Ref        string   `json:"ref" yaml:"ref" toml:"ref" toon:"ref"`
-	Executable string   `json:"executable" yaml:"executable" toml:"executable" toon:"executable"`
-	Admission  string   `json:"admission" yaml:"admission" toml:"admission" toon:"admission"`
-	Mirrors    []string `json:"mirrors,omitempty" yaml:"mirrors,omitempty" toml:"mirrors,omitempty" toon:"mirrors,omitempty"`
+	Executable string `json:"executable" yaml:"executable" toml:"executable" toon:"executable"`
 }
 
 type ResolvedTool struct {
 	Name       string
 	Platform   string
-	Ref        string
-	Digest     string
 	Executable string
-	Admission  string
-	Mirrors    []string
 }
 
 func Load(workspaceRoot string) (Catalog, string, error) {
@@ -110,18 +109,10 @@ func ResolveFrom(catalog Catalog, name string, platform string) (ResolvedTool, e
 	if strings.TrimSpace(spec.Executable) == "" {
 		return ResolvedTool{}, fmt.Errorf("guardian: tool %q platform %q executable is required", name, platform)
 	}
-	digest, err := digestFromRef(spec.Ref)
-	if err != nil {
-		return ResolvedTool{}, fmt.Errorf("guardian: tool %q platform %q: %w", name, platform, err)
-	}
 	return ResolvedTool{
 		Name:       name,
 		Platform:   platform,
-		Ref:        strings.TrimSpace(spec.Ref),
-		Digest:     digest,
 		Executable: strings.TrimSpace(spec.Executable),
-		Admission:  strings.TrimSpace(spec.Admission),
-		Mirrors:    append([]string(nil), spec.Mirrors...),
 	}, nil
 }
 
@@ -157,33 +148,6 @@ func discoverCatalogPath(workspaceRoot string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("guardian: tool catalog not found\nsearched:\n  %s", strings.Join(relList(workspaceRoot, searched), "\n  "))
-}
-
-func digestFromRef(ref string) (string, error) {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return "", errors.New("ref is required")
-	}
-	_, digest, ok := strings.Cut(ref, "@")
-	if !ok {
-		return "", fmt.Errorf("ref %q must be digest-addressed", ref)
-	}
-	if err := validateDigest(digest); err != nil {
-		return "", err
-	}
-	return digest, nil
-}
-
-func validateDigest(digest string) error {
-	if !strings.HasPrefix(digest, "sha256:") || len(digest) != len("sha256:")+64 {
-		return fmt.Errorf("digest %q must be sha256:<64 lowercase hex chars>", digest)
-	}
-	for _, r := range strings.TrimPrefix(digest, "sha256:") {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
-			return fmt.Errorf("digest %q must be lowercase sha256 hex", digest)
-		}
-	}
-	return nil
 }
 
 func decodeCUEFile(path string, out any) error {
