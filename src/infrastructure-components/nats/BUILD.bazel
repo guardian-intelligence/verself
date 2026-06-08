@@ -1,8 +1,13 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 
 exports_files(["tools.lock.json"])
+
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
 
 pkg_tar(
     name = "runtime_artifact",
@@ -10,31 +15,14 @@ pkg_tar(
     files = {
         "@nats_tools//tools/nats-server": "bin/nats-server",
         "@nats_tools//tools/spiffe-helper": "bin/spiffe-helper",
+        "//src/infrastructure-components/nats/cmd/nats-recover:nats-recover": "bin/nats-recover",
     },
     modes = {
+        "bin/nats-recover": "0755",
         "bin/nats-server": "0755",
         "bin/spiffe-helper": "0755",
     },
     visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
 )
 
 spire_identity(
@@ -45,17 +33,5 @@ spire_identity(
     path = "/svc/nats",
     restart_units = [],
     user = "nats",
-    visibility = ["//src/host:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "nats-runtime",
-    },
-    component = "nats",
-    deploy_phase = "platform",
-    job_id = "nats",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

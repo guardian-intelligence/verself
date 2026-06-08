@@ -12,8 +12,7 @@ bootstrap_exceptions:
     provider: cloudflare
     isolation: controller_only
     credential_keys:
-      - cloudflare_account_admin_api_token_a
-      - cloudflare_account_admin_api_token_b
+      - cloudflare_api_key
     storage_targets:
       - controller_openbao
     allowed_uses:
@@ -21,7 +20,7 @@ bootstrap_exceptions:
       - create site-scoped R2 deployment artifact child tokens
       - create site-scoped R2 object-storage child tokens
       - create recovery R2 child tokens
-    reason: Cloudflare account API tokens are account authority and must never be generated artifacts or runtime material.
+    reason: Cloudflare account API token authority must never be generated artifact or runtime material.
 integrations:
   - key: infrastructure.latitude
     provider: latitude
@@ -98,9 +97,9 @@ integrations:
     owner: src/infrastructure-components/zitadel
     purpose: identity_provider_bootstrap
     credentials:
-      - key: github-integration-service.github.oauth_client_secret
+      - key: auth-control-plane.github_login.oauth_client_secret
         source: provider_oauth_app
         target: runtime_secret
         target_store: site_openbao
-        openbao_name: github-integration-service.github.oauth_client_secret
-    reason: Zitadel is hosted inside the Verself site.
+        openbao_name: auth-control-plane.github_login.oauth_client_secret
+    reason: Zitadel is hosted inside the Verself site and reads its GitHub login client secret through auth-control-plane runtime policy.

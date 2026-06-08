@@ -1,6 +1,17 @@
-# verself.sh (Verself)
+# Guardian
+
+<top_priority>
+We're trying to turn the repo's build artifacts into an OCI image and OCI-ing all our services and containerizing everything.
+</top_priority>
 
 This is a polyglot monorepo structured as a modular monolith. It contains all code for infrastructure, service, and client applications for a multi-tenant cloud computing company. It is the only repo for the entire company.
+
+All configuration is defined as CRDs authored in CUE.
+The Guardian specification encompases: CRDs for each deployable component/service
+All service APIs are described with IDLs via Smithy
+All scripts are to be written as aspects executing typed binaries
+
+Treat violations of the above as aberrations to be corrected, not examples to be emulated.
 
 Console: verself.sh
 Auth portal: verself.sh
@@ -9,21 +20,46 @@ Company website: guardianintelligence.org
 Letters - Blog posts from the founder: guardianintelligence.org/letters
 Newsroom - Business updates: guardianintelligence.org/newsroom
 
-<available_tooling>
-Integrations: `aspect integrations`
-</available_toling>
+The Guardian software specification specifies the procedure to convert compute into personal software companies (called "Guardians"), comprised of a) source code b) a substrate upon which to run the deployed source code.
 
+```sh
+guardian preflight gamma
+guardian fly gamma --dry-run
+```
+
+`preflight` establishes a connection with a remote, uploads the repo plus built artifacts, verifies the remote workspace and artifact store, and prepares fixed host executor prerequisites. It answers: "How do I reach and prepare this target enough to run control loops?" It loads one static graph, feeds CRD values into the declared Ansible preflight playbook, and reports whether the target is ready for `fly`.
+`fly` starts with the same preflight phase and then relies on repo-owned Nomad job conventions. Promoting a specific ref of the source code to gamma/prod/beta/dev is updating the declared desired state and running the component-owned control loops.
+
+All binaries used at development time, build time, and runtime are version pinned and included in the `guardian` binary under `guardian run`. E.g. use `guardian run bazel -- query '//src/...' --output=package` to learn about the top level structure of `/src`
+
+# Disaster Recovery / `fly`
+
+A foundational invariant of the system is that is able to execute a `fly` (disaster-recovery + deployment) control loop over `(credentials, source code, network i/o)` in order to bring the system to an operable state, regardless of which component is degraded, even if the system and all off-site backups are wiped (components with backed up data like PG and ClickHouse define their state machines to prefer to restore from offsite backup when available).
+
+IOW, disaster recovery is just like any other deployment, where the control loop spends additional time in the recovery process because the system was in a degraded state.
+
+The process is `guardian preflight` -> Guardian synchronous checks to make sure the remote workspace and artifact store are verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
+
+We accomplish this by treating the repo + build artifacts as a golden image and then uploading them to the target host.
+
+1. The repo builds a the system that is deployed, byte-for-byte via Bazel + commit-pinning every dependency including developer tooling.
+2. Deployment is the process of taking credentials and a deployment target (a remote + configuration), uploading the built repo, and running `nomad` to execute control loops to bring the system to the desired state.
+
+See `docs/architecture/disaster-recovery-reference.md` for the recovery lifecycle contract, the canonical topology, condition feedback, seal/unseal posture, and the reasoning behind each decision.
+
+Keep the Guardian Specification as lean as possible. It's just a simple CRD -- do not add any concepts that should better be handled by Ansible, Nomad, or Bazel.
+
+We deliberately do not use Docker or the docker ecosystem and use more open, performant, efficient and lightweight solutions for containerization like Podman for services, OCI, 
 
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.
-
 * Expect to build with the level of rigor that would make FedRAMP HIGH certification seem realistic.
-* Keep OpenTofu provisioning lean -- It does a narrow job. Let Ansible keep the boxes in order, and Bazel for build graph and Nomad for deployment orchestration. Every layer does what it's good at.
+* Keep OpenTofu provisioning lean -- It does a narrow job. Component-owned recovery definitions declare runtime prerequisites, Bazel owns build graph and binary pins, and Nomad owns deployment orchestration. Every layer does what it's good at.
 * Use nftables for perimeter, host, and guest-boundary policy. Do not encode service-to-service reachability or dependency ports in nftables.
 * Always think of the governance, IAM, quotas, and metering story behind service changes. Customers must know who did what, what they're allowed to do, and how much they used.
 * Think in terms of providing users a "Digital Habitat" -- their sessions should be synced across devices as much as possible.
 * Never use useEffect. Very rarely, if ever, use `useState` -- prefer TanStack Query primitives for all state. Sync snowflake client-side state with the URL.
-* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Choose the appropriate language and check the result into a Bazel target. Treat scripts as core load-bearing architecture + sharp knives. They are extremely dangerous and should be carefully reviewed.
+* No shell scripts. The only exceptions are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/` because they execute before Guardian is installed.
 * Never construct OCSF events outside a single typed builder. Hand-rolled map[string]any events drift and break SIEM rules silently.
 * Treat errors as data. Use tagged and structured errors to aid control flow.
 * Avoid fallbacks and defaults. Runtime behavior should fail fast with useful logging.
@@ -38,11 +74,10 @@ Integrations: `aspect integrations`
 * Our customers will use our services via API and browser. Fix issues at the service level; don't paper over them in any one domain. E2E test the browser primarily since it exercises the same API that API consumers call directly.
 * No global, hand-managed /usr/local/bin. Let Bazel call out to package-specific toolchains for dev tools and deployment requirements.
 * For local development, packages should offer to install onto the caller's $HOME/.local/bin, requiring an explicit --bin-dir. These shims should point back to Bazel-resolved outputs or package-manager-resolved binaries and not duplicate version state.
-* When adding a binary dependency, classify it as controller/dev tooling under `src/tools/dev/binaries` or runtime/deployed tooling under the owning component's Bazel targets before exposing it through Aspect, Ansible, or deployment code.
+* When adding a binary dependency, classify it as controller/dev tooling under `src/tools/dev/binaries` or runtime/deployed tooling under the owning component's Bazel targets before exposing it through Aspect, recovery, or deployment code.
 
 * Avoid drift between what runs in CI and what you run for local development. CI is basically a warm dev box. Local development should give high confidence on correctness.
 
-* The only shell scripts allowed are the platform bootstrap entrypoints under `src/tools/dev/bootstrap/`. Scripts are load-bearing tooling and infrastructure so choose the right tool for the job (it's never a shell script).
 * Binaries are versioned, built, packaged, and installed by Bazel declarations owned by the component or tool that uses them.
 * Canonical API contracts live under `src/smithy/models/verself` as Smithy models. OpenAPI is generated for docs, ecosystem tooling, and transitional generators; it is not semantic truth.
 * Model our system's contracts in Smithy-first: OpenAPI is good at describing HTTP shapes, but Verself needs one contract to also carry correctness-critical semantics: Zanzibar permissions, OIDC audience and auth mode, SPIFFE-only internal surfaces, audit event names, idempotency policy, pagination shape, rate-limit class, request body limits, stable problem types, SDK behavior, and conformance cases. Smithy gives us a protocol-aware model with custom traits so those invariants can be validated and generated instead of re-declared in prose, route metadata, SDK code, and audit code.
@@ -59,18 +94,20 @@ Integrations: `aspect integrations`
 <repo_overview>
 See @README.md for mission and development orientation.
 
-See @src/services/iam-service/schema/verself.zed for Zanzibar policies
+See src/services/iam-service/schema/verself.zed for Zanzibar policies
+
+See src/guardian-specification/ansible/preflight.yml if installing a stateful binary that is needed prior to the Nomad agent being up (recall that the `guardian fly` command )
 
 The manifest of all discoverable public APIs is in `src/infrastructure-components/haproxy/templates/verself-discovery.json.j2`; all new public services must be registered there.
 
 * `aspect` contains lots of helpful commands under `.aspect/`. Run `aspect` to get the list of tasks and task groups and `aspect <task> --help` for more details.
-* Run `bazelisk query 'kind(".*", ...)` to learn more about how systems link together (expect large output, filter accordingly)
+* Run `guardian run bazel -- query 'kind(".*", ...)'` to learn more about how systems link together (expect large output, filter accordingly)
 
 GitHub with `actions/cache` - ~20m
 Blacksmith.sh + Sticky Disks - ~2m10s
 our internal CI - ~11s
 
-If we ever become slower than either platform, that becomes a top concern as speeding up our customers is a top priority.
+If we ever become slower than either platform, that becomes a top concern as securely speeding up our customers is a top priority.
 
 ## General Structure:
 
@@ -111,7 +148,6 @@ Single region (ASH)
 three sites (prod, gamma, dev)
 No cells
 1 node per site
-Single global writer for TigerBeetle, ClickHouse, and PG
 
 <critical>Make architecture decisions that design for the target</critical>
 
@@ -145,7 +181,7 @@ More detail in docs/architecture/release-architecture.md
 
 # Deployments
 
-Each site runs its own deployment-service. `aspect deploy` is a thin client that resolves the site endpoint, authenticates, submits a deployment request for a commit SHA, and returns a deployment ID for status, logs, and ClickHouse evidence.
+Each site runs its own deployment-service. `guardian fly <site>` promotes the checked-out repo state through repo-owned Nomad jobs and deployment-service-owned control loops.
 
 Bazel produces every byte that is deployed. If we know the commit SHA that was deployed, we should be able to byte-for-byte reproduce what's deployed by pulling the commit and building.
 
@@ -155,29 +191,17 @@ Prod/Staging/Gamma/Beta/Dev are the same code with different config loaded, diff
 
 OpenBao is the runtime secret source of truth; Nomad is the runtime secret delivery mechanism; SPIRE is workload mTLS identity, not the normal secret-delivery path.
 
-Per environment, the founder configures a single site root key that they are responsible for; it initializes, seals, and unseals OpenBao. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
+Per environment, autonomous OpenBao restart requires a configured external seal or equivalent root-of-trust mechanism; Shamir material is breakglass authority, not the normal restart path. Fresh initialization may generate operator recovery material, but the initial root token is process-local, used only to reconcile baseline state, and revoked before recovery completes. Runtime DEKs and generated site-local credentials are created after OpenBao is available. External provider authorities such as Cloudflare, Stripe, Resend full-access authority, and GitHub App private material originate from those provider control planes and are imported or rotated into OpenBao.
 
 Deployments are designed to be as efficient as possible by leveraging artifact digests. Bazel produces the artifacts. A key invariant to maintain velocity is that we skip deploying unchanged deployable components, whether that's a service, an infrastructure binary like Zitadel, a CLI, or frontend. 
 
-Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. The R2 control plane publishes immutable artifacts from those outputs. Nomad orchestrates deployments for non-host concerns. Ansible configures hosts and ensures convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
-
-The bootstrap from zero special case:
-
-1. Operator sets up provider API keys, the fresh-host SSH root password when needed, and the site root key
-    a. Minimum needed are
-        i. Compute Provider (Latitude only for now)
-        ii. Domain Registrar (Cloudflare only for now)
-        iii. Object Storage Provider (Cloudflare R2 only for now)
-    b. Additional bootstrap integrations: Stripe for payments and GitHub App private material
-2. SSH into target box, verify the OS/machine is configured correctly, apply security patches. Host convergence installs the site root key for OpenBao bootstrap.
-3. `aspect site bootstrap-deploy` builds locally, publishes the initial immutable artifacts through a temporary controller-owned R2 path, and registers the minimum Nomad jobs over recovery SSH.
-4. Nomad brings up the site-local deployment-service and control-plane jobs. After that, `aspect deploy` only submits authenticated deployment requests to deployment-service.
+Ref-based GitOps: every deployable unit must be able to deploy atomically. Bazel's job is to cache and decide when to run a unit's build pipeline. Deployment-service publishes immutable artifacts through object-storage-service and submits Nomad jobs. Nomad orchestrates recovery and deployment; component-owned jobs declare their own prerequisites and convergence. We rebuild only what we need by teaching Bazel about inputs and outputs.
 
 # Tech Stack (partial description):
 
 ## Layers:
 
-1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/host`, `src/integrations`)
+1. Host layer: machine + OS configuration and binaries/processes that run directly on our bare metal (see `src/infrastructure-components`, `src/tools/provisioning`, `src/integrations`)
 2. Contract layer: Smithy models under `src/smithy/models/verself` describe public and internal service APIs, resource shapes, auth expectations, Zanzibar/IAM metadata, audit metadata, idempotency, pagination, rate limits, error sets, SDK behavior, data handling.
 3. Service API layer: services expose the Smithy-modeled HTTP APIs at <service>.api.<domain>. Typically Huma because we are an OpenAPI shop, but services can be written in any language.
 4. Client/projection layer: OpenAPI compatibility artifacts are generated from the contract model for docs, ecosystem tooling, and public SDK transport generation where reliable. Repo-owned service calls use service-local typed clients/adapters with caller-owned SPIFFE mTLS transports.
@@ -206,7 +230,7 @@ Each service defines a /recoveryz to expose recovery health status
 * ClickHouse for all time series data (host process metrics, time-series data from APIs), logs, traces, metrics (Wide Event pattern a. la Majors et. al/Honeycomb), miscellaneous append only event ledger where realtime policy decisions or UX isn't critical. ClickHouse rows never get updated
 * TigerBeetle for financial OLTP. Currently using for financial truth and treating as a ledger -- we model debits/credits.
 * Verdaccio to mirror NPM within our system to avoid north/south traffic being routine and to enforce minimum dependency age
-* HAProxy (AWS-LC build) terminates public TLS with certificates projected by the prod Cloudflare/TLS control plane; Ansible renders bootstrap `haproxy.cfg`, and Nomad-managed upstream reconciliation owns dynamic workload backends.
+* HAProxy (AWS-LC build) terminates public TLS with certificates projected by the prod Cloudflare/TLS control plane; HAProxy-owned recovery/deployment definitions own edge config and Nomad-managed upstream reconciliation owns dynamic workload backends.
 * SPIRE for our SPIFFE implementation, x509-SVIDs everywhere except services that don't support SPIFFE where we use short-lived JWT-SVIDs.
 * Golang's River library for background jobs within a service. NATS JetStream for messaging/fan-out batch jobs between services.
 * Stalwart over JMAP for inbound mail, Resend API integration for outbound
@@ -229,12 +253,12 @@ Boundary components that sit outside the usual service shape:
 
 - `src/substrate/vm-orchestrator/` — the one privileged host daemon (Firecracker, ZFS, TAP, jailer, vm-bridge, gRPC over Unix socket). Deliberately outside the service mesh.
 - `src/substrate/vm-guest-telemetry/` — Zig, lives in the guest, streams over vsock.
-- `src/host/` — host bootstrap convergence: Ansible runner, server-tool catalog, site facts, Nomad agent, and ClickHouse initial schema.
-- `src/tools/provisioning/` — bare-metal provisioning and inventory generation (OpenTofu -> Latitude.sh).
+- `src/tools/provisioning/` — bare-metal provisioning inputs and Latitude/OpenTofu helpers.
+- `src/sites/` — authored site facts and SSH inventory consumed by deployment and recovery.
 
 Top-level landmarks:
 
-- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or raw `bazelisk`.
+- `.aspect/` — typed task surface. `aspect` (no args) lists every command; `aspect <task> --help` documents flags; `.aspect/config.axl` is the registration list. Use the typed `aspect <group> <action> --flag=value` form or `guardian run bazel -- ...`.
 - `docs/` — cross-service architecture; `docs/references/` is read-only third-party material. Grep through docs/references instead of reading directly.
 - Local Verself CLI: build `//src/verself-cli/cmd/verself:verself` and run the repo-local binary as `./bazel-bin/src/verself-cli/cmd/verself/verself_/verself ...`. Do not assume `verself` is on `PATH` in cloned workspaces.
 
@@ -285,6 +309,7 @@ Recommended that you read relevant ones directly. You can have a subagent summar
 - **Service change packet, SDK-first API design, capacity, metering, retention, waiters, observability, release evidence:** `docs/architecture/service-change-reference-architecture.md`
 - Billing architecture, credit subscription, entitlements, metering, TigerBeetle, PostgreSQL, Reconcile, refunds, plan change, dual-write, Stripe webhooks, invoices:** `src/services/billing-service/docs/billing-architecture.md`
 - **Governance audit data contract, HMAC chain, OCSF, CloudTrail parity, tamper evidence, SIEM export, audit ledger:** `src/services/governance-service/docs/audit-data-contract.md`
+- **Disaster recovery reconciler contract, recovery lifecycle topology, seal/unseal posture, condition feedback to `fly` and `/recoveryz`:** `docs/architecture/disaster-recovery-reference.md`
 
 In this repo, "ship" does not just mean merge to main. It means running on real customer devices in production after a thorough release checklist automated by CI.
 
@@ -319,9 +344,9 @@ Before writing markdown architecture in docs/ directories, please read docs/agen
 
 <output_contract>
 - When providing a recommendation, consider different plausible options and provide a differentiated recommendation leaning toward the simplest solution that best sets this project up for the *long term*. Read docs/architecture/service-change-reference-architecture.md for more information on how to think about architecture.
-- Unit tests and successful `bazelisk` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are the only admissible completion evidence. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
+- Unit tests and successful `guardian run bazel` and `aspect` commands are low signal and are not to be trusted. Real observability traces in ClickHouse post-deployment that exercise the modified code are typically the only admissible completion evidence for service changes. ClickHouse exists for producing verifiable completion artifacts. If a new schema is needed you can create one.
 - Do not speculate without evidence. Logs, traces, and host metrics are queryable in ClickHouse via `aspect db ch query --query='...'` — check them before attributing failures to transient or pre-existing factors.
-- Do not stop work short of verifying changes with a live rehearsal of a deployment via `aspect deploy`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
+- Do not stop work short of verifying changes with a live rehearsal of a deployment via `guardian fly <site>`. You have full authority to wipe databases and recreate them as needed. Prefer that over time-consuming, tricky migrations during this early phase.
 </output_contract>
 
 

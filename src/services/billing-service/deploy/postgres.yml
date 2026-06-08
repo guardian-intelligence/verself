@@ -1,4 +1,0 @@
-postgresql_service_databases:
-  - { name: billing, owner: billing }
-postgresql_peer_mappings:
-  - { system_user: billing, pg_user: billing }

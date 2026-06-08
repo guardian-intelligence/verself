@@ -1,35 +1,31 @@
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 POSTGRESQL_RUNTIME_ROOT = "opt/verself/postgresql"
 
 POSTGRESQL_MAJOR_VERSION = "16"
 
+exports_files([
+    "nomad.hcl",
+])
+
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )
 
 genrule(
     name = "postgresql_runtime",
     srcs = [
+        "@postgresql_tool_libicu74//file",
         "@postgresql_tool_libpq5//file",
+        "@postgresql_tool_libssh2_1t64//file",
         "@postgresql_tool_libxml2//file",
+        "@postgresql_tool_pgbackrest//file",
         "@postgresql_tool_postgresql_16//file",
         "@postgresql_tool_postgresql_client_16//file",
+        "//src/infrastructure-components/postgresql/cmd/postgresql-recovery",
     ],
     outs = ["postgresql_runtime.tar"],
     cmd = """
@@ -37,17 +33,27 @@ set -euo pipefail
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
 mkdir -p "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libicu74//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_libpq5//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_libssh2_1t64//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_libxml2//file)" "$$tmp/extract"
+dpkg-deb -x "$(location @postgresql_tool_pgbackrest//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_postgresql_client_16//file)" "$$tmp/extract"
 dpkg-deb -x "$(location @postgresql_tool_postgresql_16//file)" "$$tmp/extract"
 mkdir -p \
+  "$$tmp/{root}/usr/bin" \
   "$$tmp/{root}/usr/lib/postgresql" \
   "$$tmp/{root}/usr/share/postgresql" \
   "$$tmp/{root}/usr/lib/x86_64-linux-gnu"
+cp -a "$$tmp/extract/usr/bin/pgbackrest" "$$tmp/{root}/usr/bin/pgbackrest"
+install -m 0755 "$(location //src/infrastructure-components/postgresql/cmd/postgresql-recovery:postgresql-recovery)" "$$tmp/{root}/usr/bin/postgresql-recovery"
 cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresql/{major}"
 cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicudata.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicudata.so.74"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicui18n.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicui18n.so.74"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libicuuc.so.74" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libicuuc.so.74"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libpq.so.5" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libpq.so.5"
+cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libssh2.so.1" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libssh2.so.1"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libxml2.so.2" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libxml2.so.2"
 rm -rf "$$tmp/extract"
 chmod -R a+rX "$$tmp"
@@ -63,14 +69,118 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
     visibility = ["//visibility:public"],
 )
 
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":postgresql_runtime": "postgresql-runtime",
+alias(
+    name = "runtime_artifact",
+    actual = ":postgresql_runtime",
+    visibility = ["//visibility:public"],
+)
+
+# OS-level layer: krb5 + ldap satisfy postgres/pgbackrest dynamic loads;
+# python3.12 + stdlib run the in-container recovery orchestrator. Extracted at
+# natural /usr paths so ld.so and python resolve normally. /usr/bin/python3 is
+# symlinked to python3.12 (the python3-defaults wrapper is not installed).
+genrule(
+    name = "postgresql_os_deps",
+    srcs = [
+        "@postgresql_os_libgssapi_krb5_2//file",
+        "@postgresql_os_libkrb5_3//file",
+        "@postgresql_os_libk5crypto3//file",
+        "@postgresql_os_libkrb5support0//file",
+        "@postgresql_os_libkeyutils1//file",
+        "@postgresql_os_libldap2//file",
+        "@postgresql_os_libsasl2_2//file",
+        "@postgresql_os_libsasl2_modules_db//file",
+        "@postgresql_os_libexpat1//file",
+        "@postgresql_os_libreadline8t64//file",
+        "@postgresql_os_libsqlite3_0//file",
+        "@postgresql_os_libpython3_12_minimal//file",
+        "@postgresql_os_libpython3_12_stdlib//file",
+        "@postgresql_os_python3_12_minimal//file",
+        "@postgresql_os_python3_12//file",
+        "@postgresql_os_tzdata//file",
+    ],
+    outs = ["postgresql_os_deps.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/root"
+for deb in $(SRCS); do
+  dpkg-deb -x "$$deb" "$$tmp/root"
+done
+# python3-defaults is not installed; provide the conventional python3 entrypoint.
+ln -s python3.12 "$$tmp/root/usr/bin/python3"
+chmod -R a+rX "$$tmp/root"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/root" .
+""",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Identity layer: a self-contained passwd/group so podman's user="postgres"
+# resolves inside the container (the base ubuntu has no postgres user) and the
+# in-container orchestrator's pwd/grp lookups (postgres, adm) succeed. uid/gid
+# 999 is fixed so durable host bind-mount ownership is deterministic across
+# rebuilds. Overwrites the base /etc/passwd+group on purpose: the container runs
+# nothing but the postgres runtime.
+pkg_tar(
+    name = "postgresql_identity_layer",
+    files = {
+        "image/passwd": "etc/passwd",
+        "image/group": "etc/group",
     },
-    component = "postgresql",
-    deploy_phase = "pre_artifact",
-    job_id = "postgresql",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    modes = {
+        "etc/passwd": "0644",
+        "etc/group": "0644",
+    },
+)
+
+oci_image(
+    name = "postgresql_image",
+    base = "@ubuntu_noble_base_linux_amd64",
+    env = "image/postgresql.env",
+    tars = [
+        ":postgresql_os_deps",
+        ":postgresql_runtime",
+        ":postgresql_identity_layer",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "postgresql_image_load",
+    image = ":postgresql_image",
+    repo_tags = "image/postgresql.image-tags.txt",
+)
+
+filegroup(
+    name = "postgresql_image_archive",
+    srcs = [":postgresql_image_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "nomad_vars",
+    srcs = [":postgresql_image_archive"],
+    outs = ["nomad.vars.hcl"],
+    cmd = """
+set -euo pipefail
+artifact="$(location :postgresql_image_archive)"
+digest="$$(sha256sum "$$artifact" | awk '{print $$1}')"
+printf 'postgresql_image_sha256 = "%s"\\n' "$$digest" > "$@"
+""",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "fly_artifacts",
+    srcs = [
+        ":nomad_vars",
+        ":postgresql_image_archive",
+    ],
+    visibility = ["//visibility:public"],
 )

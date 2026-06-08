@@ -35,8 +35,6 @@ const (
 	productTokenClaimsFunction     = "preaccesstoken"
 	defaultZitadelBaseURL          = "http://127.0.0.1:8085"
 	defaultGithubLoginIDPName      = "GitHub"
-	defaultOpenBaoAddr             = "https://127.0.0.1:8200"
-	defaultOpenBaoCACert           = "/etc/verself/openbao/ca.pem"
 	desiredPasswordMinLength       = 8
 	desiredPasswordLockoutAttempts = 10
 )
@@ -59,6 +57,7 @@ type config struct {
 	zitadelHost         string
 	adminPAT            string
 	adminPATFile        string
+	adminPATSecretName  string
 	verselfDomain       string
 	iamServiceDomain    string
 	projectName         string
@@ -72,14 +71,17 @@ type config struct {
 	openBaoCACert       string
 	openBaoToken        string
 	openBaoTokenFile    string
+	resourceGraph       string
+	resourceName        string
 	// GitHub login IdP ("Sign in with GitHub"). Optional: when either value is
 	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
-	// login still converge. Values come from site metadata plus OpenBao-rendered
-	// Nomad credential files.
+	// login still converge. Values come from the Guardian resource graph plus
+	// OpenBao runtime secrets.
 	githubLoginIDPName          string
 	githubLoginClientID         string
 	githubLoginClientSecret     string
 	githubLoginClientSecretFile string
+	githubLoginClientSecretName string
 }
 
 type zitadelClient struct {
@@ -188,8 +190,9 @@ func run(args []string) error {
 		claimsActionPath:    defaultClaimsActionPath,
 		zitadelReadyWait:    60 * time.Second,
 		zitadelReadyBackoff: time.Second,
-		openBaoAddr:         envOr("BAO_ADDR", envOr("VAULT_ADDR", defaultOpenBaoAddr)),
-		openBaoCACert:       envOr("BAO_CACERT", envOr("VAULT_CACERT", defaultOpenBaoCACert)),
+		openBaoAddr:         "",
+		openBaoCACert:       "",
+		resourceName:        "auth-control-plane",
 
 		githubLoginIDPName:  envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
 		githubLoginClientID: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID", ""),
@@ -208,11 +211,20 @@ func run(args []string) error {
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", cfg.openBaoAddr, "OpenBao address for publishing Zitadel outputs.")
 	fs.StringVar(&cfg.openBaoCACert, "openbao-ca-cert", cfg.openBaoCACert, "OpenBao CA certificate path.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", cfg.openBaoTokenFile, "File containing the OpenBao workload token.")
+	fs.StringVar(&cfg.resourceGraph, "resource-graph", cfg.resourceGraph, "Guardian resource graph document path.")
+	fs.StringVar(&cfg.resourceName, "resource-name", cfg.resourceName, "ZitadelAuthControlPlane resource name.")
 	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientID, "github-login-client-id", cfg.githubLoginClientID, "GitHub OAuth App client id for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientSecretFile, "github-login-client-secret-file", cfg.githubLoginClientSecretFile, "File containing the GitHub OAuth App client secret.")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if cfg.resourceGraph != "" {
+		next, err := applyResourceGraphConfig(cfg)
+		if err != nil {
+			return err
+		}
+		cfg = next
 	}
 	if err := cfg.loadCredentialFiles(); err != nil {
 		return err
@@ -241,21 +253,20 @@ func run(args []string) error {
 }
 
 func (cfg *config) loadCredentialFiles() error {
-	adminPAT, err := readRequiredCredentialFile(cfg.adminPATFile, "--admin-pat-file")
-	if err != nil {
-		return err
-	}
-	cfg.adminPAT = adminPAT
 	openBaoToken, err := readRequiredCredentialFile(cfg.openBaoTokenFile, "--openbao-token-file")
 	if err != nil {
 		return err
 	}
 	cfg.openBaoToken = openBaoToken
 
-	if strings.TrimSpace(cfg.githubLoginClientSecretFile) == "" {
-		if strings.TrimSpace(cfg.githubLoginClientID) != "" {
-			return fmt.Errorf("--github-login-client-secret-file is required when --github-login-client-id is set")
+	if strings.TrimSpace(cfg.adminPATFile) != "" {
+		adminPAT, err := readRequiredCredentialFile(cfg.adminPATFile, "--admin-pat-file")
+		if err != nil {
+			return err
 		}
+		cfg.adminPAT = adminPAT
+	}
+	if strings.TrimSpace(cfg.githubLoginClientSecretFile) == "" {
 		return nil
 	}
 	secret, err := readRequiredCredentialFile(cfg.githubLoginClientSecretFile, "--github-login-client-secret-file")
@@ -287,7 +298,6 @@ func (cfg config) validate() error {
 	for name, value := range map[string]string{
 		"--zitadel-base-url":   cfg.zitadelBaseURL,
 		"--zitadel-host":       cfg.zitadelHost,
-		"--admin-pat-file":     cfg.adminPAT,
 		"--verself-domain":     cfg.verselfDomain,
 		"--iam-service-domain": cfg.iamServiceDomain,
 		"--project-name":       cfg.projectName,
@@ -302,8 +312,14 @@ func (cfg config) validate() error {
 			missing = append(missing, name)
 		}
 	}
+	if strings.TrimSpace(cfg.adminPAT) == "" && strings.TrimSpace(cfg.adminPATSecretName) == "" {
+		missing = append(missing, "--admin-pat-file or ZitadelAuthControlPlane.spec.openBao.adminPATSecretRef")
+	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
+	}
+	if strings.TrimSpace(cfg.githubLoginClientID) != "" && strings.TrimSpace(cfg.githubLoginClientSecret) == "" && strings.TrimSpace(cfg.githubLoginClientSecretName) == "" {
+		return fmt.Errorf("--github-login-client-secret-file or ZitadelAuthControlPlane.spec.openBao.githubLoginClientSecretRef is required when GitHub login client id is set")
 	}
 	if err := validateDomainFlag("--verself-domain", cfg.verselfDomain); err != nil {
 		return err
@@ -331,6 +347,100 @@ func validateDomainFlag(name, value string) error {
 	return nil
 }
 
+type guardianDocument struct {
+	Entrypoint json.RawMessage    `json:"entrypoint,omitempty"`
+	Resources  []guardianResource `json:"resources"`
+}
+
+type guardianResource struct {
+	APIVersion string          `json:"apiVersion"`
+	Kind       string          `json:"kind"`
+	Metadata   resourceMeta    `json:"metadata"`
+	Spec       json.RawMessage `json:"spec"`
+}
+
+type resourceMeta struct {
+	Name string `json:"name"`
+}
+
+type objectRef struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+type authControlPlaneSpec struct {
+	ZitadelBaseURL   string `json:"zitadelBaseURL"`
+	ZitadelHost      string `json:"zitadelHost"`
+	VerselfDomain    string `json:"verselfDomain"`
+	IAMServiceDomain string `json:"iamServiceDomain"`
+	ProjectName      string `json:"projectName"`
+	BrowserAppName   string `json:"browserAppName"`
+	CLIAppName       string `json:"cliAppName"`
+	ClaimsTargetName string `json:"claimsTargetName"`
+	ClaimsActionPath string `json:"claimsActionPath"`
+	OpenBao          struct {
+		Address                    string     `json:"address"`
+		CACert                     string     `json:"caCert"`
+		AdminPATSecretRef          objectRef  `json:"adminPATSecretRef"`
+		GithubLoginClientID        string     `json:"githubLoginClientID"`
+		GithubLoginClientSecretRef *objectRef `json:"githubLoginClientSecretRef"`
+	} `json:"openBao"`
+}
+
+func applyResourceGraphConfig(cfg config) (config, error) {
+	body, err := os.ReadFile(cfg.resourceGraph)
+	if err != nil {
+		return config{}, fmt.Errorf("read Guardian resource graph: %w", err)
+	}
+	var doc guardianDocument
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&doc); err != nil {
+		return config{}, fmt.Errorf("decode Guardian resource graph: %w", err)
+	}
+	name := strings.TrimSpace(cfg.resourceName)
+	if name == "" {
+		name = "auth-control-plane"
+	}
+	var matches []guardianResource
+	for _, resource := range doc.Resources {
+		if resource.APIVersion == "zitadel.guardianintelligence.org/v1alpha1" && resource.Kind == "ZitadelAuthControlPlane" && resource.Metadata.Name == name {
+			matches = append(matches, resource)
+		}
+	}
+	if len(matches) != 1 {
+		return config{}, fmt.Errorf("expected exactly one ZitadelAuthControlPlane resource named %q, found %d", name, len(matches))
+	}
+	var spec authControlPlaneSpec
+	specDecoder := json.NewDecoder(bytes.NewReader(matches[0].Spec))
+	specDecoder.DisallowUnknownFields()
+	if err := specDecoder.Decode(&spec); err != nil {
+		return config{}, fmt.Errorf("decode ZitadelAuthControlPlane %q: %w", name, err)
+	}
+	cfg.zitadelBaseURL = spec.ZitadelBaseURL
+	cfg.zitadelHost = spec.ZitadelHost
+	cfg.verselfDomain = spec.VerselfDomain
+	cfg.iamServiceDomain = spec.IAMServiceDomain
+	cfg.projectName = spec.ProjectName
+	cfg.browserAppName = spec.BrowserAppName
+	cfg.cliAppName = spec.CLIAppName
+	cfg.claimsTargetName = spec.ClaimsTargetName
+	cfg.claimsActionPath = spec.ClaimsActionPath
+	cfg.openBaoAddr = spec.OpenBao.Address
+	cfg.openBaoCACert = spec.OpenBao.CACert
+	cfg.adminPATSecretName = refName(spec.OpenBao.AdminPATSecretRef)
+	cfg.githubLoginClientID = strings.TrimSpace(spec.OpenBao.GithubLoginClientID)
+	if spec.OpenBao.GithubLoginClientSecretRef != nil {
+		cfg.githubLoginClientSecretName = refName(*spec.OpenBao.GithubLoginClientSecretRef)
+	}
+	return cfg, nil
+}
+
+func refName(ref objectRef) string {
+	return strings.TrimSpace(ref.Name)
+}
+
 func initTelemetry(ctx context.Context) (func(context.Context) error, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -349,6 +459,17 @@ func apply(ctx context.Context, cfg config) error {
 		attribute.String("zitadel.host", cfg.zitadelHost),
 		attribute.String("verself.domain", cfg.verselfDomain),
 	)
+	secrets, err := newRuntimeSecretStore(cfg)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := loadRuntimeSecrets(ctx, secrets, &cfg); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
 	if err := waitForZitadel(ctx, cfg); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -359,12 +480,6 @@ func apply(ctx context.Context, cfg config) error {
 		hostHeader: cfg.zitadelHost,
 		token:      strings.TrimSpace(cfg.adminPAT),
 		client:     &http.Client{Timeout: 5 * time.Second},
-	}
-	secrets, err := newRuntimeSecretStore(cfg)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
 	}
 	if err := client.EnsurePasswordPolicies(ctx); err != nil {
 		span.RecordError(err)
@@ -453,6 +568,31 @@ func ensureRuntimeAudiences(ctx context.Context, secrets *runtimeSecretStore, pr
 	if err := secrets.writeRuntimeSecret(ctx, iamAuthAudienceSecret, projectID); err != nil {
 		return fmt.Errorf("write iam-service auth audience: %w", err)
 	}
+	return nil
+}
+
+func loadRuntimeSecrets(ctx context.Context, secrets *runtimeSecretStore, cfg *config) error {
+	if strings.TrimSpace(cfg.adminPAT) == "" {
+		value, found, err := secrets.readRuntimeSecret(ctx, cfg.adminPATSecretName)
+		if err != nil {
+			return fmt.Errorf("read Zitadel admin PAT: %w", err)
+		}
+		if !found || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("OpenBao runtime secret %s is empty or missing", cfg.adminPATSecretName)
+		}
+		cfg.adminPAT = value
+	}
+	if strings.TrimSpace(cfg.githubLoginClientID) == "" || strings.TrimSpace(cfg.githubLoginClientSecret) != "" {
+		return nil
+	}
+	value, found, err := secrets.readRuntimeSecret(ctx, cfg.githubLoginClientSecretName)
+	if err != nil {
+		return fmt.Errorf("read GitHub login client secret: %w", err)
+	}
+	if !found || strings.TrimSpace(value) == "" {
+		return fmt.Errorf("OpenBao runtime secret %s is empty or missing", cfg.githubLoginClientSecretName)
+	}
+	cfg.githubLoginClientSecret = value
 	return nil
 }
 

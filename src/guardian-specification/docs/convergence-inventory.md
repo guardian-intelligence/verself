@@ -1,0 +1,191 @@
+# Convergence Inventory
+
+This inventory records the current disaster-recovery cutover shape. It is not a
+historical incident log.
+
+## Data Model
+
+The source of truth is the Guardian CUE site graph plus component CRDs. Static
+deployment facts live with the owning component, not in a centralized deployment
+declaration layer. Bazel emits deployable artifacts, artifact metadata,
+component-owned `nomad.hcl`, and component-owned generated `nomad.vars.hcl`.
+
+Artifact promotion is content-addressed:
+
+- Bazel reports the digest for each fly artifact.
+- Guardian uploads build outputs under `<repoRoot>/artifacts/sha256/<digest>`.
+- Guardian no longer synchronizes a wholesale `bazel-bin` tree to the target.
+- Nomad receives concrete HCL vars: `repo_root`, `artifact_root`, `site`, and
+  the component-owned var file.
+- Components use those vars inside `nomad.hcl`.
+- Unchanged digests mean no byte upload and no meaningful Nomad job change.
+
+Secrets are runtime resources:
+
+- Provider authority originates outside the repo and is imported or rotated into
+  OpenBao.
+- Generated site-local credentials are produced by the component responsible for
+  the integration.
+- Consumers declare required `SecretPath` references or health dependencies.
+- Missing or unhealthy credentials cause allocation failure or recovery failure
+  with structured evidence.
+
+## State Machines
+
+Before:
+
+- Static `src/**/deploy/*.yml` files declared routes, environment, secrets,
+  databases, and canary gates.
+- Guardian deployment code consumed centralized declarations.
+- Component-specific Nomad submission and monitoring logic leaked into Guardian.
+- Artifact upload was broad `bazel-bin` synchronization.
+- Canary intent was represented by static gate files.
+
+After:
+
+- `guardian fly`: load site graph -> build `fly_artifacts` -> upload changed
+  digests -> preflight root services -> plan and submit Nomad jobs with var
+  files -> poll evaluations/allocations -> emit evidence.
+- Component recovery: Nomad allocation starts -> prestart/templates resolve
+  secrets -> reconcile task applies runtime state -> service task reaches
+  healthy -> `/recoveryz` and ClickHouse evidence confirm.
+- OpenBao: absent/uninitialized -> init or restore -> unseal -> configure
+  mounts, policies, and Nomad JWT roles -> generated/imported secret authority
+  available. Existing initialized gamma state additionally needs an
+  operator-authorized reconcile for missing roles; preflight does not retain a
+  root token.
+- Credentials: missing -> producer obtains or imports authority -> producer
+  writes OpenBao secret with metadata -> consumer allocation validates ->
+  healthy, expired, revoked, or unhealthy evidence.
+- Canary/promotion: component emits recovery and health evidence -> canary
+  runner records success, failure, or skipped -> promotion decision consumes
+  evidence.
+
+## Current Gamma Inventory
+
+| Component | Current convergence owner | Current status | Next proof |
+| --- | --- | --- | --- |
+| Guardian preflight | Guardian CLI + Ansible preflight playbook | Hermetic: no `apt` and no PyPI on the preflight path. rsync is seeded over ssh from a pinned `.deb` and driven with `--rsync-path`; ansible-core runs from a reproducible, offline, controller-side bundle (no `uvx --from`). Uploads the workspace graph plus content-addressed Bazel outputs and prepares root services; verified on gamma from wiped OpenBao/Nomad state | Keep fast path and wiped-host path green |
+| OpenBao | Preflight root service via `openbao-recover` and systemd | Installs, starts, initializes/restores, unseals, bootstraps `SecretPath` KV mounts, generated secret values, import handoff, and Nomad JWT auth, then revokes fresh init root token | Fresh gamma wipe with Cloudflare import |
+| Nomad | Preflight root service via systemd | Starts the agent, exposes workload-identity JWKS before OpenBao JWT auth setup, and validates the Podman driver | Add the next component job to the fly loop |
+| Podman | Preflight root prerequisite | Installed from the pinned noble `.deb` closure (`//src/infrastructure-components/podman:runtime_artifact`, bundled as the `.deb` files) via an offline `dpkg -i ./*.deb` — no `apt install` archive fetch. dpkg owns placement, ldconfig, `/usr/libexec/podman/catatonit`, helper dirs, the stock `podman.socket`/`.service`, and stock `/etc/containers` config, so the "could not load shared library / not found in PATH" class is structurally impossible. Verified offline in a clean container; live verification is the Nomad podman driver reporting Detected+Healthy on a fresh node | More services run from repo-local image archives |
+| Cloudflare Control Plane | Component-owned Nomad recovery job | Converged on gamma after operator import; account-admin and R2 recovery authority are now written through OpenBao | Re-run from wiped gamma and confirm same path |
+| PostgreSQL | Component-owned Nomad recovery job | Converged to healthy on gamma under the podman driver. The reliability chain that gated steady state is fixed in `nomad.hcl`: a `provision-host-dirs` prestart creates the durable + socket bind sources; server/reconcile carry `mode=delay` restart stanzas so a slow start no longer SIGKILLs the alloc; `clear_stale_postmaster` clears a namespace-local stale `postmaster.pid` (under `init=true` the wrapper is pid 2, so the old `os.kill` liveness check self-aliased); `stanza-create` is unconditional + idempotent; pgBackRest reaches R2 via a host `/etc/ssl/certs` mount + `repo1-s3-ca-file`. Verified: `report.json status=healthy`, 16 service databases + 17 roles, pgBackRest full backup `20260608-091822F` ok | After an OpenBao wipe regenerates `postgresql.pgbackrest.cipher_pass`, reset the stale R2 stanza (`stop` / `stanza-delete --force` / `stanza-create`); fold CA roots into the image so the host `/etc/ssl/certs` mount becomes unnecessary |
+| Static deployment facts | Guardian CRDs and site graph | PostgreSQL databases, public routes, runtime credential references, and promotion signals are expressed in the graph instead of a separate declaration layer | Add graph validators for cross-resource invariants |
+| Runtime secrets | Producer-owned component recovery jobs plus OpenBao | Generated values are created by OpenBao bootstrap or by the provider integration that owns the external API; consumers reference `SecretPath` resources and fail their allocations when required credentials are absent or unhealthy | Add component-owned health conditions for produced credentials and consumer prestart checks |
+| Profile Service | Component-owned Nomad job | First service cutover to OCI/Podman; static auth audience is in the CRD | Nomad alloc runs migration and service from `docker-archive:` |
+| Distribution Service | Component-owned Nomad job | Cut over to OCI/Podman; static auth audience and release policy inputs are in the CRD | Nomad alloc runs migration and service from `docker-archive:` |
+
+## Observed Errors
+
+| Component | Error | Root cause | Resolution |
+| --- | --- | --- | --- |
+| Deployment artifact identity | deploy/fly must submit stable Nomad jobs from Bazel-owned bytes | OCI-native services use Bazel-produced image archives and job vars owned by the component package | unchanged jobs submit the same bytes and metadata, so Nomad receives a stable jobspec |
+| OpenBao operator import | account-admin import returned OpenBao 403 after decrypting init material | the import token was a child of the transient initial root token and was revoked when the initial root token was revoked | create the short-lived operator-import token as an orphan token before revoking the initial root token |
+| Cloudflare recovery OCI task | Cloudflare API verification failed with `x509: certificate signed by unknown authority` | scratch-style OCI image had no CA trust roots | mount host `/etc/ssl/certs` read-only into the recovery task |
+| Cloudflare certificate issuance | certificate writer failed with `mkdir /etc/haproxy: read-only file system` | recovery task root filesystem is read-only, while TLS output is intentionally `/etc/haproxy/certs` for HAProxy consumption | component-owned root prestart creates `/etc/haproxy/certs`; recovery task mounts `/etc/haproxy` read-write |
+| PostgreSQL Nomad Vault token | allocation failed before task start with `role "postgresql-runtime" could not be found` | gamma OpenBao was initialized before PostgreSQL's workload role existed, and no operator authority was available to mutate auth roles in-place | fresh OpenBao bootstrap creates `postgresql-runtime`; the disaster-recovery path (wipe the raft store, re-fly) is the supported fix and was verified on gamma — the role-not-found error is gone and a fresh allocation starts |
+| PostgreSQL setup info decode | setup prestart crashed in `backup_repository_status` with `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc5` while `json.loads`-ing a `text=True` capture of `postgresql-recovery --action=info` | the recovery binary's pgBackRest `info` output against the fresh R2 repo contained a non-utf8 byte, so the strict-utf8 capture crashed before JSON parsing | resolved (`sanitizeUTF8` in postgresql-recovery; verified on gamma, setup exits 0). Clearing it exposed a downstream chain since fixed in `nomad.hcl` — postmaster PID-namespace staleness under `init=true`, the reconcile/restart supervision race (Exit 143), host-dir provisioning, and pgBackRest R2 CA trust; see the PostgreSQL row above |
+| Podman API service crash on reconverge | `database graph driver "" does not match our graph driver "overlay": database configuration mismatch`; the Nomad podman driver then reports `Cannot connect to any Podman socket` | a stale `/var/lib/containers/storage` left by a prior (apt) podman conflicts with the pinned prefix's overlay `storage.conf` | the full preflight path stops podman and clears `/var/lib/containers/storage` + `/run/containers/storage` before reconfiguring, so the prefix initializes storage cleanly |
+| Duplicate deployment facts | component facts were declared outside the component CRD/site graph contract | duplicate declaration layers split validation and ownership | express deployment facts once in component CRDs/site graph and component-owned Nomad vars |
+
+## Current Rules
+
+- OpenBao is not a Nomad job.
+- OpenBao recovery only bootstraps generic trust-store substrate: KV v2 mounts
+  implied by `SecretPath`, generated `source: generated` values, encrypted
+  operator-import handoff for `source: operatorImport`, and Nomad workload JWT
+  roles derived from root-service substrate needs.
+- OpenBao recovery does not import provider credentials. Existing initialized
+  stores require operator authority before new OpenBao auth roles can be added.
+- Services run as OCI images through the Nomad Podman driver. Podman, rsync, and
+  ansible-core are installed from pinned Bazel artifacts (deb closures / offline
+  bundle), never from the Ubuntu archive or PyPI during preflight.
+- `guardian run <tool>` resolves every pinned tool from the generated catalog
+  (`.config/guardian/tools.cue`, produced from the Bazel pin graph and gated by a
+  diff_test); tool digests are not authored in more than one place.
+- OCI-bound Go binaries are built static so scratch-style image layers do not
+  depend on host distro libraries.
+- Image archive and runtime artifact digests must be part of component-owned
+  generated Nomad vars, so changed bytes produce a new Nomad evaluation.
+- Batch recovery jobs skip when the same image digest has already completed,
+  but a failed or lost batch allocation is purged and resubmitted so operator
+  imports can be retried without changing job bytes.
+- The repo upload is source and generated graph state. `guardian run bazel --
+  build //src/guardian-specification/examples/<site>:fly_artifacts` writes
+  Bazel build events to `.guardian/build/build-events.json`, and the preflight
+  playbook uploads the reported outputs once by SHA-256 digest under
+  `<repoRoot>/artifacts/sha256`.
+- `guardian fly` plans each declared Nomad job, submits only changed jobs with
+  Nomad's plan check index, and treats unchanged plans as successful no-ops.
+- Component packages own their Nomad jobs, OCI image/archive outputs, and
+  component CRD schemas.
+- PostgreSQL databases, public routes, runtime credential references, and
+  promotion signals are expressed in component CRDs and the site graph.
+- No fixed host ports for services. Nomad allocates dynamic ports.
+- No numeric UID/GID contracts. Host accounts are reconciled by name only when a
+  current host boundary requires a host identity.
+- Static nonsecret configuration belongs in component CRDs.
+- Secret values originate from OpenBao or provider control planes after the
+  trust store is available. The component that owns the provider integration
+  produces the provider credential; consumers only declare typed references and
+  fail allocation startup when required credentials are missing, expired, or
+  unhealthy.
+
+## Gamma Secret Authority
+
+For the current gamma fly loop, Cloudflare has the provider authority needed to
+reconcile the Cloudflare control-plane job: the account-admin import path
+completed and the R2 recovery authority is available through OpenBao.
+
+PostgreSQL is not blocked on a provider secret. It is blocked on OpenBao auth
+state: the initialized gamma OpenBao store does not currently expose the
+`postgresql-runtime` Nomad JWT role needed by the PostgreSQL allocation. There
+are two valid ways forward:
+
+- wipe/re-bootstrap OpenBao so preflight recreates the auth role set from the
+  current resource graph;
+- run an explicit operator-authenticated OpenBao reconcile against the existing
+  store.
+
+The first path proves disaster recovery from current source. The second path is
+the day-two mutation path and needs an explicit operator authority flow, because
+preflight intentionally does not retain root authority after bootstrap.
+
+## Dynamic Credential Pattern
+
+Provider credentials are owned by the component that integrates with the
+provider. Examples:
+
+- Cloudflare Control Plane owns Cloudflare account/R2 child credentials.
+- Source Code Hosting owns Forgejo automation/webhook credentials.
+- Email integration owns Resend child API keys.
+
+The producer job authenticates to OpenBao with Nomad workload identity, creates
+or rotates the provider credential, writes the value and metadata to OpenBao,
+and emits provider-health evidence. Consumer jobs read only the referenced
+OpenBao path and include a prestart or startup check that fails loudly when the
+credential is absent, expired too soon, scoped incorrectly, or marked unhealthy.
+
+Promotion gates are not static files. A promotion controller can consume
+component health, provider canary evidence, `/recoveryz`, Nomad allocation
+state, and ClickHouse rows. Spinnaker or another canary engine may make
+promotion decisions from that evidence, but basic `guardian fly` convergence
+does not depend on a separate gate declaration layer.
+
+## First Cutover Target
+
+`profile-service` is the first service cutover because it had both legacy
+patterns directly:
+
+- a static Zitadel audience rendered through OpenBao/Nomad templates;
+- fixed numeric UID/GID repair.
+
+The new shape is:
+
+- `ProfileService.spec.auth.audience` is static CRD configuration;
+- the Nomad job projects the resource graph and OCI archive into a
+  service-readable runtime root;
+- `migrate` and `serve` run through the Podman driver from the projected image;
+- service checks and HAProxy discovery continue to use Nomad service names and
+  dynamic ports.

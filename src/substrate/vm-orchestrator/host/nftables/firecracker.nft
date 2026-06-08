@@ -1,8 +1,8 @@
 # Owner-local nftables file.
 #!/usr/sbin/nft -f
 # Firecracker guest networking: NAT + forwarding for the guest pool.
-# The uplink interface placeholder below is substituted by the firecracker
-# Ansible role at deploy time.
+# The uplink interface placeholder below is substituted by vm-orchestrator
+# recovery before the ruleset is loaded.
 
 table ip verself_firecracker
 delete table ip verself_firecracker

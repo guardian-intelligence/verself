@@ -1,3 +1,23 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
+variable "source_code_hosting_service_resource_name" {
+  type    = string
+  default = "source-code-hosting-service"
+}
+
+variable "source_code_hosting_service_runtime_root" {
+  type    = string
+  default = "/var/lib/source-code-hosting-service/runtime"
+}
+
+variable "source_code_hosting_service_projected_graph" {
+  type    = string
+  default = "/run/verself/recovery/source-code-hosting-service/document.json"
+}
+
 job "source-code-hosting-service" {
   name = "source-code-hosting-service"
   datacenters = ["*"]
@@ -13,89 +33,35 @@ job "source-code-hosting-service" {
         host_network = "loopback"
       }
     }
-    task "source-code-hosting-service-migrate" {
-      driver = "raw_exec"
-      user = "source_code_hosting_service"
-      vault {
-        role = "source-code-hosting-service-runtime"
-      }
 
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
+    task "setup" {
+      driver = "raw_exec"
+      user = "root"
 
       lifecycle {
         hook = "prestart"
         sidecar = false
       }
-      artifact {
-        source = "verself-artifact://source-code-hosting-service"
-        destination = "local"
-        chown = true
-      }
+
       config {
-        args = ["migrate", "up"]
-        command = "local/bin/source-code-hosting-service"
+        command = "${var.guardian_repo_root}/bazel-bin/src/services/source-code-hosting-service/cmd/source-code-hosting-service/source-code-hosting-service_/source-code-hosting-service"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.source_code_hosting_service_resource_name}",
+          "--runtime-root=${var.source_code_hosting_service_runtime_root}",
+          "--projected-graph=${var.source_code_hosting_service_projected_graph}",
+          "--migrate",
+        ]
       }
-      env {
-        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "source-code-hosting-service-migration"
-        SOURCE_FORGEJO_OWNER = "forgejo-automation"
-        SOURCE_PUBLIC_BASE_URL = "__VERSELF_FORGEJO_BASE_URL__"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
-        VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
-        VERSELF_PG_DSN = "postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "8"
-        VERSELF_PG_MIN_CONNS = "1"
-        VERSELF_SUPERVISOR = "nomad"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/webhook-secret"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
+
       resources {
         cpu = 100
         memory = 128
       }
-      template {
-        change_mode = "restart"
-        destination = "secrets/forgejo.env"
-        perms = "0600"
-        data = <<-EOT
-SOURCE_FORGEJO_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/forgejo-automation-token"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
     }
+
     task "source-code-hosting-service" {
       driver = "raw_exec"
       user = "source_code_hosting_service"
@@ -105,50 +71,57 @@ EOT
       vault {
         role = "source-code-hosting-service-runtime"
       }
+
       identity {
         name = "vault_default"
         aud  = ["vault.io"]
         ttl  = "1h"
       }
-      artifact {
-        source = "verself-artifact://source-code-hosting-service"
-        destination = "local"
-        chown = true
-      }
+
       config {
-        command = "local/bin/source-code-hosting-service"
+        command = "${var.source_code_hosting_service_runtime_root}/current/bin/source-code-hosting-service"
+        args = [
+          "--resource-graph=${var.source_code_hosting_service_projected_graph}",
+          "--resource-name=${var.source_code_hosting_service_resource_name}",
+          "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
+          "--internal-listen-addr=127.0.0.1:$${NOMAD_PORT_internal_https}",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "source-code-hosting-service"
-        SOURCE_FORGEJO_OWNER = "forgejo-automation"
-        SOURCE_PUBLIC_BASE_URL = "__VERSELF_FORGEJO_BASE_URL__"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
-        VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
-        VERSELF_PG_DSN = "postgres://source_code_hosting_service@/source_code_hosting?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "8"
-        VERSELF_PG_MIN_CONNS = "1"
+        HOME = "/var/lib/source-code-hosting-service/home"
+        TMPDIR = "/var/lib/source-code-hosting-service/home/tmp"
         VERSELF_SUPERVISOR = "nomad"
       }
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience"
+        destination = "secrets/iam-service.zitadel.auth_audience"
         perms = "0600"
+        uid = "974"
+        gid = "967"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
       template {
         change_mode = "restart"
-        destination = "secrets/webhook-secret"
+        destination = "secrets/source-code-hosting-service.forgejo.automation_token"
         perms = "0600"
+        uid = "974"
+        gid = "967"
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value }}{{ end }}
+EOT
+      }
+      template {
+        change_mode = "restart"
+        destination = "secrets/source-code-hosting-service.forgejo.webhook_secret"
+        perms = "0600"
+        uid = "974"
+        gid = "967"
         data = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.webhook_secret" }}{{ .Data.data.value }}{{ end }}
 EOT
@@ -189,23 +162,6 @@ EOT
           interval = "1s"
           timeout = "3s"
         }
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/forgejo-automation-token"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/source-code-hosting-service.forgejo.automation_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/upstreams.env"
-        perms = "0600"
-        data = <<-EOT
-SOURCE_FORGEJO_BASE_URL=http://{{- with nomadService "forgejo-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
-EOT
-        env = true
       }
     }
     update {

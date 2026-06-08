@@ -38,44 +38,29 @@ Email Routing zone. Resend keeps its records on subdomains — DKIM on
 includes both providers. DMARC at the apex is `p=reject`; alignment holds
 through Resend's DKIM signature.
 
-`resend_sending_domains` in the site vars describes the sending domains.
+`email.resendSendingDomains` in the site facts describes the sending domains.
 Provider-side domain verification is controller/operator setup. Runtime Resend
 sending credentials are created by `email-service` after site OpenBao is
 available.
 
 ## Provisioning
 
-```
-ANSIBLE_ROLES_PATH=src/integrations/resend/domain-bootstrap:src/integrations/cloudflare/email-routing \
-ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections" \
-  ansible-playbook -i src/host/sites/prod/inventory.ini \
-    -e verself_site=prod src/integrations/email/provision-email-domains.yml
-```
+Cloudflare integration owns Email Routing reconciliation for the operator
+mailboxes. `email-service` owns Resend runtime sender credentials after site
+OpenBao is available. Provider evidence must be emitted by the owning
+integration or service.
 
-The playbook registers and verifies every Resend sending domain, then enables
-Cloudflare Email Routing for the operator mailboxes. It runs on the controller
-against the Resend and Cloudflare APIs and is idempotent. The controller process
-must supply `resend_full_access_api_key` and Cloudflare authority from OpenBao.
-The playbook does not create or deliver the runtime Resend sending key.
+### Cloudflare Authority
 
-### Cloudflare Credentials
+Cloudflare DNS and Email Routing mutations run through
+`cloudflare-integration-service`. The service owns account-admin authority,
+loads it through `secrets-service` only for the provider operation, and records
+token fingerprints in provider evidence. The playbook must not receive or stage
+Cloudflare API token values.
 
-Cloudflare DNS mutations run from the prod Cloudflare control-plane authority.
-The controller may pass one account-admin token as
-`cloudflare_account_admin_api_token` when provisioning Resend verification DNS.
-That token is never written to generated artifacts, Nomad jobs, Ansible host
-vars, or runtime service environments.
-
-`cloudflare_company_api_token` is an explicit Email-Routing-scoped credential
-for the Email Routing role. It needs, on `guardianintelligence.org`: Zone DNS
-edit, Zone Email Routing Rules edit, and account-level Email Routing Addresses
-edit.
-
-A token missing Zone Email Routing Rules edit returns 403 on rule list/create.
-Email Routing destination addresses are an account-level resource: a strictly
-zone-scoped token returns 403 there, which the role accepts — add and verify the
-destination in the dashboard (Account → Email Routing → Destination addresses)
-instead.
+Email Routing destination addresses are a provider-side account resource.
+`cloudflare-integration-service` records whether destination address creation
+was accepted or requires manual provider verification.
 
 ### Destination verification
 

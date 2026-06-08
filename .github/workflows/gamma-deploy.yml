@@ -29,5 +29,8 @@ jobs:
       - name: Bootstrap toolchain
         run: src/tools/dev/bootstrap/bootstrap-linux-amd64
 
+      - name: Build fly artifacts
+        run: guardian run bazel -- build //src/guardian-specification/examples/gamma:fly_artifacts
+
       - name: Deploy
-        run: aspect deploy --site=gamma --sha="$GITHUB_SHA"
+        run: guardian fly gamma

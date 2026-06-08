@@ -1,92 +1,116 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
+variable "verdaccio_resource_name" {
+  type    = string
+  default = "verdaccio"
+}
+
 job "verdaccio" {
-  name = "verdaccio"
+  name        = "verdaccio"
   datacenters = ["*"]
-  type = "service"
+  type        = "service"
 
   group "verdaccio" {
     count = 1
 
+    reschedule {
+      attempts  = 0
+      unlimited = false
+    }
+
     network {
       mode = "host"
+
       port "http" {
         host_network = "loopback"
-        static = 4873
-        to = 4873
+        static       = 4873
+        to           = 4873
       }
     }
 
-    task "prepare-storage" {
+    task "recover" {
       driver = "raw_exec"
-      user = "root"
+      user   = "root"
+
+      restart {
+        attempts = 0
+        mode     = "fail"
+      }
+
       lifecycle {
-        hook = "prestart"
+        hook    = "prestart"
         sidecar = false
       }
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "install -d -o nobody -g nogroup -m 0755 /var/lib/verdaccio /var/lib/verdaccio/storage\nif [ ! -e /var/lib/verdaccio/htpasswd ]; then\n  : > /var/lib/verdaccio/htpasswd\nfi\nchmod 0640 /var/lib/verdaccio/htpasswd\nif [ ! -e /var/lib/verdaccio/.nomad-owner-nobody-v1 ]; then\n  chown -R nobody:nogroup /var/lib/verdaccio\n  : > /var/lib/verdaccio/.nomad-owner-nobody-v1\n  chown nobody:nogroup /var/lib/verdaccio/.nomad-owner-nobody-v1\nelse\n  chown nobody:nogroup /var/lib/verdaccio/htpasswd\nfi\n"]
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/verdaccio/cmd/verdaccio-recover/verdaccio-recover_/verdaccio-recover"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.verdaccio_resource_name}",
+        ]
       }
 
       resources {
-        cpu = 100
-        memory = 64
+        cpu    = 100
+        memory = 128
       }
     }
 
     task "server" {
-      driver = "raw_exec"
-      user = "nobody"
-      kill_signal = "SIGTERM"
+      driver       = "raw_exec"
+      user         = "root"
+      kill_signal  = "SIGTERM"
       kill_timeout = "30s"
 
-      artifact {
-        source = "verself-artifact://verdaccio-runtime"
-        destination = "local"
-        chown = true
+      restart {
+        attempts = 0
+        mode     = "fail"
       }
 
       config {
-        command = "/bin/sh"
-        args = ["-ec", "if [ ! -d local/lib/node_modules/verdaccio ]; then\n  tar -xf local/lib/node_modules.tar -C local/lib\nfi\nexport PATH=\"$PWD/local/bin:/usr/bin:/bin\"\nexec local/bin/verdaccio --config local/etc/verdaccio/config.yaml\n"]
-      }
-
-      env {
-        HOME = "/var/lib/verdaccio"
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "verdaccio"
-        VERSELF_SUPERVISOR = "nomad"
+        command = "/var/lib/verdaccio/runtime/current/bin/verdaccio-recover"
+        args = [
+          "server",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.verdaccio_resource_name}",
+        ]
       }
 
       resources {
-        cpu = 500
+        cpu    = 500
         memory = 768
       }
 
       service {
-        name = "verdaccio-http"
-        port = "http"
-        provider = "nomad"
+        name         = "verdaccio-http"
+        port         = "http"
+        provider     = "nomad"
         address_mode = "auto"
+
         check {
-          name = "verdaccio-http-ping"
-          type = "http"
-          path = "/-/ping"
-          port = "http"
+          name     = "verdaccio-http-ping"
+          type     = "http"
+          path     = "/-/ping"
+          port     = "http"
           interval = "2s"
-          timeout = "3s"
+          timeout  = "3s"
         }
       }
     }
 
     update {
-      max_parallel = 1
-      health_check = "checks"
-      min_healthy_time = "3s"
-      healthy_deadline = "300s"
+      max_parallel      = 1
+      health_check      = "checks"
+      min_healthy_time  = "3s"
+      healthy_deadline  = "300s"
       progress_deadline = "600s"
-      auto_revert = true
+      auto_revert       = true
     }
   }
 }

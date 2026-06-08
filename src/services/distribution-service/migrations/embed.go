@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"sort"
 	"strings"
 
@@ -22,11 +21,11 @@ import (
 //go:embed *.sql
 var Files embed.FS
 
-func Run(ctx context.Context, dsn string, service string) error {
-	return UpDSN(ctx, service, dsn)
-}
-
 func UpDSN(ctx context.Context, service string, dsn string) error {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" {
+		return fmt.Errorf("%s: postgres dsn is required", service)
+	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return fmt.Errorf("%s: open migration database: %w", service, err)
@@ -64,17 +63,6 @@ func UpDSN(ctx context.Context, service string, dsn string) error {
 	return nil
 }
 
-func RunCLI(ctx context.Context, args []string, service string) error {
-	if len(args) != 1 || args[0] != "up" {
-		return fmt.Errorf("usage: %s migrate up", service)
-	}
-	dsn := getenv("VERSELF_PG_DSN")
-	if dsn == "" {
-		return fmt.Errorf("VERSELF_PG_DSN is required")
-	}
-	return Run(ctx, dsn, service)
-}
-
 func Fingerprint() string {
 	names := make([]string, 0)
 	if err := fs.WalkDir(Files, ".", func(path string, entry fs.DirEntry, err error) error {
@@ -101,8 +89,4 @@ func Fingerprint() string {
 		_, _ = h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-func getenv(key string) string {
-	return strings.TrimSpace(os.Getenv(key))
 }

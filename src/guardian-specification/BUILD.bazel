@@ -1,0 +1,43 @@
+load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
+
+# gazelle:prefix github.com/verself/guardian-specification
+
+go_module_checks()
+
+filegroup(
+    name = "docs",
+    srcs = glob([
+        "*.md",
+        "docs/*.md",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+exports_files([
+    "guardian_tools.MODULE.bazel",
+    "tools.lock.json",
+    "tools.metadata.json",
+])
+
+filegroup(
+    name = "cue",
+    srcs = glob([
+        "cue.mod/*.cue",
+        "cue/**/*.cue",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "examples",
+    srcs = ["//src/guardian-specification/examples/gamma:examples"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "ansible",
+    srcs = glob([
+        "ansible/**/*.yml",
+    ]),
+    visibility = ["//visibility:public"],
+)

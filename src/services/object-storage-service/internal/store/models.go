@@ -51,3 +51,27 @@ type ObjectStorageCredential struct {
 	RevokedAt         pgtype.Timestamptz
 	RevokedBy         string
 }
+
+type ObjectStorageWriteSession struct {
+	SessionID      string
+	Site           string
+	Capability     string
+	Namespace      string
+	BucketID       uuid.UUID
+	IdempotencyKey string
+	Status         string
+	ExpiresAt      pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	CreatedBy      string
+	CompletedAt    pgtype.Timestamptz
+}
+
+type ObjectStorageWriteSessionObject struct {
+	SessionID string
+	Name      string
+	ObjectKey string
+	Sha256    string
+	SizeBytes int64
+	Action    string
+	CreatedAt pgtype.Timestamptz
+}

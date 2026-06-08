@@ -1,3 +1,8 @@
+variable "email_service_resend_keys_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "email-service-resend-keys" {
   name = "email-service-resend-keys"
   datacenters = ["*"]
@@ -22,7 +27,7 @@ job "email-service-resend-keys" {
       }
 
       artifact {
-        source = "verself-artifact://email-service-resend-keys"
+        source = var.email_service_resend_keys_artifact_source
         destination = "local"
         chown = true
       }

@@ -2,17 +2,36 @@
 
 load(
     ".aspect/lib/helpers.axl",
+    "bazel_output_file",
     "bazel_run",
     "checked_spawn",
     "install_bazel_tool_shims",
     "ws_path",
 )
 
+GUARDIAN_TOOLS_ROOT_TARGET = "//src/guardian-specification/tools:tools_root"
+GUARDIAN_TOOLS_ROOT_DIR = ".verself/tools/root"
+
+def _materialize_guardian_tool_root(ctx):
+    """Lay the Bazel-built Guardian tool closure under .verself/tools/root.
+
+    Built with stage-zero bazel: `guardian run bazel` resolves from this very
+    root, so using guardian here would deadlock its own resolver.
+    """
+    tar = bazel_output_file(ctx, GUARDIAN_TOOLS_ROOT_TARGET, stage_zero = True)
+    if tar == "":
+        return 1
+    root = ws_path(ctx, GUARDIAN_TOOLS_ROOT_DIR)
+    if checked_spawn(ctx, "rm", ["-rf", root], label = "rm -rf guardian tool root") != 0:
+        return 1
+    if checked_spawn(ctx, "mkdir", ["-p", root], label = "mkdir -p guardian tool root") != 0:
+        return 1
+    return checked_spawn(ctx, "tar", ["-xf", tar, "-C", root], label = "extract guardian tool root")
+
 DEV_CONVENIENCE_SHIMS = [
-    # Inspect the Bazel-pinned Ansible collection set used by host convergence.
-    ("ansible-galaxy", "//src/host:ansible_galaxy_bin"),
     ("buildifier", "//src/tools/dev/binaries:buildifier"),
     ("gofumpt", "//src/tools/dev/binaries:gofumpt"),
+    ("guardian", "//src/guardian-specification/cli/cmd/guardian:guardian"),
     ("ruby", "//src/tools/dev/binaries:ruby"),
     ("stripe", "//src/tools/dev/binaries:stripe"),
     ("uv", "//src/tools/dev/binaries:uv"),
@@ -21,9 +40,22 @@ DEV_CONVENIENCE_SHIMS = [
 
 def _install_impl(ctx):
     if ctx.args.install_shims or ctx.args.print_path:
-        bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir)
+        bin_dir = install_bazel_tool_shims(ctx, DEV_CONVENIENCE_SHIMS, ctx.args.bin_dir, stage_zero = True)
         if bin_dir == "":
             return 1
+        if ctx.args.install_shims:
+            rc = _materialize_guardian_tool_root(ctx)
+            if rc != 0:
+                return rc
+            rc = checked_spawn(
+                ctx,
+                bin_dir + "/guardian",
+                ["run", "--install-shims", "--bin-dir", bin_dir],
+                cwd = ws_path(ctx),
+                label = "guardian run --install-shims --bin-dir " + bin_dir,
+            )
+            if rc != 0:
+                return rc
         if ctx.args.print_path:
             ctx.std.io.stdout.write(bin_dir + "\n")
     return 0
@@ -49,7 +81,7 @@ install = task(
     implementation = _install_impl,
     name = "install",
     group = ["dev"],
-    summary = "Install controller OS prerequisites and optional repo-local tool shims.",
+    summary = "Install controller shims for Guardian and repo-owned developer tools.",
     args = {
         "install_shims": args.boolean(default = False, description = "Install repo-local shims for common developer tools."),
         "print_path": args.boolean(default = False, description = "Print the shim directory that should lead PATH for local development."),

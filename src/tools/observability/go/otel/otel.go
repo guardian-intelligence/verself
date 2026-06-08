@@ -46,8 +46,9 @@ const telemetryExportInterval = time.Second
 
 // Config controls the OTel providers. Only ServiceName is required.
 type Config struct {
-	ServiceName    string
-	ServiceVersion string
+	ServiceName      string
+	ServiceVersion   string
+	ExporterEndpoint string
 }
 
 // Init sets up trace and log providers, registers the global TracerProvider
@@ -61,7 +62,10 @@ func Init(ctx context.Context, cfg Config) (shutdown func(context.Context) error
 	// ("http://host:port") while WithEndpoint wants "host:port". If the user
 	// set the env var with a scheme, strip it; otherwise fall through to the
 	// SDK default (127.0.0.1:4317).
-	endpoint := strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	endpoint := strings.TrimSpace(cfg.ExporterEndpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	}
 	endpoint = strings.TrimPrefix(endpoint, "http://")
 	endpoint = strings.TrimPrefix(endpoint, "https://")
 	endpoint = strings.TrimSuffix(endpoint, "/")

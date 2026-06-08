@@ -7,11 +7,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
-	"gopkg.in/yaml.v3"
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
 const (
@@ -36,49 +38,55 @@ const (
 )
 
 const (
-	accountAdminAOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin/a"
-	accountAdminBOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin/b"
+	accountAdminOpenBaoPathDefault = "kv-controller/data/integrations/cloudflare/account-admin"
 )
 
 type config struct {
-	action                   string
-	repoRoot                 string
-	site                     string
-	accountID                string
-	bucket                   string
-	keyPrefix                string
-	region                   string
-	accountAdminAOpenBaoPath string
-	accountAdminBOpenBaoPath string
-	openBaoAddr              string
-	openBaoPath              string
-	openBaoCACertFile        string
-	openBaoTokenFile         string
-	runtimeOpenBaoAddr       string
-	runtimeOpenBaoCACertFile string
-	runtimeOpenBaoTokenFile  string
-	dnsInventory             string
-	dnsConcurrency           int
-	dryRun                   bool
-	provider                 string
-	cloudflareAPITokenFile   string
-	certificateOutputDir     string
-	tlsProductDomain         string
-	tlsCompanyDomain         string
-	tlsProductZone           string
-	tlsCompanyZone           string
-	acmeDirectoryURL         string
-	acmeContactEmail         string
-	acmeDNSPropagationWait   time.Duration
-	certificateRenewBefore   time.Duration
-	testPrefix               string
-	inventoryPrefix          string
-	inventoryDepth           int
-	tempTTL                  time.Duration
-	childTokenTTL            time.Duration
-	accountAdminTTL          time.Duration
-	timeout                  time.Duration
-	verifyTempCredentials    bool
+	action                                 string
+	repoRoot                               string
+	site                                   string
+	accountID                              string
+	bucket                                 string
+	keyPrefix                              string
+	region                                 string
+	accountAdminOpenBaoPath                string
+	accountAdminAPITokenFile               string
+	operatorImportStdin                    bool
+	operatorImportInitMaterial             string
+	operatorImportPrivateKeyFile           string
+	operatorImportPrivateKeyPassphraseFile string
+	operatorImportTokenName                string
+	openBaoAddr                            string
+	openBaoPath                            string
+	openBaoCACertFile                      string
+	openBaoTokenFile                       string
+	openBaoToken                           string
+	runtimeOpenBaoAddr                     string
+	runtimeOpenBaoCACertFile               string
+	runtimeOpenBaoTokenFile                string
+	dnsInventory                           string
+	dnsConcurrency                         int
+	dryRun                                 bool
+	provider                               string
+	cloudflareAPITokenFile                 string
+	certificateOutputDir                   string
+	tlsProductDomain                       string
+	tlsCompanyDomain                       string
+	tlsProductZone                         string
+	tlsCompanyZone                         string
+	acmeDirectoryURL                       string
+	acmeContactEmail                       string
+	acmeDNSPropagationWait                 time.Duration
+	certificateRenewBefore                 time.Duration
+	testPrefix                             string
+	inventoryPrefix                        string
+	inventoryDepth                         int
+	tempTTL                                time.Duration
+	childTokenTTL                          time.Duration
+	timeout                                time.Duration
+	verifyTempCredentials                  bool
+	recoveryConfig                         string
+	recovery                               *CloudflareControlPlane
 }
 
 type report struct {
@@ -116,8 +124,8 @@ type report struct {
 	RuntimeSecretFingerprints    map[string]string       `json:"runtime_secret_fingerprints,omitempty"`
 	VerificationObjectGetStatus  int                     `json:"verification_object_get_status,omitempty"`
 	Inventory                    []inventoryPrefixReport `json:"inventory,omitempty"`
-	AccountAdminAStatus          accountAdminStatus      `json:"account_admin_a_status,omitempty"`
-	AccountAdminBStatus          accountAdminStatus      `json:"account_admin_b_status,omitempty"`
+	AccountAdminStatus           accountAdminStatus      `json:"account_admin_status,omitempty"`
+	RecoveryConditions           []string                `json:"recovery_conditions,omitempty"`
 }
 
 type inventoryPrefixReport struct {
@@ -156,23 +164,28 @@ func main() {
 func run(args []string) error {
 	cfg := config{}
 	fs := flag.NewFlagSet("cloudflare-control-plane", flag.ContinueOnError)
-	fs.StringVar(&cfg.action, "action", "verify-admin-pair", "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
-	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and src/host/sites/<site>/site.json.")
+	fs.StringVar(&cfg.action, "action", "verify-account-admin", "Action: recover, import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, ensure-bucket, ensure-recovery, rotate-recovery, rotate-object-storage-provider, inventory, or verify.")
+	fs.StringVar(&cfg.repoRoot, "repo-root", ".", "Repository root for loading Cloudflare account config and site facts.")
 	fs.StringVar(&cfg.site, "site", "prod", "Target deployment site. Cloudflare account authority is global and anchored to prod.")
 	fs.StringVar(&cfg.accountID, "account-id", "", "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json.")
 	fs.StringVar(&cfg.bucket, "bucket", "", "R2 bucket name. Defaults to account.json r2.deployment_artifacts_bucket.")
 	fs.StringVar(&cfg.keyPrefix, "key-prefix", "sha256", "R2 artifact key prefix.")
 	fs.StringVar(&cfg.region, "region", "auto", "R2 S3 signing region.")
-	fs.StringVar(&cfg.accountAdminAOpenBaoPath, "account-admin-a-openbao-path", accountAdminAOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot A.")
-	fs.StringVar(&cfg.accountAdminBOpenBaoPath, "account-admin-b-openbao-path", accountAdminBOpenBaoPathDefault, "Controller OpenBao KV path for Cloudflare account-admin slot B.")
+	fs.StringVar(&cfg.accountAdminOpenBaoPath, "account-admin-openbao-path", accountAdminOpenBaoPathDefault, "Controller OpenBao KV path for the Cloudflare account-admin API token.")
+	fs.StringVar(&cfg.accountAdminAPITokenFile, "account-admin-api-token-file", "", "File containing the Cloudflare account-admin API token for --action=import-account-admin.")
+	fs.BoolVar(&cfg.operatorImportStdin, "operator-import-stdin", false, "Read OpenBao and Cloudflare account-admin tokens from a JSON stdin payload for --action=import-account-admin.")
+	fs.StringVar(&cfg.operatorImportInitMaterial, "operator-import-init-material", "", "OpenBao init-material.json containing encrypted operator import token handoff for --action=import-account-admin.")
+	fs.StringVar(&cfg.operatorImportPrivateKeyFile, "operator-import-private-key-file", "", "Operator PGP private key file used to decrypt init-material operator import token handoff.")
+	fs.StringVar(&cfg.operatorImportPrivateKeyPassphraseFile, "operator-import-private-key-passphrase-file", "", "Optional file containing the operator PGP private key passphrase.")
+	fs.StringVar(&cfg.operatorImportTokenName, "operator-import-token-name", "guardian-operator-import", "Operator import token handoff name in init-material.json.")
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", "", "Controller OpenBao address.")
-	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", "Controller OpenBao KV path for R2 credentials.")
+	fs.StringVar(&cfg.openBaoPath, "openbao-path", "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", "Controller OpenBao KV path for R2 credentials.")
 	fs.StringVar(&cfg.openBaoCACertFile, "openbao-ca-cert", "", "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", "", "File containing the OpenBao token.")
 	fs.StringVar(&cfg.runtimeOpenBaoAddr, "runtime-openbao-addr", "", "Runtime OpenBao address for service-required secret projection. Defaults to --openbao-addr.")
 	fs.StringVar(&cfg.runtimeOpenBaoCACertFile, "runtime-openbao-ca-cert", "", "Runtime OpenBao CA certificate file. Defaults to --openbao-ca-cert, BAO_CACERT, or VAULT_CACERT.")
 	fs.StringVar(&cfg.runtimeOpenBaoTokenFile, "runtime-openbao-token-file", "", "File containing the runtime OpenBao token. Defaults to --openbao-token-file.")
-	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini.")
+	fs.StringVar(&cfg.dnsInventory, "dns-inventory", "", "Path to the site inventory for DNS target IP fallback. Defaults to src/sites/<site>/inventory.ini.")
 	fs.IntVar(&cfg.dnsConcurrency, "dns-concurrency", 8, "Maximum parallel Cloudflare DNS write requests for --action=reconcile-dns.")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "Print and report the DNS diff without applying writes for --action=reconcile-dns.")
 	fs.StringVar(&cfg.provider, "provider", "", "External provider for direct public-edge operations. Supported value: cloudflare.")
@@ -191,10 +204,13 @@ func run(args []string) error {
 	fs.IntVar(&cfg.inventoryDepth, "inventory-depth", 2, "Prefix depth for --action=inventory summaries.")
 	fs.DurationVar(&cfg.tempTTL, "temp-ttl", 15*time.Minute, "TTL for Cloudflare temporary scoped R2 verification credentials.")
 	fs.DurationVar(&cfg.childTokenTTL, "child-token-ttl", 7*24*time.Hour, "TTL for generated Cloudflare child API tokens.")
-	fs.DurationVar(&cfg.accountAdminTTL, "account-admin-ttl", 7*24*time.Hour, "TTL for Cloudflare account-admin expiration updates.")
 	fs.DurationVar(&cfg.timeout, "timeout", 30*time.Second, "Total timeout for Cloudflare R2 calls.")
 	fs.BoolVar(&cfg.verifyTempCredentials, "verify-temp-credentials", true, "Mint scoped temporary credentials and use them for the object verification.")
+	fs.StringVar(&cfg.recoveryConfig, "recovery-config", "", "Path to a cloudflare.guardianintelligence.org/v1alpha1 CloudflareControlPlane document for --action=recover.")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := cfg.applyRecoveryConfig(); err != nil {
 		return err
 	}
 	if err := cfg.applySiteDefaults(); err != nil {
@@ -208,14 +224,19 @@ func run(args []string) error {
 	if cfg.action == "issue-site-certificates" && timeout < 5*time.Minute {
 		timeout = 5 * time.Minute
 	}
+	if cfg.action == "recover" && timeout < 10*time.Minute {
+		timeout = 10 * time.Minute
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	switch cfg.action {
-	case "verify-admin-pair":
-		return verifyAccountAdminPair(ctx, cfg)
-	case "rotate-admin-pair":
-		return rotateAccountAdminPair(ctx, cfg)
+	case "recover":
+		return recoverCloudflare(ctx, cfg)
+	case "import-account-admin":
+		return importAccountAdmin(ctx, cfg)
+	case "verify-account-admin":
+		return verifyAccountAdmin(ctx, cfg)
 	case "verify-dns-authority":
 		return verifyDNSAuthority(ctx, cfg)
 	case "reconcile-dns":
@@ -310,7 +331,7 @@ func run(args []string) error {
 			AccessKeyID:     temp.AccessKeyID,
 			SecretAccessKey: temp.SecretAccessKey,
 			SessionToken:    temp.SessionToken,
-			Source:          "cloudflare-r2-control-plane-temp",
+			Source:          "cloudflare-control-plane-temp",
 			Timeout:         cfg.timeout,
 		})
 		if err != nil {
@@ -378,7 +399,7 @@ func certificateOnlyAction(action string) bool {
 
 func isChildProvisioningAction(action string) bool {
 	switch action {
-	case "ensure-bucket", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 		return true
 	default:
 		return false
@@ -404,9 +425,12 @@ func resolveRepoRoot(raw string) (string, error) {
 
 func (cfg config) validate() error {
 	switch cfg.action {
-	case "verify-admin-pair", "rotate-admin-pair", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-publisher", "rotate-publisher", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
+	case "recover", "import-account-admin", "verify-account-admin", "verify-dns-authority", "reconcile-dns", "issue-site-certificates", "provision-site", "inventory", "verify", "ensure-bucket", "ensure-recovery", "rotate-recovery", "rotate-object-storage-provider":
 	default:
-		return fmt.Errorf("--action must be verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+		return fmt.Errorf("--action must be recover, import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider, got %q", cfg.action)
+	}
+	if cfg.action == "recover" && cfg.recovery == nil {
+		return fmt.Errorf("--recovery-config is required for recovery")
 	}
 	if !certificateOnlyAction(cfg.action) {
 		if !r2control.IsCloudflareAccountID(cfg.accountID) {
@@ -434,9 +458,6 @@ func (cfg config) validate() error {
 	if cfg.dnsConcurrency < 1 || cfg.dnsConcurrency > 64 {
 		return fmt.Errorf("--dns-concurrency must be between 1 and 64")
 	}
-	if cfg.accountAdminTTL <= 0 || cfg.accountAdminTTL > 7*24*time.Hour {
-		return fmt.Errorf("--account-admin-ttl must be greater than zero and no more than 7 days")
-	}
 	if cfg.acmeDNSPropagationWait <= 0 || cfg.acmeDNSPropagationWait > 10*time.Minute {
 		return fmt.Errorf("--acme-dns-propagation-wait must be greater than zero and no more than 10 minutes")
 	}
@@ -458,6 +479,33 @@ func (cfg config) validate() error {
 		}
 		if strings.TrimSpace(cfg.acmeContactEmail) == "" {
 			return fmt.Errorf("--acme-contact-email is required for certificate issuance")
+		}
+	}
+	if cfg.action == "import-account-admin" {
+		if strings.TrimSpace(cfg.openBaoAddr) == "" {
+			return fmt.Errorf("--openbao-addr is required for account-admin import")
+		}
+		initMaterialConfigured := strings.TrimSpace(cfg.operatorImportInitMaterial) != "" || strings.TrimSpace(cfg.operatorImportPrivateKeyFile) != "" || strings.TrimSpace(cfg.operatorImportPrivateKeyPassphraseFile) != ""
+		if cfg.operatorImportStdin {
+			if strings.TrimSpace(cfg.openBaoTokenFile) != "" || strings.TrimSpace(cfg.accountAdminAPITokenFile) != "" || initMaterialConfigured {
+				return fmt.Errorf("--operator-import-stdin cannot be combined with file-based account-admin import inputs")
+			}
+			return nil
+		}
+		if strings.TrimSpace(cfg.accountAdminAPITokenFile) == "" {
+			return fmt.Errorf("--account-admin-api-token-file is required for file-based account-admin import")
+		}
+		if initMaterialConfigured {
+			if strings.TrimSpace(cfg.openBaoTokenFile) != "" {
+				return fmt.Errorf("--openbao-token-file cannot be combined with --operator-import-init-material")
+			}
+			if strings.TrimSpace(cfg.operatorImportInitMaterial) == "" || strings.TrimSpace(cfg.operatorImportPrivateKeyFile) == "" {
+				return fmt.Errorf("--operator-import-init-material and --operator-import-private-key-file are required together")
+			}
+			return nil
+		}
+		if strings.TrimSpace(cfg.openBaoTokenFile) == "" {
+			return fmt.Errorf("--openbao-token-file or --operator-import-init-material is required for file-based account-admin import")
 		}
 	}
 	return nil
@@ -504,6 +552,7 @@ func (cfg config) parentCredentialConfig() r2control.ParentCredentialConfig {
 		OpenBaoPath:       cfg.openBaoPath,
 		OpenBaoCACertFile: cfg.openBaoCACertFile,
 		OpenBaoTokenFile:  cfg.openBaoTokenFile,
+		OpenBaoToken:      cfg.openBaoToken,
 		Timeout:           cfg.timeout,
 	}
 }
@@ -515,6 +564,7 @@ func (cfg config) runtimeOpenBaoCredentialConfig(path string) r2control.ParentCr
 		OpenBaoPath:       path,
 		OpenBaoCACertFile: firstNonEmpty(cfg.runtimeOpenBaoCACertFile, cfg.openBaoCACertFile),
 		OpenBaoTokenFile:  firstNonEmpty(cfg.runtimeOpenBaoTokenFile, cfg.openBaoTokenFile),
+		OpenBaoToken:      cfg.openBaoToken,
 		Timeout:           cfg.timeout,
 	}
 }
@@ -528,88 +578,354 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-type accountAdminPair struct {
-	A       r2control.ParentCredentials
-	B       r2control.ParentCredentials
-	AStatus accountAdminStatus
-	BStatus accountAdminStatus
-}
-
-func verifyAccountAdminPair(ctx context.Context, cfg config) error {
-	pair, err := loadAndVerifyAccountAdminPair(ctx, cfg)
+func importAccountAdmin(ctx context.Context, cfg config) error {
+	token, cfg, err := readAccountAdminImport(os.Stdin, cfg)
 	if err != nil {
 		return err
 	}
-	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin-pair")
-	out.VerifiedWith = "cloudflare-account-admin-pair"
-	out.AccountAdminAStatus = pair.AStatus
-	out.AccountAdminBStatus = pair.BStatus
+	defer clearBytes(token)
+
+	imported, err := verifyAccountAdminToken(ctx, cfg, string(token))
+	if err != nil {
+		return fmt.Errorf("verify account-admin token: %w", err)
+	}
+	if err := writeAccountAdminCredential(ctx, cfg, accountAdminOpenBaoPath(cfg), imported.tokenID, string(token), imported.ExpiresOn); err != nil {
+		return fmt.Errorf("write account-admin: %w", err)
+	}
+	_, verified, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminOpenBaoPath(cfg))
+	if err != nil {
+		return fmt.Errorf("verify imported account-admin: %w", err)
+	}
+	out := baseReport(cfg, "operator-token-file:cloudflare-account-admin")
+	out.VerifiedWith = "cloudflare-account-admin-import"
+	out.AccountAdminStatus = verified
 	return writeReport(out)
 }
 
-func rotateAccountAdminPair(ctx context.Context, cfg config) error {
-	pair, err := loadAndVerifyAccountAdminPair(ctx, cfg)
+func readAccountAdminImport(stdin io.Reader, cfg config) ([]byte, config, error) {
+	if cfg.operatorImportStdin {
+		material, err := readOperatorImportStdin(stdin)
+		if err != nil {
+			return nil, config{}, err
+		}
+		cfg.openBaoToken = material.OpenBaoToken
+		return []byte(material.CloudflareAccountAdminAPIToken), cfg, nil
+	}
+	if strings.TrimSpace(cfg.operatorImportInitMaterial) != "" {
+		openBaoToken, err := decryptOperatorImportToken(cfg)
+		if err != nil {
+			return nil, config{}, err
+		}
+		cfg.openBaoToken = openBaoToken
+		token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "account-admin API token")
+		return token, cfg, err
+	}
+	token, err := readRequiredSecretFile(cfg.accountAdminAPITokenFile, "account-admin API token")
+	return token, cfg, err
+}
+
+type operatorImportMaterial struct {
+	OpenBaoToken                   string `json:"openBaoToken"`
+	CloudflareAccountAdminAPIToken string `json:"cloudflareAccountAdminAPIToken"`
+}
+
+type openBaoInitMaterial struct {
+	APIVersion string                  `json:"apiVersion"`
+	Kind       string                  `json:"kind"`
+	Metadata   json.RawMessage         `json:"metadata"`
+	Spec       openBaoInitMaterialSpec `json:"spec"`
+}
+
+type openBaoInitMaterialSpec struct {
+	CreatedAt                  string                               `json:"createdAt"`
+	KeyShares                  int                                  `json:"keyShares"`
+	KeyThreshold               int                                  `json:"keyThreshold"`
+	PGPRecipientCount          int                                  `json:"pgpRecipientCount"`
+	EncryptedUnsealSharesB64   []string                             `json:"encryptedUnsealSharesB64"`
+	EncryptedRecoverySharesB64 []string                             `json:"encryptedRecoverySharesB64,omitempty"`
+	OperatorImportTokens       []openBaoOperatorImportTokenMaterial `json:"operatorImportTokens,omitempty"`
+}
+
+type openBaoOperatorImportTokenMaterial struct {
+	Name               string   `json:"name"`
+	Policy             string   `json:"policy"`
+	TTL                string   `json:"ttl"`
+	Uses               int      `json:"uses"`
+	EncryptedTokensB64 []string `json:"encryptedTokensB64"`
+}
+
+func decryptOperatorImportToken(cfg config) (string, error) {
+	materialBody, err := readRegularFile(cfg.operatorImportInitMaterial, "OpenBao init material")
+	if err != nil {
+		return "", err
+	}
+	var material openBaoInitMaterial
+	decoder := json.NewDecoder(bytes.NewReader(materialBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&material); err != nil {
+		return "", fmt.Errorf("decode OpenBao init material: %w", err)
+	}
+	if strings.TrimSpace(material.APIVersion) != "openbao.guardianintelligence.org/v1alpha1" || strings.TrimSpace(material.Kind) != "OpenBaoEncryptedInitMaterial" {
+		return "", fmt.Errorf("OpenBao init material must be openbao.guardianintelligence.org/v1alpha1/OpenBaoEncryptedInitMaterial")
+	}
+	tokenName := strings.TrimSpace(cfg.operatorImportTokenName)
+	if tokenName == "" {
+		return "", fmt.Errorf("--operator-import-token-name is required")
+	}
+	var encrypted []string
+	for _, token := range material.Spec.OperatorImportTokens {
+		if strings.TrimSpace(token.Name) == tokenName {
+			encrypted = token.EncryptedTokensB64
+			break
+		}
+	}
+	if len(encrypted) == 0 {
+		return "", fmt.Errorf("OpenBao init material missing operator import token %q", tokenName)
+	}
+	keyring, err := readOperatorPrivateKey(cfg.operatorImportPrivateKeyFile, cfg.operatorImportPrivateKeyPassphraseFile)
+	if err != nil {
+		return "", err
+	}
+	var failures []string
+	for i, encoded := range encrypted {
+		ciphertext, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("entry %d base64: %v", i, err))
+			continue
+		}
+		message, err := openpgp.ReadMessage(bytes.NewReader(ciphertext), keyring, nil, nil)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("entry %d decrypt: %v", i, err))
+			continue
+		}
+		plaintext, err := io.ReadAll(io.LimitReader(message.UnverifiedBody, 1<<20))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("entry %d read plaintext: %v", i, err))
+			continue
+		}
+		token := strings.TrimSpace(string(plaintext))
+		if token == "" {
+			failures = append(failures, fmt.Sprintf("entry %d plaintext was empty", i))
+			continue
+		}
+		return token, nil
+	}
+	return "", fmt.Errorf("decrypt operator import token %q: no encrypted entry matched the provided private key: %s", tokenName, strings.Join(failures, "; "))
+}
+
+func readOperatorPrivateKey(path string, passphrasePath string) (openpgp.EntityList, error) {
+	body, err := readRequiredSecretFileRaw(path, "operator PGP private key")
+	if err != nil {
+		return nil, err
+	}
+	keyring, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(body))
+	if err != nil {
+		keyring, err = openpgp.ReadKeyRing(bytes.NewReader(body))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read operator PGP private key: %w", err)
+	}
+	if strings.TrimSpace(passphrasePath) == "" {
+		return keyring, nil
+	}
+	passphrase, err := readRequiredSecretFile(passphrasePath, "operator PGP private key passphrase")
+	if err != nil {
+		return nil, err
+	}
+	defer clearBytes(passphrase)
+	for _, entity := range keyring {
+		if entity.PrivateKey != nil && entity.PrivateKey.Encrypted {
+			if err := entity.PrivateKey.Decrypt(passphrase); err != nil {
+				return nil, fmt.Errorf("decrypt operator PGP private key: %w", err)
+			}
+		}
+		for _, subkey := range entity.Subkeys {
+			if subkey.PrivateKey != nil && subkey.PrivateKey.Encrypted {
+				if err := subkey.PrivateKey.Decrypt(passphrase); err != nil {
+					return nil, fmt.Errorf("decrypt operator PGP subkey: %w", err)
+				}
+			}
+		}
+	}
+	return keyring, nil
+}
+
+func readRequiredSecretFileRaw(path, label string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("%s file is required", label)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %s must not be a symlink", label, path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%s file %s must be readable only by the operator", label, path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	return body, nil
+}
+
+func readRegularFile(path string, label string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("%s file is required", label)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %s must not be a symlink", label, path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	return body, nil
+}
+
+func readRequiredSecretFile(path, label string) ([]byte, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("%s file is required", label)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect %s file: %w", label, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s file %s must not be a symlink", label, path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s file %s must be a regular file", label, path)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%s file %s must be readable only by the operator", label, path)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s file: %w", label, err)
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, fmt.Errorf("%s file %s is empty", label, path)
+	}
+	return body, nil
+}
+
+func readRequiredSecretStdin(stdin io.Reader, label string) ([]byte, error) {
+	if stdin == nil {
+		return nil, fmt.Errorf("%s stdin is required", label)
+	}
+	body, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read %s from stdin: %w", label, err)
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return nil, fmt.Errorf("%s stdin is empty", label)
+	}
+	return body, nil
+}
+
+func readOperatorImportStdin(stdin io.Reader) (operatorImportMaterial, error) {
+	body, err := readRequiredSecretStdin(stdin, "operator import JSON")
+	if err != nil {
+		return operatorImportMaterial{}, err
+	}
+	var material operatorImportMaterial
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&material); err != nil {
+		return operatorImportMaterial{}, fmt.Errorf("decode operator import JSON: %w", err)
+	}
+	material.OpenBaoToken = strings.TrimSpace(material.OpenBaoToken)
+	material.CloudflareAccountAdminAPIToken = strings.TrimSpace(material.CloudflareAccountAdminAPIToken)
+	if material.OpenBaoToken == "" || material.CloudflareAccountAdminAPIToken == "" {
+		return operatorImportMaterial{}, errors.New("operator import JSON requires openBaoToken and cloudflareAccountAdminAPIToken")
+	}
+	return material, nil
+}
+
+func clearBytes(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
+}
+
+type importedAccountAdminStatus struct {
+	tokenID string
+	accountAdminStatus
+}
+
+func verifyAccountAdminToken(ctx context.Context, cfg config, apiToken string) (importedAccountAdminStatus, error) {
+	if strings.TrimSpace(apiToken) == "" {
+		return importedAccountAdminStatus{}, fmt.Errorf("api token is empty")
+	}
+	apiClient, err := r2control.NewCloudflareAPIClient(apiToken, cfg.timeout)
+	if err != nil {
+		return importedAccountAdminStatus{}, err
+	}
+	verified, err := apiClient.VerifyAccountToken(ctx, cfg.accountID)
+	if err != nil {
+		return importedAccountAdminStatus{}, err
+	}
+	if verified.Status != "" && verified.Status != "active" {
+		return importedAccountAdminStatus{}, fmt.Errorf("cloudflare account-admin status is %q", verified.Status)
+	}
+	if strings.TrimSpace(verified.ID) == "" {
+		return importedAccountAdminStatus{}, fmt.Errorf("cloudflare account-admin token ID is empty")
+	}
+	if _, err := apiClient.GetAccountToken(ctx, cfg.accountID, verified.ID); err != nil {
+		return importedAccountAdminStatus{}, fmt.Errorf("cloudflare account-admin cannot read account token metadata; requires Account API Tokens Read on account %s: %w", cfg.accountID, err)
+	}
+	if err := verifyAccountAdminR2Authority(ctx, cfg, apiClient); err != nil {
+		return importedAccountAdminStatus{}, err
+	}
+	return importedAccountAdminStatus{
+		tokenID: verified.ID,
+		accountAdminStatus: accountAdminStatus{
+			TokenIDFingerprint: r2control.Fingerprint(verified.ID),
+			Status:             verified.Status,
+			ExpiresOn:          verified.ExpiresOn,
+		},
+	}, nil
+}
+
+func verifyAccountAdmin(ctx context.Context, cfg config) error {
+	_, status, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminOpenBaoPath(cfg))
 	if err != nil {
 		return err
 	}
-	newB, bStatus, err := rotateAccountAdminTarget(ctx, cfg, pair.A, pair.B, accountAdminBOpenBaoPath(cfg))
-	if err != nil {
-		return fmt.Errorf("rotate account-admin b with account-admin a: %w", err)
-	}
-	_, aStatus, err := rotateAccountAdminTarget(ctx, cfg, newB, pair.A, accountAdminAOpenBaoPath(cfg))
-	if err != nil {
-		return fmt.Errorf("rotate account-admin a with account-admin b: %w", err)
-	}
-	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin-pair")
-	out.VerifiedWith = "cloudflare-account-admin-pair-rotation"
-	out.AccountAdminAStatus = aStatus
-	out.AccountAdminBStatus = bStatus
+	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin")
+	out.VerifiedWith = "cloudflare-account-admin"
+	out.AccountAdminStatus = status
 	return writeReport(out)
-}
-
-func rotateAccountAdminTarget(ctx context.Context, cfg config, actor, target r2control.ParentCredentials, targetPath string) (r2control.ParentCredentials, accountAdminStatus, error) {
-	if strings.TrimSpace(actor.APIToken) == "" {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("actor account-admin credential must include api_token")
-	}
-	if strings.TrimSpace(target.AccessKeyID) == "" {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("target account-admin credential must include token_id")
-	}
-	actorClient, err := r2control.NewCloudflareAPIClient(actor.APIToken, cfg.timeout)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	details, err := actorClient.GetAccountToken(ctx, cfg.accountID, target.AccessKeyID)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	expiresOn := time.Now().UTC().Add(cfg.accountAdminTTL)
-	updated, err := actorClient.UpdateAccountTokenExpiresOn(ctx, cfg.accountID, details, expiresOn)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	newValue, err := actorClient.RollAccountTokenValue(ctx, cfg.accountID, target.AccessKeyID)
-	if err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	if err := writeAccountAdminCredential(ctx, cfg, targetPath, target.AccessKeyID, newValue, firstNonEmpty(updated.ExpiresOn, expiresOn.Format(time.RFC3339))); err != nil {
-		return r2control.ParentCredentials{}, accountAdminStatus{}, err
-	}
-	return loadAndVerifyAccountAdmin(ctx, cfg, targetPath)
-}
-
-func loadAndVerifyAccountAdminPair(ctx context.Context, cfg config) (accountAdminPair, error) {
-	a, aStatus, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminAOpenBaoPath(cfg))
-	if err != nil {
-		return accountAdminPair{}, fmt.Errorf("verify account-admin a: %w", err)
-	}
-	b, bStatus, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminBOpenBaoPath(cfg))
-	if err != nil {
-		return accountAdminPair{}, fmt.Errorf("verify account-admin b: %w", err)
-	}
-	if a.AccessKeyID == b.AccessKeyID {
-		return accountAdminPair{}, fmt.Errorf("account-admin slots a and b resolve to the same Cloudflare token ID")
-	}
-	return accountAdminPair{A: a, B: b, AStatus: aStatus, BStatus: bStatus}, nil
 }
 
 func provisionSite(ctx context.Context, cfg config) error {
@@ -623,7 +939,7 @@ func provisionSite(ctx context.Context, cfg config) error {
 	if err := provisionChildCredential(ctx, bucketCfg); err != nil {
 		return fmt.Errorf("ensure-bucket: %w", err)
 	}
-	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin-pair")
+	out := baseReport(cfg, "controller-openbao:cloudflare-account-admin")
 	out.VerifiedWith = "cloudflare-site-provisioned"
 	return writeReport(out)
 }
@@ -652,6 +968,12 @@ func loadAndVerifyAccountAdmin(ctx context.Context, cfg config, path string) (r2
 	}
 	if admin.AccessKeyID != "" && verified.ID != admin.AccessKeyID {
 		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("cloudflare account-admin verified as %s but OpenBao stored %s", verified.ID, admin.AccessKeyID)
+	}
+	if _, err := apiClient.GetAccountToken(ctx, cfg.accountID, verified.ID); err != nil {
+		return r2control.ParentCredentials{}, accountAdminStatus{}, fmt.Errorf("cloudflare account-admin cannot read account token metadata; requires Account API Tokens Read on account %s: %w", cfg.accountID, err)
+	}
+	if err := verifyAccountAdminR2Authority(ctx, cfg, apiClient); err != nil {
+		return r2control.ParentCredentials{}, accountAdminStatus{}, err
 	}
 	admin.AccessKeyID = verified.ID
 	return admin, accountAdminStatus{
@@ -682,16 +1004,9 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 			return err
 		}
 	}
-	if cfg.action == "ensure-publisher" || cfg.action == "rotate-publisher" {
-		if err := preflightOpenBaoPersistence(cfg.parentCredentialConfig(), "deployment publisher capability persistence"); err != nil {
-			return err
-		}
-		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath("cloudflare-r2-control-plane.publisher_token_id")), "deployment publisher runtime secret projection"); err != nil {
-			return err
-		}
-	}
 	if cfg.action == "rotate-object-storage-provider" {
-		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath("object-storage-service.r2.admin_access_key_id")), "object-storage provider runtime secret projection"); err != nil {
+		adminSecret := cfg.objectStorageRuntimeSecretNames().AdminAccessKeyName()
+		if err := preflightOpenBaoPersistence(cfg.runtimeOpenBaoCredentialConfig(runtimeSecretOpenBaoPath(adminSecret)), "object-storage provider runtime secret projection"); err != nil {
 			return err
 		}
 	}
@@ -703,10 +1018,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
-	parentClient, err := accountAdminR2Client(cfg, accountAdmin, "cloudflare-r2-control-plane-account-admin-verification")
-	if err != nil {
-		return err
-	}
 	out := baseReport(cfg, accountAdmin.Source)
 	out.ParentAccessKeyIDFingerprint = r2control.Fingerprint(accountAdmin.AccessKeyID)
 	out.BucketExisted = existed
@@ -714,8 +1025,6 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 	switch cfg.action {
 	case "ensure-bucket":
 		err = nil
-	case "ensure-publisher", "rotate-publisher":
-		err = provisionPublisherCredential(ctx, cfg, accountAdmin, parentClient, &out)
 	case "ensure-recovery", "rotate-recovery":
 		err = provisionRecoveryCredential(ctx, cfg, accountAdmin, &out)
 	case "rotate-object-storage-provider":
@@ -730,14 +1039,14 @@ func provisionChildCredential(ctx context.Context, cfg config) error {
 }
 
 func loadRequiredAccountAdminCredentials(ctx context.Context, cfg config) (r2control.ParentCredentials, error) {
-	pair, err := loadAndVerifyAccountAdminPair(ctx, cfg)
+	accountAdmin, _, err := loadAndVerifyAccountAdmin(ctx, cfg, accountAdminOpenBaoPath(cfg))
 	if err != nil {
 		return r2control.ParentCredentials{}, err
 	}
-	if strings.TrimSpace(pair.A.APIToken) == "" {
+	if strings.TrimSpace(accountAdmin.APIToken) == "" {
 		return r2control.ParentCredentials{}, fmt.Errorf("cloudflare account-admin credential must include api_token")
 	}
-	return pair.A, nil
+	return accountAdmin, nil
 }
 
 func preflightOpenBaoPersistence(openBao r2control.ParentCredentialConfig, label string) error {
@@ -751,37 +1060,43 @@ func preflightOpenBaoPersistence(openBao r2control.ParentCredentialConfig, label
 }
 
 func ensureR2BucketWithAccountAdmin(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient) (bool, bool, error) {
-	var existed bool
-	var created bool
-	err := retryR2CredentialPropagation(ctx, "ensure R2 bucket with account-admin credential", func() error {
-		var ensureErr error
-		existed, created, ensureErr = apiClient.EnsureR2Bucket(ctx, cfg.accountID, cfg.bucket)
-		return ensureErr
-	})
+	existed, created, err := apiClient.EnsureR2Bucket(ctx, cfg.accountID, cfg.bucket)
 	if err != nil {
-		return false, false, err
+		return false, false, accountAdminR2AuthorityError(cfg, err)
 	}
 	return existed, created, nil
 }
 
-func accountAdminR2Client(cfg config, parent r2control.ParentCredentials, source string) (*r2control.R2Client, error) {
-	return r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     parent.AccessKeyID,
-		SecretAccessKey: parent.SecretAccessKey,
-		SessionToken:    parent.SessionToken,
-		Source:          source,
-		Timeout:         cfg.timeout,
-	})
+func verifyAccountAdminR2Authority(ctx context.Context, cfg config, apiClient *r2control.CloudflareAPIClient) error {
+	if err := apiClient.VerifyR2BucketTokenPermissionGroups(ctx, cfg.accountID, []string{
+		r2control.PermissionR2BucketItemRead,
+		r2control.PermissionR2BucketItemWrite,
+	}); err != nil {
+		return fmt.Errorf("cloudflare account-admin cannot inspect R2 bucket token permission groups; requires Account API Tokens Read on account %s: %w", cfg.accountID, err)
+	}
+	if strings.TrimSpace(cfg.bucket) == "" {
+		return nil
+	}
+	if _, err := apiClient.GetR2Bucket(ctx, cfg.accountID, cfg.bucket); err != nil {
+		var apiErr r2control.APIStatusError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return accountAdminR2AuthorityError(cfg, err)
+	}
+	return nil
 }
 
-func accountAdminAOpenBaoPath(cfg config) string {
-	return firstNonEmpty(cfg.accountAdminAOpenBaoPath, accountAdminAOpenBaoPathDefault)
+func accountAdminR2AuthorityError(cfg config, err error) error {
+	var apiErr r2control.APIStatusError
+	if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
+		return fmt.Errorf("cloudflare account-admin cannot access R2 bucket %s on account %s; requires Workers R2 Storage Read/Write on the account: %w", cfg.bucket, cfg.accountID, err)
+	}
+	return err
 }
 
-func accountAdminBOpenBaoPath(cfg config) string {
-	return firstNonEmpty(cfg.accountAdminBOpenBaoPath, accountAdminBOpenBaoPathDefault)
+func accountAdminOpenBaoPath(cfg config) string {
+	return firstNonEmpty(cfg.accountAdminOpenBaoPath, accountAdminOpenBaoPathDefault)
 }
 
 func baseReport(cfg config, source string) report {
@@ -885,63 +1200,6 @@ func verifyObjectRoundTripOnce(ctx context.Context, client *r2control.R2Client, 
 	return nil
 }
 
-func provisionPublisherCredential(ctx context.Context, cfg config, parent r2control.ParentCredentials, parentClient *r2control.R2Client, out *report) (err error) {
-	if strings.TrimSpace(parent.APIToken) == "" {
-		return fmt.Errorf("r2 publisher provisioning requires the parent cloudflare API token value")
-	}
-	apiClient, err := r2control.NewCloudflareAPIClient(parent.APIToken, cfg.timeout)
-	if err != nil {
-		return err
-	}
-	tokenName := "verself-" + cfg.site + "-nomad-artifact-publisher-" + time.Now().UTC().Format("20060102T150405Z")
-	publisher, err := apiClient.CreateR2BucketTokenWithPermissions(ctx, cfg.accountID, cfg.bucket, tokenName, []string{
-		r2control.PermissionR2BucketItemRead,
-		r2control.PermissionR2BucketItemWrite,
-	}, time.Now().UTC().Add(cfg.childTokenTTL))
-	if err != nil {
-		return err
-	}
-	persisted := false
-	defer func() {
-		if !persisted {
-			deleteCreatedTokensOnError(&err, apiClient, cfg, publisher)
-		}
-	}()
-	publisherClient, err := r2control.NewR2Client(r2control.R2ClientConfig{
-		Endpoint:        r2control.Endpoint(cfg.accountID),
-		Region:          cfg.region,
-		AccessKeyID:     publisher.S3AccessKeyID,
-		SecretAccessKey: publisher.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-publisher-verification",
-		Timeout:         cfg.timeout,
-	})
-	if err != nil {
-		return err
-	}
-	if _, _, err := parentClient.EnsureBucket(ctx, cfg.bucket); err != nil {
-		return err
-	}
-	if err := verifyObjectRoundTrip(ctx, publisherClient, cfg, "publisher", out); err != nil {
-		return err
-	}
-	if err := writeCapabilityCredential(ctx, cfg, capabilityOpenBaoPath("deployment-publisher"), "deployment-publisher", publisher); err != nil {
-		return err
-	}
-	runtimeValues := publisherRuntimeSecretValues(publisher)
-	if err := writeRuntimeSecrets(ctx, cfg, runtimeValues); err != nil {
-		return err
-	}
-	persisted = true
-	out.ChildCredentialPermission = publisher.PermissionGroup
-	out.ChildCredentialName = publisher.Name
-	out.ChildCredentialExpiresOn = publisher.ExpiresOn
-	out.ChildAccessKeyIDFingerprint = r2control.Fingerprint(publisher.S3AccessKeyID)
-	out.ChildSecretKeyFingerprint = r2control.Fingerprint(publisher.S3SecretKey)
-	out.RuntimeSecretFingerprints = fingerprintMap(runtimeValues)
-	out.VerificationObjectGetStatus = out.TestObjectGetStatus
-	return nil
-}
-
 func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, parent r2control.ParentCredentials, out *report) (err error) {
 	if strings.TrimSpace(parent.APIToken) == "" {
 		return fmt.Errorf("object-storage R2 provider provisioning requires the account-admin Cloudflare API token value")
@@ -983,7 +1241,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 		Region:          cfg.region,
 		AccessKeyID:     adminToken.S3AccessKeyID,
 		SecretAccessKey: adminToken.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-object-storage-admin-verification",
+		Source:          "cloudflare-control-plane-object-storage-admin-verification",
 		Timeout:         cfg.timeout,
 	})
 	if err != nil {
@@ -997,7 +1255,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 		Region:          cfg.region,
 		AccessKeyID:     proxyToken.S3AccessKeyID,
 		SecretAccessKey: proxyToken.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-object-storage-proxy-verification",
+		Source:          "cloudflare-control-plane-object-storage-proxy-verification",
 		Timeout:         cfg.timeout,
 	})
 	if err != nil {
@@ -1006,7 +1264,7 @@ func provisionObjectStorageProviderCredential(ctx context.Context, cfg config, p
 	if err := verifyObjectRoundTrip(ctx, proxyClient, cfg, "object-storage-proxy", out); err != nil {
 		return err
 	}
-	updates := objectStorageVars(adminToken, proxyToken)
+	updates := cfg.objectStorageVars(adminToken, proxyToken)
 	if err := writeRuntimeSecrets(ctx, cfg, updates); err != nil {
 		return err
 	}
@@ -1049,7 +1307,7 @@ func provisionRecoveryCredential(ctx context.Context, cfg config, parent r2contr
 		Region:          cfg.region,
 		AccessKeyID:     recovery.S3AccessKeyID,
 		SecretAccessKey: recovery.S3SecretKey,
-		Source:          "cloudflare-r2-control-plane-recovery-verification",
+		Source:          "cloudflare-control-plane-recovery-verification",
 		Timeout:         cfg.timeout,
 	})
 	if err != nil {
@@ -1113,13 +1371,22 @@ func reconcileDNS(ctx context.Context, cfg config) error {
 	if err != nil {
 		return err
 	}
+	out, err := reconcileDNSDesired(ctx, cfg, accountAdmin, apiClient, desired)
+	if err != nil {
+		_ = writeReport(out)
+		return err
+	}
+	return writeReport(out)
+}
+
+func reconcileDNSDesired(ctx context.Context, cfg config, accountAdmin r2control.ParentCredentials, apiClient *r2control.CloudflareAPIClient, desired dnsDesiredState) (report, error) {
 	zoneIDsByName, err := apiClient.ZonesByName(ctx, desired.zoneNames())
 	if err != nil {
-		return fmt.Errorf("list cloudflare zones: %w", err)
+		return report{}, fmt.Errorf("list cloudflare zones: %w", err)
 	}
 	plan, err := buildDNSPlan(ctx, apiClient, zoneIDsByName, desired)
 	if err != nil {
-		return err
+		return report{}, err
 	}
 	jobs := dnsWriteJobs(plan)
 
@@ -1146,49 +1413,35 @@ func reconcileDNS(ctx context.Context, cfg config) error {
 		})
 	}
 	if cfg.dryRun {
-		return writeReport(out)
+		return out, nil
 	}
 	applied, err := applyDNSWrites(ctx, apiClient, cfg.dnsConcurrency, jobs)
 	out.DNSRecordsApplied = applied
 	if err != nil {
-		_ = writeReport(out)
-		return err
+		return out, err
 	}
-	return writeReport(out)
+	return out, nil
 }
 
 func siteDNSZones(cfg config) ([]string, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
-	body, err := os.ReadFile(path)
+	facts, err := loadSiteFacts(cfg.repoRoot, cfg.site)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	var siteVars struct {
-		VerselfDomain         string `yaml:"verself_domain"`
-		CompanyDomain         string `yaml:"company_domain"`
-		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
-		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
-		Records               []struct {
-			Zone string `yaml:"zone"`
-		} `yaml:"cloudflare_dns_records"`
-	}
-	if err := yaml.Unmarshal(body, &siteVars); err != nil {
-		return nil, fmt.Errorf("decode %s: %w", path, err)
+		return nil, err
 	}
 	zoneBySelector := map[string]string{
-		"product": firstNonEmpty(siteVars.CloudflareProductZone, siteVars.VerselfDomain),
-		"company": firstNonEmpty(siteVars.CloudflareCompanyZone, siteVars.CompanyDomain),
+		"product": facts.productZone,
+		"company": facts.companyZone,
 	}
 	seen := map[string]struct{}{}
 	out := []string{}
-	for _, record := range siteVars.Records {
+	for _, record := range facts.dnsRecords {
 		selector := strings.TrimSpace(record.Zone)
 		zone, ok := zoneBySelector[selector]
 		if !ok {
-			return nil, fmt.Errorf("%s: unknown cloudflare_dns_records[].zone %q", path, selector)
+			return nil, fmt.Errorf("%s: unknown cloudflare.dnsRecords[].zone %q", facts.path, selector)
 		}
-		if zone == "" || strings.Contains(zone, "{{") {
-			return nil, fmt.Errorf("%s: cloudflare DNS zone selector %q resolved to an invalid zone name", path, selector)
+		if zone == "" {
+			return nil, fmt.Errorf("%s: cloudflare DNS zone selector %q resolved to an invalid zone name", facts.path, selector)
 		}
 		if _, ok := seen[zone]; ok {
 			continue
@@ -1197,7 +1450,7 @@ func siteDNSZones(cfg config) ([]string, error) {
 		out = append(out, zone)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%s declares no cloudflare_dns_records", path)
+		return nil, fmt.Errorf("%s declares no cloudflare.dnsRecords", facts.path)
 	}
 	sort.Strings(out)
 	return out, nil
@@ -1240,33 +1493,17 @@ func (d dnsDesiredState) byZone(zone string) []dnsDesiredRecord {
 }
 
 func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
-	path := filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "vars.yml")
-	body, err := os.ReadFile(path)
+	facts, err := loadSiteFacts(cfg.repoRoot, cfg.site)
 	if err != nil {
-		return dnsDesiredState{}, fmt.Errorf("read %s: %w", path, err)
+		return dnsDesiredState{}, err
 	}
-	var siteVars struct {
-		VerselfDomain         string `yaml:"verself_domain"`
-		CompanyDomain         string `yaml:"company_domain"`
-		CloudflareProductZone string `yaml:"cloudflare_product_zone"`
-		CloudflareCompanyZone string `yaml:"cloudflare_company_zone"`
-		BareMetalPublicIPv4   string `yaml:"bare_metal_public_ipv4"`
-		Records               []struct {
-			Kind   string `yaml:"kind"`
-			Record string `yaml:"record"`
-			Zone   string `yaml:"zone"`
-		} `yaml:"cloudflare_dns_records"`
-	}
-	if err := yaml.Unmarshal(body, &siteVars); err != nil {
-		return dnsDesiredState{}, fmt.Errorf("decode %s: %w", path, err)
-	}
-	verself := strings.TrimSpace(siteVars.VerselfDomain)
-	company := strings.TrimSpace(siteVars.CompanyDomain)
-	publicIP := strings.TrimSpace(siteVars.BareMetalPublicIPv4)
+	verself := strings.TrimSpace(facts.productDomain)
+	company := strings.TrimSpace(facts.companyDomain)
+	publicIP := strings.TrimSpace(facts.publicIPv4)
 	if publicIP == "" || publicIP == "0.0.0.0" {
 		inventoryPath := cfg.dnsInventory
 		if strings.TrimSpace(inventoryPath) == "" {
-			inventoryPath = filepath.Join(cfg.repoRoot, "src", "host", "sites", cfg.site, "inventory.ini")
+			inventoryPath = filepath.Join(cfg.repoRoot, "src", "sites", cfg.site, "inventory.ini")
 		}
 		publicIP, err = inventoryInfraHost(inventoryPath)
 		if err != nil {
@@ -1274,29 +1511,27 @@ func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
 		}
 	}
 	if verself == "" || company == "" || publicIP == "" {
-		return dnsDesiredState{}, fmt.Errorf("%s: missing verself_domain, company_domain, or site public IP", path)
+		return dnsDesiredState{}, fmt.Errorf("%s: missing domains.product, domains.company, or site public IP", facts.path)
 	}
-	productZone := firstNonEmpty(siteVars.CloudflareProductZone, verself)
-	companyZone := firstNonEmpty(siteVars.CloudflareCompanyZone, company)
 	seen := map[string]struct{}{}
 	out := dnsDesiredState{}
-	for _, record := range siteVars.Records {
+	for _, record := range facts.dnsRecords {
 		publicDomain := ""
 		hostedZone := ""
 		switch strings.TrimSpace(record.Zone) {
 		case "product":
 			publicDomain = verself
-			hostedZone = productZone
+			hostedZone = facts.productZone
 		case "company":
 			publicDomain = company
-			hostedZone = companyZone
+			hostedZone = facts.companyZone
 		default:
-			return dnsDesiredState{}, fmt.Errorf("%s: unknown cloudflare_dns_records[].zone %q", path, record.Zone)
+			return dnsDesiredState{}, fmt.Errorf("%s: unknown cloudflare.dnsRecords[].zone %q", facts.path, record.Zone)
 		}
 		fqdn := publicFQDN(publicDomain, record.Record)
 		relativeRecord, err := recordNameForHostedZone(fqdn, hostedZone)
 		if err != nil {
-			return dnsDesiredState{}, fmt.Errorf("%s: %w", path, err)
+			return dnsDesiredState{}, fmt.Errorf("%s: %w", facts.path, err)
 		}
 		key := strings.TrimSpace(hostedZone) + "|" + fqdn
 		if _, ok := seen[key]; ok {
@@ -1313,7 +1548,7 @@ func loadDNSDesiredState(cfg config) (dnsDesiredState, error) {
 		})
 	}
 	if len(out.records) == 0 {
-		return dnsDesiredState{}, fmt.Errorf("%s declares no cloudflare_dns_records", path)
+		return dnsDesiredState{}, fmt.Errorf("%s declares no cloudflare.dnsRecords", facts.path)
 	}
 	return out, nil
 }
@@ -1375,7 +1610,7 @@ func inventoryInfraHost(path string) (string, error) {
 		host := fields[0]
 		for _, field := range fields[1:] {
 			key, value, ok := strings.Cut(field, "=")
-			if ok && key == "ansible_host" {
+			if ok && key == "verself_ssh_host" {
 				host = value
 				break
 			}
@@ -1542,20 +1777,14 @@ func deleteCreatedTokensOnError(errp *error, apiClient *r2control.CloudflareAPIC
 	}
 }
 
-func objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[string]string {
-	return map[string]string{
-		"object-storage-service.r2.admin_access_key_id":     adminToken.S3AccessKeyID,
-		"object-storage-service.r2.admin_secret_access_key": adminToken.S3SecretKey,
-		"object-storage-service.r2.proxy_access_key_id":     proxyToken.S3AccessKeyID,
-		"object-storage-service.r2.proxy_secret_access_key": proxyToken.S3SecretKey,
-	}
-}
-
-func publisherRuntimeSecretValues(publisher r2control.CreatedAPIToken) map[string]string {
-	return map[string]string{
-		"cloudflare-r2-control-plane.publisher_token_id":          publisher.S3AccessKeyID,
-		"cloudflare-r2-control-plane.publisher_secret_access_key": publisher.S3SecretKey,
-	}
+func (cfg config) objectStorageVars(adminToken, proxyToken r2control.CreatedAPIToken) map[string]string {
+	names := cfg.objectStorageRuntimeSecretNames()
+	return names.Map(
+		adminToken.S3AccessKeyID,
+		adminToken.S3SecretKey,
+		proxyToken.S3AccessKeyID,
+		proxyToken.S3SecretKey,
+	)
 }
 
 func fingerprintMap(values map[string]string) map[string]string {
@@ -1577,7 +1806,7 @@ func verificationObject(site, prefix string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("generate verification nonce: %w", err)
 	}
 	key := normalizedPrefix(prefix) + site + "/" + time.Now().UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(nonce) + ".txt"
-	body := []byte("verself cloudflare-r2-control-plane verification\nsite=" + site + "\nkey=" + key + "\n")
+	body := []byte("verself cloudflare-control-plane verification\nsite=" + site + "\nkey=" + key + "\n")
 	return key, body, nil
 }
 

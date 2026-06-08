@@ -19,100 +19,110 @@ ssh ubuntu@gamma@access.verself.sh
 ssh ubuntu@dev@access.verself.sh
 ```
 
-During first bootstrap before IAM, Zitadel, Pomerium, and WireGuard are healthy,
-use direct host SSH only as the temporary bootstrap path. After the operator
+During first recovery before IAM, Zitadel, Pomerium, and WireGuard are healthy,
+use direct host SSH only as the temporary recovery path. After the operator
 access handoff, public SSH is Pomerium-only and fallback access is WireGuard:
 
 ```shell
 ssh -p 2222 ubuntu@10.66.66.1
 ```
 
-Run `aspect observe` to discover available telemetry, run `aspect db ch query`/`aspect db pg query` wrappers to easily query ClickHouse/PG with fewer shell string escaping issues, deploy playbooks and correlation model (`deploy_run_key`, `deploy_id`, `traceparent`), TLS via Cloudflare, the host configuration, Ansible playbooks table.
+Run `aspect observe` to discover available telemetry and `aspect db ch query`/`aspect db pg query` wrappers to query ClickHouse/PG with fewer shell string escaping issues. Deployment and recovery spans carry `deploy_run_key`, `deploy_id`, and `traceparent`.
 
 Before testing the authenticated console against the production website, read the agent-browser login runbook in `src/viteplus-monorepo/apps/verself-web/AGENTS.md`.
 
-Deployment requests go through the site-local deployment-service for the requested SHA:
+Deployments promote the checked-out repo state through Guardian and repo-owned Nomad jobs:
 
 ```shell
-aspect deploy --site=prod --sha=HEAD
+guardian run bazel -- build //src/guardian-specification/examples/gamma:fly_artifacts
+guardian fly gamma
 ```
 
-`aspect deploy` resolves the site endpoint, authenticates, submits the request,
-and returns a deployment ID. The deployment-service owns build orchestration,
-artifact publication, Nomad submission, state, errors as data, and ClickHouse
-evidence. Nomad jobs own runtime rollout behavior.
+`guardian fly` runs preflight, uploads the repo graph and content-addressed
+Bazel outputs, submits component-owned Nomad jobs, and observes allocation
+status. The deployment-service owns deployment state, errors as data, and
+ClickHouse evidence for the long-running site-local control loops. Nomad jobs
+own runtime rollout behavior.
 
-## Gamma Wipe + Bootstrap
+**Don't use personal access tokens**. We don't use static permanent long-standing credentials.
+
+## Gamma Wipe + Recovery
 
 If Gamma still has old state, reinstall it to Ubuntu from Latitude. Select the
-generic `verself-bootstrap` user data. That cloud-init only installs the
-operator SSH key and Python for Ansible; all site-specific state is applied by
-inventory and `aspect site converge-host`.
+generic user data. The first operator action after reinstall is SSH access to
+the target node. Site-specific convergence is performed by component-owned
+recovery and deployment jobs; there is no repository-level bootstrap deployer.
 
-If the reinstall does not use the generic user data, use the fresh-host SSH
-root password for `aspect site root-handoff` before host convergence.
+If the reinstall does not use the generic user data, perform the fresh-host SSH
+handoff with a pinned host key before recovery.
 
 ```shell
 cd /home/ubuntu/Projects/verself-sh
 git pull --ff-only
 ```
 
-`aspect site converge-host` configures the OS, installs host tools, starts
-Nomad, and installs the operator-provided OpenBao site root key. It skips the
-public edge. `aspect site bootstrap-deploy` builds locally, copies every
-deployment artifact to the target host over SSH, registers the Nomad jobs
-through a temporary SSH tunnel, and exits. Runtime Cloudflare child credentials
-for deployment publication, recovery, and object-storage-service are written to
-OpenBao by their rotation actions after provider verification. Product provider
-credentials such as Stripe and GitHub App private material may be absent during
-site bootstrap; if absent, the owning service or gate fails when it
-consumes that runtime secret. Resend sending credentials are created by
-`email-service` after site OpenBao is available.
+Recovery configuration is a single-use local handoff. Root trust material is
+operator-held and consumed through ephemeral operator entry paths, not durable
+host files. Component-owned recovery jobs consume the smallest configuration
+they need and fail loudly when a credential is missing, unverifiable, or too
+broadly staged.
 
-The site root key is the operator-held bootstrap key for OpenBao initialization, seal, and
-unseal. It is separate from the fresh-host SSH root password. Runtime DEKs and
-generated site-local credentials are derived or created after site OpenBao is
-available. Cloudflare account tokens, R2 child token creation, DNS authority,
-Stripe, Resend full-access authority, and GitHub App private material are
-external provider authorities; the site root key protects imported copies after
-they enter OpenBao. Provider-side authority originates from the provider control
-plane and enters OpenBao through an approved import or rotation path.
+Resend is a prod/global provider authority. The
+`email-service.resend.full_access_api_key` value is imported into site OpenBao
+so the `email-service-resend-keys` Nomad batch job can create a site-local
+`sending_access` key, write `email-service.resend.api_key`, and write
+`zitadel.smtp.password`. Runtime services do not receive the full-access key.
 
-The Cloudflare account is a single global provider control plane anchored to
-prod authority. `--site=gamma` selects target site records, R2 prefixes, and
-R2 child credential destinations; it does not select a Gamma-local Cloudflare
-authority. The Cloudflare account ID and account-owned R2 buckets are declared
-only in `src/integrations/cloudflare/account.json`. Site metadata consumes
-Cloudflare capabilities through controller-owned DNS/TLS reconciliation and
-scoped R2 child credentials. Cloudflare R2 is modeled as global capability
-buckets, with site isolation handled by object prefixes and OpenBao policy.
-Cloudflare account API tokens are stored only in prod controller OpenBao and are
-exposed only to the rotation/provisioning control plane. Controller-only
-bootstrap exceptions are imported into controller OpenBao.
+OpenBao recovery uses operator-held recovery material: Shamir unseal shares or
+recovery shares for an existing store, PGP recipient identities for fresh
+initialization, and operator credentials only for explicit baseline or
+breakglass operations. Runtime DEKs and generated site-local credentials are
+derived or created after site OpenBao is available. Cloudflare account tokens,
+R2 child token creation, DNS authority, Stripe, Resend full-access authority,
+and GitHub App private material are external provider authorities; after import,
+OpenBao protects the site-local copies. Provider-side authority originates from
+the provider control plane and enters OpenBao through an approved import or
+rotation path.
 
-Prod owns global DNS and R2 control-plane operations for every Verself site.
-Target hosts do not receive Cloudflare account authority during host
-convergence.
+The Cloudflare account is a single global provider account anchored to prod
+authority. `site=gamma` selects target records, R2 prefixes, runtime capability
+credentials, and evidence labels; it does not select a Gamma-local Cloudflare
+account. The Cloudflare account ID and account-owned R2 buckets are declared
+only in `src/integrations/cloudflare/account.json`.
 
-Provision two Cloudflare account admin API tokens before bootstrap. They are
-stored only in controller OpenBao at
-`kv-controller/data/integrations/cloudflare/account-admin/a` and
-`kv-controller/data/integrations/cloudflare/account-admin/b`. Each token must
-have Account API Tokens Read/Write, Workers R2 Storage Read/Write, Workers R2
-Storage Bucket Item Read/Write, Zone Read, and DNS Write for the managed hosted
-zones. The Cloudflare API token value returned by the provider is available
-only once and must be written directly into controller OpenBao by the operator
-or an authenticated controller ingress path. Do not stage Cloudflare account
-authority in repo-local env files, Nomad jobs, Ansible vars, or generated
-artifacts.
+`cloudflare-integration-service` owns Cloudflare provider lifecycle for every
+site. It is the only service that calls Cloudflare. `object-storage-service` is
+the caller for Cloudflare-backed object-byte workflows. Edge/TLS, site
+provisioning, and email provisioning call Cloudflare integration for DNS, ACME
+DNS-01, and Email Routing capabilities. `secrets-service` stores Cloudflare
+secret material, enforces SPIFFE/JIT access, and records OpenBao audit evidence.
+OpenBao supplies KV and Transit primitives; provider policy and rotation state
+machines remain in `cloudflare-integration-service`.
+
+Target hosts receive Cloudflare account authority only through the Cloudflare
+integration recovery task.
+
+Provision one Cloudflare account admin API token before recovery and place it
+only in the local recovery credential file referenced by the Cloudflare recovery
+configuration. The token is not durable site state. Recovery uses it to derive
+and verify DNS, certificate, and object-storage runtime credentials that are
+stored in OpenBao.
+
+The token must have Account API Tokens Read/Write, Workers R2 Storage
+Read/Write, Workers R2 Storage Bucket Item Read/Write, Zone Read, DNS Write,
+and Email Routing permissions for managed zones. The provider returns token
+values only once; write the value directly into a local operator-only handoff
+file or read it from the approved password manager. Do not stage Cloudflare
+account authority in Nomad jobs, generated artifacts, or
+committed encrypted blobs.
 
 The R2 buckets are capability-owned global account resources:
 
-| Capability | Bucket | Durable credential | Access |
-| --- | --- | --- | --- |
-| Deployment artifact publication | `verself-deployment-artifacts` | deployment publisher | read/write for deployment artifact prefixes |
-| Nomad artifact retrieval | `verself-deployment-artifacts` | deployment getter | read-only for deployment artifact prefixes |
-| Recovery and backup bytes | `verself-recovery` | recovery writer/reader | read/write for recovery prefixes |
+| Capability | Bucket | Runtime capability |
+| --- | --- | --- |
+| Deployment artifacts | `verself-deployment-artifacts` | object-storage deployment-artifact write sessions and read handles |
+| Product object storage | service-declared bucket set | object-storage S3-compatible transfer handles and product credentials |
+| Recovery and backup bytes | `verself-recovery` | object-storage recovery writer and reader handles |
 
 Object prefixes include the site name:
 
@@ -127,97 +137,43 @@ the in-flight candidate deployment, and a short drain window for previous
 allocations. Recovery retention follows the recovery policy for the protected
 data class.
 
-After the two account-admin credentials are present in controller OpenBao, every
-Cloudflare action reads account authority from OpenBao:
-
-```shell
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=verify-admin-pair \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=reconcile-dns \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=ensure-bucket \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
-```
-
-If prod controller OpenBao is not reachable during first-site recovery, recover
-or establish controller OpenBao before running Cloudflare DNS or R2
-provisioning. TLS issuance is an explicit public-edge step outside host
-bootstrap. The Cloudflare control plane does not accept static account-admin
-secret files.
-
-Steady-state child rotation uses the prod controller OpenBao account-admin pair
-for the individual capabilities:
-
-```shell
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=rotate-admin-pair \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=rotate-publisher \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file> \
-  --runtime-openbao-addr=<site-runtime-openbao-addr> \
-  --runtime-openbao-token-file=<site-runtime-openbao-token-file>
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=rotate-object-storage-provider \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file> \
-  --runtime-openbao-addr=<site-runtime-openbao-addr> \
-  --runtime-openbao-token-file=<site-runtime-openbao-token-file>
-
-aspect integrations cloudflare-control-plane \
-  --site=gamma \
-  --action=rotate-recovery \
-  --openbao-addr=<controller-openbao-addr> \
-  --openbao-token-file=<controller-openbao-token-file>
-```
-
-The Cloudflare account admin token stays in prod controller OpenBao and is used
-only by the provisioning control plane. It creates the global R2 buckets through
-Cloudflare's REST R2 bucket API, reconciles DNS, issues certificates, and mints
-bucket-scoped R2 child tokens.
-Steady-state artifact publication uses the site-local
-`cloudflare-r2-control-plane` Nomad job with a scoped publisher credential.
-That job receives the publisher access key ID and secret access key from
-OpenBao, then signs temporary R2 upload credentials and per-object download
-URLs per deployment. Nomad downloads artifacts through object-scoped URLs
-returned after upload verification; it does not receive a host-wide R2
-credential.
-
-Bootstrap artifact delivery is SSH file copy to the target host. Nomad artifact
-downloads use `file://` sources for that first deployment. Steady-state
-deployments use per-object download sources returned by the site-local R2
-control plane after upload verification.
-
-Runtime deployment publisher, object-storage, and recovery credentials are
-OpenBao entries.
-
-Daily Cloudflare DNS/R2 rotation is controller-owned:
+After the site is alive, `cloudflare-integration-service` owns steady-state
+provider reconciliation and performs these transitions:
 
 ```text
-verify cloudflare.account_admin
-  -> rotate the account-admin pair through the peer token
-  -> reconcile DNS state from prod control-plane authority
-  -> create new R2 child token generation for each R2 capability
-  -> write runtime child generations to OpenBao
-  -> verify real R2 access for every child generation
+VerifyCloudflareAuthority
+  -> RotateCloudflareAuthority
+  -> ReconcileCloudflareDNS
+  -> ReconcileR2Capability for deployment_artifacts, object_storage_provider, and recovery
+  -> RotateR2CapabilityCredential for each runtime capability
+  -> ReconcileEmailRouting for managed forwarding zones
+```
+
+If prod authority storage is not reachable during first-site recovery, use the
+local recovery credential file only for the first handoff. TLS issuance is an
+explicit Cloudflare integration recovery step.
+
+Steady-state artifact publication uses
+`object-storage-service.CreateObjectWriteSession` and
+`CompleteObjectWriteSession` with capability `deployment_artifacts`.
+Deployment-service uploads artifact bytes to S3-compatible write handles and
+receives read handles for Nomad. Nomad receives object-scoped read sources.
+
+Initial artifact delivery is SSH file copy to the target host. Steady-state
+deployments use per-object download sources returned by `object-storage-service`
+after upload verification.
+
+Runtime deployment, object-storage, and recovery credentials are
+`secrets-service` entries backed by OpenBao.
+
+Daily Cloudflare reconciliation is service-owned:
+
+```text
+verify Cloudflare account authority
+  -> reconcile DNS state from desired records
+  -> create new R2 capability credential generation when due
+  -> persist capability generations through secrets-service
+  -> verify real R2 access for every capability generation
   -> delete superseded R2 child generations after overlap
   -> emit ClickHouse evidence
   -> email the operator on any failure
@@ -228,110 +184,84 @@ the last known valid token generation in OpenBao, write a structured failure
 event, and notify the operator instead of retrying silently or deleting old
 credentials.
 
-```shell
-BOOTSTRAP_SECRET_DIR="$(mktemp -d -t verself-bootstrap.XXXXXX)"
-chmod 700 "$BOOTSTRAP_SECRET_DIR"
-printf '%s\n' '<gamma-site-root-key>' > "$BOOTSTRAP_SECRET_DIR/site-root-key"
-chmod 600 "$BOOTSTRAP_SECRET_DIR/site-root-key"
+OpenBao operator recovery material is entered through explicit operator paths and is
+not placed under `.verself`, git, generated artifacts, site inventory, argv, or
+environment variables.
+
+GitHub Sign-in is a manual provider credential. In GitHub, create or open the
+OAuth App used for browser login, set the homepage URL to the site product
+domain, and set the authorization callback URL to the Zitadel GitHub IdP
+callback for that site:
+
+```text
+https://<site-product-domain>/idps/callback
 ```
 
-If the reinstall used `verself-bootstrap`, write inventory for the new host and
-verify direct SSH as `ubuntu` before convergence:
+For gamma this is `https://gamma.verself.sh/idps/callback`. Store the client
+secret in the approved password manager and import it into site OpenBao as:
+
+```text
+auth-control-plane.github_login.oauth_client_secret
+```
+
+The client ID is site metadata rendered into `auth-control-plane`; the client
+secret is not procedurally provisioned by recovery and must never be committed
+as an env file, SOPS file, Ansible var, or generated artifact.
+
+Write or update the deployment site inventory for the new host and verify SSH
+before recovery:
 
 ```shell
-aspect site inventory-write \
-  --site=gamma \
-  --host=<gamma-public-ip> \
-  --force
-
 ssh ubuntu@<gamma-public-ip> true
 ```
 
-If the reinstall did not use `verself-bootstrap`, prefer pinned host key
-verification for root handoff:
-
-```shell
-printf '%s\n' '<gamma-root-password>' > "$BOOTSTRAP_SECRET_DIR/root-password"
-chmod 600 "$BOOTSTRAP_SECRET_DIR/root-password"
-
-aspect site root-handoff \
-  --site=gamma \
-  --host=<gamma-public-ip> \
-  --root-password-file="$BOOTSTRAP_SECRET_DIR/root-password" \
-  --host-key-sha256='<SHA256:fingerprint>' \
-  --force-inventory
-```
-
-If you do not have the host key fingerprint yet, use TOFU explicitly:
-
-```shell
-aspect site root-handoff \
-  --site=gamma \
-  --host=<gamma-public-ip> \
-  --root-password-file="$BOOTSTRAP_SECRET_DIR/root-password" \
-  --trust-first-use \
-  --force-inventory
-```
-
-Then materialize provider state, publish DNS, converge the host, and deploy:
+Then materialize provider state, publish DNS, run component recovery jobs, and
+deploy:
 
 OpenBao initialization uses the root token returned by `bao operator init` only
-inside the first bootstrap transaction. The token is not stored in `/etc`,
+inside the OpenBao recovery transaction. The token is not stored in `/etc`,
 `.verself`, git, logs, or generated artifacts. Breakglass plaintext access is
 limited to an operator-approved incident or gameday through controller OpenBao
 with an auditable reason and no persistence in repo files, generated artifacts,
 shell history, or logs.
 
-```shell
-aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns --dry-run
-aspect integrations cloudflare-control-plane --site=gamma --action=reconcile-dns
-aspect integrations cloudflare-control-plane --site=gamma --action=ensure-bucket
-aspect site converge-host \
-  --site=gamma \
-  --openbao-site-root-key-file="$BOOTSTRAP_SECRET_DIR/site-root-key"
-aspect site bootstrap-deploy --site=gamma --sha="$(git rev-parse HEAD)"
-aspect deploy --site=gamma --sha="$(git rev-parse HEAD)"
+```text
+cloudflare-control-plane --action=recover --recovery-config=<gamma-cloudflare-recovery.yml> --dry-run
+cloudflare-control-plane --action=recover --recovery-config=<gamma-cloudflare-recovery.yml>
 ```
 
-## Bootstrap State Machine
+```shell
+guardian fly gamma
+```
+
+## Recovery State Machine
 
 ```text
-external provider authority available through controller OpenBao
-  -> site root key is provided as an explicit operator file
-  -> host base converged
-  -> OpenBao initialized and unsealed; unseal material is wrapped by the site root key
-  -> Nomad starts with site-local OpenBao integration
-  -> bootstrap-deploy copies local artifacts over SSH and tunnels to Nomad
-  -> bootstrap-deploy registers the minimum Nomad jobs needed for the site
-  -> service-owned jobs or rotation commands project runtime secrets into OpenBao
-  -> Nomad deploys deployment-service and site-local services
-  -> public-edge certificates and HAProxy are converged after core services are healthy
+operator reaches the node over SSH
+  -> built repo artifacts are copied to the target
+  -> Nomad executes component-owned recovery definitions
+  -> OpenBao initializes, restores, or unseals using operator-held recovery material
+  -> owning recovery jobs import external provider runtime secrets into OpenBao
+  -> service-owned jobs or rotation commands create derived runtime secrets
+  -> deployment-service and site-local services are deployed through Nomad
+  -> public-edge certificates and HAProxy converge after core services are healthy
   -> Pomerium operator access handoff is verified
-  -> normal aspect deploy submits requests to deployment-service
+  -> normal deploys submit requests to deployment-service
 ```
 
 Deployment-service-managed deploys require S0-S7 to pass in under one second:
-S0 site metadata, S1 Nomad allocation evidence, S2 recovery SSH bootstrap
-handoff declaration, S3 `bazelisk` and `git`, S4 OpenBao runtime secret
-delivery, S6 Nomad, and S7 Postgres, deployment repo, and site-local R2
-control-plane. `aspect deploy` reports
+S0 site metadata, S1 Nomad allocation evidence, S2 recovery SSH
+handoff declaration, S3 Guardian-resolved `bazel` and `git`, S4 OpenBao runtime secret
+delivery, S6 Nomad, S7 Postgres, deployment repo, and artifact publishing
+through `object-storage-service`. The deployment API reports
 `deployment_service_unavailable` with the failed stage and does not SSH or run
-Ansible.
+recovery.
 
-`aspect site bootstrap-deploy` is the only deployment-shaped bootstrap escape
-hatch. It runs from the controller, opens a temporary recovery SSH tunnel to the
-site Nomad API, builds the deployment inputs locally, copies the artifact bytes
-to `/var/lib/verself/bootstrap/artifacts/<site>/<sha>/` on the host, rewrites
-the Nomad artifact sources to those host-local files, registers the Nomad jobs,
-and exits.
+Only durable local host state classes remain after handoff:
 
-Only two local host state classes remain after handoff:
-
-- `/etc/verself/bootstrap/openbao-root.key`: root-only site root key material
-  needed to unwrap OpenBao recovery material during bootstrap and unseal.
-- `/var/lib/verself/bootstrap/openbao`: OpenBao recovery material wrapped by
-  the site root key. The `bao operator init` root token exists only in memory
-  during this state transition and is revoked before the bootstrap task exits.
+- `/run/verself/recovery/openbao/report.json`: nonsecret OpenBao recovery
+  conditions and evidence. The `bao operator init` root token exists only in
+  memory during this state transition and is revoked before recovery completes.
 - `/var/lib/verself/access/pomerium`: operator-access key material needed by
   Pomerium and sshd before an authenticated operator can reach the host through
   Pomerium.

@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,7 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
 func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
@@ -26,12 +31,38 @@ func TestRetryableR2CredentialPropagationUsesTypedStatuses(t *testing.T) {
 	}
 }
 
+func TestAccountAdminR2AuthorityErrorExplainsPermission(t *testing.T) {
+	err := accountAdminR2AuthorityError(validTestConfig(), r2control.APIStatusError{
+		Method:     http.MethodGet,
+		Path:       "/accounts/0123456789abcdef0123456789abcdef/r2/buckets/verself-deployment-artifacts",
+		StatusCode: http.StatusForbidden,
+		Body:       `{"success":false}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires Workers R2 Storage Read/Write") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestAccountAdminR2AuthorityErrorLeavesNonAuthError(t *testing.T) {
+	input := r2control.APIStatusError{
+		Method:     http.MethodGet,
+		Path:       "/accounts/0123456789abcdef0123456789abcdef/r2/buckets/missing",
+		StatusCode: http.StatusNotFound,
+		Body:       `{"success":false}`,
+	}
+	err := accountAdminR2AuthorityError(validTestConfig(), input)
+	if err.Error() != input.Error() {
+		t.Fatalf("error = %v, want original", err)
+	}
+}
+
 func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.openBaoAddr = "https://openbao.internal"
-	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher"
+	cfg.openBaoPath = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin"
 	cfg.openBaoCACertFile = "/openbao/ca.pem"
 	cfg.openBaoTokenFile = "/run/openbao/token"
+	cfg.openBaoToken = "openbao-token"
 
 	got := cfg.parentCredentialConfig()
 	if got.Source != r2control.ParentCredentialSourceOpenBao {
@@ -39,6 +70,9 @@ func TestParentCredentialConfigUsesOpenBao(t *testing.T) {
 	}
 	if got.OpenBaoAddr != cfg.openBaoAddr || got.OpenBaoPath != cfg.openBaoPath || got.OpenBaoCACertFile != cfg.openBaoCACertFile || got.OpenBaoTokenFile != cfg.openBaoTokenFile {
 		t.Fatalf("OpenBao config = %+v", got)
+	}
+	if got.OpenBaoToken != "openbao-token" {
+		t.Fatalf("OpenBao token was not carried in memory")
 	}
 }
 
@@ -80,111 +114,300 @@ func TestWriteRuntimeSecretsWritesKVValues(t *testing.T) {
 		runtimeOpenBaoTokenFile: tokenFile,
 		timeout:                 time.Second,
 	}, map[string]string{
-		"cloudflare-r2-control-plane.publisher_token_id":    "publisher-id",
+		"object-storage-service.r2.admin_access_key_id":     "admin-id",
 		"object-storage-service.r2.proxy_secret_access_key": "proxy-secret",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if writes["kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id"] != "publisher-id" {
-		t.Fatalf("publisher write = %#v", writes)
+	if writes["kv-runtime/data/secret/org/object-storage-service.r2.admin_access_key_id"] != "admin-id" {
+		t.Fatalf("admin write = %#v", writes)
 	}
 	if writes["kv-runtime/data/secret/org/object-storage-service.r2.proxy_secret_access_key"] != "proxy-secret" {
 		t.Fatalf("proxy write = %#v", writes)
 	}
 }
 
-func TestSiteDNSZonesUsesHostedZoneForSubdomainSite(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
-verself_domain: gamma.verself.sh
-cloudflare_product_zone: verself.sh
-company_domain: gamma.guardianintelligence.org
-cloudflare_company_zone: guardianintelligence.org
-cloudflare_dns_records:
-  - { kind: public_api_origin, record: deployments.api, zone: product }
-  - { kind: browser_origin, record: "@", zone: company }
-`)
-	zones, err := siteDNSZones(config{repoRoot: root, site: "gamma"})
-	if err != nil {
-		t.Fatal(err)
+func TestValidateImportAccountAdminRequiresExactlyOneTokenSource(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.action = "import-account-admin"
+	cfg.openBaoAddr = "https://openbao.internal"
+
+	err := cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--account-admin-api-token-file is required") {
+		t.Fatalf("validate error = %v", err)
 	}
-	if len(zones) != 2 || zones[0] != "guardianintelligence.org" || zones[1] != "verself.sh" {
-		t.Fatalf("zones = %#v", zones)
+
+	cfg.openBaoTokenFile = "/run/openbao/token"
+	cfg.accountAdminAPITokenFile = "/run/operator/cloudflare-token"
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("file token source should validate: %v", err)
+	}
+
+	cfg.operatorImportStdin = true
+	err = cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--operator-import-stdin cannot be combined") {
+		t.Fatalf("validate error with mixed token sources = %v", err)
+	}
+
+	cfg.openBaoTokenFile = ""
+	cfg.accountAdminAPITokenFile = ""
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("operator import stdin should validate: %v", err)
+	}
+
+	cfg.operatorImportStdin = false
+	cfg.accountAdminAPITokenFile = "/run/operator/cloudflare-token"
+	cfg.operatorImportInitMaterial = "/run/operator/init-material.json"
+	err = cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--operator-import-init-material and --operator-import-private-key-file are required together") {
+		t.Fatalf("validate error with incomplete init material source = %v", err)
+	}
+
+	cfg.operatorImportPrivateKeyFile = "/run/operator/private-key.asc"
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("init-material token source should validate: %v", err)
+	}
+
+	cfg.openBaoTokenFile = "/run/openbao/token"
+	err = cfg.validate()
+	if err == nil || !strings.Contains(err.Error(), "--openbao-token-file cannot be combined") {
+		t.Fatalf("validate error with mixed file token sources = %v", err)
 	}
 }
 
-func TestLoadDNSDesiredStateUsesInventoryWhenSiteIPIsPlaceholder(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
-verself_domain: gamma.verself.sh
-company_domain: gamma.guardianintelligence.org
-bare_metal_public_ipv4: 0.0.0.0
-cloudflare_dns_records:
-  - { kind: browser_origin, record: "@", zone: product }
-`)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/inventory.ini"), `
-[infra]
-vs-gamma-w0 ansible_host=203.0.113.10
-`)
-
-	desired, err := loadDNSDesiredState(config{repoRoot: root, site: "gamma"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(desired.records) != 1 {
-		t.Fatalf("unexpected desired records: %+v", desired.records)
-	}
-	if desired.records[0].targetIP != "203.0.113.10" {
-		t.Fatalf("target IP came from vars placeholder: %+v", desired.records[0])
+func TestCloudflareRecoveryAuthorityUnavailableErrorRequestsOperatorAuthority(t *testing.T) {
+	err := cloudflareRecoveryAuthorityUnavailableError(
+		"kv-controller/data/integrations/cloudflare/account-admin",
+		errors.New("missing account-admin"),
+		"kv-controller/data/integrations/cloudflare/r2/capabilities/recovery",
+		errors.New("missing recovery credential"),
+	)
+	msg := err.Error()
+	for _, want := range []string{
+		"CloudflareRecoveryAuthorityAvailable=False",
+		"OperatorAuthorityRequired",
+		"--operator-import-init-material",
+		"--operator-import-private-key-file",
+		"--account-admin-api-token-file",
+		"--operator-import-stdin",
+		"scoped OpenBao token",
+		"guardian-operator-import",
+		"init-material.json",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q did not contain %q", msg, want)
+		}
 	}
 }
 
-func TestLoadDNSDesiredStateUsesHostedZoneForSubdomainSite(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/vars.yml"), `
-verself_domain: gamma.verself.sh
-cloudflare_product_zone: verself.sh
-company_domain: gamma.guardianintelligence.org
-cloudflare_company_zone: guardianintelligence.org
-bare_metal_public_ipv4: 203.0.113.10
-cloudflare_dns_records:
-  - { kind: public_api_origin, record: deployments.api, zone: product }
-  - { kind: browser_origin, record: "@", zone: company }
-`)
+func TestReadRequiredSecretFileRequiresOperatorOnlyMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte("cloudflare-token\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	desired, err := loadDNSDesiredState(config{repoRoot: root, site: "gamma"})
+	_, err := readRequiredSecretFile(path, "cloudflare token")
+	if err == nil || !strings.Contains(err.Error(), "readable only by the operator") {
+		t.Fatalf("read error = %v", err)
+	}
+}
+
+func TestReadRequiredSecretFileRejectsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("cloudflare-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "token")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := readRequiredSecretFile(link, "cloudflare token")
+	if err == nil || !strings.Contains(err.Error(), "must not be a symlink") {
+		t.Fatalf("read error = %v", err)
+	}
+}
+
+func TestReadRequiredSecretFileTrimsSecret(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte(" cloudflare-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := readRequiredSecretFile(path, "cloudflare token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearBytes(got)
+	if string(got) != "cloudflare-token" {
+		t.Fatalf("secret = %q", got)
+	}
+}
+
+func TestReadRequiredSecretStdinTrimsSecret(t *testing.T) {
+	got, err := readRequiredSecretStdin(strings.NewReader(" cloudflare-token\n"), "cloudflare token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearBytes(got)
+	if string(got) != "cloudflare-token" {
+		t.Fatalf("secret = %q", got)
+	}
+}
+
+func TestReadOperatorImportStdinRequiresBothTokens(t *testing.T) {
+	material, err := readOperatorImportStdin(strings.NewReader(`{
+  "openBaoToken": " openbao-token ",
+  "cloudflareAccountAdminAPIToken": " cloudflare-token "
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if material.OpenBaoToken != "openbao-token" || material.CloudflareAccountAdminAPIToken != "cloudflare-token" {
+		t.Fatalf("material = %#v", material)
+	}
+
+	_, err = readOperatorImportStdin(strings.NewReader(`{"openBaoToken":"openbao-token"}`))
+	if err == nil || !strings.Contains(err.Error(), "requires openBaoToken and cloudflareAccountAdminAPIToken") {
+		t.Fatalf("missing token error = %v", err)
+	}
+}
+
+func TestReadAccountAdminImportDecryptsOpenBaoTokenFromInitMaterial(t *testing.T) {
+	dir := t.TempDir()
+	privateKeyPath, encryptedToken := writeTestOperatorImportPGPMaterial(t, dir, "openbao-token")
+	initMaterialPath := filepath.Join(dir, "init-material.json")
+	writeTestFile(t, initMaterialPath, fmt.Sprintf(`{
+  "apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+  "kind": "OpenBaoEncryptedInitMaterial",
+  "metadata": {"name": "openbao"},
+  "spec": {
+    "operatorImportTokens": [{
+      "name": "guardian-operator-import",
+      "encryptedTokensB64": [%q]
+    }]
+  }
+}`, encryptedToken))
+	accountAdminPath := filepath.Join(dir, "cloudflare-token")
+	if err := os.WriteFile(accountAdminPath, []byte("cloudflare-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := validTestConfig()
+	cfg.action = "import-account-admin"
+	cfg.accountAdminAPITokenFile = accountAdminPath
+	cfg.operatorImportInitMaterial = initMaterialPath
+	cfg.operatorImportPrivateKeyFile = privateKeyPath
+	cfg.operatorImportTokenName = "guardian-operator-import"
+
+	token, got, err := readAccountAdminImport(strings.NewReader(""), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clearBytes(token)
+	if string(token) != "cloudflare-token" {
+		t.Fatalf("account-admin token = %q", token)
+	}
+	if got.openBaoToken != "openbao-token" {
+		t.Fatalf("OpenBao token = %q", got.openBaoToken)
+	}
+}
+
+func TestApplyRecoveryConfigMapsMinimalCloudflareControlPlane(t *testing.T) {
+	t.Setenv("NOMAD_SECRETS_DIR", "/alloc/secrets")
+	path := filepath.Join(t.TempDir(), "cloudflare-recovery.yml")
+	writeTestFile(t, path, minimalRecoveryConfigYAML())
+
+	cfg := validTestConfig()
+	cfg.action = "recover"
+	cfg.recoveryConfig = path
+	if err := cfg.applyRecoveryConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.site != "gamma" || cfg.accountID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("site/account = %s/%s", cfg.site, cfg.accountID)
+	}
+	if cfg.openBaoTokenFile != "/alloc/secrets/vault_token" {
+		t.Fatalf("openbao token file = %q", cfg.openBaoTokenFile)
+	}
+	if cfg.accountAdminOpenBaoPath != "kv-controller/data/integrations/cloudflare/account-admin" {
+		t.Fatalf("account-admin OpenBao path = %q", cfg.accountAdminOpenBaoPath)
+	}
+	if cfg.objectStorageRuntimeSecretNames().AdminAccessKeyName() != "object-storage-service.r2.admin_access_key_id" {
+		t.Fatalf("runtime secret names = %#v", cfg.objectStorageRuntimeSecretNames())
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoadCloudflareControlPlaneSelectsFromGuardianDocument(t *testing.T) {
+	t.Setenv("NOMAD_SECRETS_DIR", "/alloc/secrets")
+	path := filepath.Join(t.TempDir(), "document.yml")
+	writeTestFile(t, path, minimalGuardianRecoveryDocumentYAML())
+
+	doc, err := loadCloudflareControlPlane(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.APIVersion != cloudflareControlPlaneAPIVersion || doc.Kind != kindCloudflareControlPlane {
+		t.Fatalf("selected resource = %s/%s", doc.APIVersion, doc.Kind)
+	}
+	if doc.Spec.Site != "gamma" || doc.Spec.AccountID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("site/account = %s/%s", doc.Spec.Site, doc.Spec.AccountID)
+	}
+}
+
+func TestLoadCloudflareControlPlaneRejectsUnknownSelectedSpecField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "document.yml")
+	body := strings.Replace(minimalGuardianRecoveryDocumentYAML(), "      site: gamma", "      site: gamma\n      unsupported: value", 1)
+	writeTestFile(t, path, body)
+
+	_, err := loadCloudflareControlPlane(path)
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("load error = %v", err)
+	}
+}
+
+func TestDNSDesiredStateFromRecoveryUsesHostedZones(t *testing.T) {
+	doc := CloudflareControlPlane{
+		Spec: CloudflareControlPlaneSpec{
+			TargetIPv4: "203.0.113.10",
+			DNS: CloudflareDNS{
+				Zones: []CloudflareDNSZone{
+					{Name: "product", Zone: "verself.sh", Domain: "gamma.verself.sh"},
+					{Name: "company", Zone: "guardianintelligence.org", Domain: "gamma.guardianintelligence.org"},
+				},
+				Records: []CloudflareDNSRecord{
+					{Zone: "product", Record: "deployments.api", TTL: 1},
+					{Zone: "company", Record: "@", TTL: 1},
+				},
+			},
+		},
+	}
+	desired, err := dnsDesiredStateFromRecovery(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(desired.records) != 2 {
-		t.Fatalf("unexpected desired records: %+v", desired.records)
+		t.Fatalf("records = %#v", desired.records)
 	}
 	byFQDN := map[string]dnsDesiredRecord{}
 	for _, record := range desired.records {
 		byFQDN[record.fqdn] = record
 	}
-	deployments := byFQDN["deployments.api.gamma.verself.sh"]
-	if deployments.zoneName != "verself.sh" || deployments.record != "deployments.api.gamma" {
-		t.Fatalf("deployment record = %+v", deployments)
+	if got := byFQDN["deployments.api.gamma.verself.sh"]; got.zoneName != "verself.sh" || got.record != "deployments.api.gamma" {
+		t.Fatalf("product record = %+v", got)
 	}
-	company := byFQDN["gamma.guardianintelligence.org"]
-	if company.zoneName != "guardianintelligence.org" || company.record != "gamma" {
-		t.Fatalf("company record = %+v", company)
+	if got := byFQDN["gamma.guardianintelligence.org"]; got.zoneName != "guardianintelligence.org" || got.record != "gamma" {
+		t.Fatalf("company record = %+v", got)
 	}
 }
 
 func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	root := t.TempDir()
 	writeCloudflareAccountConfig(t, root)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
-  "artifact_delivery": {
-    "kind": "cloudflare_r2_control_plane",
-    "key_prefix": "sha256",
-    "checksum_algorithm": "sha256",
-    "public": false
-  }
-}`)
 
 	cfg, err := loadSiteConfig(root, "gamma")
 	if err != nil {
@@ -201,31 +424,9 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	}
 }
 
-func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
-	root := t.TempDir()
-	writeCloudflareAccountConfig(t, root)
-	writeTestFile(t, filepath.Join(root, "src/host/sites/gamma/site.json"), `{
-  "artifact_delivery": {
-    "kind": "cloudflare_r2_control_plane",
-    "bucket": "verself-deployment-artifacts",
-    "key_prefix": "sha256",
-    "checksum_algorithm": "sha256",
-    "public": false
-  }
-}`)
-
-	err := validLoadSiteConfigError(root, "gamma")
-	if err == nil {
-		t.Fatal("expected site Cloudflare global rejection")
-	}
-	if !strings.Contains(err.Error(), "artifact_delivery.bucket belongs to src/integrations/cloudflare/account.json") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
 func validTestConfig() config {
 	return config{
-		action:                 "verify-admin-pair",
+		action:                 "verify-account-admin",
 		site:                   "gamma",
 		accountID:              "0123456789abcdef0123456789abcdef",
 		bucket:                 "verself-deployment-artifacts",
@@ -233,7 +434,6 @@ func validTestConfig() config {
 		region:                 "auto",
 		tempTTL:                15 * time.Minute,
 		childTokenTTL:          7 * 24 * time.Hour,
-		accountAdminTTL:        7 * 24 * time.Hour,
 		inventoryDepth:         2,
 		dnsConcurrency:         8,
 		acmeDNSPropagationWait: 2 * time.Minute,
@@ -264,7 +464,98 @@ func writeCloudflareAccountConfig(t *testing.T, root string) {
 }`)
 }
 
-func validLoadSiteConfigError(root, site string) error {
-	_, err := loadSiteConfig(root, site)
-	return err
+func writeTestOperatorImportPGPMaterial(t *testing.T, dir string, token string) (string, string) {
+	t.Helper()
+	entity, err := openpgp.NewEntity("operator", "", "operator@example.invalid", nil)
+	if err != nil {
+		t.Fatalf("generate operator PGP entity: %v", err)
+	}
+	var private bytes.Buffer
+	if err := entity.SerializePrivate(&private, nil); err != nil {
+		t.Fatalf("serialize private key: %v", err)
+	}
+	privateKeyPath := filepath.Join(dir, "operator-private-key.asc")
+	if err := os.WriteFile(privateKeyPath, private.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var encrypted bytes.Buffer
+	writer, err := openpgp.Encrypt(&encrypted, []*openpgp.Entity{entity}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("encrypt operator import token: %v", err)
+	}
+	if _, err := writer.Write([]byte(token)); err != nil {
+		t.Fatalf("write encrypted token: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close encrypted token: %v", err)
+	}
+	return privateKeyPath, base64.StdEncoding.EncodeToString(encrypted.Bytes())
+}
+
+func minimalRecoveryConfigYAML() string {
+	return `apiVersion: cloudflare.guardianintelligence.org/v1alpha1
+kind: CloudflareControlPlane
+metadata:
+  name: gamma-cloudflare
+spec:
+  site: gamma
+  accountID: 0123456789abcdef0123456789abcdef
+  accountAdminOpenBaoPath: kv-controller/data/integrations/cloudflare/account-admin
+  targetIPv4: 203.0.113.10
+  openBao:
+    address: https://127.0.0.1:8200
+    tokenFile: ${NOMAD_SECRETS_DIR}/vault_token
+    caCertFile: /etc/verself/openbao/ca.pem
+  dns:
+    zones:
+      - name: product
+        zone: verself.sh
+        domain: gamma.verself.sh
+    records:
+      - zone: product
+        record: "@"
+        ttl: 1
+        proxied: false
+  tls:
+    outputDir: /etc/haproxy/certs
+    acme:
+      directoryURL: https://acme-v02.api.letsencrypt.org/directory
+      contactEmail: agents@guardianintelligence.org
+      dnsPropagationWait: 2m
+      renewBefore: 720h
+    certificates:
+      - name: gamma.verself.sh
+        domains:
+          - gamma.verself.sh
+  objectStorage:
+    bucket: verself-deployment-artifacts
+    recoveryBucket: verself-recovery
+    childTokenTTL: 168h
+    runtimeSecrets:
+      adminAccessKeyID: object-storage-service.r2.admin_access_key_id
+      adminSecretAccessKey: object-storage-service.r2.admin_secret_access_key
+      proxyAccessKeyID: object-storage-service.r2.proxy_access_key_id
+      proxySecretAccessKey: object-storage-service.r2.proxy_secret_access_key
+`
+}
+
+func minimalGuardianRecoveryDocumentYAML() string {
+	lines := strings.Split(strings.TrimSpace(minimalRecoveryConfigYAML()), "\n")
+	var b strings.Builder
+	b.WriteString("entrypoint: {}\n")
+	b.WriteString("resources:\n")
+	b.WriteString("  - apiVersion: example.guardianintelligence.org/v1alpha1\n")
+	b.WriteString("    kind: Ignored\n")
+	b.WriteString("    metadata:\n")
+	b.WriteString("      name: ignored\n")
+	b.WriteString("    spec: {}\n")
+	b.WriteString("  - ")
+	b.WriteString(lines[0])
+	b.WriteByte('\n')
+	for _, line := range lines[1:] {
+		b.WriteString("    ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }

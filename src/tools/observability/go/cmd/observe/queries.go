@@ -240,7 +240,7 @@ func emptyHintFor(id string) string {
 	case "describe.field.resource_attributes":
 		return "No ResourceAttribute with this name across traces or logs."
 	case "catalog.deploys":
-		return "No verself-deploy spans have been recorded. Run `aspect deploy` to populate deploy traces."
+		return "No deployment-service spans have been recorded. Run `guardian fly` to populate deploy traces."
 	case "deploy.nomad_decisions":
 		return "No verself.nomad.* span events were recorded for this deploy. The deploy likely failed before Nomad planning."
 	case "deploy.nomad_observer_events":
@@ -822,7 +822,7 @@ SELECT
   TraceId AS trace_id,
   left(StatusMessage, 160) AS error
 FROM default.otel_traces
-WHERE ServiceName = 'verself-deploy'
+WHERE ServiceName = 'deployment-service'
   AND SpanName = 'verself_deploy.run'
   AND Timestamp >= parseDateTime64BestEffort({since:String}, 9, 'UTC')
   AND Timestamp <= parseDateTime64BestEffort({until:String}, 9, 'UTC')
@@ -851,7 +851,7 @@ SELECT
   left(StatusMessage, 160) AS error
 FROM default.otel_traces
 WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
-  AND (ServiceName = 'verself-deploy' OR ServiceName = 'bazel')
+  AND (ServiceName = 'deployment-service' OR ServiceName = 'bazel')
 ORDER BY Timestamp, ServiceName, SpanName
 LIMIT {row_limit:UInt32}`
 
@@ -876,7 +876,7 @@ SELECT
 FROM default.otel_traces
 ARRAY JOIN Events.Timestamp AS event_time, Events.Name AS event_name, Events.Attributes AS event_attrs
 WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
-  AND ServiceName = 'verself-deploy'
+  AND ServiceName = 'deployment-service'
   AND event_name IN (
     'verself.nomad.decision',
     'verself.nomad.submitted',
@@ -897,7 +897,7 @@ WITH
       JSONExtract(SpanAttributes['verself.changed_jobs'], 'Array(String)') AS changed_jobs
     FROM default.otel_traces
     WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
-      AND ServiceName = 'verself-deploy'
+      AND ServiceName = 'deployment-service'
       AND SpanName = 'verself_deploy.run'
     ORDER BY Timestamp DESC
     LIMIT 1
@@ -914,7 +914,7 @@ WITH
     FROM default.otel_traces
     ARRAY JOIN Events.Name AS event_name, Events.Attributes AS event_attrs
     WHERE ResourceAttributes['verself.deploy_run_key'] = {run_key:String}
-      AND ServiceName = 'verself-deploy'
+      AND ServiceName = 'deployment-service'
   )
 SELECT
   formatDateTime(l.Timestamp, '%H:%i:%S') AS time,

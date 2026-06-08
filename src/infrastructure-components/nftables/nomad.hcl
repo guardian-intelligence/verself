@@ -1,7 +1,17 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
+variable "nftables_resource_name" {
+  type    = string
+  default = "nftables"
+}
+
 job "nftables" {
-  name = "nftables"
+  name        = "nftables"
   datacenters = ["*"]
-  type = "batch"
+  type        = "batch"
 
   group "nftables" {
     count = 1
@@ -11,25 +21,16 @@ job "nftables" {
       user = "root"
 
       config {
-        command = "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables/bin/nftables-apply"
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/nftables/cmd/nftables-apply/nftables-apply_/nftables-apply"
         args = [
-          "--artifact-root", "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables",
-          "--nft-bin", "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables/bin/nft",
-          "--ld-library-path", "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables/lib/x86_64-linux-gnu",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.nftables_resource_name}",
         ]
       }
 
-      env {
-        LD_LIBRARY_PATH = "$${VERSELF_NFTABLES_RUNTIME}/opt/verself/nftables/lib/x86_64-linux-gnu"
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "nftables"
-        VERSELF_NFTABLES_RUNTIME = "verself-artifact://nftables-runtime"
-        VERSELF_SUPERVISOR = "nomad"
-      }
-
       resources {
-        cpu = 50
+        cpu    = 50
         memory = 64
       }
 

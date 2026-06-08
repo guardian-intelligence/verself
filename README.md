@@ -43,9 +43,9 @@ Choose the controller platform that is running the repo commands.
 # 1. Toolchain (one time per controller).
 ./src/tools/dev/bootstrap/bootstrap-linux-amd64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
-bazelisk mod tidy
 aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
+guardian run bazel -- mod tidy
 ```
 
 ### macOS Apple Silicon controller
@@ -54,20 +54,18 @@ export PATH="${HOME}/.local/bin:${PATH}"
 # 1. Toolchain (one time per controller).
 ./src/tools/dev/bootstrap/bootstrap-darwin-arm64
 export PATH="${HOME}/.cache/verself/bootstrap-bin:${PATH}"
-bazelisk mod tidy
 aspect dev install --install-shims --bin-dir="${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
+guardian run bazel -- mod tidy
 ```
 
 `src/tools/dev/bootstrap/bootstrap-linux-amd64` and
 `src/tools/dev/bootstrap/bootstrap-darwin-arm64` are the only sanctioned shell
-scripts in the repo. Everything else is done through `aspect` and `bazelisk`.
-The two scripts just get any fresh developer/agent environment set up. They
-install into `${HOME}/.cache/verself/bootstrap-bin` by default and
-automatically add that directory to GitHub Actions via `GITHUB_PATH` when that
-file is present. Set `BOOTSTRAP_INSTALL_DIR` to opt into a different install
-directory. Local shells need that directory on `PATH` before invoking `aspect`
-or `bazelisk`.
-`aspect dev install --install-shims` also installs the Bazel-pinned
-`ansible-galaxy` CLI so operators can inspect the host Ansible collection set
-used by convergence.
+scripts in the repo. They install stage-zero `bazel` and `aspect`; `aspect dev
+install --install-shims` then installs `guardian` and Guardian-owned tool shims.
+After that, repo-owned Bazel execution goes through
+`guardian run bazel -- ...`. The bootstrap scripts install into
+`${HOME}/.cache/verself/bootstrap-bin` by default and automatically add that
+directory to GitHub Actions via `GITHUB_PATH` when that file is present. Set
+`BOOTSTRAP_INSTALL_DIR` to opt into a different install directory. Local shells
+need that directory on `PATH` before invoking the stage-zero build step.

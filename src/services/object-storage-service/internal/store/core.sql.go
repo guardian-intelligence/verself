@@ -188,6 +188,49 @@ func (q *Queries) BucketByName(ctx context.Context, arg BucketByNameParams) (Obj
 	return i, err
 }
 
+const completeWriteSession = `-- name: CompleteWriteSession :one
+UPDATE object_storage_write_sessions
+SET status = $1, completed_at = $2
+WHERE site = $3
+  AND session_id = $4
+  AND status = $5
+RETURNING session_id, site, capability, namespace, bucket_id, idempotency_key,
+          status, expires_at, created_at, created_by, completed_at
+`
+
+type CompleteWriteSessionParams struct {
+	CompletedStatus string
+	CompletedAt     pgtype.Timestamptz
+	Site            string
+	SessionID       string
+	OpenStatus      string
+}
+
+func (q *Queries) CompleteWriteSession(ctx context.Context, arg CompleteWriteSessionParams) (ObjectStorageWriteSession, error) {
+	row := q.db.QueryRow(ctx, completeWriteSession,
+		arg.CompletedStatus,
+		arg.CompletedAt,
+		arg.Site,
+		arg.SessionID,
+		arg.OpenStatus,
+	)
+	var i ObjectStorageWriteSession
+	err := row.Scan(
+		&i.SessionID,
+		&i.Site,
+		&i.Capability,
+		&i.Namespace,
+		&i.BucketID,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
 const createAlias = `-- name: CreateAlias :exec
 INSERT INTO object_storage_bucket_aliases (alias, bucket_id, prefix, service_tag, created_at, created_by)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -304,6 +347,82 @@ func (q *Queries) CreateCredential(ctx context.Context, arg CreateCredentialPara
 		arg.CreatedBy,
 		arg.RevokedAt,
 		arg.RevokedBy,
+	)
+	return err
+}
+
+const createWriteSession = `-- name: CreateWriteSession :exec
+INSERT INTO object_storage_write_sessions (
+    session_id, site, capability, namespace, bucket_id, idempotency_key,
+    status, expires_at, created_at, created_by, completed_at
+)
+VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $9,
+    $10, $11
+)
+`
+
+type CreateWriteSessionParams struct {
+	SessionID      string
+	Site           string
+	Capability     string
+	Namespace      string
+	BucketID       uuid.UUID
+	IdempotencyKey string
+	Status         string
+	ExpiresAt      pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	CreatedBy      string
+	CompletedAt    pgtype.Timestamptz
+}
+
+func (q *Queries) CreateWriteSession(ctx context.Context, arg CreateWriteSessionParams) error {
+	_, err := q.db.Exec(ctx, createWriteSession,
+		arg.SessionID,
+		arg.Site,
+		arg.Capability,
+		arg.Namespace,
+		arg.BucketID,
+		arg.IdempotencyKey,
+		arg.Status,
+		arg.ExpiresAt,
+		arg.CreatedAt,
+		arg.CreatedBy,
+		arg.CompletedAt,
+	)
+	return err
+}
+
+const createWriteSessionObject = `-- name: CreateWriteSessionObject :exec
+INSERT INTO object_storage_write_session_objects (
+    session_id, name, object_key, sha256, size_bytes, action, created_at
+)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7
+)
+`
+
+type CreateWriteSessionObjectParams struct {
+	SessionID string
+	Name      string
+	ObjectKey string
+	Sha256    string
+	SizeBytes int64
+	Action    string
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) CreateWriteSessionObject(ctx context.Context, arg CreateWriteSessionObjectParams) error {
+	_, err := q.db.Exec(ctx, createWriteSessionObject,
+		arg.SessionID,
+		arg.Name,
+		arg.ObjectKey,
+		arg.Sha256,
+		arg.SizeBytes,
+		arg.Action,
+		arg.CreatedAt,
 	)
 	return err
 }
@@ -680,4 +799,108 @@ func (q *Queries) UpdateBucket(ctx context.Context, arg UpdateBucketParams) (uui
 	var bucket_id uuid.UUID
 	err := row.Scan(&bucket_id)
 	return bucket_id, err
+}
+
+const writeSessionByID = `-- name: WriteSessionByID :one
+SELECT session_id, site, capability, namespace, bucket_id, idempotency_key,
+       status, expires_at, created_at, created_by, completed_at
+FROM object_storage_write_sessions
+WHERE site = $1 AND session_id = $2
+`
+
+type WriteSessionByIDParams struct {
+	Site      string
+	SessionID string
+}
+
+func (q *Queries) WriteSessionByID(ctx context.Context, arg WriteSessionByIDParams) (ObjectStorageWriteSession, error) {
+	row := q.db.QueryRow(ctx, writeSessionByID, arg.Site, arg.SessionID)
+	var i ObjectStorageWriteSession
+	err := row.Scan(
+		&i.SessionID,
+		&i.Site,
+		&i.Capability,
+		&i.Namespace,
+		&i.BucketID,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const writeSessionByIdempotencyKey = `-- name: WriteSessionByIdempotencyKey :one
+SELECT session_id, site, capability, namespace, bucket_id, idempotency_key,
+       status, expires_at, created_at, created_by, completed_at
+FROM object_storage_write_sessions
+WHERE site = $1
+  AND capability = $2
+  AND idempotency_key = $3
+`
+
+type WriteSessionByIdempotencyKeyParams struct {
+	Site           string
+	Capability     string
+	IdempotencyKey string
+}
+
+func (q *Queries) WriteSessionByIdempotencyKey(ctx context.Context, arg WriteSessionByIdempotencyKeyParams) (ObjectStorageWriteSession, error) {
+	row := q.db.QueryRow(ctx, writeSessionByIdempotencyKey, arg.Site, arg.Capability, arg.IdempotencyKey)
+	var i ObjectStorageWriteSession
+	err := row.Scan(
+		&i.SessionID,
+		&i.Site,
+		&i.Capability,
+		&i.Namespace,
+		&i.BucketID,
+		&i.IdempotencyKey,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const writeSessionObjectsBySession = `-- name: WriteSessionObjectsBySession :many
+SELECT session_id, name, object_key, sha256, size_bytes, action, created_at
+FROM object_storage_write_session_objects
+WHERE session_id = $1
+ORDER BY name
+`
+
+type WriteSessionObjectsBySessionParams struct {
+	SessionID string
+}
+
+func (q *Queries) WriteSessionObjectsBySession(ctx context.Context, arg WriteSessionObjectsBySessionParams) ([]ObjectStorageWriteSessionObject, error) {
+	rows, err := q.db.Query(ctx, writeSessionObjectsBySession, arg.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ObjectStorageWriteSessionObject{}
+	for rows.Next() {
+		var i ObjectStorageWriteSessionObject
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.Name,
+			&i.ObjectKey,
+			&i.Sha256,
+			&i.SizeBytes,
+			&i.Action,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

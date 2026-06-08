@@ -62,7 +62,7 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 
 	var (
 		section     string
-		ansibleUser string
+		defaultUser string
 		first       *InventoryTarget
 	)
 	scanner := bufio.NewScanner(f)
@@ -82,8 +82,8 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 		if strings.HasSuffix(section, ":vars") {
 			for _, field := range fields {
 				key, value, ok := splitInventoryKV(field)
-				if ok && key == "ansible_user" {
-					ansibleUser = value
+				if ok && key == "verself_ssh_user" {
+					defaultUser = value
 				}
 			}
 			continue
@@ -98,14 +98,14 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 				continue
 			}
 			switch key {
-			case "ansible_host":
+			case "verself_ssh_host":
 				target.Host = value
-			case "ansible_user":
+			case "verself_ssh_user":
 				target.User = value
-			case "ansible_port":
+			case "verself_ssh_port":
 				port, err := parseInventoryPort(value)
 				if err != nil {
-					return InventoryTarget{}, fmt.Errorf("inventory %s has invalid ansible_port for %s: %w", path, target.Alias, err)
+					return InventoryTarget{}, fmt.Errorf("inventory %s has invalid verself_ssh_port for %s: %w", path, target.Alias, err)
 				}
 				target.Port = port
 			case "verself_recovery_ssh_host":
@@ -129,10 +129,10 @@ func LoadInfraTarget(path string) (InventoryTarget, error) {
 		return InventoryTarget{}, fmt.Errorf("inventory %s has no [infra] host", path)
 	}
 	if first.User == "" {
-		first.User = ansibleUser
+		first.User = defaultUser
 	}
 	if first.User == "" {
-		return InventoryTarget{}, errors.New("inventory has no ansible_user on [infra] host or [all:vars]")
+		return InventoryTarget{}, errors.New("inventory has no verself_ssh_user on [infra] host or [all:vars]")
 	}
 	if err := validateSSHHost(first.Host); err != nil {
 		return InventoryTarget{}, fmt.Errorf("inventory resolved invalid [infra] host %q: %w", first.Host, err)

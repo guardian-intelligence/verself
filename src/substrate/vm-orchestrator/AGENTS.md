@@ -7,9 +7,9 @@ Privileged Go daemon for lease-scoped Firecracker lifecycle management: ZFS clon
 
 Firecracker guests boot from a slim **substrate** ext4 and compose
 read-only **toolchain images** at lease boot. The catalog lives in
-the `vm-orchestrator` Nomad job. Its prestart task runs
-`vm-orchestrator-cli stage-guest-images` to stage the substrate files under
-`/var/lib/verself/guest-images/`, then its poststart task runs
+the `vm-orchestrator` Nomad job. Recovery consumes built guest-image artifacts
+and stages them under `/var/lib/verself/guest-images/`; it must not build
+substrate or toolchain images on the target host. The poststart task runs
 `vm-orchestrator-cli seed-catalog` after the daemon starts. The CLI
 materialises every entry by issuing SeedImage RPCs in catalog order
 (idempotent via a content-derived `vs:source_digest` on `@ready`). Org-local
@@ -22,9 +22,8 @@ clones keep their existing origin.
   vm-guest-telemetry + a few apt deps the runners need at runtime.
   No Go, no Node.js, no GitHub Actions runner. Owns the `runner`
   user ABI. Refreshes only when the kernel, vm-bridge,
-  vm-guest-telemetry, or Ubuntu base move. Built by
-  `//src/substrate/vm-orchestrator/guest-images/substrate:build_substrate`,
-  through the Nomad prestart staging task on the deploy host.
+  vm-guest-telemetry, or Ubuntu base move. It must be a built repo artifact
+  before recovery starts.
 - **Toolchain images** (`/var/lib/verself/guest-images/toolchains/<ref>.ext4`):
   Bazel-built ext4 artefacts under
   `//src/substrate/vm-orchestrator/guest-images/<ref>:`. Today: `gh-actions-runner`
@@ -60,13 +59,13 @@ clones keep their existing origin.
 - `zfs/` — typed refs, validation, channel programs, the `VolumeLifecycle` facade.
 - `proto/v1/` — gRPC contracts for the lease/exec API.
 - `vmproto/` — host↔guest control-plane wire types.
-- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate builder + per-image build rules. Each image declares a `tier` consumed by the Nomad-owned seed catalog. See `<guest_image_split>` in the repo-root `AGENTS.md`.
+- `guest-images/` — `toolchain_ext4_image` Bazel macro + substrate image build inputs + per-image build rules. Each image declares a `tier` consumed by the Nomad-owned seed catalog. See `<guest_image_split>` in the repo-root `AGENTS.md`.
 
 ## Privilege Boundary
 
 vm-orchestrator is the only runtime process allowed to hold host privileges for ZFS, Firecracker, TAP, jailer, `/dev/kvm`, or `/dev/zvol`. Product services never receive `zfs allow`, host device access, root-equivalent capabilities, or Firecracker/jailer arguments. They send service-authorized refs and lifecycle intents over the Unix socket; vm-orchestrator resolves those refs to contained host resources.
 
-Treat membership in the socket group (`vm-clients`) as root-equivalent for this daemon's API. Keep it to explicitly approved internal callers, audit it in Ansible, and do not add browser frontends, webhook-only services, guest agents, or general platform services to that group.
+Treat membership in the socket group (`vm-clients`) as root-equivalent for this daemon's API. Keep it to explicitly approved internal callers, audit it through component recovery evidence, and do not add browser frontends, webhook-only services, guest agents, or general platform services to that group.
 
 PrivOps accepts host-level names because it is the privileged adapter. All callers above it must use typed refs or constructors that enforce pool/dataset containment before invoking ZFS, Firecracker, TAP, or jailer operations.
 

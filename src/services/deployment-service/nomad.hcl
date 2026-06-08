@@ -1,3 +1,23 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
+variable "deployment_service_resource_name" {
+  type    = string
+  default = "deployment-service"
+}
+
+variable "deployment_service_runtime_root" {
+  type    = string
+  default = "/var/lib/deployment-service/runtime"
+}
+
+variable "deployment_service_projected_graph" {
+  type    = string
+  default = "/run/verself/recovery/deployment-service/document.json"
+}
+
 job "deployment-service" {
   name = "deployment-service"
   datacenters = ["*"]
@@ -10,40 +30,30 @@ job "deployment-service" {
         host_network = "loopback"
       }
     }
-    task "deployment-service-setup" {
+    task "recover" {
       driver = "raw_exec"
+      user = "root"
       lifecycle {
         hook = "prestart"
         sidecar = false
       }
       config {
-        command = "/usr/bin/install"
-        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/home/deployment_service", "/var/lib/verself/deployment-service", "/var/lib/verself/deployment-service/.cache", "/var/lib/verself/deployment-service/.cache/bazelisk", "/var/lib/verself/deployment-service/tmp"]
-      }
-      resources {
-        cpu = 50
-        memory = 32
-      }
-    }
-    task "deployment-service-migrate" {
-      driver = "raw_exec"
-      user = "deployment_service"
-      lifecycle {
-        hook = "prestart"
-        sidecar = false
-      }
-      artifact {
-        source = "verself-artifact://deployment-service"
-        destination = "local"
-        chown = true
-      }
-      config {
-        args = ["migrate", "up"]
-        command = "local/bin/deployment-service"
+        command = "${var.guardian_repo_root}/bazel-bin/src/services/deployment-service/cmd/deployment-service/deployment-service_/deployment-service"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.deployment_service_resource_name}",
+          "--runtime-root=${var.deployment_service_runtime_root}",
+          "--projected-graph=${var.deployment_service_projected_graph}",
+          "--migrate",
+        ]
       }
       env {
-        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        VERSELF_PG_DSN = "postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable"
+        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
+        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
+        OTEL_SERVICE_NAME = "deployment-service-migration"
+        VERSELF_SUPERVISOR = "nomad"
       }
       resources {
         cpu = 100
@@ -55,53 +65,28 @@ job "deployment-service" {
       user = "deployment_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
-      vault {
-        role = "deployment-service-runtime"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
-      artifact {
-        source = "verself-artifact://deployment-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        command = "local/bin/deployment-service"
+        command = "${var.deployment_service_runtime_root}/current/bin/deployment-service"
+        args = [
+          "--resource-graph=${var.deployment_service_projected_graph}",
+          "--resource-name=${var.deployment_service_resource_name}",
+          "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
+        ]
       }
       env {
-        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        BAZELISK_HOME = "/var/lib/verself/deployment-service/.cache/bazelisk"
-        HOME = "/var/lib/verself/deployment-service"
+        HOME = "/var/lib/deployment-service/home"
+        GIT_EXEC_PATH = "${var.deployment_service_runtime_root}/current/lib/git-core"
+        GIT_TEMPLATE_DIR = "${var.deployment_service_runtime_root}/current/share/git-core/templates"
+        LD_LIBRARY_PATH = "${var.deployment_service_runtime_root}/current/lib/x86_64-linux-gnu"
         LOGNAME = "deployment_service"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "deployment-service"
-        PATH = "/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        TMPDIR = "/var/lib/verself/deployment-service/tmp"
+        PATH = "${var.deployment_service_runtime_root}/current/bin:/opt/verself/profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        TMPDIR = "/var/lib/deployment-service/home/tmp"
         USER = "deployment_service"
-        VERSELF_DEPLOY_BAZEL_JOBS = "4"
-        VERSELF_DEPLOY_GITHUB_ALLOWED_REFS = "__VERSELF_DEPLOY_GITHUB_ALLOWED_REFS__"
-        VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES = "__VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES__"
-        VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS = "__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__"
-        VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE = "__VERSELF_DEPLOYMENT_SERVICE_BASE_URL__"
-        VERSELF_DEPLOY_REPO_INIT_TIMEOUT = "2m"
-        VERSELF_DEPLOY_REPO_ROOT = "/var/lib/verself/deployment-service/repo"
-        VERSELF_DEPLOY_REPO_URL = "__VERSELF_DEPLOY_REPO_URL__"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_NOMAD_ADDR = "http://127.0.0.1:4646"
-        VERSELF_PG_DSN = "postgres://deployment_service@/deployment_service?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "4"
-        VERSELF_R2_CONTROL_PLANE_ADDR = "https://cloudflare-r2-control-plane-internal-https"
-        VERSELF_RECOVERY_SSH_READY = "true"
-        VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
-        XDG_CACHE_HOME = "/var/lib/verself/deployment-service/.cache"
+        XDG_CACHE_HOME = "/var/lib/deployment-service/home/.cache"
       }
       resources {
         cpu = 1500

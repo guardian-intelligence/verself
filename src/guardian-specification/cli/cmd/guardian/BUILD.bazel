@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "guardian_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/guardian-specification/cli/cmd/guardian",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//src/guardian-specification/internal/formatio",
+        "//src/guardian-specification/internal/guardianconfig",
+        "//src/guardian-specification/internal/specdoc",
+        "//src/guardian-specification/internal/toolcatalog",
+        "//src/guardian-specification/internal/toolrun",
+        "@org_cuelang_go//cue",
+        "@org_cuelang_go//cue/cuecontext",
+        "@org_cuelang_go//cue/load",
+    ],
+)
+
+go_binary(
+    name = "guardian",
+    embed = [":guardian_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "guardian_test",
+    srcs = ["main_test.go"],
+    embed = [":guardian_lib"],
+    deps = [
+        "@com_github_burntsushi_toml//:toml",
+        "@com_github_toon_format_toon_go//:toon-go",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)

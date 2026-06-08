@@ -1,9 +1,13 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "profile-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+    ],
     importpath = "github.com/verself/profile-service/cmd/profile-service",
     visibility = ["//visibility:private"],
     deps = [
@@ -12,7 +16,6 @@ go_library(
         "//src/services/profile-service/internal/profile",
         "//src/services/profile-service/migrations",
         "//src/services/service-runtime/go/auth",
-        "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
         "//src/services/service-runtime/go/workload",
         "//src/tools/observability/go/otel",
@@ -24,11 +27,42 @@ go_library(
 go_binary(
     name = "profile-service",
     embed = [":profile-service_lib"],
+    pure = "on",
+    static = "on",
     visibility = ["//visibility:public"],
 )
 
-nomad_binary_artifact(
-    name = "profile-service_nomad_artifact",
-    binary = ":profile-service",
-    output = "profile-service",
+go_test(
+    name = "profile-service_test",
+    srcs = [
+        "guardian_config_test.go",
+    ],
+    embed = [":profile-service_lib"],
+)
+
+pkg_tar(
+    name = "profile-service_image_layer",
+    files = {":profile-service": "usr/local/bin/profile-service"},
+    modes = {"usr/local/bin/profile-service": "0755"},
+)
+
+oci_image(
+    name = "profile-service_image",
+    architecture = "amd64",
+    entrypoint = ":profile-service.entrypoint",
+    os = "linux",
+    tars = [":profile-service_image_layer"],
+)
+
+oci_load(
+    name = "profile-service_image_load",
+    image = ":profile-service_image",
+    repo_tags = ":profile-service.image-tags.txt",
+)
+
+filegroup(
+    name = "profile-service_image_archive",
+    srcs = [":profile-service_image_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
 )

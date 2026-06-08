@@ -5,8 +5,9 @@ Two macros, one for each tier in the vm-orchestrator seed catalog:
 * `toolchain_ext4_image` — read-only toolchain images mounted by
   vm-orchestrator at lease boot. Pure layout (extract one upstream
   tarball, drop in additional files), no chroot, fully hermetic.
-* substrate image — built by the Go build_substrate operator from staged
-  inputs because the chroot and mount flow must run as root on the host.
+* substrate image — must be emitted as a built artifact before recovery.
+  `build_substrate` is the current builder implementation, not target-host
+  recovery logic.
 
 Each toolchain image exports two files:
   <name>.ext4            — the on-disk image staged onto the host at

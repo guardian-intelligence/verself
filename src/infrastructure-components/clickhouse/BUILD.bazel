@@ -1,86 +1,28 @@
 # gazelle:prefix github.com/verself/infrastructure-components/clickhouse
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 
-exports_files(["tools.lock.json"])
+exports_files([
+    "tools.lock.json",
+])
 
 pkg_tar(
-    name = "host_install_artifact",
-    out = "clickhouse-host-install.tar",
+    name = "runtime_artifact",
+    out = "clickhouse-runtime.tar",
     files = {
-        "@clickhouse_tools//tools/clickhouse": "opt/verself/profile/bin/clickhouse",
-        "//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload": "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload",
+        "@clickhouse_tools//tools/clickhouse": "bin/clickhouse",
+        "@clickhouse_tools//tools/spiffe-helper": "bin/spiffe-helper",
+        "//src/infrastructure-components/clickhouse/cmd/clickhouse-recover:clickhouse-recover": "bin/clickhouse-recover",
+        "//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload": "bin/clickhouse-spiffe-bundle-reload",
     },
     modes = {
-        "opt/verself/profile/bin/clickhouse": "0755",
-        "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload": "0755",
-    },
-    symlinks = {
-        "opt/verself/profile/bin/clickhouse-benchmark": "/opt/verself/profile/bin/clickhouse",
-        "opt/verself/profile/bin/clickhouse-client": "/opt/verself/profile/bin/clickhouse",
-        "opt/verself/profile/bin/clickhouse-keeper": "/opt/verself/profile/bin/clickhouse",
-        "opt/verself/profile/bin/clickhouse-local": "/opt/verself/profile/bin/clickhouse",
-        "opt/verself/profile/bin/clickhouse-server": "/opt/verself/profile/bin/clickhouse",
+        "bin/clickhouse": "0755",
+        "bin/clickhouse-recover": "0755",
+        "bin/clickhouse-spiffe-bundle-reload": "0755",
+        "bin/spiffe-helper": "0755",
     },
     visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
-pkg_tar(
-    name = "migration_artifact",
-    srcs = glob(
-        ["migrations/*.up.sql"],
-        allow_empty = True,
-        exclude = ["migrations/001_initial_schema.up.sql"],
-    ),
-    out = "clickhouse-migrations.tar",
-    empty_files = ["migrations/.collapsed"],
-    package_dir = "/",
-    strip_prefix = ".",
-)
-
-nomad_component(
-    name = "host_install_nomad_component",
-    artifacts = {
-        ":host_install_artifact": "clickhouse-host-install",
-    },
-    component = "clickhouse_host_install",
-    deploy_phase = "pre_artifact",
-    job_id = "clickhouse-host-install",
-    job_spec = "host-install.nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":migration_artifact": "clickhouse-migrations",
-    },
-    component = "clickhouse_migrations",
-    deploy_phase = "platform",
-    job_id = "clickhouse-migrations",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
 
 spire_identity(
@@ -91,7 +33,7 @@ spire_identity(
     path = "/svc/clickhouse-server",
     restart_units = ["clickhouse-server-spiffe-helper"],
     user = "clickhouse",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
 
 spire_identity(
@@ -102,5 +44,5 @@ spire_identity(
     path = "/svc/clickhouse-operator",
     restart_units = ["clickhouse-operator-spiffe-helper"],
     user = "clickhouse_operator",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

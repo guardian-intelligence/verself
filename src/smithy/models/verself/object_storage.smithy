@@ -11,6 +11,7 @@ use smithy.api#idempotencyToken
 use smithy.api#idempotent
 use smithy.api#length
 use smithy.api#pattern
+use smithy.api#range
 use smithy.api#readonly
 use smithy.api#required
 use smithy.api#sensitive
@@ -64,6 +65,18 @@ service ObjectStorage {
         ObjectStorageMtlsPrincipal
     ]
 }
+@serviceRuntime(serviceName: "object-storage-service", publicAudience: "object-storage-service", internalAudience: "object-storage-service")
+@restJson1
+service ObjectStorageInternal {
+    version: "2026-05-13"
+    operations: [
+        CreateObjectWriteSession,
+        CompleteObjectWriteSession
+    ]
+    resources: [
+        ObjectWriteSession
+    ]
+}
 @pattern("^[0-9a-fA-F-]{36}$")
 string BucketId
 @pattern("^[0-9a-fA-F-]{36}$")
@@ -95,6 +108,28 @@ string CredentialStatus
 string AuthMode
 @length(max: 128)
 string ServiceTag
+@length(min: 1, max: 64)
+@pattern("^[a-z][a-z0-9_-]*$")
+string SiteName
+@length(min: 1, max: 128)
+@pattern("^objws_[0-9A-HJKMNP-TV-Z]{26}$")
+string ObjectWriteSessionId
+@length(min: 1, max: 255)
+string ObjectName
+@length(min: 1, max: 4096)
+string ObjectKey
+@length(min: 1, max: 255)
+string ObjectNamespace
+@length(min: 64, max: 64)
+@pattern("^[0-9a-f]{64}$")
+string SHA256Hex
+@range(min: 1, max: 9223372036854775807)
+long ObjectSizeBytes
+@range(min: 60, max: 604800)
+integer ObjectTransferTTLSeconds
+@length(min: 1, max: 4096)
+@sensitive
+string ObjectTransferURL
 list Buckets {
     member: BucketView
 }
@@ -107,6 +142,30 @@ list ObjectStorageCredentials {
 list ObjectStorageLifecycleRules {
     member: Document
 }
+list ObjectWriteRequests {
+    member: ObjectWriteRequest
+}
+list ObjectWriteSessionObjects {
+    member: ObjectWriteSessionObject
+}
+map ObjectTransferHeaders {
+    key: String
+    value: String
+}
+enum ObjectStorageCapability {
+    DEPLOYMENT_ARTIFACTS = "deployment_artifacts"
+    PRODUCT_OBJECTS = "product_objects"
+    RECOVERY = "recovery"
+}
+enum ObjectWriteAction {
+    PRESENT = "present"
+    PUT = "put"
+}
+enum S3CompatibleObjectMethod {
+    GET = "GET"
+    PUT = "PUT"
+    HEAD = "HEAD"
+}
 @permission(name: "object-storage:bucket:read")
 string BucketReadPermission
 @permission(name: "object-storage:bucket:write")
@@ -115,6 +174,8 @@ string BucketWritePermission
 string AccessKeyReadPermission
 @permission(name: "object-storage:access-key:write")
 string AccessKeyWritePermission
+@permission(name: "object-storage:object-session:write")
+string ObjectSessionWritePermission
 @auditEvent(name: "object_storage.bucket.list")
 string BucketListAuditEvent
 @auditEvent(name: "object_storage.bucket.create")
@@ -143,11 +204,16 @@ string AccessKeyDeleteAuditEvent
 string MTLSPrincipalCreateAuditEvent
 @auditEvent(name: "object_storage.mtls_principal.delete")
 string MTLSPrincipalDeleteAuditEvent
+@auditEvent(name: "object_storage.object_write_session.create")
+string ObjectWriteSessionCreateAuditEvent
+@auditEvent(name: "object_storage.object_write_session.complete")
+string ObjectWriteSessionCompleteAuditEvent
 resource Bucket {}
 resource BucketAlias {}
 resource ObjectStorageCredential {}
 resource ObjectStorageAccessKey {}
 resource ObjectStorageMtlsPrincipal {}
+resource ObjectWriteSession {}
 structure BucketView {
     @required
     @protoField(number: 1)
@@ -233,6 +299,50 @@ structure ObjectStorageAccessKeySecret {
     @required
     @protoField(number: 4)
     credential: ObjectStorageCredentialView
+}
+structure ObjectWriteRequest {
+    @required
+    @protoField(number: 1)
+    name: ObjectName
+    @required
+    @protoField(number: 2)
+    sha256: SHA256Hex
+    @required
+    @protoField(number: 3)
+    size_bytes: ObjectSizeBytes
+}
+structure S3CompatibleObject {
+    @required
+    @protoField(number: 1)
+    method: S3CompatibleObjectMethod
+    @required
+    @protoField(number: 2)
+    url: ObjectTransferURL
+    @required
+    @protoField(number: 3)
+    headers: ObjectTransferHeaders
+    @required
+    @protoField(number: 4)
+    expires_at: DateTime
+    @protoField(number: 5)
+    sha256: SHA256Hex
+}
+structure ObjectWriteSessionObject {
+    @required
+    @protoField(number: 1)
+    name: ObjectName
+    @required
+    @protoField(number: 2)
+    key: ObjectKey
+    @required
+    @protoField(number: 3)
+    action: ObjectWriteAction
+    @protoField(number: 4)
+    write: S3CompatibleObject
+    @protoField(number: 5)
+    read: S3CompatibleObject
+    @protoField(number: 6)
+    getter_source: ObjectTransferURL
 }
 structure EmptyInput {}
 structure BucketPathInput {
@@ -561,4 +671,91 @@ structure DeleteObjectStorageMTLSPrincipalInput {
     @httpHeader("Idempotency-Key")
     @idempotencyToken
     idempotencyKey: IdempotencyKey
+}
+
+structure CreateObjectWriteSessionInput {
+    @required
+    @httpHeader("Idempotency-Key")
+    @idempotencyToken
+    idempotencyKey: IdempotencyKey
+    @required
+    @httpLabel
+    site: SiteName
+    @required
+    @protoField(number: 1)
+    capability: ObjectStorageCapability
+    @required
+    @protoField(number: 2)
+    namespace: ObjectNamespace
+    @required
+    @protoField(number: 3)
+    objects: ObjectWriteRequests
+    @required
+    @protoField(number: 4)
+    ttl_seconds: ObjectTransferTTLSeconds
+}
+
+structure CreateObjectWriteSessionOutput {
+    @required
+    @protoField(number: 1)
+    session_id: ObjectWriteSessionId
+    @required
+    @protoField(number: 2)
+    expires_at: DateTime
+    @protoField(number: 3)
+    completed_at: DateTime
+    @required
+    @protoField(number: 4)
+    objects: ObjectWriteSessionObjects
+}
+
+@idempotent
+@http(method: "POST", uri: "/internal/v1/object-storage/sites/{site}/write-sessions", code: 201)
+@identity(mode: "spiffe_mtls", audience: "object-storage-service", principals: ["workload"])
+@authz(permission: ObjectSessionWritePermission, organization: {source: "installation"})
+@audit(event: ObjectWriteSessionCreateAuditEvent, resource: ObjectWriteSession, action: "create")
+@rateLimit(bucket: "object_storage_internal_mutation")
+@requestBudget(maxBytes: 65536)
+@sdk(module: "objectStorageInternal.writeSessions", method: "create", paginated: false, retryable: false)
+operation CreateObjectWriteSession {
+    input: CreateObjectWriteSessionInput
+    output: CreateObjectWriteSessionOutput
+    errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ConflictError, IdempotencyPayloadMismatchError, RateLimitedError, ServiceUnavailableError]
+}
+
+structure CompleteObjectWriteSessionInput {
+    @required
+    @httpLabel
+    site: SiteName
+    @required
+    @httpLabel
+    session_id: ObjectWriteSessionId
+}
+
+structure CompleteObjectWriteSessionOutput {
+    @required
+    @protoField(number: 1)
+    session_id: ObjectWriteSessionId
+    @required
+    @protoField(number: 2)
+    expires_at: DateTime
+    @required
+    @protoField(number: 3)
+    completed_at: DateTime
+    @required
+    @protoField(number: 4)
+    objects: ObjectWriteSessionObjects
+}
+
+@http(method: "POST", uri: "/internal/v1/object-storage/sites/{site}/write-sessions/{session_id}/complete", code: 200)
+@identity(mode: "spiffe_mtls", audience: "object-storage-service", principals: ["workload"])
+@authz(permission: ObjectSessionWritePermission, organization: {source: "installation"})
+@audit(event: ObjectWriteSessionCompleteAuditEvent, resource: ObjectWriteSession, action: "verify")
+@rateLimit(bucket: "object_storage_internal_mutation")
+@requestBudget(maxBytes: 1024)
+@sdk(module: "objectStorageInternal.writeSessions", method: "complete", paginated: false, retryable: false)
+operation CompleteObjectWriteSession {
+    input: CompleteObjectWriteSessionInput
+    output: CompleteObjectWriteSessionOutput
+    errors: [ValidationFailedError, UnauthenticatedError, PermissionDeniedError, ResourceNotFoundError, ConflictError, RateLimitedError, ServiceUnavailableError]
 }

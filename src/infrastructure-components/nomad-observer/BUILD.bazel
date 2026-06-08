@@ -1,13 +1,15 @@
 # gazelle:prefix github.com/verself/infrastructure-components/nomad-observer
 
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
+
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
 
 spire_identity(
     name = "spiffe_identity",
@@ -16,37 +18,5 @@ spire_identity(
     key = "nomad_observer.default",
     path = "/svc/nomad-observer",
     user = "nomad_observer",
-    visibility = ["//src/host:__pkg__"],
-)
-
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/infrastructure-components/nomad-observer/cmd/nomad-observer:nomad-observer_nomad_artifact": "nomad-observer",
-    },
-    component = "nomad-observer",
-    deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "nomad-observer",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

@@ -6,19 +6,15 @@ index. Bazel metadata updates live under `aspect bazel *`; semantic
 verification gates live under `aspect check`.
 """
 
-load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_tracked_files", "checked_spawn", "java_tracked_files", "viteplus_vp", "ws_path")
+load(".aspect/lib/helpers.axl", "GO_DIRS", "VITEPLUS_NODE_TARGET", "VITEPLUS_WORKSPACE_INSTALL_TARGET", "bazel_command", "bazel_run", "bazel_tracked_files", "java_tracked_files", "viteplus_vp", "ws_path")
 
 GOFUMPT_TARGET = "//src/tools/dev/binaries:gofumpt"
 GOOGLE_JAVA_FORMAT_TARGET = "//src/smithy/tools:google_java_format"
 BUILDIFIER_TARGET = "//src/tools/dev/binaries:buildifier"
 
-def _tool_path(ctx, *parts):
-    return ws_path(ctx, "bazel-bin", *parts)
-
 def _build_toolchain(ctx):
-    return checked_spawn(
+    return bazel_command(
         ctx,
-        "bazelisk",
         [
             "build",
             VITEPLUS_NODE_TARGET,
@@ -28,7 +24,7 @@ def _build_toolchain(ctx):
             BUILDIFIER_TARGET,
         ],
         cwd = ws_path(ctx),
-        label = "bazelisk build tidy toolchain",
+        label = "guardian run bazel -- build tidy toolchain",
     )
 
 def _viteplus(ctx):
@@ -38,9 +34,9 @@ def _go(ctx):
     dirs = []
     for d in GO_DIRS:
         dirs.append(ws_path(ctx, d))
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        _tool_path(ctx, "src/tools/dev/binaries/gofumpt"),
+        GOFUMPT_TARGET,
         ["-w"] + dirs,
         label = "gofumpt -w",
     )
@@ -51,9 +47,9 @@ def _java(ctx):
         return 1
     if len(files) == 0:
         return 0
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        _tool_path(ctx, "src/smithy/tools/google_java_format"),
+        GOOGLE_JAVA_FORMAT_TARGET,
         ["--replace"] + files,
         cwd = ws_path(ctx),
         label = "google-java-format --replace",
@@ -66,9 +62,9 @@ def _buildifier(ctx):
     abs_files = []
     for f in files:
         abs_files.append(ws_path(ctx, f))
-    return checked_spawn(
+    return bazel_run(
         ctx,
-        _tool_path(ctx, "src/tools/dev/binaries/buildifier"),
+        BUILDIFIER_TARGET,
         ["-mode=fix"] + abs_files,
         label = "buildifier -mode=fix",
     )

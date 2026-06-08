@@ -3,7 +3,7 @@
 load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
 load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 
 # Render the React Email template to a Go text/template. The {{.Subject}} and
 # {{.Body}} actions survive HTML escaping, so the output is both a valid email
@@ -64,5 +64,5 @@ spire_identity(
     key = "agent_mail.default",
     path = "/svc/agent-mail",
     user = "agent_mail",
-    visibility = ["//src/host:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

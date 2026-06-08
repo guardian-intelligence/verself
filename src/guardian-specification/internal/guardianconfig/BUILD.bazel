@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "guardianconfig",
+    srcs = ["config.go"],
+    importpath = "github.com/verself/guardian-specification/internal/guardianconfig",
+    visibility = ["//src/guardian-specification:__subpackages__"],
+    deps = [
+        "//src/guardian-specification/internal/formatio",
+        "@org_cuelang_go//cue",
+        "@org_cuelang_go//cue/cuecontext",
+        "@org_cuelang_go//cue/load",
+    ],
+)
+
+go_test(
+    name = "guardianconfig_test",
+    srcs = ["config_test.go"],
+    embed = [":guardianconfig"],
+)

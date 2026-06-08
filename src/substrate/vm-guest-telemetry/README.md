@@ -16,7 +16,7 @@ Bazel is the authoritative build system for this package — `rules_zig` orchest
 ## Build
 
 ```bash
-bazelisk build //src/substrate/vm-guest-telemetry:vm-guest-telemetry
+guardian run bazel -- build //src/substrate/vm-guest-telemetry:vm-guest-telemetry
 ```
 
 The deployable binary is pinned to `linux/x86_64/musl` via `zig_configure_binary` regardless of the requesting `-c` mode, and emitted under `bazel-bin/src/substrate/vm-guest-telemetry/`.
@@ -24,7 +24,7 @@ The deployable binary is pinned to `linux/x86_64/musl` via `zig_configure_binary
 ## Test
 
 ```bash
-bazelisk test //src/substrate/vm-guest-telemetry/...
+guardian run bazel -- test //src/substrate/vm-guest-telemetry/...
 ```
 
 This runs:
@@ -35,7 +35,7 @@ This runs:
 
 ## Guest Artifact
 
-The guest binary is a required part of the Firecracker rootfs. The `guest-rootfs` automation builds `//src/substrate/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle`, installs the bundled binary at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
+The guest binary is a required part of the Firecracker rootfs. The substrate image build installs it at `/usr/local/bin/vm-guest-telemetry`, and `vm-bridge` starts it during boot.
 
 ## Cross-Language Conformance
 
@@ -55,7 +55,7 @@ End-to-end ingestion is exercised by the telemetry smoke harness, which produces
 Regenerate after changing the binary protocol layout:
 
 ```bash
-bazelisk run //src/substrate/vm-guest-telemetry:write_vectors
+guardian run bazel -- run //src/substrate/vm-guest-telemetry:write_vectors
 ```
 
 `bazel test` will fail until the regenerated file is committed. See [docs/protocol.md](docs/protocol.md) for the vector file format and conformance testing model.
@@ -63,7 +63,7 @@ bazelisk run //src/substrate/vm-guest-telemetry:write_vectors
 ## Bench
 
 ```bash
-bazelisk run //src/substrate/vm-guest-telemetry:bench -- [args]
+guardian run bazel -- run //src/substrate/vm-guest-telemetry:bench -- [args]
 ```
 
 ## Deterministic Host Faults

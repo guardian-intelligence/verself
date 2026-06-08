@@ -14,7 +14,6 @@ import (
 	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/temporal-platform/internal/pgsocket"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.temporal.io/server/common/config"
 	tlog "go.temporal.io/server/common/log"
@@ -37,7 +36,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: temporal-schema <setup|update> --store <datastore> --schema-name <schema> [--version <version>] [--config <path>]")
+		return errors.New("usage: temporal-schema <migrate|setup|update> --config <path> [--store <datastore>] [--schema-name <schema>] [--version <version>]")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -58,7 +57,7 @@ func run(args []string) error {
 	command := strings.TrimSpace(args[0])
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	configPath := flags.String("config", strings.TrimSpace(os.Getenv("VERSELF_TEMPORAL_CONFIG_PATH")), "path to Temporal config file")
+	configPath := flags.String("config", "", "path to Temporal config file")
 	storeName := flags.String("store", "", "Temporal datastore name")
 	schemaName := flags.String("schema-name", "", "embedded Temporal schema name")
 	initialVersion := flags.String("version", "0.0", "initial schema version for setup")
@@ -66,9 +65,9 @@ func run(args []string) error {
 		return err
 	}
 	if strings.TrimSpace(*configPath) == "" {
-		return errors.New("--config or VERSELF_TEMPORAL_CONFIG_PATH is required")
+		return errors.New("--config is required")
 	}
-	if strings.TrimSpace(*storeName) == "" {
+	if command != "migrate" && strings.TrimSpace(*storeName) == "" {
 		return errors.New("--store is required")
 	}
 	cfg, err := config.Load(config.WithConfigFile(*configPath))
@@ -79,57 +78,104 @@ func run(args []string) error {
 		return fmt.Errorf("configure temporal datastores: %w", err)
 	}
 
-	sqlCfg, err := datastoreSQL(cfg, *storeName)
-	if err != nil {
-		return err
-	}
-
 	_, span := tracer.Start(ctx, "temporal.schema."+command)
 	defer span.End()
-	span.SetAttributes(
-		attribute.String("temporal.datastore", strings.TrimSpace(*storeName)),
-		attribute.String("db.name", strings.TrimSpace(sqlCfg.DatabaseName)),
-	)
-	if strings.TrimSpace(*schemaName) != "" {
-		span.SetAttributes(attribute.String("temporal.schema_name", strings.TrimSpace(*schemaName)))
-	}
-
-	tlogger := tlog.NewCLILogger()
-	conn, err := toolsql.NewConnection(sqlCfg, tlogger)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return fmt.Errorf("open temporal datastore %s: %w", *storeName, err)
-	}
-	defer conn.Close()
 
 	switch command {
+	case "migrate":
+		tasks := []schemaTask{
+			{Command: "setup", Store: "postgres-default", Version: "0.0"},
+			{Command: "update", Store: "postgres-default", SchemaName: "postgresql/v12/temporal"},
+			{Command: "setup", Store: "postgres-visibility", Version: "0.0"},
+			{Command: "update", Store: "postgres-visibility", SchemaName: "postgresql/v12/visibility"},
+		}
+		for _, task := range tasks {
+			if err := runSchemaTask(cfg, task); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return err
+			}
+		}
+		return nil
 	case "setup":
-		if err := schema.NewSetupSchemaTask(conn, &schema.SetupConfig{
-			SchemaName:     strings.TrimSpace(*schemaName),
-			InitialVersion: strings.TrimSpace(*initialVersion),
-		}, tlogger).Run(); err != nil {
+		if err := runSchemaTask(cfg, schemaTask{
+			Command:    "setup",
+			Store:      strings.TrimSpace(*storeName),
+			SchemaName: strings.TrimSpace(*schemaName),
+			Version:    strings.TrimSpace(*initialVersion),
+		}); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return fmt.Errorf("setup temporal datastore %s schema version tables: %w", *storeName, err)
+			return err
 		}
 	case "update":
 		if strings.TrimSpace(*schemaName) == "" {
 			return errors.New("--schema-name is required for update")
 		}
-		if err := schema.NewUpdateSchemaTask(conn, &schema.UpdateConfig{
-			DBName:     strings.TrimSpace(sqlCfg.DatabaseName),
+		if err := runSchemaTask(cfg, schemaTask{
+			Command:    "update",
+			Store:      strings.TrimSpace(*storeName),
 			SchemaName: strings.TrimSpace(*schemaName),
-		}, tlogger).Run(); err != nil {
+		}); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return fmt.Errorf("update temporal schema %s on datastore %s: %w", *schemaName, *storeName, err)
+			return err
 		}
 	default:
 		return fmt.Errorf("unknown temporal-schema command %q", command)
 	}
 
 	return nil
+}
+
+type schemaTask struct {
+	Command    string
+	Store      string
+	SchemaName string
+	Version    string
+}
+
+func runSchemaTask(cfg *config.Config, task schemaTask) error {
+	sqlCfg, err := datastoreSQL(cfg, task.Store)
+	if err != nil {
+		return err
+	}
+	tlogger := tlog.NewCLILogger()
+	conn, err := toolsql.NewConnection(sqlCfg, tlogger)
+	if err != nil {
+		return fmt.Errorf("open temporal datastore %s: %w", task.Store, err)
+	}
+	defer conn.Close()
+	switch task.Command {
+	case "setup":
+		if err := schema.NewSetupSchemaTask(conn, &schema.SetupConfig{
+			SchemaName:     strings.TrimSpace(task.SchemaName),
+			InitialVersion: strings.TrimSpace(task.Version),
+		}, tlogger).Run(); err != nil {
+			if schemaAlreadySetup(err) {
+				return nil
+			}
+			return fmt.Errorf("setup temporal datastore %s schema version tables: %w", task.Store, err)
+		}
+	case "update":
+		if err := schema.NewUpdateSchemaTask(conn, &schema.UpdateConfig{
+			DBName:     strings.TrimSpace(sqlCfg.DatabaseName),
+			SchemaName: strings.TrimSpace(task.SchemaName),
+		}, tlogger).Run(); err != nil {
+			return fmt.Errorf("update temporal schema %s on datastore %s: %w", task.SchemaName, task.Store, err)
+		}
+	default:
+		return fmt.Errorf("unknown temporal schema task command %q", task.Command)
+	}
+	return nil
+}
+
+func schemaAlreadySetup(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already exists") || strings.Contains(msg, "duplicate key")
 }
 
 func datastoreSQL(cfg *config.Config, storeName string) (*config.SQL, error) {

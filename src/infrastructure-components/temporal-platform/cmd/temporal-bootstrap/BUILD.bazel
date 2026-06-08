@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "temporal-bootstrap_lib",
@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//src/infrastructure-components/temporal-platform/internal/namespaceadmin",
         "//src/infrastructure-components/temporal-platform/sdkclient",
-        "//src/services/service-runtime/go/workload",
         "//src/tools/observability/go/otel",
     ],
 )
@@ -17,4 +16,10 @@ go_binary(
     name = "temporal-bootstrap",
     embed = [":temporal-bootstrap_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "temporal-bootstrap_test",
+    srcs = ["main_test.go"],
+    embed = [":temporal-bootstrap_lib"],
 )

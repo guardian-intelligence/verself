@@ -259,5 +259,5 @@ func (rt *Runtime) TraceID() string {
 }
 
 func InventoryPath(repoRoot, site string) string {
-	return filepath.Join(repoRoot, "src", "host", "sites", site, "inventory.ini")
+	return filepath.Join(repoRoot, "src", "sites", site, "inventory.ini")
 }

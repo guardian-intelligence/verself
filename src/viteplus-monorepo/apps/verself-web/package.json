@@ -9,7 +9,7 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mjs ./.output/server/index.mjs",
-    "generate": "bazelisk run //src/viteplus-monorepo/apps/verself-web:dev_update",
+    "generate": "guardian run bazel -- run //src/viteplus-monorepo/apps/verself-web:dev_update",
     "typecheck": "vp exec tsc -p tsconfig.json"
   },
   "dependencies": {

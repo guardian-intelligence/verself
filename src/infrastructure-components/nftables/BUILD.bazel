@@ -1,5 +1,3 @@
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
 NFTABLES_RUNTIME_ROOT = "opt/verself/nftables"
 
 filegroup(
@@ -8,9 +6,9 @@ filegroup(
 )
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(["files/**"]),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )
 
 genrule(
@@ -77,16 +75,4 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
         "@platforms//os:linux",
     ],
     visibility = ["//visibility:public"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "nftables-runtime",
-    },
-    component = "nftables",
-    deploy_phase = "pre_artifact",
-    job_id = "nftables",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

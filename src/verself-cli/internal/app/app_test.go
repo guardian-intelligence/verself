@@ -167,13 +167,9 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		`render_targets:`,
 		`openbao://kv-runtime/secret/org/latitude.api_token`,
 	})
-	assertFileContains(t, filepath.Join(repoRoot, "src", "host", "sites", "prod", "vars.yml"), []string{
-		`service_discovery_canary_org_slug: "guardian"`,
-		`bootstrap_runtime_substrate: customer_latitude_bare_metal`,
-	})
 	assertFileContains(t, filepath.Join(repoRoot, "README.md"), []string{
-		"bazelisk build //src/guardian-cli:guardian",
-		"aspect deploy --site=prod --sha=HEAD",
+		"guardian run bazel -- build //src/guardian-cli:guardian",
+		"guardian fly prod",
 	})
 
 	overrideRepoRoot := t.TempDir()
@@ -183,7 +179,7 @@ func TestBootstrapRendersLocalSeedCompanySiteArtifacts(t *testing.T) {
 		"--repo-root", overrideRepoRoot,
 		"--set", "latitude.region=DFW",
 	)
-	assertFileContains(t, filepath.Join(overrideRepoRoot, "src", "host", "sites", "prod", "provisioning.tfvars.json.template"), []string{
+	assertFileContains(t, filepath.Join(overrideRepoRoot, "src", "tools", "provisioning", "sites", "prod", "terraform.tfvars.json.template"), []string{
 		`"region": "DFW"`,
 	})
 
@@ -1369,46 +1365,6 @@ func TestAuthAndOrgsUseIAMSDK(t *testing.T) {
 	if revokedSessions[secondSession] != 2 {
 		t.Fatalf("profile logout did not revoke remaining device session; revoked sessions = %#v", revokedSessions)
 	}
-}
-
-func TestBootstrapOverlaysExistingSiteVars(t *testing.T) {
-	xdgRoot := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(xdgRoot, "config"))
-	t.Setenv("XDG_DATA_HOME", filepath.Join(xdgRoot, "data"))
-	t.Setenv("XDG_STATE_HOME", filepath.Join(xdgRoot, "state"))
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(xdgRoot, "cache"))
-
-	runCLI(t, nil,
-		"company", "configure", "guardian",
-		"--site", "prod",
-		"--product-domain", "guardian.example",
-		"--company-domain", "guardianintelligence.org",
-		"--company-name", "Guardian Intelligence",
-		"--owner-alias", "shovon",
-		"--owner-name", "Shovon Hasan",
-		"--cli-name", "guardian",
-	)
-
-	repoRoot := t.TempDir()
-	siteVarsPath := filepath.Join(repoRoot, "src", "host", "sites", "prod", "vars.yml")
-	if err := os.MkdirAll(filepath.Dir(siteVarsPath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(siteVarsPath, []byte(`---
-verself_site: prod
-bare_metal_host_alias: vs-dev-w0
-verself_domain: old.example
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	runCLI(t, nil, "bootstrap", "--company", "guardian", "--repo-root", repoRoot, "--force")
-
-	assertFileContains(t, siteVarsPath, []string{
-		`bare_metal_host_alias: vs-dev-w0`,
-		`verself_domain: "guardian.example"`,
-		`service_discovery_canary_org_slug: "guardian"`,
-	})
 }
 
 func runCLI(t *testing.T, out *bytes.Buffer, args ...string) {

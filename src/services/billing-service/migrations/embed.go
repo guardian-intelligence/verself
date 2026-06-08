@@ -22,21 +22,6 @@ import (
 //go:embed *.up.sql
 var Files embed.FS
 
-func RunCLI(ctx context.Context, args []string, service string) error {
-	if len(args) != 1 || args[0] != "up" {
-		return errors.New("usage: migrate up")
-	}
-	return Up(ctx, service)
-}
-
-func Up(ctx context.Context, service string) error {
-	dsn := strings.TrimSpace(os.Getenv("VERSELF_PG_DSN"))
-	if dsn == "" {
-		return errors.New("VERSELF_PG_DSN is required")
-	}
-	return UpDSN(ctx, service, dsn)
-}
-
 func UpDSN(ctx context.Context, service, dsn string) error {
 	sourceDriver, err := iofs.New(Files, ".")
 	if err != nil {

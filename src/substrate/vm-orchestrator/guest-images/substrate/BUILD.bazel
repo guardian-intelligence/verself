@@ -10,20 +10,15 @@ go_library(
     visibility = ["//visibility:private"],
 )
 
-# The substrate builder runs on the Firecracker host as root because it mounts
-# chroot filesystems, installs the minimal apt package set, and materializes an
-# ext4 image from staged inputs.
+# Substrate builder implementation. Recovery must consume the built substrate
+# artifact, not run this builder on the target host.
 go_binary(
     name = "build_substrate",
     embed = [":build_substrate_lib"],
 )
 
-# Substrate-image build inputs bundled for the deploy host.
-# build_substrate runs on the Firecracker host and consumes the Bazel-vendored
-# Ubuntu base + kernel + Bazel-built vm-bridge + vm-guest-telemetry binaries
-# staged alongside it. The vm-orchestrator Nomad prestart task stages the
-# bundle and runs the builder on the host.
-
+# Substrate-image build inputs. Keep this edge visible until recovery consumes
+# a built substrate artifact target.
 pkg_tar(
     name = "substrate_inputs_bundle",
     files = {

@@ -1,19 +1,27 @@
 # gazelle:prefix github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "cloudflare-control-plane_lib",
     srcs = [
         "certificates.go",
         "main.go",
+        "recovery.go",
+        "recovery_config.go",
         "site.go",
+        "site_facts.go",
     ],
     importpath = "github.com/verself/integrations/cloudflare/control-plane/cmd/cloudflare-control-plane",
     visibility = ["//visibility:private"],
     deps = [
-        "//src/integrations/cloudflare/control-plane/internal/r2control",
+        "//src/integrations/cloudflare/control-plane/r2control",
+        "@com_github_protonmail_go_crypto//openpgp",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_cuelang_go//cue",
+        "@org_cuelang_go//cue/cuecontext",
         "@org_golang_x_crypto//acme",
     ],
 )
@@ -21,6 +29,8 @@ go_library(
 go_binary(
     name = "cloudflare-control-plane",
     embed = [":cloudflare-control-plane_lib"],
+    pure = "on",
+    static = "on",
     visibility = ["//visibility:public"],
 )
 
@@ -28,5 +38,35 @@ go_test(
     name = "cloudflare-control-plane_test",
     srcs = ["main_test.go"],
     embed = [":cloudflare-control-plane_lib"],
-    deps = ["//src/integrations/cloudflare/control-plane/internal/r2control"],
+    deps = [
+        "//src/integrations/cloudflare/control-plane/r2control",
+        "@com_github_protonmail_go_crypto//openpgp",
+    ],
+)
+
+pkg_tar(
+    name = "cloudflare-control-plane_image_layer",
+    files = {":cloudflare-control-plane": "usr/local/bin/cloudflare-control-plane"},
+    modes = {"usr/local/bin/cloudflare-control-plane": "0755"},
+)
+
+oci_image(
+    name = "cloudflare-control-plane_image",
+    architecture = "amd64",
+    entrypoint = ":cloudflare-control-plane.entrypoint",
+    os = "linux",
+    tars = [":cloudflare-control-plane_image_layer"],
+)
+
+oci_load(
+    name = "cloudflare-control-plane_image_load",
+    image = ":cloudflare-control-plane_image",
+    repo_tags = ":cloudflare-control-plane.image-tags.txt",
+)
+
+filegroup(
+    name = "cloudflare-control-plane_image_archive",
+    srcs = [":cloudflare-control-plane_image_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
 )

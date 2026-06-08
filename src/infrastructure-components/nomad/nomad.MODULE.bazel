@@ -1,0 +1,15 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "nomad_tool_nomad",
+    downloaded_file_path = "nomad_1.11.3_linux_amd64.zip",
+    sha256 = "19dac5642a2ba5305e6ff8efee06a708d760ebe4d1cd7936bc3dc526f477dc12",
+    url = "https://releases.hashicorp.com/nomad/1.11.3/nomad_1.11.3_linux_amd64.zip",
+)
+
+http_file(
+    name = "nomad_tool_podman_driver",
+    downloaded_file_path = "nomad-driver-podman_0.6.4_linux_amd64.zip",
+    sha256 = "5b9ac89585d7359f941a2504b11d50866f67c2887cb3716fba2bbaa0749a14a8",
+    url = "https://releases.hashicorp.com/nomad-driver-podman/0.6.4/nomad-driver-podman_0.6.4_linux_amd64.zip",
+)

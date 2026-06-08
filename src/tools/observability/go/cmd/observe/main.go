@@ -11,7 +11,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -44,7 +43,6 @@ const maxLookbackMinutes = uint64(1<<63-1) / uint64(time.Minute)
 
 type config struct {
 	repoRoot      string
-	substrateRoot string
 	site          string
 	what          string
 	signal        string
@@ -134,6 +132,7 @@ func runObserve(ctx context.Context, cfg config) error {
 		Site:           cfg.site,
 		NeedSSH:        true,
 		NeedOTel:       true,
+		UseRecovery:    opruntime.UseRecoveryFromEnv(),
 	}, func(rt *opruntime.Runtime) error {
 		chClient, err := opch.OpenOperator(rt.Ctx, rt, opch.Config{Database: "default"})
 		if err != nil {
@@ -223,7 +222,6 @@ func parseConfigAt(args []string, now time.Time) (config, error) {
 	flags := flag.NewFlagSet("observe", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	flags.StringVar(&cfg.repoRoot, "repo-root", "", "verself-sh checkout root (defaults to cwd)")
-	flags.StringVar(&cfg.substrateRoot, "substrate-root", "", "path to src/host")
 	flags.StringVar(&cfg.site, "site", strings.TrimSpace(os.Getenv("VERSELF_SITE")), "deployment site")
 	flags.StringVar(&cfg.what, "what", strings.TrimSpace(os.Getenv("WHAT")), "query family to run")
 	flags.StringVar(&cfg.signal, "signal", strings.TrimSpace(os.Getenv("SIGNAL")), "signal catalog: metrics, traces, logs, http, deploys")
@@ -289,9 +287,6 @@ func parseConfigAt(args []string, now time.Time) (config, error) {
 			return cfg, fmt.Errorf("resolve working directory: %w", err)
 		}
 		cfg.repoRoot = wd
-	}
-	if cfg.substrateRoot == "" {
-		cfg.substrateRoot = filepath.Join(cfg.repoRoot, "src", "host")
 	}
 	if cfg.site == "" {
 		cfg.site = opruntime.DefaultSite

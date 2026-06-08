@@ -1,0 +1,92 @@
+# CLI
+
+`guardian` resolves repo-owned tools and Guardian profiles, then runs the
+convergence state machine to the requested stop point.
+
+```sh
+guardian run bazel -- build //src/guardian-specification/...
+guardian preflight gamma -o json
+guardian fly gamma --dry-run -o yaml
+guardian fly gamma
+```
+
+The stable command response is written to stdout. State transitions and
+diagnostics are written to stderr, so machine callers can collect the final
+response without parsing progress logs.
+
+## Response Formats
+
+`-o yaml` is the default. `json`, `toml`, and `toon` are supported for
+automation and language-specific tooling. `--output` is the long form, and
+`--format` is accepted as an alias.
+
+JSON uses Go's standard `encoding/json` package. YAML uses `gopkg.in/yaml.v3`.
+TOML uses `github.com/BurntSushi/toml`. TOON uses
+`github.com/toon-format/toon-go`.
+
+## Input Formats
+
+CUE is the preferred authoring format. YAML, JSON, TOML, and TOON are accepted
+as runtime input formats when they encode the same entrypoint and resource
+graph.
+
+Normal usage discovers `.config/guardian/guardian.cue` from the workspace root
+and selects a named profile. `-f <config>` is the file override for explicit
+config files or standalone Guardian documents.
+
+## Tool Execution
+
+`guardian run <tool> -- <args...>` resolves a repo-declared catalog tool,
+verifies its admitted digest, materializes it in the Guardian cache, and
+executes it without consulting `PATH`.
+
+For Bazel builds, Guardian also asks Bazel to emit build events and then
+materializes Bazel-reported top-level outputs under `.guardian/build` inside
+the repo. Preflight uploads that repo-local output tree; it does not consume
+Bazel convenience symlinks.
+
+Tool inspection and shim installation stay under `run`:
+
+```sh
+guardian run --list
+guardian run bazel --which
+guardian run bazel --verify
+guardian run --install-shims --bin-dir "$HOME/.local/bin"
+```
+
+## Profiles
+
+`guardian profiles list` shows available profiles and the repo default.
+`guardian profiles show [profile]` shows the resolved Guardian document.
+
+Profiles are named contexts. There is no mutable local profile selection.
+
+## Preflight
+
+`preflight` runs through substrate readiness and stops. It resolves the profile
+and referenced `Substrate`, verifies local build artifacts exist, runs the
+configured preflight playbook, uploads the repo tree and digest-addressed Bazel
+outputs to the target when needed, and verifies OpenBao, Nomad, and the Podman
+driver. Preflight writes `.guardian/fly/document.json` before the playbook runs
+so component-owned Nomad jobs can read the graph from the remote workspace.
+
+`ready_to_fly: yes` means the configured preflight playbook completed, the
+remote workspace and artifact store are verified or already marked healthy, and
+Nomad can run component-owned recovery jobs. Missing build artifacts, failed
+hooks, missing verify digests, or kernel blockers produce `ready_to_fly: no`
+with stable condition reasons.
+
+## Fly
+
+`fly` starts with the same preflight phase. `fly --dry-run` validates the graph
+and verifies local preflight inputs without mutating the target.
+
+Live `fly` prepares the target and submits the declared Nomad jobs.
+Components own provider reconciliation, backup restore, health waiting, and
+other runtime behavior through their job files and owner-local binaries.
+
+## Observability
+
+State transitions are emitted by default for `preflight` and `fly`.
+Use [Command Observability](command-observability.md) for verbosity, filters,
+tee-friendly logs, and structured event formats.

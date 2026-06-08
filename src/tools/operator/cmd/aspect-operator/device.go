@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"cuelang.org/go/cue"
 )
 
 const (
@@ -26,10 +28,9 @@ type deviceOptions struct {
 }
 
 type deviceOpsVars struct {
-	BareMetalHostAlias string `yaml:"bare_metal_host_alias"`
-	PomeriumDomain     string `yaml:"pomerium_domain"`
-	PomeriumSubdomain  string `yaml:"pomerium_subdomain"`
-	VerselfDomain      string `yaml:"verself_domain"`
+	BareMetalHostAlias string
+	PomeriumSubdomain  string
+	VerselfDomain      string
 }
 
 type deviceConfig struct {
@@ -97,12 +98,12 @@ func configureOperatorDevice(opts deviceOptions) error {
 		Alias:     strings.TrimSpace(ops.BareMetalHostAlias),
 		Access:    accessHost,
 		SSHRoute:  route,
-		Inventory: filepath.Join(repoRoot, "src", "host", "sites", opts.site, "inventory.ini"),
+		Inventory: filepath.Join(repoRoot, "src", "sites", opts.site, "inventory.ini"),
 		KeyPath:   filepath.Join(home, ".ssh", defaultSSHKeyName),
 		PubPath:   filepath.Join(home, ".ssh", defaultSSHKeyName+".pub"),
 	}
 	if cfg.Alias == "" {
-		return fmt.Errorf("device: %s must define bare_metal_host_alias", siteVarsPath(repoRoot, opts.site))
+		return fmt.Errorf("device: %s must define bareMetal.hostAlias", siteFactsPath(repoRoot, opts.site))
 	}
 	if strings.ContainsAny(cfg.Alias, " \t\r\n[]") {
 		return fmt.Errorf("device: invalid bare_metal_host_alias %q", cfg.Alias)
@@ -118,25 +119,37 @@ func configureOperatorDevice(opts deviceOptions) error {
 }
 
 func loadDeviceOps(repoRoot, site string) (deviceOpsVars, error) {
-	path := siteVarsPath(repoRoot, site)
-	var out deviceOpsVars
-	if err := readYAMLFile(path, &out); err != nil {
+	facts, _, err := loadSiteFacts(repoRoot, site)
+	if err != nil {
 		return deviceOpsVars{}, err
 	}
-	return out, nil
+	alias, err := siteFactString(facts, cue.ParsePath("bareMetal.hostAlias"), true)
+	if err != nil {
+		return deviceOpsVars{}, err
+	}
+	domain, err := siteFactString(facts, cue.ParsePath("domains.product"), true)
+	if err != nil {
+		return deviceOpsVars{}, err
+	}
+	pomerium, err := siteFactString(facts, cue.MakePath(cue.Str("serviceSubdomains"), cue.Str("pomerium")), false)
+	if err != nil {
+		return deviceOpsVars{}, err
+	}
+	return deviceOpsVars{
+		BareMetalHostAlias: alias,
+		PomeriumSubdomain:  pomerium,
+		VerselfDomain:      domain,
+	}, nil
 }
 
 func derivePomeriumAccessHost(ops deviceOpsVars) (string, error) {
-	if domain := strings.TrimSpace(ops.PomeriumDomain); domain != "" && !strings.Contains(domain, "{{") {
-		return domain, nil
-	}
 	subdomain := strings.TrimSpace(ops.PomeriumSubdomain)
 	if subdomain == "" {
 		subdomain = "access"
 	}
 	domain := strings.TrimSpace(ops.VerselfDomain)
 	if domain == "" {
-		return "", errors.New("device: site vars must define verself_domain or concrete pomerium_domain")
+		return "", errors.New("device: site facts must define domains.product")
 	}
 	return subdomain + "." + domain, nil
 }
@@ -237,15 +250,13 @@ func writeDeviceInventory(cfg deviceConfig, opts deviceOptions) error {
 
 func renderDeviceInventory(cfg deviceConfig) string {
 	return fmt.Sprintf(`[workers]
-%s ansible_host=%s
+%s verself_ssh_host=%s
 
 [infra]
-%s ansible_host=%s
+%s verself_ssh_host=%s
 
 [all:vars]
-ansible_user=%s@%s
-ansible_python_interpreter=/usr/bin/python3
-ansible_ssh_extra_args=-o IdentitiesOnly=yes
+verself_ssh_user=%s@%s
 `, cfg.Alias, cfg.Access, cfg.Alias, cfg.Access, defaultOperatorSSHUser, cfg.SSHRoute)
 }
 

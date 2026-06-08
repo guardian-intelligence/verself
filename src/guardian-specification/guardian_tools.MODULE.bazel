@@ -1,0 +1,39 @@
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+controller_http_file = use_repo_rule("//src/tools/dev/binaries:controller_http_file.bzl", "controller_http_file")
+
+# Single source of truth for the bazel pin `guardian run bazel` resolves. The
+# bootstrap stage-zero script mirrors these digests by hand because it runs
+# before Bazel exists; the make-skill release lockfile and this pin must agree.
+controller_http_file(
+    name = "guardian_tool_bazel",
+    darwin_arm64_downloaded_file_path = "bazel-9.1.0-darwin-arm64",
+    darwin_arm64_sha256 = "084a1784fa8f0dcae77fb4e88faa15048d8149a36c947ce198508bffb060e1bb",
+    darwin_arm64_url = "https://releases.bazel.build/9.1.0/release/bazel-9.1.0-darwin-arm64",
+    linux_amd64_downloaded_file_path = "bazel-9.1.0-linux-x86_64",
+    linux_amd64_sha256 = "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f",
+    linux_amd64_url = "https://releases.bazel.build/9.1.0/release/bazel-9.1.0-linux-x86_64",
+)
+
+http_archive(
+    name = "guardian_specification_hyperfine_source",
+    build_file_content = """exports_files([
+    "Cargo.lock",
+    "Cargo.toml",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+])
+""",
+    sha256 = "ab62661c633a4461311381c532af8a35d55040a77487fd44fffb095965f2f265",
+    strip_prefix = "hyperfine-975fe108c4ee7bd2600d10758207b44ca3dae738",
+    urls = ["https://github.com/sharkdp/hyperfine/archive/975fe108c4ee7bd2600d10758207b44ca3dae738.tar.gz"],
+)
+
+http_file(
+    name = "guardian_specification_rsync_deb",
+    downloaded_file_path = "rsync_3.2.7-1ubuntu1.4_amd64.deb",
+    sha256 = "a2c92fc69ef4f646f2b267dacb456dbfec022bd32d5394e819c147548059627f",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/r/rsync/rsync_3.2.7-1ubuntu1.4_amd64.deb",
+)

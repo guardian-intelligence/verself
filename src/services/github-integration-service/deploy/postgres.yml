@@ -1,4 +1,0 @@
-postgresql_service_databases:
-  - { name: github_integration_service, owner: github_integration_service }
-postgresql_peer_mappings:
-  - { system_user: github_integration_service, pg_user: github_integration_service }

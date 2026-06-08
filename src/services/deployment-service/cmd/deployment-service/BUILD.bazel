@@ -3,7 +3,11 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "deployment-service_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "guardian_config.go",
+        "main.go",
+        "recover.go",
+    ],
     importpath = "github.com/verself/deployment-service/cmd/deployment-service",
     visibility = ["//visibility:private"],
     deps = [

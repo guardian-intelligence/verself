@@ -7,12 +7,8 @@ certificates.
 
 note:
 
-Pomerium is a manual operator-access handoff, outside bootstrap convergence and
-regular Nomad deploys:
-
-```shell
-aspect host operator-access-handoff --site=prod --confirm
-```
+Pomerium is a manual operator-access handoff outside component recovery and
+regular Nomad deploys.
 
 The handoff connects through WireGuard recovery SSH because it mutates Pomerium
 and sshd listeners. If Pomerium and WireGuard are unavailable, IPMI/reprovision
@@ -43,25 +39,19 @@ The SSH route name is `prod`, so a standard client connects with:
 ssh ubuntu@prod@access.<domain>
 ```
 
-Pomerium is reconciled only by the manual operator-access handoff play after
+Pomerium is reconciled only by the manual operator-access handoff after
 IAM/Zitadel component substrate binding has completed. It is outside host
 bootstrap and outside Nomad deployment because it changes the SSH access
 boundary. Before that handoff, bootstrap uses direct host SSH. After the
 handoff, public `:22` is Pomerium-owned and recovery SSH is reachable only over
-the `wg-ops` tunnel at `10.66.66.1:2222`. The handoff itself connects through
-the WireGuard recovery listener so Pomerium and sshd can restart without
-invalidating the Ansible control connection.
-
-```bash
-aspect host operator-access-handoff --site=prod --confirm
-```
+the `wg-ops` tunnel at `10.66.66.1:2222`.
 
 ## Device Enrollment
 
 `aspect operator device --site=prod` configures a checkout to use the native SSH
 route. It derives the Pomerium access host from
-`src/host/sites/<site>/vars.yml`, writes the authored per-site inventory at
-`src/host/sites/<site>/inventory.ini`, and ensures a default OpenSSH key exists
+`src/guardian-specification/examples/<site>/facts.cue`, writes the authored per-site inventory at
+`src/sites/<site>/inventory.ini`, and ensures a default OpenSSH key exists
 at `~/.ssh/id_ed25519`.
 
 Passphrase-protected device keys are supported through `ssh-agent`. Load the
@@ -76,9 +66,9 @@ Zitadel users are scoped to human operators. Development devices and agent VMs
 present separate SSH keys. Pomerium binds each key to the authenticated human
 subject on first use.
 
-The generated inventory keeps Ansible's `[workers]` and `[infra]` topology
-groups. In the single-node topology both groups resolve to the same Pomerium
-access host, with `ansible_user=ubuntu@prod` selecting the Pomerium SSH route.
+The generated inventory keeps `[workers]` and `[infra]` topology groups. In the
+single-node topology both groups resolve to the same Pomerium access host, with
+`verself_ssh_user=ubuntu@prod` selecting the Pomerium SSH route.
 
 Subsequent SSH, SCP, SFTP, Ansible, and Go SSH connections use the same
 public-key source and re-evaluate Pomerium policy on each connection.

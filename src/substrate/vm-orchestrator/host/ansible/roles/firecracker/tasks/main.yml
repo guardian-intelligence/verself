@@ -8,10 +8,7 @@
   become: false
   run_once: true
   ansible.builtin.command:
-    argv:
-      - "{{ firecracker_bazelisk }}"
-      - build
-      - "{{ firecracker_release_bazel_label }}"
+    argv: "{{ firecracker_bazel_command + ['build', firecracker_release_bazel_label] }}"
     chdir: "{{ firecracker_monorepo_root }}"
   changed_when: false
 
@@ -20,10 +17,7 @@
   become: false
   run_once: true
   ansible.builtin.command:
-    argv:
-      - "{{ firecracker_bazelisk }}"
-      - info
-      - execution_root
+    argv: "{{ firecracker_bazel_command + ['info', 'execution_root'] }}"
     chdir: "{{ firecracker_monorepo_root }}"
   changed_when: false
   register: firecracker_bazel_execution_root
@@ -33,11 +27,7 @@
   become: false
   run_once: true
   ansible.builtin.command:
-    argv:
-      - "{{ firecracker_bazelisk }}"
-      - cquery
-      - --output=files
-      - "{{ firecracker_release_bazel_label }}"
+    argv: "{{ firecracker_bazel_command + ['cquery', '--output=files', firecracker_release_bazel_label] }}"
     chdir: "{{ firecracker_monorepo_root }}"
   changed_when: false
   register: firecracker_release_bazel_output

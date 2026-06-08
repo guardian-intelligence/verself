@@ -9,12 +9,5 @@
     "cli_client_id": {{ (haproxy_verself_cli_client_id | default('')) | to_json }},
     "product_api_audience": {{ (haproxy_verself_product_api_audience | default('')) | to_json }}
   },
-  "public_apis": {
-{% for api in haproxy_public_apis | default([]) | sort(attribute='key') %}
-    {{ api.key | to_json }}: {
-      "base_url": {{ ('https://' ~ api.host) | to_json }},
-      "path_prefix": {{ api.path_prefix | to_json }}
-    }{{ "," if not loop.last else "" }}
-{% endfor %}
-  }
+  "public_apis": {}
 }

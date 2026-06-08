@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"cuelang.org/go/cue"
 	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
@@ -14,7 +15,7 @@ type mailOptions struct {
 }
 
 type mailMainVars struct {
-	VerselfDomain string `yaml:"verself_domain"`
+	VerselfDomain string
 }
 
 func cmdMail(args []string) error {
@@ -77,13 +78,17 @@ func companyEmailLocalParts() []string {
 }
 
 func loadMailConfig(repoRoot, site string) (mailMainVars, error) {
-	path := siteVarsPath(repoRoot, site)
-	var cfg mailMainVars
-	if err := readYAMLFile(path, &cfg); err != nil {
+	facts, path, err := loadSiteFacts(repoRoot, site)
+	if err != nil {
 		return mailMainVars{}, err
 	}
+	domain, err := siteFactString(facts, cue.ParsePath("domains.product"), true)
+	if err != nil {
+		return mailMainVars{}, fmt.Errorf("%s: %w", path, err)
+	}
+	cfg := mailMainVars{VerselfDomain: domain}
 	if strings.TrimSpace(cfg.VerselfDomain) == "" {
-		return mailMainVars{}, fmt.Errorf("%s missing verself_domain", path)
+		return mailMainVars{}, fmt.Errorf("%s missing domains.product", path)
 	}
 	cfg.VerselfDomain = strings.TrimSpace(cfg.VerselfDomain)
 	return cfg, nil

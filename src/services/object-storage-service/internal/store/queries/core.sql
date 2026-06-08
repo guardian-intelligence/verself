@@ -124,3 +124,52 @@ UPDATE object_storage_credentials
 SET status = sqlc.arg(revoked_status), revoked_at = sqlc.arg(revoked_at), revoked_by = sqlc.arg(revoked_by)
 WHERE credential_id = sqlc.arg(credential_id) AND status = sqlc.arg(active_status)
 RETURNING credential_id;
+
+-- name: CreateWriteSession :exec
+INSERT INTO object_storage_write_sessions (
+    session_id, site, capability, namespace, bucket_id, idempotency_key,
+    status, expires_at, created_at, created_by, completed_at
+)
+VALUES (
+    sqlc.arg(session_id), sqlc.arg(site), sqlc.arg(capability), sqlc.arg(namespace), sqlc.arg(bucket_id),
+    sqlc.arg(idempotency_key), sqlc.arg(status), sqlc.arg(expires_at), sqlc.arg(created_at),
+    sqlc.arg(created_by), sqlc.arg(completed_at)
+);
+
+-- name: WriteSessionByID :one
+SELECT session_id, site, capability, namespace, bucket_id, idempotency_key,
+       status, expires_at, created_at, created_by, completed_at
+FROM object_storage_write_sessions
+WHERE site = sqlc.arg(site) AND session_id = sqlc.arg(session_id);
+
+-- name: WriteSessionByIdempotencyKey :one
+SELECT session_id, site, capability, namespace, bucket_id, idempotency_key,
+       status, expires_at, created_at, created_by, completed_at
+FROM object_storage_write_sessions
+WHERE site = sqlc.arg(site)
+  AND capability = sqlc.arg(capability)
+  AND idempotency_key = sqlc.arg(idempotency_key);
+
+-- name: CompleteWriteSession :one
+UPDATE object_storage_write_sessions
+SET status = sqlc.arg(completed_status), completed_at = sqlc.arg(completed_at)
+WHERE site = sqlc.arg(site)
+  AND session_id = sqlc.arg(session_id)
+  AND status = sqlc.arg(open_status)
+RETURNING session_id, site, capability, namespace, bucket_id, idempotency_key,
+          status, expires_at, created_at, created_by, completed_at;
+
+-- name: CreateWriteSessionObject :exec
+INSERT INTO object_storage_write_session_objects (
+    session_id, name, object_key, sha256, size_bytes, action, created_at
+)
+VALUES (
+    sqlc.arg(session_id), sqlc.arg(name), sqlc.arg(object_key), sqlc.arg(sha256),
+    sqlc.arg(size_bytes), sqlc.arg(action), sqlc.arg(created_at)
+);
+
+-- name: WriteSessionObjectsBySession :many
+SELECT session_id, name, object_key, sha256, size_bytes, action, created_at
+FROM object_storage_write_session_objects
+WHERE session_id = sqlc.arg(session_id)
+ORDER BY name;

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"cuelang.org/go/cue"
 	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
@@ -31,7 +32,7 @@ type personaDefinition struct {
 }
 
 type hostMainVars struct {
-	VerselfDomain string `yaml:"verself_domain"`
+	VerselfDomain string
 }
 
 func cmdPersona(args []string) error {
@@ -172,13 +173,17 @@ func resolvePersona(repoRoot, site, name string) (personaDefinition, error) {
 }
 
 func loadVerselfDomain(repoRoot, site string) (string, error) {
-	path := siteVarsPath(repoRoot, site)
-	var vars hostMainVars
-	if err := readYAMLFile(path, &vars); err != nil {
+	facts, path, err := loadSiteFacts(repoRoot, site)
+	if err != nil {
 		return "", err
 	}
+	domain, err := siteFactString(facts, cue.ParsePath("domains.product"), true)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	vars := hostMainVars{VerselfDomain: domain}
 	if strings.TrimSpace(vars.VerselfDomain) == "" {
-		return "", fmt.Errorf("%s did not define verself_domain", path)
+		return "", fmt.Errorf("%s did not define domains.product", path)
 	}
 	return strings.TrimSpace(vars.VerselfDomain), nil
 }

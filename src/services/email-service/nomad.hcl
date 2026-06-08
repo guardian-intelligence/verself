@@ -1,3 +1,8 @@
+variable "email_service_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "email-service" {
   name = "email-service"
   datacenters = ["*"]
@@ -31,7 +36,7 @@ job "email-service" {
         sidecar = false
       }
       artifact {
-        source = "verself-artifact://email-service"
+        source = var.email_service_artifact_source
         destination = "local"
         chown = true
       }
@@ -96,7 +101,7 @@ EOT
         ttl  = "1h"
       }
       artifact {
-        source = "verself-artifact://email-service"
+        source = var.email_service_artifact_source
         destination = "local"
         chown = true
       }

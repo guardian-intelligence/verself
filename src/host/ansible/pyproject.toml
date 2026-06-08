@@ -1,8 +1,0 @@
-[project]
-name = "verself-host-ansible"
-version = "0.0.0"
-requires-python = ">=3.12"
-dependencies = [
-    "ansible-core==2.20.3",
-    "ansible-lint==26.4.0",
-]

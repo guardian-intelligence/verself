@@ -136,7 +136,7 @@ mksk = task(
         "public_registry": args.string(default = "https://oci.verself.sh", description = "Public OCI registry URL reported by --publish."),
         "repository": args.string(default = "verself/mksk", description = "OCI repository used by --publish."),
         "registry_username": args.string(default = "artifact-publisher", description = "OCI registry publisher user used by --publish."),
-        "registry_password_file": args.string(default = "/etc/zot/publisher-password", description = "OCI registry publisher password file used by --publish."),
+        "registry_password_file": args.string(default = "/run/verself/secrets/zot.publisher.password", description = "OCI registry publisher password file (project from OpenBao SecretPath kv-runtime/data/secret/org/zot.publisher.password) used by --publish."),
         "signing": args.string(default = "disabled", description = "Signing mode used by --publish: disabled | openbao-transit."),
         "openbao_addr": args.string(default = "", description = "OpenBao base URL used by --signing=openbao-transit."),
         "openbao_token_file": args.string(default = "", description = "OpenBao token file used by --signing=openbao-transit."),

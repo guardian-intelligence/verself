@@ -1,3 +1,0 @@
-{% for route in haproxy_public_routes | default([]) | sort(attribute='host') -%}
-{{ route.host }} {{ route.backend }}
-{% endfor -%}

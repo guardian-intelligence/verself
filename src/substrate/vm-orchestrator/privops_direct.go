@@ -414,8 +414,7 @@ func zfsCreateVolume(ctx context.Context, dataset string, sizeBytes uint64, volb
 
 // ZFSWriteVolumeFromFile dd's the source file's bytes onto a zvol device with
 // fsync at end. Returns total bytes written so the caller can record the
-// seeded size on the trace span. This is the seed equivalent of the legacy
-// Ansible "Write ext4 rootfs to staging zvol" task.
+// seeded size on the trace span.
 func (DirectPrivOps) ZFSWriteVolumeFromFile(ctx context.Context, devicePath, sourcePath string) (uint64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
@@ -865,6 +864,12 @@ func ensureJailDirectory(path string) error {
 }
 
 func (DirectPrivOps) StartJailer(_ context.Context, leaseID string, cfg JailerConfig) (*JailerProcess, error) {
+	if strings.TrimSpace(cfg.FirecrackerBin) == "" {
+		return nil, fmt.Errorf("firecracker binary path is required")
+	}
+	if strings.TrimSpace(cfg.JailerBin) == "" {
+		return nil, fmt.Errorf("jailer binary path is required")
+	}
 	args := []string{
 		"--id", leaseID,
 		"--exec-file", cfg.FirecrackerBin,

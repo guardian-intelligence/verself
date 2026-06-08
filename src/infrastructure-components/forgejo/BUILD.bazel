@@ -1,8 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 exports_files(["tools.lock.json"])
 
@@ -36,12 +32,14 @@ pkg_tar(
     name = "runtime_artifact",
     out = "forgejo-runtime.tar",
     files = {
+        "//src/infrastructure-components/forgejo/cmd/forgejo-recover:forgejo-recover": "bin/forgejo-recover",
         "@forgejo_tools//tools/forgejo": "bin/forgejo",
         ":git_bin": "bin/git",
         ":sqlite3_bin": "bin/sqlite3",
     },
     modes = {
         "bin/forgejo": "0755",
+        "bin/forgejo-recover": "0755",
         "bin/git": "0755",
         "bin/sqlite3": "0755",
     },
@@ -49,33 +47,7 @@ pkg_tar(
 )
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "forgejo-runtime",
-    },
-    component = "forgejo",
-    deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "forgejo",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )

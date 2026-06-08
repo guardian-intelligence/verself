@@ -1,12 +1,8 @@
 # gazelle:prefix github.com/verself/temporal-platform
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
@@ -20,12 +16,14 @@ pkg_tar(
         "@temporal_tools//tools/temporal-server": "bin/temporal-server",
         "@temporal_tools//tools/temporal-sql-tool": "bin/temporal-sql-tool",
         "//src/infrastructure-components/temporal-platform/cmd/temporal-bootstrap:temporal-bootstrap": "bin/temporal-bootstrap",
+        "//src/infrastructure-components/temporal-platform/cmd/temporal-recover:temporal-recover": "bin/temporal-recover",
         "//src/infrastructure-components/temporal-platform/cmd/temporal-schema:temporal-schema": "bin/temporal-schema",
         "//src/infrastructure-components/temporal-platform/cmd/verself-temporal-server:verself-temporal-server": "bin/verself-temporal-server",
     },
     modes = {
         "bin/tdbg": "0755",
         "bin/temporal-bootstrap": "0755",
+        "bin/temporal-recover": "0755",
         "bin/temporal-schema": "0755",
         "bin/temporal-server": "0755",
         "bin/temporal-sql-tool": "0755",
@@ -35,22 +33,9 @@ pkg_tar(
 )
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )
 
 spire_identity(
@@ -61,18 +46,5 @@ spire_identity(
     path = "/svc/temporal-server",
     restart_units = ["temporal-server"],
     user = "temporal_server",
-    visibility = ["//src/host:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "temporal-runtime",
-    },
-    component = "temporal",
-    deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "temporal",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

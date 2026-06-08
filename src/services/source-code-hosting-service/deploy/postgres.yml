@@ -1,4 +1,0 @@
-postgresql_service_databases:
-  - { name: source_code_hosting, owner: source_code_hosting_service }
-postgresql_peer_mappings:
-  - { system_user: source_code_hosting_service, pg_user: source_code_hosting_service }

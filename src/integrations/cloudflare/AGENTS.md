@@ -1,159 +1,138 @@
 # Cloudflare Integration
 
-Cloudflare is a single global provider control plane anchored to prod authority. The repository still passes `--site=<site>` to Cloudflare tooling; that argument selects target site records, object prefixes, and R2 child credential destinations. It does not select a site-local Cloudflare authority.
+`cloudflare-integration-service` owns every Cloudflare provider interaction for
+Verself. Object-byte workflows enter through `object-storage-service`;
+`object-storage-service` uses Cloudflare integration as its R2 provider driver.
+DNS, ACME DNS-01, Email Routing, and Cloudflare account authority remain direct
+Cloudflare integration capabilities.
 
-Site `prod` has a special infrastructure role: it owns global Cloudflare DNS and R2 control-plane operations for prod, gamma, dev, and future sites. Host bootstrap does not receive Cloudflare account authority.
+Cloudflare is a single global provider account anchored to prod authority.
+`site` selects target DNS records, R2 object prefixes, runtime capability
+credentials, and evidence labels. It does not select a site-local Cloudflare
+account.
 
-Global Cloudflare account identity and account-owned R2 buckets are declared only in `src/integrations/cloudflare/account.json`. Site files may reference Cloudflare as a consumed capability, but must not declare `cloudflare_account_id` or global R2 bucket names.
+## Authority
 
-The Cloudflare account-admin pair is stored only in prod controller OpenBao:
+The service owns Cloudflare account-admin lifecycle. Account-admin values are
+stored through `secrets-service`; `secrets-service` enforces SPIFFE/JIT access,
+records audit evidence, and stores encrypted material in OpenBao. OpenBao stores
+provider secret material and supplies Transit/KV primitives. It does not own
+Cloudflare policy, rotation, verification, or provider state machines.
 
-- `kv-controller/data/integrations/cloudflare/account-admin/a`
-- `kv-controller/data/integrations/cloudflare/account-admin/b`
+The bootstrap account-admin credential is one Cloudflare API token:
 
-Initial provider ingress writes the account-admin pair directly to prod controller OpenBao. Do not copy account-admin tokens into repo files, Nomad jobs, Ansible vars, generated artifacts, or service environments.
+```text
+cloudflare.account_admin
+```
 
-Required account-admin token policies:
+Required account-admin permissions:
 
 - Account API Tokens Read and Account API Tokens Write on the Cloudflare account.
 - Workers R2 Storage Read and Workers R2 Storage Write on the Cloudflare account.
-- Workers R2 Storage Bucket Item Read and Workers R2 Storage Bucket Item Write on the Cloudflare account.
-- Zone Read and DNS Write for every managed hosted zone, currently `verself.sh` and any company zone reconciled by site vars.
+- Workers R2 Storage Bucket Item Read and Workers R2 Storage Bucket Item Write
+  on the Cloudflare account.
+- Zone Read and DNS Write for every managed hosted zone.
+- Email Routing permissions for managed forwarding zones when email routing is
+  reconciled.
+
+The provider returns a token value only when it is created or rolled.
+`cloudflare-integration-service` writes it to `secrets-service` before any
+follow-up mutation and records only token ID and value fingerprints in reports.
+Overlapping token generations are created after bootstrap by the Cloudflare
+integration owner, not by the host bootstrap path.
+
+## Capability API
+
+Callers request Cloudflare capabilities, not raw provider credentials.
+
+- `object-storage-service` requests R2 capability reconciliation, scoped R2
+  credentials, and presigned S3-compatible object transfer handles for
+  deployment artifacts, product object storage, and recovery bytes.
+- `deployment-service` requests deployment-artifact object write sessions from
+  `object-storage-service`.
+- edge/TLS tooling requests ACME DNS-01 TXT records and deletes them after
+  issuance.
+- site provisioning requests DNS reconciliation for exact desired records.
+- email provisioning requests Cloudflare Email Routing reconciliation.
+
+The service may use Cloudflare's S3-compatible R2 API internally. S3-compatible
+transfer handles are issued by `object-storage-service` to trusted workloads;
+Cloudflare provider selection remains hidden from those workloads.
 
 ## R2 Model
 
-R2 is required for ongoing deployment. `aspect site bootstrap-deploy` copies the initial immutable build artifacts to the target host over SSH; after Nomad starts deployment-service, normal deployments publish through the site-local Cloudflare R2 control-plane job.
-
-The deployment artifact bucket is a global account resource declared in `account.json`:
-
-```text
-verself-deployment-artifacts
-```
-
-Target-site isolation is by object prefix and child credential scope:
+Global account-owned buckets are declared in `src/integrations/cloudflare/account.json`.
+Target-site isolation is by object prefix and credential scope:
 
 ```text
 verself-deployment-artifacts/<site>/sha256/<artifact-sha256>/...
 verself-deployment-artifacts/<site>/candidate/<deploy-run-key>/...
+verself-recovery/<site>/...
 ```
 
-The account-admin token creates the bucket through Cloudflare's REST R2 bucket API. Runtime jobs receive bucket-scoped child credentials only. R2 child credentials are delivered as S3-compatible access key IDs plus secret access keys. The Cloudflare API token value used to create a child credential is not a site runtime secret.
+R2 capability credentials are bucket-scoped Cloudflare child credentials.
+`cloudflare-integration-service` creates them, verifies real R2 access, and
+stores them through `secrets-service`. `object-storage-service` is the runtime
+consumer for object transfer, deployment artifact, product object, and recovery
+byte workflows.
 
-- Nomad artifact fetch: the site-local R2 control plane returns per-object presigned download sources after upload verification; Nomad receives only object-scoped download URLs.
-- Object storage service admin/proxy: bucket item read/write, written only to OpenBao runtime secret names declared by `src/services/object-storage-service/deploy/runtime-secrets.yml`.
-- Deployment publisher: bucket item read/write, stored as capability metadata and projected into the OpenBao runtime names declared by `src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml`.
-
-Do not create account-wide R2 child tokens. Live Cloudflare behavior requires bucket-scoped child token resources for S3-compatible credentials; account-wide R2 bucket management stays with the account-admin pair.
-
-## DNS Model
-
-DNS records are target-site resources inside global hosted zones. For Gamma, `verself_domain: gamma.verself.sh` maps records into hosted zone `verself.sh`; record names are rendered under the Gamma subdomain.
-
-`cloudflare_product_zone` and `cloudflare_company_zone` name hosted zones. `verself_domain` and `company_domain` name public domains inside those zones. Do not infer the hosted zone from a subdomain site name.
-
-The prod Cloudflare control plane reconciles DNS using the account-admin pair. `aspect integrations cloudflare-control-plane --site=<site> --action=reconcile-dns` reads the prod account-admin pair from controller authority and applies the target site's `cloudflare_dns_records`. DNS reconciliation produces records and evidence only.
-
-ACME/TLS issuer authority is an explicit public-edge input outside host bootstrap.
-
-## TLS Certificate Model
-
-HAProxy public certificates are issued before the public edge is converged. The operator-provided Cloudflare token creates short-lived ACME DNS-01 TXT records in the managed Cloudflare zones, completes the ACME authorization, deletes the TXT records, and writes combined private-key plus certificate-chain PEM files under:
+Capability credential rotation follows this state machine:
 
 ```text
-/etc/haproxy/certs/<certificate-name>.pem
+desired
+  -> account_authority_loaded_jit
+  -> provider_token_created
+  -> provider_roundtrip_verified
+  -> persisted_to_secrets_service
+  -> active
+  -> draining_old_generation
+  -> revoked
 ```
 
-The HAProxy role fails if it cannot reuse the real public certificate. Site bootstrap does not manage a public-edge certificate lifecycle.
+## DNS And TLS
 
-The certificate set is derived from target site vars:
+DNS records are target-site resources inside global hosted zones. Site metadata
+names hosted zones explicitly with values such as `cloudflare_product_zone` and
+`cloudflare_company_zone`; callers must not infer hosted zones by trimming
+labels from a domain.
+
+DNS reconciliation accepts explicit desired records, resolves hosted zones,
+builds a provider diff, applies creates/updates/deletes, and verifies provider
+state. It emits evidence and produces no runtime credential.
+
+ACME DNS-01 issuance uses the same Cloudflare DNS capability through short-lived
+TXT records:
 
 ```text
-verself_domain + *.verself_domain + *.api.verself_domain
-company_domain
+request challenge record
+  -> resolve hosted zone
+  -> create TXT record
+  -> verify public DNS visibility
+  -> caller completes ACME authorization
+  -> delete TXT record
+  -> emit challenge evidence
 ```
 
-The hosted zone is derived from `cloudflare_product_zone` and `cloudflare_company_zone`, not by trimming labels from the domain. This supports subdomain sites such as `gamma.verself.sh` inside the `verself.sh` zone.
+## Email Routing
 
-Certificate issuance state machine:
+Cloudflare Email Routing is a Cloudflare capability. Email provisioning requests
+managed destination, MX, SPF, and routing-rule reconciliation from
+`cloudflare-integration-service`. Human destination verification remains a
+provider-side step when Cloudflare requires a mailbox verification click.
 
-```text
-load Cloudflare DNS token file from the explicit edge input
-  -> resolve every hosted zone referenced by target site vars
-  -> inspect host PEM for keypair validity, SAN coverage, and expiry
-  -> reuse host PEM when it is valid and outside the renewal window
-  -> create ACME DNS-01 TXT records through Cloudflare
-  -> wait for public DNS visibility
-  -> complete ACME authorization and finalize the order
-  -> write host PEM atomically with 0600 mode
-  -> delete ACME TXT records
-  -> emit certificate names, domains, paths, expiry, and reuse evidence
-  -> remove the copied Cloudflare token from the host
-```
+## Recovery Boundary
 
-Renewal uses the same explicit edge transition. The Cloudflare token is not stored in Nomad, OpenBao runtime secrets, repo files, generated artifacts, or service environments.
+Artifact delivery does not use Cloudflare. Fresh recovery requires an
+operator-provided Cloudflare admin API token for the provider account.
+OpenTofu may reconcile non-secret global resources such as zones, buckets, and
+provider policy scaffolding. Provider token values and child credential
+generations are imported or created by the Cloudflare integration recovery job
+and stored through OpenBao or `secrets-service` once that boundary is available.
 
-## Account-Admin Rotation
+## Failure Rules
 
-The account-admin pair rotates by peer authority:
-
-```text
-verify slot A and slot B
-  -> use slot A to roll/update slot B value and expiry
-  -> write slot B value and token ID to prod controller OpenBao
-  -> verify slot B
-  -> use slot B to roll/update slot A value and expiry
-  -> write slot A value and token ID to prod controller OpenBao
-  -> verify both slots have distinct active token IDs
-```
-
-The token value returned by Cloudflare is available only at roll/create time. Store it immediately in prod controller OpenBao. Reports may include token ID fingerprints and value fingerprints; never print token values.
-
-Rotation requires both slots to have Account API Tokens Read and Write. A slot that cannot read token metadata or update the peer is not a valid account-admin token.
-
-## Child Credential Rotation
-
-Child credentials are disposable projections from the prod account-admin pair. They are rotated by target site and capability:
-
-```text
-load account-admin slot A from prod controller OpenBao
-  -> verify account-admin token status
-  -> ensure required global resource exists
-  -> create new bucket-scoped R2 child token
-  -> verify child token against the real provider API
-  -> persist the new generation to OpenBao runtime names
-  -> delete the newly created child token on any pre-persistence failure
-```
-
-Provider verification is part of the state transition. R2 child tokens must complete a PUT/HEAD/GET round trip. Verification may retry short-lived 401/403 responses because newly created Cloudflare tokens can require a short propagation interval; other provider errors are data and should fail the transition.
-
-DNS is verified through hosted-zone visibility from the account-admin pair:
-
-```text
-load account-admin slot A from prod controller OpenBao
-  -> list every hosted zone referenced by target site vars
-  -> report zone ID fingerprints
-  -> reconcile records from the controller
-```
-
-The DNS transition emits evidence and produces no child credential.
-
-## Bootstrap Boundary
-
-Bootstrap artifact delivery does not use Cloudflare. DNS and R2 operations load account-admin authority from prod controller OpenBao. When prod controller OpenBao is not reachable, establish or recover controller OpenBao before running DNS or R2 provisioning. TLS issuance is a public-edge step outside host bootstrap.
-
-Product-provider secrets such as Stripe, Resend, GitHub App private material, object-storage provider keys, and runtime deployment publisher keys enter OpenBao through their service-owned lifecycle after OpenBao and Nomad are available.
-
-## Module Boundaries
-
-- `control-plane/`: prod-owned Cloudflare authority, account-admin pair verification/rotation, hosted-zone authority verification, DNS reconciliation, R2 bucket creation, and R2 child credential provisioning.
-- `r2-control-plane/`: site-local runtime upload-session service. It consumes a scoped publisher S3 credential and locally signs temporary R2 upload credentials. It does not hold account-admin authority or Cloudflare API token values.
-- `email-routing/`: zone email-routing automation. It must use scoped zone credentials and must not depend on account-admin material.
-
-## Code Pointers
-
-- `control-plane/cmd/cloudflare-control-plane/main.go` provisions R2 child tokens, verifies each child token against R2, writes runtime values to `kv-runtime/data/secret/org/<secret-name>`, reconciles DNS, and issues public-edge certificates when invoked for that explicit transition.
-- `r2-control-plane/nomad.hcl` reads `cloudflare-r2-control-plane.publisher_token_id` and `cloudflare-r2-control-plane.publisher_secret_access_key` through Nomad's OpenBao template integration.
-- `r2-control-plane/cmd/cloudflare-r2-control-plane/server.go` signs per-object upload and download URLs from the OpenBao-projected publisher credential.
-- `../../services/object-storage-service/nomad.hcl` reads the object-storage R2 admin/proxy credentials through Nomad OpenBao templates.
-
-Generated local files under `.verself/bootstrap/<site>/` are operator bootstrap artifacts. Do not commit them.
+Provider failures are data. The service records the operation, phase, provider
+status, request ID, token fingerprint, affected site/capability, retry decision,
+and recovery action. New credential generations are never made active until real
+provider verification succeeds. Old generations are revoked only after the new
+generation is persisted and verified.

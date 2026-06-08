@@ -5,7 +5,7 @@ import "time"
 type ObjectAccessEvent struct {
 	RecordedAt         time.Time `ch:"recorded_at"`
 	EventDate          time.Time `ch:"event_date"`
-	Environment        string    `ch:"environment"`
+	Site               string    `ch:"environment"`
 	ServiceVersion     string    `ch:"service_version"`
 	WriterInstanceID   string    `ch:"writer_instance_id"`
 	OrgID              string    `ch:"org_id"`

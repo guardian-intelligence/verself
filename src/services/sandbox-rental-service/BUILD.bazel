@@ -1,11 +1,7 @@
 # gazelle:prefix github.com/verself/sandbox-rental-service
 
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
@@ -16,18 +12,5 @@ spire_identity(
     key = "sandbox_rental.default",
     path = "/svc/sandbox-rental-service",
     user = "sandbox_rental",
-    visibility = ["//src/host:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/services/sandbox-rental-service/cmd/sandbox-rental-recurring-worker:sandbox-rental-recurring-worker_nomad_artifact": "sandbox-rental-recurring-worker",
-        "//src/services/sandbox-rental-service/cmd/sandbox-rental-service:sandbox-rental-service_nomad_artifact": "sandbox-rental-service",
-    },
-    component = "sandbox_rental",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "sandbox-rental",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

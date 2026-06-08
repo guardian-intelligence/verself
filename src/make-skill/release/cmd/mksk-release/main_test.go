@@ -390,8 +390,8 @@ func TestPublishBundlePublishesEvidenceReferrers(t *testing.T) {
 }
 
 func TestExtractToolsRequiresBuildTools(t *testing.T) {
-	toolsTar := writeReleaseToolsTar(t, []string{"bazelisk", "cargo-about"})
-	_, cleanup, err := extractTools(toolsTar, []string{"bazelisk", "cargo-about", "syft"})
+	toolsTar := writeReleaseToolsTar(t, []string{"bazel", "cargo-about"})
+	_, cleanup, err := extractTools(toolsTar, []string{"bazel", "cargo-about", "syft"})
 	if cleanup != nil {
 		defer cleanup()
 	}

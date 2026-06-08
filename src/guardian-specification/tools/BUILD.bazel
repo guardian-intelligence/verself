@@ -1,0 +1,55 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load(":catalog.bzl", "tools_root_files", "tools_root_modes", "tools_root_tree_deps")
+
+package(default_visibility = ["//visibility:public"])
+
+# The bazel pin digest must be hand-mirrored into the stage-zero bootstrap (runs
+# before Bazel exists) and the make-skill release lockfile (independent hub).
+# This test fails if any copy drifts from the canonical pin in
+# //src/guardian-specification:guardian_tools.MODULE.bazel.
+go_test(
+    name = "bazel_pin_consistency_test",
+    srcs = ["bazel_pin_consistency_test.go"],
+    data = [
+        "//src/guardian-specification:guardian_tools.MODULE.bazel",
+        "//src/make-skill/release:tools.lock.json",
+        "//src/tools/dev:bootstrap/bootstrap-linux-amd64",
+    ],
+)
+
+genrule(
+    name = "rsync_bin",
+    srcs = ["@guardian_specification_rsync_deb//file"],
+    outs = ["rsync"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @guardian_specification_rsync_deb//file)" "$$tmp"
+install -m 0755 "$$tmp/usr/bin/rsync" "$@"
+""",
+)
+
+genrule(
+    name = "bazel_bin",
+    srcs = ["@guardian_tool_bazel//file"],
+    outs = ["bazel"],
+    cmd = "install -m 0755 $(location @guardian_tool_bazel//file) $@",
+)
+
+# The Guardian tool root: one content-addressed layer per tool laid out at
+# <name>/bin/<exe>, the convention `guardian run` resolves against. The golden
+# image extracts this into /opt/guardian/tools; `aspect dev install` extracts it
+# into .verself/tools/root via stage-zero bazel. The layout is projected from the
+# single catalog source of truth (catalog.bzl), the same list that generates
+# .config/guardian/tools.cue, so the catalog can never name a tool the root does
+# not materialize.
+pkg_tar(
+    name = "tools_root",
+    out = "guardian-tools-root.tar",
+    files = tools_root_files(),
+    modes = tools_root_modes(),
+    visibility = ["//visibility:public"],
+    deps = tools_root_tree_deps(),
+)

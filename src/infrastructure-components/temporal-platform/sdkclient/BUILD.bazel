@@ -7,7 +7,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src/infrastructure-components/temporal-platform/internal/temporallog",
-        "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/workload",
         "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
         "@com_github_spiffe_go_spiffe_v2//workloadapi",

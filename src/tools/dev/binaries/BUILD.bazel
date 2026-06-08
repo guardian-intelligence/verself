@@ -20,6 +20,46 @@ genrule(
     cmd = "install -m 0755 $(location @cc_mvdan_gofumpt//:gofumpt) $@",
 )
 
+# Go ships its standard library and runtime tree alongside the binary; the
+# `go` command derives GOROOT as the parent of bin/. The catalog convention
+# <name>/bin/<exe> places the binary at go/bin/go, so GOROOT resolves to the
+# tool root's go/ subdir — we must carry the whole dist, not just the binary.
+# The upstream tarball is already rooted at go/, so this just recompresses it
+# as a plain tar for pkg_tar `deps` composition into the tool root.
+genrule(
+    name = "go_root_tar",
+    srcs = ["@dev_tool_go//file"],
+    outs = ["go-root.tar"],
+    cmd = "gzip -dc $(location @dev_tool_go//file) > $@",
+)
+
+genrule(
+    name = "jq_bin",
+    srcs = ["@dev_tool_jq//file"],
+    outs = ["jq"],
+    cmd = "install -m 0755 $(location @dev_tool_jq//file) $@",
+)
+
+genrule(
+    name = "cdxgen_bin",
+    srcs = ["@dev_tool_cdxgen//file"],
+    outs = ["cdxgen"],
+    cmd = "install -m 0755 $(location @dev_tool_cdxgen//file) $@",
+)
+
+genrule(
+    name = "syft_bin",
+    srcs = ["@dev_tool_syft//file"],
+    outs = ["syft"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+tar -xzf "$(location @dev_tool_syft//file)" -C "$$tmp"
+install -m 0755 "$$tmp/syft" "$@"
+""",
+)
+
 alias(
     name = "ruby",
     actual = "@dev_tool_ruby//:ruby",

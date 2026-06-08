@@ -31,7 +31,7 @@ Verification gates:
 - repository search shows converted substrate resources are declared only beside
   owning packages;
 - `aspect check` passes, including deployment-contract validation;
-- `aspect deploy --site=<site> --sha=<sha>` succeeds for the target site;
+- `guardian fly <site>` succeeds for the target site;
 - ClickHouse evidence proves reconcilers, canaries, and promotion gates ran;
 - direct substrate checks confirm PostgreSQL roles/databases, OpenBao policies
   and JWT roles, Zitadel objects, and service-owned route state.
@@ -73,7 +73,7 @@ server functions, and generated OpenAPI projections conform to the Smithy model.
 | Deployability | Owning Bazel target, owner-local substrate declarations, migrations, Nomad job, route registration, config/secrets, recovery status endpoint, independent deploy path, rollback or full-cutover plan, and generated artifact ownership. |
 | Load and failure testing | Product-level load test, maximum payload test, failure injection, worker retry test, reconciliation test, and saturation behavior. |
 | Documentation and communication | Public docs, internal docs, AGENTS guidance, SDK examples, policy updates, release note, customer notification, and lead-time rule for customer-impacting runtime changes. |
-| Release evidence | Canary scenario, `aspect deploy` evidence, ClickHouse queries, PostgreSQL/TigerBeetle checks, host metrics, billing projection checks, audit rows, and SLO gate. |
+| Release evidence | Canary scenario, `guardian fly` evidence, ClickHouse queries, PostgreSQL/TigerBeetle checks, host metrics, billing projection checks, audit rows, and SLO gate. |
 
 ## SDK And API Ergonomics
 
@@ -307,33 +307,23 @@ Every service remains independently deployable. The packet must confirm:
 - Nomad job and service registration;
 - HAProxy discovery entry for new public services;
 - SPIFFE identity and service-local clients for repo-owned calls;
-- owner-local PostgreSQL, OpenBao, Zitadel, ClickHouse, credential, route, and
-  integration declarations;
+- owner-local CRD/site-graph declarations for PostgreSQL, OpenBao, Zitadel,
+  ClickHouse, credentials, routes, and integrations;
 - migrations, generated artifacts, and validators;
 - recovery status endpoint for declared recoverable sources;
 - config and secrets source;
 - owner-local promotion gates and full-cutover behavior.
 
 Deployable packages own their substrate contract next to the code that consumes
-it. The conventional package layout is:
-
-```text
-src/services/<service>/
-  deploy/postgres.yml
-  deploy/openbao.yml
-  deploy/zitadel.yml
-  deploy/clickhouse.yml
-  deploy/gates.yml
-```
-
-Infrastructure components may use the same declaration shape under the owning
-component directory. Bazel providers aggregate and validate these declarations
-into deploy inputs. Generic reconcilers apply the inputs to each substrate:
-PostgreSQL creates databases, owner roles, extensions, migrations, and
-publications; OpenBao creates mounts, policies, auth roles, transit keys, and
-secret names; Zitadel creates projects, apps, actions, identity-provider links,
-and grants; ClickHouse creates service-owned schemas, tables, materialized
-views, and evidence queries. Reconciler code stays generic; Bazel-supplied
+it. Static configuration belongs in the component Guardian CRD schema and the
+site graph. Bazel builds the component-owned artifacts, including Nomad jobs
+and vars files, and component recovery tasks apply the inputs to each
+substrate: PostgreSQL creates databases, owner roles, extensions, migrations,
+and publications; OpenBao creates mounts, policies, auth roles, transit keys,
+and secret names; Zitadel creates projects, apps, actions, identity-provider
+links, and grants; ClickHouse creates service-owned schemas, tables,
+materialized views, and evidence queries. Reconciler code stays generic;
+Bazel-supplied
 declarations provide all service-specific inputs.
 
 Shared site substrate instances still provide hard service isolation. Each

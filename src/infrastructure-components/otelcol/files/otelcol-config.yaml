@@ -311,9 +311,9 @@ receivers:
     transport: unix
     username: otelcol
     password: peer-auth-placeholder
-    databases: [sandbox_rental]
+    databases: [postgres]
     collection_interval: 10s
-  filelog/postgresql:
+  file_log/postgresql:
     include: [/var/log/postgresql/postgresql-*.log]
     storage: file_storage
     resource:
@@ -350,8 +350,12 @@ receivers:
         include:
           match_type: regexp
           names: ["billing-service", "sandbox-rental.*", "haproxy", "clickhouse.*", "ClickHouse.*", "forgejo.*", "source-code-hosting-service", "projects-service", "grafana.*", "otelcol.*", "node", "verself", "verdaccio", "next-server.*", "npm", "vm-orchestrator.*", "tigerbeetle", "zitadel", "bao", "postgres", "spire-server", "spire-agent", "verself-temporal-server"]
+        # Short-lived PIDs can vanish between /proc enumeration and scrape.
+        scrape_process_delay: 2s
+        mute_process_name_error: true
         mute_process_exe_error: true
         mute_process_io_error: true
+        mute_process_user_error: true
       cpu: {}
       memory: {}
       load: {}
@@ -377,13 +381,6 @@ receivers:
             insecure_skip_verify: true
           static_configs:
             - targets: ["127.0.0.1:8200"]
-  prometheus/temporal:
-    config:
-      scrape_configs:
-        - job_name: temporal
-          scrape_interval: 10s
-          static_configs:
-            - targets: ["127.0.0.1:9001"]
   prometheus/nomad:
     config:
       scrape_configs:
@@ -394,14 +391,6 @@ receivers:
             format: [prometheus]
           static_configs:
             - targets: ["127.0.0.1:4646"]
-  prometheus/haproxy:
-    config:
-      scrape_configs:
-        - job_name: haproxy
-          scrape_interval: 10s
-          metrics_path: /metrics
-          static_configs:
-            - targets: ["127.0.0.1:8404"]
 
 processors:
   batch:
@@ -414,16 +403,16 @@ processors:
         conditions:
           - resource.attributes["service.name"] == "ansible"
         statements:
-          - set(name, "ansible.playbook") where IsMatch(name, ".*\\.ya?ml$")
-          - set(name, "ansible.task") where name != "ansible.playbook"
-          - set(attributes["verself.deploy_id"], resource.attributes["verself.deploy_id"]) where resource.attributes["verself.deploy_id"] != nil
-          - set(attributes["verself.deploy_run_key"], resource.attributes["verself.deploy_run_key"]) where resource.attributes["verself.deploy_run_key"] != nil
-          - set(attributes["verself.commit_sha"], resource.attributes["verself.commit_sha"]) where resource.attributes["verself.commit_sha"] != nil
-          - set(attributes["verself.branch"], resource.attributes["verself.branch"]) where resource.attributes["verself.branch"] != nil
-          - set(attributes["verself.commit_message"], resource.attributes["verself.commit_message"]) where resource.attributes["verself.commit_message"] != nil
-          - set(attributes["verself.author"], resource.attributes["verself.author"]) where resource.attributes["verself.author"] != nil
-          - set(attributes["verself.dirty"], resource.attributes["verself.dirty"]) where resource.attributes["verself.dirty"] != nil
-          - set(attributes["verself.deploy_kind"], resource.attributes["verself.deploy_kind"]) where resource.attributes["verself.deploy_kind"] != nil
+          - set(span.name, "ansible.playbook") where IsMatch(span.name, ".*\\.ya?ml$")
+          - set(span.name, "ansible.task") where span.name != "ansible.playbook"
+          - set(span.attributes["verself.deploy_id"], resource.attributes["verself.deploy_id"]) where resource.attributes["verself.deploy_id"] != nil
+          - set(span.attributes["verself.deploy_run_key"], resource.attributes["verself.deploy_run_key"]) where resource.attributes["verself.deploy_run_key"] != nil
+          - set(span.attributes["verself.commit_sha"], resource.attributes["verself.commit_sha"]) where resource.attributes["verself.commit_sha"] != nil
+          - set(span.attributes["verself.branch"], resource.attributes["verself.branch"]) where resource.attributes["verself.branch"] != nil
+          - set(span.attributes["verself.commit_message"], resource.attributes["verself.commit_message"]) where resource.attributes["verself.commit_message"] != nil
+          - set(span.attributes["verself.author"], resource.attributes["verself.author"]) where resource.attributes["verself.author"] != nil
+          - set(span.attributes["verself.dirty"], resource.attributes["verself.dirty"]) where resource.attributes["verself.dirty"] != nil
+          - set(span.attributes["verself.deploy_kind"], resource.attributes["verself.deploy_kind"]) where resource.attributes["verself.deploy_kind"] != nil
 
 exporters:
   clickhouse:
@@ -450,7 +439,7 @@ service:
   extensions: [health_check, file_storage]
   pipelines:
     logs:
-      receivers: [otlp, journald/haproxy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, filelog/postgresql]
+      receivers: [otlp, journald/haproxy, journald/billing-service, journald/sandbox-rental, journald/sandbox-rental-recurring-worker, journald/verself-web, journald/zitadel, journald/openbao, journald/sshd, journald/spire-server, journald/spire-agent, journald/vm-orchestrator, journald/forgejo, journald/source-code-hosting-service, journald/projects-service, journald/grafana, journald/temporal-server, journald/verdaccio, journald/wireguard, file_log/postgresql]
       processors: [batch]
       exporters: [clickhouse]
     traces:
@@ -458,6 +447,6 @@ service:
       processors: [transform/ansible_spans, batch]
       exporters: [clickhouse]
     metrics:
-      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/temporal, prometheus/nomad, prometheus/haproxy]
+      receivers: [otlp, hostmetrics, postgresql, statsd, prometheus/openbao, prometheus/nomad]
       processors: [batch]
       exporters: [clickhouse]

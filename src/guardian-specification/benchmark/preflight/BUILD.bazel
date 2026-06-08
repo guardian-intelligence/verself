@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+alias(
+    name = "hyperfine",
+    actual = "@guardian_specification_tools//tools/hyperfine",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "preflight_benchmark",
+    timeout = "long",
+    srcs = ["preflight_benchmark_test.go"],
+    args = [
+        "-test.run=__benchmark_only__",
+        "-test.bench=BenchmarkGuardianPreflight",
+        "-test.benchtime=10x",
+        "-test.benchmem",
+    ],
+    tags = [
+        "local",
+        "manual",
+    ],
+)

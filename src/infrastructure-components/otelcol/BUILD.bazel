@@ -1,29 +1,12 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
-
-deploy_declarations(visibility = ["//visibility:public"])
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 
 exports_files(["tools.lock.json"])
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
+    name = "guardian_crd",
+    srcs = ["guardian/v1alpha1/schema.cue"],
+    visibility = ["//visibility:public"],
 )
 
 pkg_tar(
@@ -66,19 +49,5 @@ spire_identity(
     path = "/svc/otelcol",
     restart_units = [],
     user = "otelcol",
-    visibility = ["//src/host:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":config_artifact": "otelcol-config",
-        ":runtime_artifact": "otelcol-runtime",
-    },
-    component = "otelcol",
-    deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "otelcol",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

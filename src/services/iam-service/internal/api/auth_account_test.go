@@ -44,6 +44,54 @@ func TestCreateDeviceSessionRejectsUnverifiedProviderEmail(t *testing.T) {
 	assertProblem(t, err, http.StatusForbidden, "auth.provider_email_unverified")
 }
 
+func TestGetAuthContextRequiresDeviceSessionProof(t *testing.T) {
+	ctx, handlers := newAuthAccountTestHandlers(t)
+	identity := authIdentity("https://issuer.example", "subject-auth-context", "auth-context@example.test", true)
+
+	_, err := handlers.GetAuthContext(auth.WithIdentity(ctx, identity), &contractapi.GetAuthContextInput{})
+	assertProblem(t, err, http.StatusForbidden, "auth.device_session_required")
+
+	created, err := handlers.CreateDeviceSession(auth.WithIdentity(ctx, identity), createDeviceSessionInput("auth-context"))
+	if err != nil {
+		t.Fatalf("create device session: %v", err)
+	}
+
+	_, err = handlers.GetAuthContext(auth.WithIdentity(ctx, identity), &contractapi.GetAuthContextInput{})
+	assertProblem(t, err, http.StatusForbidden, "auth.device_session_required")
+
+	out, err := handlers.GetAuthContext(auth.WithIdentity(ctx, identity), &contractapi.GetAuthContextInput{
+		SessionID: created.Body.Session.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("get auth context: %v", err)
+	}
+	if out.Body.Session.SessionID != created.Body.Session.SessionID || !out.Body.Session.Current {
+		t.Fatalf("auth context session = %#v, want current %q", out.Body.Session, created.Body.Session.SessionID)
+	}
+}
+
+func TestGetAuthContextRejectsRevokedDeviceSessionProof(t *testing.T) {
+	ctx, handlers := newAuthAccountTestHandlers(t)
+	identity := authIdentity("https://issuer.example", "subject-revoked-session", "revoked-session@example.test", true)
+	created, err := handlers.CreateDeviceSession(auth.WithIdentity(ctx, identity), createDeviceSessionInput("revoked-session"))
+	if err != nil {
+		t.Fatalf("create device session: %v", err)
+	}
+
+	_, err = handlers.RevokeDeviceSession(auth.WithIdentity(ctx, identity), &contractapi.RevokeDeviceSessionInput{
+		SessionID:        created.Body.Session.SessionID,
+		CurrentSessionID: created.Body.Session.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("revoke device session: %v", err)
+	}
+
+	_, err = handlers.GetAuthContext(auth.WithIdentity(ctx, identity), &contractapi.GetAuthContextInput{
+		SessionID: created.Body.Session.SessionID,
+	})
+	assertProblem(t, err, http.StatusForbidden, "auth.session_revoked")
+}
+
 func TestRevokeDeviceSessionRevokesProviderSessionBeforeLocalSession(t *testing.T) {
 	ctx, handlers := newAuthAccountTestHandlers(t)
 	identity := authIdentity("https://issuer.example", "subject-session", "session@example.test", true)

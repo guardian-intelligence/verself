@@ -14,12 +14,12 @@ pkg_tar(
     name = "release_tools_artifact",
     out = "mksk-release-tools.tar",
     files = {
-        "@mksk_release_tools//tools/bazelisk": "bin/bazelisk",
+        "@mksk_release_tools//tools/bazel": "bin/bazel",
         "@mksk_release_tools//tools/cargo-about": "bin/cargo-about",
         "@mksk_release_tools//tools/syft": "bin/syft",
     },
     modes = {
-        "bin/bazelisk": "0755",
+        "bin/bazel": "0755",
         "bin/cargo-about": "0755",
         "bin/syft": "0755",
     },

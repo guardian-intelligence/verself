@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
+  "hyperfine": {
+    "binaries": [
+      {
+        "kind": "archive",
+        "url": "https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine-v1.20.0-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "63ad53934062118f5b0be11785e0bb1603d4b91667d1921f2fd8df9a8712040a",
+        "type": "tar.gz",
+        "file": "hyperfine-v1.20.0-x86_64-unknown-linux-gnu/hyperfine",
+        "os": "linux",
+        "cpu": "x86_64"
+      }
+    ]
+  }
+}

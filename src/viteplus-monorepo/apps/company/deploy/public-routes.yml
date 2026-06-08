@@ -1,3 +1,0 @@
-haproxy_public_routes:
-  - host: "{{ company_domain }}"
-    backend: be_route_company_apex_company_frontend

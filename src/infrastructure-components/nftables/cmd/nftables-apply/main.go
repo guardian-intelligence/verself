@@ -1,10 +1,12 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,22 +17,60 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
 const managedHeader = "# Managed by Verself nftables component."
 
 type config struct {
+	repoRoot             string
+	resourceGraph        string
+	resourceName         string
+	runtimeArtifact      string
 	artifactRoot         string
 	nftBin               string
 	ldLibraryPath        string
 	destRoot             string
 	hostRuntimeRoot      string
+	configPath           string
+	rulesDir             string
+	serviceUnitPath      string
+	firewallTargetPath   string
 	serviceArtifactRoot  string
 	serviceNftBin        string
 	serviceLDLibraryPath string
 	manageSystemd        bool
 	systemctlBin         string
+}
+
+type guardianDocument struct {
+	Resources []guardianResource `json:"resources"`
+}
+
+type guardianResource struct {
+	APIVersion string               `json:"apiVersion"`
+	Kind       string               `json:"kind"`
+	Metadata   guardianMetadata     `json:"metadata"`
+	Spec       nftablesFirewallSpec `json:"spec"`
+}
+
+type guardianMetadata struct {
+	Name string `json:"name"`
+}
+
+type nftablesFirewallSpec struct {
+	RuntimeArtifact string              `json:"runtimeArtifact"`
+	RuntimeRoot     string              `json:"runtimeRoot"`
+	ConfigPath      string              `json:"configPath"`
+	RulesDir        string              `json:"rulesDir"`
+	ManageSystemd   *bool               `json:"manageSystemd"`
+	Systemd         nftablesSystemdSpec `json:"systemd"`
+}
+
+type nftablesSystemdSpec struct {
+	ServiceUnitPath    string `json:"serviceUnitPath"`
+	FirewallTargetPath string `json:"firewallTargetPath"`
 }
 
 type fileInstall struct {
@@ -55,7 +95,11 @@ func run(ctx context.Context, args []string) error {
 	if err := cfg.validate(); err != nil {
 		return err
 	}
-	if cfg.manageSystemd {
+	if cfg.runtimeArtifact != "" {
+		if err := installRepoRuntime(&cfg); err != nil {
+			return err
+		}
+	} else if cfg.manageSystemd {
 		if err := installHostRuntime(&cfg); err != nil {
 			return err
 		}
@@ -63,7 +107,7 @@ func run(ctx context.Context, args []string) error {
 	if err := installConfig(cfg); err != nil {
 		return err
 	}
-	nftConf := destPath(cfg.destRoot, "/etc/nftables.conf")
+	nftConf := destPath(cfg.destRoot, cfg.configPath)
 	if err := runCommand(ctx, cfg.ldLibraryPath, cfg.nftBin, "-c", "-f", nftConf); err != nil {
 		return err
 	}
@@ -92,19 +136,32 @@ func parseConfig(args []string) (config, error) {
 	fs := flag.NewFlagSet("nftables-apply", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	cfg := config{
-		artifactRoot:    os.Getenv("VERSELF_NFTABLES_RUNTIME"),
-		nftBin:          "nft",
-		ldLibraryPath:   os.Getenv("LD_LIBRARY_PATH"),
-		destRoot:        "/",
-		hostRuntimeRoot: "/opt/verself/nftables",
-		manageSystemd:   true,
-		systemctlBin:    "systemctl",
+		repoRoot:           "/home/ubuntu/.local/state/guardian/repo",
+		resourceName:       "nftables",
+		nftBin:             "nft",
+		ldLibraryPath:      os.Getenv("LD_LIBRARY_PATH"),
+		destRoot:           "/",
+		hostRuntimeRoot:    "/opt/verself/nftables",
+		configPath:         "/etc/nftables.conf",
+		rulesDir:           "/etc/nftables.d",
+		serviceUnitPath:    "/etc/systemd/system/verself-nftables.service",
+		firewallTargetPath: "/etc/systemd/system/verself-firewall.target",
+		manageSystemd:      true,
+		systemctlBin:       "systemctl",
 	}
+	fs.StringVar(&cfg.repoRoot, "repo-root", cfg.repoRoot, "Boarded repo root.")
+	fs.StringVar(&cfg.resourceGraph, "resource-graph", "", "Guardian resource graph document path.")
+	fs.StringVar(&cfg.resourceName, "resource-name", cfg.resourceName, "NftablesFirewall resource name.")
+	fs.StringVar(&cfg.runtimeArtifact, "runtime-artifact", "", "Repo-relative nftables runtime tar.")
 	fs.StringVar(&cfg.artifactRoot, "artifact-root", cfg.artifactRoot, "Extracted nftables runtime artifact root.")
 	fs.StringVar(&cfg.nftBin, "nft-bin", cfg.nftBin, "nft executable.")
 	fs.StringVar(&cfg.ldLibraryPath, "ld-library-path", cfg.ldLibraryPath, "LD_LIBRARY_PATH for nft.")
 	fs.StringVar(&cfg.destRoot, "dest-root", cfg.destRoot, "Destination root for tests.")
 	fs.StringVar(&cfg.hostRuntimeRoot, "host-runtime-root", cfg.hostRuntimeRoot, "Durable host path for the nftables runtime used by systemd.")
+	fs.StringVar(&cfg.configPath, "config", cfg.configPath, "Installed nftables config path.")
+	fs.StringVar(&cfg.rulesDir, "rules-dir", cfg.rulesDir, "Installed nftables rules directory.")
+	fs.StringVar(&cfg.serviceUnitPath, "service-unit", cfg.serviceUnitPath, "Installed systemd service path.")
+	fs.StringVar(&cfg.firewallTargetPath, "firewall-target", cfg.firewallTargetPath, "Installed systemd firewall target path.")
 	fs.BoolVar(&cfg.manageSystemd, "manage-systemd", cfg.manageSystemd, "Install, enable, and start component-owned systemd units.")
 	fs.StringVar(&cfg.systemctlBin, "systemctl-bin", cfg.systemctlBin, "systemctl executable.")
 	if err := fs.Parse(args); err != nil {
@@ -113,26 +170,122 @@ func parseConfig(args []string) (config, error) {
 	if fs.NArg() != 0 {
 		return config{}, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
 	}
+	cfg = normalizeConfig(cfg)
+	if cfg.resourceGraph != "" {
+		next, err := applyResourceGraphConfig(cfg)
+		if err != nil {
+			return config{}, err
+		}
+		cfg = normalizeConfig(next)
+	}
+	return cfg, nil
+}
+
+func normalizeConfig(cfg config) config {
+	cfg = defaultConfigPaths(cfg)
+	cfg.repoRoot = strings.TrimSpace(cfg.repoRoot)
+	cfg.resourceGraph = strings.TrimSpace(cfg.resourceGraph)
+	cfg.resourceName = strings.TrimSpace(cfg.resourceName)
+	cfg.runtimeArtifact = strings.TrimSpace(cfg.runtimeArtifact)
+	cfg.artifactRoot = strings.TrimSpace(cfg.artifactRoot)
+	cfg.nftBin = strings.TrimSpace(cfg.nftBin)
+	cfg.ldLibraryPath = strings.TrimSpace(cfg.ldLibraryPath)
+	cfg.destRoot = strings.TrimSpace(cfg.destRoot)
+	cfg.hostRuntimeRoot = strings.TrimSpace(cfg.hostRuntimeRoot)
+	cfg.configPath = strings.TrimSpace(cfg.configPath)
+	cfg.rulesDir = strings.TrimSpace(cfg.rulesDir)
+	cfg.serviceUnitPath = strings.TrimSpace(cfg.serviceUnitPath)
+	cfg.firewallTargetPath = strings.TrimSpace(cfg.firewallTargetPath)
+	cfg.systemctlBin = strings.TrimSpace(cfg.systemctlBin)
+	return cfg
+}
+
+func defaultConfigPaths(cfg config) config {
+	if cfg.configPath == "" {
+		cfg.configPath = "/etc/nftables.conf"
+	}
+	if cfg.rulesDir == "" {
+		cfg.rulesDir = "/etc/nftables.d"
+	}
+	if cfg.serviceUnitPath == "" {
+		cfg.serviceUnitPath = "/etc/systemd/system/verself-nftables.service"
+	}
+	if cfg.firewallTargetPath == "" {
+		cfg.firewallTargetPath = "/etc/systemd/system/verself-firewall.target"
+	}
+	return cfg
+}
+
+func applyResourceGraphConfig(cfg config) (config, error) {
+	body, err := os.ReadFile(cfg.resourceGraph)
+	if err != nil {
+		return config{}, fmt.Errorf("read Guardian resource graph: %w", err)
+	}
+	var doc guardianDocument
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return config{}, fmt.Errorf("decode Guardian resource graph: %w", err)
+	}
+	var matches []guardianResource
+	for _, resource := range doc.Resources {
+		if resource.APIVersion == "nftables.guardianintelligence.org/v1alpha1" &&
+			resource.Kind == "NftablesFirewall" &&
+			resource.Metadata.Name == cfg.resourceName {
+			matches = append(matches, resource)
+		}
+	}
+	if len(matches) != 1 {
+		return config{}, fmt.Errorf("expected exactly one NftablesFirewall resource named %q, found %d", cfg.resourceName, len(matches))
+	}
+	spec := matches[0].Spec
+	cfg.runtimeArtifact = spec.RuntimeArtifact
+	cfg.hostRuntimeRoot = spec.RuntimeRoot
+	cfg.configPath = spec.ConfigPath
+	cfg.rulesDir = spec.RulesDir
+	if spec.ManageSystemd != nil {
+		cfg.manageSystemd = *spec.ManageSystemd
+	}
+	cfg.serviceUnitPath = spec.Systemd.ServiceUnitPath
+	cfg.firewallTargetPath = spec.Systemd.FirewallTargetPath
 	return cfg, nil
 }
 
 func (cfg *config) validate() error {
-	if cfg.artifactRoot == "" {
-		return errors.New("--artifact-root is required")
+	*cfg = defaultConfigPaths(*cfg)
+	if cfg.repoRoot == "" && (cfg.resourceGraph != "" || cfg.runtimeArtifact != "") {
+		return errors.New("--repo-root is required")
 	}
-	root, err := filepath.Abs(cfg.artifactRoot)
-	if err != nil {
-		return fmt.Errorf("resolve --artifact-root: %w", err)
+	if cfg.repoRoot != "" {
+		repoRoot, err := filepath.Abs(cfg.repoRoot)
+		if err != nil {
+			return fmt.Errorf("resolve --repo-root: %w", err)
+		}
+		cfg.repoRoot = repoRoot
 	}
-	cfg.artifactRoot = root
-	if cfg.nftBin == "" {
+	if cfg.runtimeArtifact != "" {
+		if err := validateRepoPath(cfg.runtimeArtifact, "--runtime-artifact"); err != nil {
+			return err
+		}
+	}
+	if cfg.artifactRoot == "" && cfg.runtimeArtifact == "" {
+		return errors.New("--artifact-root or --runtime-artifact is required")
+	}
+	if cfg.artifactRoot != "" {
+		root, err := filepath.Abs(cfg.artifactRoot)
+		if err != nil {
+			return fmt.Errorf("resolve --artifact-root: %w", err)
+		}
+		cfg.artifactRoot = root
+	}
+	if cfg.nftBin == "" && cfg.runtimeArtifact == "" {
 		return errors.New("--nft-bin is required")
 	}
-	nftBin, err := resolveExecutablePath(cfg.nftBin)
-	if err != nil {
-		return fmt.Errorf("resolve --nft-bin: %w", err)
+	if cfg.nftBin != "" && !(cfg.runtimeArtifact != "" && cfg.artifactRoot == "") {
+		nftBin, err := resolveExecutablePath(cfg.nftBin)
+		if err != nil {
+			return fmt.Errorf("resolve --nft-bin: %w", err)
+		}
+		cfg.nftBin = nftBin
 	}
-	cfg.nftBin = nftBin
 	if cfg.destRoot == "" {
 		return errors.New("--dest-root is required")
 	}
@@ -141,15 +294,37 @@ func (cfg *config) validate() error {
 		return fmt.Errorf("resolve --dest-root: %w", err)
 	}
 	cfg.destRoot = destRoot
-	if cfg.destRoot == "/" && cfg.manageSystemd && !filepath.IsAbs(cfg.nftBin) {
+	if cfg.destRoot == "/" && cfg.manageSystemd && cfg.runtimeArtifact == "" && !filepath.IsAbs(cfg.nftBin) {
 		return errors.New("--nft-bin must be absolute when installing systemd units")
 	}
-	if cfg.manageSystemd {
+	if cfg.manageSystemd || cfg.runtimeArtifact != "" {
 		if cfg.hostRuntimeRoot == "" {
-			return errors.New("--host-runtime-root is required when managing systemd")
+			return errors.New("--host-runtime-root is required when managing systemd or installing --runtime-artifact")
 		}
 		if !filepath.IsAbs(cfg.hostRuntimeRoot) {
-			return errors.New("--host-runtime-root must be absolute when managing systemd")
+			return errors.New("--host-runtime-root must be absolute when managing systemd or installing --runtime-artifact")
+		}
+	}
+	for flag, value := range map[string]string{
+		"--config":          cfg.configPath,
+		"--rules-dir":       cfg.rulesDir,
+		"--service-unit":    cfg.serviceUnitPath,
+		"--firewall-target": cfg.firewallTargetPath,
+	} {
+		if value == "" || !filepath.IsAbs(value) {
+			return fmt.Errorf("%s must be an absolute path", flag)
+		}
+	}
+	return nil
+}
+
+func validateRepoPath(value, flagName string) error {
+	if filepath.IsAbs(value) {
+		return fmt.Errorf("%s must be repo-relative", flagName)
+	}
+	for _, part := range strings.Split(filepath.ToSlash(value), "/") {
+		if part == ".." {
+			return fmt.Errorf("%s must not contain '..'", flagName)
 		}
 	}
 	return nil
@@ -176,6 +351,12 @@ func installHostRuntime(cfg *config) error {
 		return err
 	}
 	actualBase := destPath(cfg.destRoot, cfg.hostRuntimeRoot)
+	return withRuntimeLock(actualBase, func() error {
+		return installHostRuntimeLocked(cfg, actualBase, releaseID)
+	})
+}
+
+func installHostRuntimeLocked(cfg *config, actualBase string, releaseID string) error {
 	actualRelease := filepath.Join(actualBase, "releases", releaseID)
 	if _, err := os.Stat(actualRelease); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -212,6 +393,186 @@ func installHostRuntime(cfg *config) error {
 	cfg.serviceArtifactRoot = serviceRoot
 	cfg.serviceNftBin = filepath.Join(serviceRoot, "bin", "nft")
 	cfg.serviceLDLibraryPath = filepath.Join(serviceRoot, "lib", "x86_64-linux-gnu")
+	return nil
+}
+
+func installRepoRuntime(cfg *config) error {
+	artifact := filepath.Join(cfg.repoRoot, filepath.FromSlash(cfg.runtimeArtifact))
+	releaseID, err := runtimeTarHash(artifact)
+	if err != nil {
+		return err
+	}
+	actualBase := destPath(cfg.destRoot, cfg.hostRuntimeRoot)
+	return withRuntimeLock(actualBase, func() error {
+		return installRepoRuntimeLocked(cfg, actualBase, releaseID, artifact)
+	})
+}
+
+func installRepoRuntimeLocked(cfg *config, actualBase string, releaseID string, artifact string) error {
+	actualRelease := filepath.Join(actualBase, "releases", releaseID)
+	if _, err := os.Stat(actualRelease); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("stat nftables runtime release %s: %w", actualRelease, err)
+		}
+		if err := extractRuntimeTar(artifact, actualRelease); err != nil {
+			return err
+		}
+	}
+	if err := promoteCurrentRuntime(actualBase, actualRelease); err != nil {
+		return err
+	}
+	current := filepath.Join(actualBase, "current")
+	serviceRoot := filepath.Join(cfg.hostRuntimeRoot, "current")
+	cfg.artifactRoot = current
+	cfg.nftBin = filepath.Join(current, "bin", "nft")
+	cfg.ldLibraryPath = filepath.Join(current, "lib", "x86_64-linux-gnu")
+	cfg.serviceArtifactRoot = serviceRoot
+	cfg.serviceNftBin = filepath.Join(serviceRoot, "bin", "nft")
+	cfg.serviceLDLibraryPath = filepath.Join(serviceRoot, "lib", "x86_64-linux-gnu")
+	return nil
+}
+
+func withRuntimeLock(actualBase string, fn func() error) error {
+	if err := os.MkdirAll(actualBase, 0o755); err != nil {
+		return fmt.Errorf("create nftables runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(actualBase, ".install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("open nftables runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return fmt.Errorf("lock nftables runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	return fn()
+}
+
+func runtimeTarHash(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open nftables runtime artifact: %w", err)
+	}
+	defer file.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", fmt.Errorf("hash nftables runtime artifact: %w", err)
+	}
+	return "sha256-" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func extractRuntimeTar(artifact, releaseRoot string) error {
+	if err := os.MkdirAll(filepath.Dir(releaseRoot), 0o755); err != nil {
+		return fmt.Errorf("create nftables runtime releases directory: %w", err)
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(releaseRoot), "."+filepath.Base(releaseRoot)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create nftables runtime staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	if err := extractTar(artifact, tmp); err != nil {
+		return err
+	}
+	extracted := filepath.Join(tmp, "opt", "verself", "nftables")
+	if _, err := os.Stat(filepath.Join(extracted, "bin", "nftables-apply")); err != nil {
+		return fmt.Errorf("nftables runtime artifact missing nftables-apply: %w", err)
+	}
+	if err := os.Rename(extracted, releaseRoot); err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("publish nftables runtime release: %w", err)
+	}
+	return nil
+}
+
+func extractTar(artifact, dest string) error {
+	file, err := os.Open(artifact)
+	if err != nil {
+		return fmt.Errorf("open nftables runtime artifact: %w", err)
+	}
+	defer file.Close()
+	destAbs, err := filepath.Abs(dest)
+	if err != nil {
+		return err
+	}
+	tr := tar.NewReader(file)
+	for {
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read nftables runtime tar: %w", err)
+		}
+		target, err := safeTarTarget(destAbs, header.Name)
+		if err != nil {
+			return err
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, fs.FileMode(header.Mode).Perm()); err != nil {
+				return fmt.Errorf("create runtime directory %s: %w", header.Name, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("create runtime parent %s: %w", header.Name, err)
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fs.FileMode(header.Mode).Perm())
+			if err != nil {
+				return fmt.Errorf("create runtime file %s: %w", header.Name, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				_ = out.Close()
+				return fmt.Errorf("write runtime file %s: %w", header.Name, err)
+			}
+			if err := out.Close(); err != nil {
+				return fmt.Errorf("close runtime file %s: %w", header.Name, err)
+			}
+		default:
+			return fmt.Errorf("unsupported nftables runtime tar entry %s type %d", header.Name, header.Typeflag)
+		}
+	}
+}
+
+func safeTarTarget(destAbs, name string) (string, error) {
+	if filepath.IsAbs(name) {
+		return "", fmt.Errorf("unsafe nftables runtime tar entry %s", name)
+	}
+	target := filepath.Join(destAbs, name)
+	targetAbs, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	if targetAbs != destAbs && !strings.HasPrefix(targetAbs, destAbs+string(os.PathSeparator)) {
+		return "", fmt.Errorf("unsafe nftables runtime tar entry %s", name)
+	}
+	return targetAbs, nil
+}
+
+func promoteCurrentRuntime(actualBase, actualRelease string) error {
+	if err := os.MkdirAll(actualBase, 0o755); err != nil {
+		return fmt.Errorf("create nftables runtime root: %w", err)
+	}
+	current := filepath.Join(actualBase, "current")
+	next, err := os.CreateTemp(actualBase, ".current.tmp-*")
+	if err != nil {
+		return fmt.Errorf("create current symlink placeholder: %w", err)
+	}
+	nextName := next.Name()
+	if err := next.Close(); err != nil {
+		return fmt.Errorf("close current symlink placeholder: %w", err)
+	}
+	if err := os.Remove(nextName); err != nil {
+		return fmt.Errorf("remove current symlink placeholder: %w", err)
+	}
+	defer func() { _ = os.Remove(nextName) }()
+	if err := os.Symlink(filepath.Join("releases", filepath.Base(actualRelease)), nextName); err != nil {
+		return fmt.Errorf("create current symlink: %w", err)
+	}
+	if err := os.Rename(nextName, current); err != nil {
+		return fmt.Errorf("publish current nftables runtime: %w", err)
+	}
 	return nil
 }
 
@@ -351,6 +712,7 @@ func copyFile(source, dest string, mode fs.FileMode) error {
 }
 
 func installConfig(cfg config) error {
+	cfg = defaultConfigPaths(cfg)
 	rulesDir := filepath.Join(cfg.artifactRoot, "etc", "nftables.d")
 	entries, err := os.ReadDir(rulesDir)
 	if err != nil {
@@ -360,18 +722,18 @@ func installConfig(cfg config) error {
 	installs := []fileInstall{
 		{
 			Source: filepath.Join(cfg.artifactRoot, "etc", "nftables.conf"),
-			Dest:   destPath(cfg.destRoot, "/etc/nftables.conf"),
+			Dest:   destPath(cfg.destRoot, cfg.configPath),
 			Mode:   0o644,
 		},
 	}
 	if cfg.manageSystemd {
 		installs = append(installs, fileInstall{
 			Source: filepath.Join(cfg.artifactRoot, "systemd", "verself-firewall.target"),
-			Dest:   destPath(cfg.destRoot, "/etc/systemd/system/verself-firewall.target"),
+			Dest:   destPath(cfg.destRoot, cfg.firewallTargetPath),
 			Mode:   0o644,
 		})
 		service := fileInstall{
-			Dest: destPath(cfg.destRoot, "/etc/systemd/system/verself-nftables.service"),
+			Dest: destPath(cfg.destRoot, cfg.serviceUnitPath),
 			Mode: 0o644,
 			Body: nftablesServiceUnit(cfg),
 		}
@@ -386,7 +748,7 @@ func installConfig(cfg config) error {
 		desiredRules[entry.Name()] = true
 		installs = append(installs, fileInstall{
 			Source: filepath.Join(rulesDir, entry.Name()),
-			Dest:   destPath(cfg.destRoot, "/etc/nftables.d", entry.Name()),
+			Dest:   destPath(cfg.destRoot, cfg.rulesDir, entry.Name()),
 			Mode:   0o644,
 		})
 	}
@@ -396,7 +758,7 @@ func installConfig(cfg config) error {
 			return err
 		}
 	}
-	if err := removeStaleManagedRules(destPath(cfg.destRoot, "/etc/nftables.d"), desiredRules); err != nil {
+	if err := removeStaleManagedRules(destPath(cfg.destRoot, cfg.rulesDir), desiredRules); err != nil {
 		return err
 	}
 	return nil

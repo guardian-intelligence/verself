@@ -6,6 +6,7 @@ go_library(
         "admin.go",
         "api_activity_sink.go",
         "contract.go",
+        "internal.go",
         "openapi.go",
         "policy.go",
         "safeconv.go",

@@ -270,7 +270,7 @@ func (h publicHandlers) accountAndSession(ctx context.Context, authIdentity *aut
 		return nil, productAccount{}, identitystore.IamDeviceSession{}, err
 	}
 	if strings.TrimSpace(session.SessionID) == "" {
-		return nil, productAccount{}, identitystore.IamDeviceSession{}, problem(ctx, 401, "auth.device_session_required", "device session proof is required", nil)
+		return nil, productAccount{}, identitystore.IamDeviceSession{}, deviceSessionRequired(ctx)
 	}
 	return q, account, session, nil
 }
@@ -298,7 +298,7 @@ func (h publicHandlers) accountAndOptionalSession(ctx context.Context, authIdent
 func (h publicHandlers) requireDeviceSession(ctx context.Context, q *identitystore.Queries, account productAccount, sessionID string) (identitystore.IamDeviceSession, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
-		return identitystore.IamDeviceSession{}, problem(ctx, 401, "auth.device_session_required", "device session proof is required", nil)
+		return identitystore.IamDeviceSession{}, deviceSessionRequired(ctx)
 	}
 	info := operationRequestInfoFromContext(ctx)
 	session, err := q.TouchDeviceSession(ctx, identitystore.TouchDeviceSessionParams{
@@ -317,9 +317,9 @@ func (h publicHandlers) requireDeviceSession(ctx context.Context, q *identitysto
 	}
 	existing, getErr := q.GetDeviceSession(ctx, identitystore.GetDeviceSessionParams{SessionID: sessionID})
 	if getErr == nil && existing.AccountID == account.AccountID {
-		return identitystore.IamDeviceSession{}, problem(ctx, 401, "auth.session_revoked", "device session is expired or revoked", nil)
+		return identitystore.IamDeviceSession{}, forbidden(ctx, "auth.session_revoked", "device session is expired or revoked")
 	}
-	return identitystore.IamDeviceSession{}, problem(ctx, 401, "auth.device_session_required", "device session proof is required", nil)
+	return identitystore.IamDeviceSession{}, deviceSessionRequired(ctx)
 }
 
 func (h publicHandlers) resolveAccount(ctx context.Context, q *identitystore.Queries, authIdentity *auth.Identity, create bool) (productAccount, error) {
@@ -336,7 +336,7 @@ func (h publicHandlers) resolveAccount(ctx context.Context, q *identitystore.Que
 		return productAccount{}, internalFailure(ctx, "service.unavailable", "load account subject failed", err)
 	}
 	if !create {
-		return productAccount{}, problem(ctx, 401, "auth.device_session_required", "device session proof is required", nil)
+		return productAccount{}, deviceSessionRequired(ctx)
 	}
 	accountID := stablePublicID(accountIDPrefix, issuer, subject)
 	email := strings.TrimSpace(authIdentity.Email)
@@ -427,6 +427,10 @@ func (h publicHandlers) resolveAccount(ctx context.Context, q *identitystore.Que
 		return productAccount{}, internalFailure(ctx, "service.unavailable", "load created account subject failed", err)
 	}
 	return productAccountFromSubject(row), nil
+}
+
+func deviceSessionRequired(ctx context.Context) error {
+	return forbidden(ctx, "auth.device_session_required", "device session proof is required")
 }
 
 func (h publicHandlers) authContext(ctx context.Context, authIdentity *auth.Identity, account productAccount, session identitystore.IamDeviceSession) (contractapi.AuthContext, error) {

@@ -28,6 +28,6 @@ PARTITION BY toYYYYMM(toDate(recorded_at))
 ORDER BY (event_type, org_id, signup_intent_id, occurred_at, event_id)
 SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 
-CREATE USER IF NOT EXISTS iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
-ALTER USER iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
+CREATE USER IF NOT EXISTS iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
+ALTER USER iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
 GRANT INSERT ON verself.iam_events TO iam_service;

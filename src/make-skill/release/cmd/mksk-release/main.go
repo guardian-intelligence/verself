@@ -39,7 +39,10 @@ const (
 	defaultPublicURL            = "https://oci.verself.sh"
 	defaultRepository           = "verself/mksk"
 	defaultRegistryUser         = "artifact-publisher"
-	defaultRegistryPasswordFile = "/etc/zot/publisher-password"
+	// Projected from the OpenBao SecretPath kv-runtime/data/secret/org/zot.publisher.password
+	// (the same plaintext zot-config bcrypts into the registry htpasswd). The old
+	// /etc/zot/publisher-password was never populated -- zot-recover discarded the plaintext.
+	defaultRegistryPasswordFile = "/run/verself/secrets/zot.publisher.password"
 	rulesRustToolsRepo          = "rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools"
 )
 
@@ -384,12 +387,12 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		return BuildBundle{}, err
 	}
 	defer source.cleanup()
-	toolsDir, cleanup, err := extractTools(req.ToolsTar, []string{"bazelisk", "cargo-about", "syft"})
+	toolsDir, cleanup, err := extractTools(req.ToolsTar, []string{"bazel", "cargo-about", "syft"})
 	if err != nil {
 		return BuildBundle{}, err
 	}
 	defer cleanup()
-	bazelisk := filepath.Join(toolsDir, "bin", "bazelisk")
+	bazel := filepath.Join(toolsDir, "bin", "bazel")
 	toolEnv, err := releaseToolEnv(req.OutputRoot, req.Subject)
 	if err != nil {
 		return BuildBundle{}, err
@@ -407,21 +410,21 @@ func buildBundle(ctx context.Context, req BuildRequest) (BuildBundle, error) {
 		"//src/make-skill:exec_test",
 		"//src/make-skill:cli_test",
 	)
-	if _, err := runCommandWithEnv(ctx, source.root, bazelisk, toolEnv, testArgs...); err != nil {
+	if _, err := runCommandWithEnv(ctx, source.root, bazel, toolEnv, testArgs...); err != nil {
 		return BuildBundle{}, err
 	}
-	mkskBinary, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, startupOptions, commandOptions, binaryTarget, releaseVersionFlag)
+	mkskBinary, err := bazelOutputFile(ctx, source.root, bazel, toolEnv, startupOptions, commandOptions, binaryTarget, releaseVersionFlag)
 	if err != nil {
 		return BuildBundle{}, err
 	}
 	if err := verifyMkskVersion(ctx, mkskBinary, req.Subject.Version); err != nil {
 		return BuildBundle{}, err
 	}
-	releaseTar, err := bazelOutputFile(ctx, source.root, bazelisk, toolEnv, startupOptions, commandOptions, releaseTarTarget, releaseVersionFlag)
+	releaseTar, err := bazelOutputFile(ctx, source.root, bazel, toolEnv, startupOptions, commandOptions, releaseTarTarget, releaseVersionFlag)
 	if err != nil {
 		return BuildBundle{}, err
 	}
-	execRoot, err := bazelExecutionRoot(ctx, source.root, bazelisk, toolEnv, startupOptions, commandOptions)
+	execRoot, err := bazelExecutionRoot(ctx, source.root, bazel, toolEnv, startupOptions, commandOptions)
 	if err != nil {
 		return BuildBundle{}, err
 	}
@@ -819,13 +822,13 @@ func addWorktree(ctx context.Context, repoRoot, sourceCommit, name string) (stri
 	return worktree, cleanup, nil
 }
 
-func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[string]string, startupOptions []string, commandOptions []string, target string, buildOptions ...string) (string, error) {
+func bazelOutputFile(ctx context.Context, repoRoot, bazel string, env map[string]string, startupOptions []string, commandOptions []string, target string, buildOptions ...string) (string, error) {
 	buildArgs := append([]string{}, startupOptions...)
 	buildArgs = append(buildArgs, "build")
 	buildArgs = append(buildArgs, commandOptions...)
 	buildArgs = append(buildArgs, buildOptions...)
 	buildArgs = append(buildArgs, target)
-	if _, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, buildArgs...); err != nil {
+	if _, err := runCommandWithEnv(ctx, repoRoot, bazel, env, buildArgs...); err != nil {
 		return "", err
 	}
 	cqueryArgs := append([]string{}, startupOptions...)
@@ -833,7 +836,7 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[str
 	cqueryArgs = append(cqueryArgs, commandOptions...)
 	cqueryArgs = append(cqueryArgs, buildOptions...)
 	cqueryArgs = append(cqueryArgs, "--output=files", target)
-	files, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, cqueryArgs...)
+	files, err := runCommandWithEnv(ctx, repoRoot, bazel, env, cqueryArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -841,7 +844,7 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[str
 	if len(lines) != 1 {
 		return "", fmt.Errorf("expected one output for %s, got %d", target, len(lines))
 	}
-	execRoot, err := bazelExecutionRoot(ctx, repoRoot, bazelisk, env, startupOptions, commandOptions)
+	execRoot, err := bazelExecutionRoot(ctx, repoRoot, bazel, env, startupOptions, commandOptions)
 	if err != nil {
 		return "", err
 	}
@@ -852,12 +855,12 @@ func bazelOutputFile(ctx context.Context, repoRoot, bazelisk string, env map[str
 	return out, nil
 }
 
-func bazelExecutionRoot(ctx context.Context, repoRoot, bazelisk string, env map[string]string, startupOptions []string, commandOptions []string) (string, error) {
+func bazelExecutionRoot(ctx context.Context, repoRoot, bazel string, env map[string]string, startupOptions []string, commandOptions []string) (string, error) {
 	infoArgs := append([]string{}, startupOptions...)
 	infoArgs = append(infoArgs, "info")
 	infoArgs = append(infoArgs, commandOptions...)
 	infoArgs = append(infoArgs, "execution_root")
-	execRoot, err := runCommandWithEnv(ctx, repoRoot, bazelisk, env, infoArgs...)
+	execRoot, err := runCommandWithEnv(ctx, repoRoot, bazel, env, infoArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -904,7 +907,6 @@ func releaseToolEnv(outRoot string, subject ReleaseSubject) (map[string]string, 
 	env := map[string]string{
 		"HOME":           filepath.Join(root, "home"),
 		"XDG_CACHE_HOME": filepath.Join(root, "cache"),
-		"BAZELISK_HOME":  filepath.Join(root, "bazelisk"),
 		"CARGO_HOME":     filepath.Join(root, "cargo"),
 	}
 	for _, dir := range env {

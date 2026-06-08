@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "toolrun",
+    srcs = ["toolrun.go"],
+    importpath = "github.com/verself/guardian-specification/internal/toolrun",
+    visibility = ["//src/guardian-specification:__subpackages__"],
+    deps = ["//src/guardian-specification/internal/toolcatalog"],
+)
+
+go_test(
+    name = "toolrun_test",
+    srcs = ["toolrun_test.go"],
+    embed = [":toolrun"],
+    deps = ["//src/guardian-specification/internal/toolcatalog"],
+)

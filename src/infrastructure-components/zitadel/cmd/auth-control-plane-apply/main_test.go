@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -73,6 +75,69 @@ func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
 	cfg.iamServiceDomain = "iam.api.verself.sh"
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestApplyResourceGraphConfig(t *testing.T) {
+	dir := t.TempDir()
+	graphPath := filepath.Join(dir, "document.json")
+	doc := map[string]any{
+		"entrypoint": map[string]any{
+			"apiVersion": "guardian.guardianintelligence.org/v1alpha1",
+			"kind":       "FlyProcedure",
+			"name":       "gamma",
+		},
+		"resources": []map[string]any{
+			{
+				"apiVersion": "zitadel.guardianintelligence.org/v1alpha1",
+				"kind":       "ZitadelAuthControlPlane",
+				"metadata": map[string]any{
+					"name": "auth-control-plane",
+				},
+				"spec": map[string]any{
+					"zitadelBaseURL":   "http://127.0.0.1:8085",
+					"zitadelHost":      "gamma.verself.sh",
+					"verselfDomain":    "gamma.verself.sh",
+					"iamServiceDomain": "iam.api.gamma.verself.sh",
+					"projectName":      "verself-api",
+					"browserAppName":   "verself-web",
+					"cliAppName":       "verself-cli",
+					"claimsTargetName": "verself-product-token-claims",
+					"claimsActionPath": "/internal/zitadel/actions/product-token-claims",
+					"openBao": map[string]any{
+						"address": "https://127.0.0.1:8200",
+						"caCert":  "/etc/verself/openbao/ca.pem",
+						"adminPATSecretRef": map[string]any{
+							"apiVersion": "openbao.guardianintelligence.org/v1alpha1",
+							"kind":       "SecretPath",
+							"name":       "auth-control-plane.zitadel.admin_token",
+						},
+						"githubLoginClientID": "",
+					},
+				},
+			},
+		},
+	}
+	body, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(graphPath, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := applyResourceGraphConfig(config{resourceGraph: graphPath, resourceName: "auth-control-plane"})
+	if err != nil {
+		t.Fatalf("applyResourceGraphConfig: %v", err)
+	}
+	if cfg.iamServiceDomain != "iam.api.gamma.verself.sh" {
+		t.Fatalf("iamServiceDomain = %q", cfg.iamServiceDomain)
+	}
+	if cfg.openBaoAddr != "https://127.0.0.1:8200" {
+		t.Fatalf("openBaoAddr = %q", cfg.openBaoAddr)
+	}
+	if cfg.adminPATSecretName != "auth-control-plane.zitadel.admin_token" {
+		t.Fatalf("adminPATSecretName = %q", cfg.adminPATSecretName)
 	}
 }
 

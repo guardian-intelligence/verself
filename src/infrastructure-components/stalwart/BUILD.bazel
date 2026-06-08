@@ -1,8 +1,4 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 exports_files(["tools.lock.json"])
 
@@ -10,6 +6,7 @@ pkg_tar(
     name = "runtime_artifact",
     out = "stalwart-runtime.tar",
     files = {
+        "//src/infrastructure-components/stalwart/cmd/stalwart-recover:stalwart-recover": "bin/stalwart-recover",
         "@stalwart_tools//tools/stalwart": "bin/stalwart",
         "@stalwart_tools//tools/stalwart-cli": "bin/stalwart-cli",
         "@stalwart_tool_spam_filter//file": "share/stalwart/spam-filter.toml",
@@ -18,6 +15,7 @@ pkg_tar(
     modes = {
         "bin/stalwart": "0755",
         "bin/stalwart-cli": "0755",
+        "bin/stalwart-recover": "0755",
         "share/stalwart/spam-filter.toml": "0644",
         "share/stalwart/webadmin.zip": "0644",
     },
@@ -25,33 +23,7 @@ pkg_tar(
 )
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "stalwart-runtime",
-    },
-    component = "stalwart",
-    deploy_phase = "platform",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "stalwart",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )

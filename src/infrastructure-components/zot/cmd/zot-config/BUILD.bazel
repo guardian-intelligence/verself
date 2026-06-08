@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "zot-config_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/zot/cmd/zot-config",
+    visibility = ["//visibility:private"],
+    deps = ["@org_golang_x_crypto//bcrypt"],
+)
+
+go_binary(
+    name = "zot-config",
+    embed = [":zot-config_lib"],
+    visibility = ["//visibility:public"],
+)

@@ -37,10 +37,11 @@ go_library(
         "//src/tools/operator-runtime/go/tigerbeetle",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_tigerbeetle_tigerbeetle_go//:tigerbeetle-go",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_cuelang_go//cue",
+        "@org_cuelang_go//cue/cuecontext",
     ],
 )
 

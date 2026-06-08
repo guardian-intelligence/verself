@@ -512,8 +512,8 @@ AS SELECT
 FROM default.otel_logs
 WHERE ServiceName = 'sshd';
 
-CREATE USER IF NOT EXISTS otelcol IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/otelcol' HOST LOCAL;
-ALTER USER otelcol IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/otelcol' HOST LOCAL;
+CREATE USER IF NOT EXISTS otelcol IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/otelcol' HOST LOCAL;
+ALTER USER otelcol IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/otelcol' HOST LOCAL;
 GRANT INSERT ON default.* TO otelcol;
 GRANT SELECT ON default.otel_logs TO otelcol;
 GRANT SELECT ON default.otel_traces TO otelcol;
@@ -694,8 +694,8 @@ ORDER BY (event_id, occurred_at, aggregate_type, aggregate_id);
 -- verself: IAM lifecycle events
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE USER IF NOT EXISTS iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
-ALTER USER iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
+CREATE USER IF NOT EXISTS iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
+ALTER USER iam_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/iam-service' HOST LOCAL;
 
 CREATE TABLE IF NOT EXISTS verself.iam_events
 (
@@ -733,8 +733,8 @@ GRANT INSERT ON verself.iam_events TO iam_service;
 -- verself: notification delivery ledger
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE USER IF NOT EXISTS notifications_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/notifications-service' HOST LOCAL;
-ALTER USER notifications_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/notifications-service' HOST LOCAL;
+CREATE USER IF NOT EXISTS notifications_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/notifications-service' HOST LOCAL;
+ALTER USER notifications_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/notifications-service' HOST LOCAL;
 GRANT SELECT ON default.otel_traces TO notifications_service;
 
 CREATE TABLE IF NOT EXISTS verself.notification_events
@@ -1041,8 +1041,8 @@ SETTINGS index_granularity = 8192;
 -- verself: sandbox-rental append-only observability
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE USER IF NOT EXISTS sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/sandbox-rental-service' HOST LOCAL;
-ALTER USER sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/sandbox-rental-service' HOST LOCAL;
+CREATE USER IF NOT EXISTS sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/sandbox-rental-service' HOST LOCAL;
+ALTER USER sandbox_rental IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/sandbox-rental-service' HOST LOCAL;
 
 CREATE TABLE IF NOT EXISTS verself.durable_events
 (
@@ -1668,8 +1668,8 @@ SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1;
 -- verself: GitHub integration events
 -- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE USER IF NOT EXISTS github_integration_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/github-integration-service' HOST LOCAL;
-ALTER USER github_integration_service IDENTIFIED WITH ssl_certificate SAN 'URI:__VERSELF_SPIFFE_SERVICE_PREFIX__/github-integration-service' HOST LOCAL;
+CREATE USER IF NOT EXISTS github_integration_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/github-integration-service' HOST LOCAL;
+ALTER USER github_integration_service IDENTIFIED WITH ssl_certificate SAN 'URI:__CLICKHOUSE_SPIFFE_SERVICE_PREFIX__/github-integration-service' HOST LOCAL;
 
 CREATE TABLE IF NOT EXISTS verself.github_integration_events
 (

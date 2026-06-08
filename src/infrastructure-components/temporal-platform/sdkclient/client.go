@@ -8,7 +8,6 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
-	"github.com/verself/service-runtime/envconfig"
 	workloadauth "github.com/verself/service-runtime/workload"
 	"github.com/verself/temporal-platform/internal/temporallog"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -22,17 +21,6 @@ import (
 
 type Config struct {
 	HostPort string
-}
-
-func LoadConfigFromEnv() (Config, error) {
-	l := envconfig.New()
-	cfg := Config{
-		HostPort: l.RequireString("VERSELF_TEMPORAL_FRONTEND_ADDRESS"),
-	}
-	if err := l.Err(); err != nil {
-		return Config{}, err
-	}
-	return cfg, nil
 }
 
 func NewSource(ctx context.Context, socket string) (*workloadapi.X509Source, error) {

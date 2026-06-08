@@ -1,3 +1,8 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
 job "auth-control-plane" {
   name = "auth-control-plane"
   datacenters = ["*"]
@@ -21,50 +26,20 @@ job "auth-control-plane" {
         ttl  = "1h"
       }
 
-      artifact {
-        source = "verself-artifact://auth-control-plane-apply"
-        destination = "local"
-      }
-
       config {
-        command = "local/bin/auth-control-plane-apply"
+        command = "${var.guardian_repo_root}/bazel-bin/src/infrastructure-components/zitadel/cmd/auth-control-plane-apply/auth-control-plane-apply_/auth-control-plane-apply"
         args = [
-          "--admin-pat-file=$${NOMAD_SECRETS_DIR}/admin-pat",
-          "--github-login-client-secret-file=$${NOMAD_SECRETS_DIR}/github-login-client-secret",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=auth-control-plane",
           "--openbao-token-file=$${NOMAD_SECRETS_DIR}/vault_token",
         ]
       }
 
       env {
-        AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN = "__VERSELF_IAM_SERVICE_DOMAIN__"
-        AUTH_CONTROL_PLANE_VERSELF_DOMAIN = "__VERSELF_PRODUCT_DOMAIN__"
-        AUTH_CONTROL_PLANE_ZITADEL_BASE_URL = "http://127.0.0.1:8085"
-        AUTH_CONTROL_PLANE_ZITADEL_HOST = "__VERSELF_PRODUCT_DOMAIN__"
-        AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID = "__VERSELF_GITHUB_OAUTH_CLIENT_ID__"
-        BAO_ADDR = "https://127.0.0.1:8200"
-        BAO_CACERT = "/etc/verself/openbao/ca.pem"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "auth-control-plane-apply"
         VERSELF_SUPERVISOR = "nomad"
-      }
-
-      template {
-        change_mode = "restart"
-        destination = "secrets/admin-pat"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/auth-control-plane.zitadel.admin_token" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
-
-      template {
-        change_mode = "restart"
-        destination = "secrets/github-login-client-secret"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/auth-control-plane.github_login.oauth_client_secret" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
 
       resources {

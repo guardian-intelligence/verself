@@ -1,6 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 # gazelle:prefix github.com/verself/vm-orchestrator
 
@@ -158,29 +157,27 @@ go_test(
     ],
 )
 
-filegroup(
-    name = "host_ansible_sources",
-    srcs = glob(
-        [
-            "host/ansible/**",
-            "host/nftables/**",
-        ],
-        allow_empty = False,
-    ),
-    visibility = ["//src/host:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/substrate/vm-orchestrator/cmd/vm-orchestrator:vm-orchestrator_nomad_artifact": "vm-orchestrator",
-        "//src/substrate/vm-orchestrator/cmd/vm-orchestrator-cli:vm-orchestrator-cli_nomad_artifact": "vm-orchestrator-cli",
-        "//src/substrate/vm-orchestrator/guest-images/substrate:substrate_inputs_bundle": "vm-orchestrator-substrate-inputs",
-        "//src/substrate/vm-orchestrator/guest-images:toolchain_images_bundle": "vm-orchestrator-toolchain-images",
-    },
-    component = "vm_orchestrator",
-    deploy_phase = "platform",
-    job_id = "vm-orchestrator",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+genrule(
+    name = "firecracker_runtime_artifact",
+    srcs = ["@guest_image_firecracker_release//file"],
+    outs = ["firecracker-runtime.tar"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/extract" "$$tmp/runtime/bin"
+tar -xzf "$(location @guest_image_firecracker_release//file)" -C "$$tmp/extract"
+firecracker="$$(find "$$tmp/extract" -type f -name 'firecracker-v*' -perm -111 | sort | head -1)"
+jailer="$$(find "$$tmp/extract" -type f -name 'jailer-v*' -perm -111 | sort | head -1)"
+test -n "$$firecracker"
+test -n "$$jailer"
+install -m 0755 "$$firecracker" "$$tmp/runtime/bin/firecracker"
+install -m 0755 "$$jailer" "$$tmp/runtime/bin/jailer"
+tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
+""",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    visibility = ["//visibility:public"],
 )

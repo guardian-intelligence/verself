@@ -171,7 +171,7 @@ func runBazel(ctx context.Context, invocationID, command string, args []string, 
 	}
 	bazelArgs = append(bazelArgs, args...)
 
-	cmd := exec.CommandContext(ctx, "bazelisk", bazelArgs...)
+	cmd := exec.CommandContext(ctx, "guardian", append([]string{"run", "bazel", "--"}, bazelArgs...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -182,7 +182,7 @@ func runBazel(ctx context.Context, invocationID, command string, args []string, 
 			code := exit.ExitCode()
 			return code, exitError{code: code, err: err}
 		}
-		return 127, exitError{code: 127, err: fmt.Errorf("run bazelisk: %w", err)}
+		return 127, exitError{code: 127, err: fmt.Errorf("run guardian run bazel: %w", err)}
 	}
 	return 0, nil
 }

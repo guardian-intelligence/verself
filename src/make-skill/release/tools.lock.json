@@ -1,11 +1,11 @@
 {
   "$schema": "https://raw.githubusercontent.com/theoremlp/rules_multitool/main/lockfile.schema.json",
-  "bazelisk": {
+  "bazel": {
     "binaries": [
       {
         "kind": "file",
-        "url": "https://github.com/bazelbuild/bazelisk/releases/download/v1.28.1/bazelisk-linux-amd64",
-        "sha256": "22e7d3a188699982f661cf4687137ee52d1f24fec1ec893d91a6c4d791a75de8",
+        "url": "https://releases.bazel.build/9.1.0/release/bazel-9.1.0-linux-x86_64",
+        "sha256": "a667454f3f4f8878df8199136b82c199f6ada8477b337fae3b1ef854f01e4e2f",
         "os": "linux",
         "cpu": "x86_64"
       }

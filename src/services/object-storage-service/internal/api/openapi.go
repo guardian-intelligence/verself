@@ -30,6 +30,7 @@ func NewAPI(mux *http.ServeMux, cfg Config) huma.API {
 	api := humago.New(mux, config)
 	applyPublicSecurityScheme(api)
 	RegisterAdminRoutes(api, cfg.Service, cfg.Authorizer)
+	RegisterInternalRoutes(api, cfg.Service)
 	humaapi.ApplyOpenAPIWireDefaults(api)
 	return api
 }

@@ -1,21 +1,16 @@
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
-deploy_declarations(visibility = ["//visibility:public"])
-
 genrule(
-    name = "grafana_tree",
+    name = "runtime_artifact",
     srcs = [
+        "//src/infrastructure-components/grafana/cmd/grafana-recover",
         "@grafana_tool_clickhouse_datasource//file",
         "@grafana_tool_grafana_oss//file",
     ],
-    outs = ["grafana-tree.tar"],
+    outs = ["grafana-runtime.tar"],
     cmd = """
 set -euo pipefail
 tmp="$$(mktemp -d)"
 trap 'rm -rf "$$tmp"' EXIT
-mkdir -p "$$tmp/extract" "$$tmp/runtime/grafana" "$$tmp/runtime/plugins"
+mkdir -p "$$tmp/extract" "$$tmp/runtime/bin" "$$tmp/runtime/grafana" "$$tmp/runtime/plugins"
 grafana_archive="$$PWD/$(location @grafana_tool_grafana_oss//file)"
 plugin_archive="$$PWD/$(location @grafana_tool_clickhouse_datasource//file)"
 zipper="$$PWD/$(location @bazel_tools//tools/zip:zipper)"
@@ -26,6 +21,7 @@ cp -a "$$grafana_root/." "$$tmp/runtime/grafana/"
 (cd "$$tmp" && "$$zipper" x "$$plugin_archive" -d plugin)
 test -d "$$tmp/plugin/grafana-clickhouse-datasource"
 cp -a "$$tmp/plugin/grafana-clickhouse-datasource" "$$tmp/runtime/plugins/grafana-clickhouse-datasource"
+install -m 0755 "$(location //src/infrastructure-components/grafana/cmd/grafana-recover:grafana-recover)" "$$tmp/runtime/bin/grafana-recover"
 printf '4.17.0\\n' > "$$tmp/runtime/plugins/.grafana-clickhouse-datasource-version"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
 """,
@@ -34,50 +30,11 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
         "@platforms//os:linux",
     ],
     tools = ["@bazel_tools//tools/zip:zipper"],
-)
-
-pkg_tar(
-    name = "runtime_artifact",
-    out = "grafana-runtime.tar",
-    files = {
-        ":grafana_tree": "grafana-runtime.tar",
-    },
-    modes = {
-        "grafana-runtime.tar": "0644",
-    },
     visibility = ["//visibility:public"],
 )
 
 filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    component = "grafana",
-    deploy_phase = "platform",
-    digest_inputs = [
-        ":deploy_declarations",
-    ],
-    job_id = "grafana",
-    job_spec = "nomad.hcl",
-    pre_artifacts = {
-        ":runtime_artifact": "grafana-runtime",
-    },
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
 )

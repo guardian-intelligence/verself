@@ -1,11 +1,7 @@
 # gazelle:prefix github.com/verself/analytics-service
 
+load("//src/infrastructure-components/spire:identity.bzl", "spire_identity")
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
-load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-load("//src/tools/deployment/spire:identity.bzl", "spire_identity")
-
-deploy_declarations(visibility = ["//visibility:public"])
 
 go_module_checks()
 
@@ -16,17 +12,5 @@ spire_identity(
     key = "analytics_service.default",
     path = "/svc/analytics-service",
     user = "analytics_service",
-    visibility = ["//src/host:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        "//src/services/analytics-service/cmd/analytics-service:analytics-service_nomad_artifact": "analytics-service",
-    },
-    component = "analytics_service",
-    digest_inputs = [":deploy_declarations"],
-    job_id = "analytics-service",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )

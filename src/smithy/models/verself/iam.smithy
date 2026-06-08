@@ -481,7 +481,7 @@ structure ProviderEmailUnverifiedError with [ProblemDetails] {}
 structure ProviderSubjectAlreadyLinkedError with [ProblemDetails] {}
 
 @error("client")
-@httpError(401)
+@httpError(403)
 @problem(type: "urn:verself:problem:auth:session_revoked", code: "auth.session_revoked")
 structure SessionRevokedError with [ProblemDetails] {}
 
@@ -506,7 +506,7 @@ structure AccountSelectionRequiredError with [ProblemDetails] {}
 structure InsufficientAssuranceError with [ProblemDetails] {}
 
 @error("client")
-@httpError(401)
+@httpError(403)
 @problem(type: "urn:verself:problem:auth:device_session_required", code: "auth.device_session_required")
 structure DeviceSessionRequiredError with [ProblemDetails] {}
 

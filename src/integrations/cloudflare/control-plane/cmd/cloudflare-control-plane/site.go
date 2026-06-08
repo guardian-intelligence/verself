@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/verself/integrations/cloudflare/control-plane/internal/r2control"
+	"github.com/verself/integrations/cloudflare/control-plane/r2control"
 )
 
 type siteArtifactConfig struct {
@@ -28,44 +28,9 @@ type cloudflareAccountConfig struct {
 }
 
 func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
-	path := filepath.Join(repoRoot, "src", "host", "sites", site, "site.json")
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return siteArtifactConfig{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	var raw struct {
-		ArtifactDelivery struct {
-			Kind                   string `json:"kind"`
-			Bucket                 string `json:"bucket"`
-			KeyPrefix              string `json:"key_prefix"`
-			CloudflareAccountID    string `json:"cloudflare_account_id"`
-			CloudflareAccountIDEnv string `json:"cloudflare_account_id_env"`
-			ChecksumAlgorithm      string `json:"checksum_algorithm"`
-			Public                 *bool  `json:"public"`
-		} `json:"artifact_delivery"`
-	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return siteArtifactConfig{}, fmt.Errorf("decode %s: %w", path, err)
-	}
-	if raw.ArtifactDelivery.Kind != "cloudflare_r2_control_plane" {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.kind must be cloudflare_r2_control_plane", path)
-	}
-	if raw.ArtifactDelivery.Public == nil || *raw.ArtifactDelivery.Public {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.public must be false", path)
-	}
-	if strings.TrimSpace(raw.ArtifactDelivery.Bucket) != "" {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.bucket belongs to src/integrations/cloudflare/account.json", path)
-	}
-	if strings.TrimSpace(raw.ArtifactDelivery.CloudflareAccountID) != "" || strings.TrimSpace(raw.ArtifactDelivery.CloudflareAccountIDEnv) != "" {
-		return siteArtifactConfig{}, fmt.Errorf("%s: artifact_delivery.cloudflare_account_id belongs to src/integrations/cloudflare/account.json", path)
-	}
 	cloudflare, err := loadCloudflareAccountConfig(repoRoot)
 	if err != nil {
 		return siteArtifactConfig{}, err
-	}
-	keyPrefix := strings.Trim(raw.ArtifactDelivery.KeyPrefix, "/")
-	if keyPrefix == "" {
-		keyPrefix = "sha256"
 	}
 	sitePrefix, err := artifactSitePrefix(site)
 	if err != nil {
@@ -74,7 +39,7 @@ func loadSiteConfig(repoRoot, site string) (siteArtifactConfig, error) {
 	return siteArtifactConfig{
 		AccountID:  cloudflare.AccountID,
 		Bucket:     cloudflare.DeploymentArtifactsBucket,
-		KeyPrefix:  keyPrefix,
+		KeyPrefix:  "sha256",
 		SitePrefix: sitePrefix,
 		Region:     "auto",
 	}, nil

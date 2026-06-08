@@ -2,7 +2,11 @@
 # Firecracker host setup defaults. The daemon and composable image seeding are
 # owned by the component-local vm-orchestrator Nomad job.
 firecracker_monorepo_root: "{{ playbook_dir }}/../../../.."
-firecracker_bazelisk: bazelisk
+firecracker_bazel_command:
+  - guardian
+  - run
+  - bazel
+  - --
 firecracker_release_bazel_label: "@guest_image_firecracker_release//file"
 firecracker_release_remote_tmp: /tmp
 firecracker_jailer_root: /vspool/jailer

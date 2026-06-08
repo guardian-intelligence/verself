@@ -1,80 +1,78 @@
+variable "guardian_repo_root" {
+  type    = string
+  default = "/home/ubuntu/.local/state/guardian/repo"
+}
+
+variable "projects_service_resource_name" {
+  type    = string
+  default = "projects-service"
+}
+
+variable "projects_service_runtime_root" {
+  type    = string
+  default = "/var/lib/projects-service/runtime"
+}
+
+variable "projects_service_projected_graph" {
+  type    = string
+  default = "/run/verself/recovery/projects-service/document.json"
+}
+
 job "projects-service" {
-  name = "projects-service"
+  name        = "projects-service"
   datacenters = ["*"]
-  type = "service"
+  type        = "service"
+
   group "projects-service" {
     count = 2
+
     network {
       mode = "host"
-      port "service_https" {
+
+      port "internal_https" {
         host_network = "loopback"
       }
+
       port "public_http" {
         host_network = "loopback"
       }
     }
-    task "projects-service-migrate" {
-      driver = "raw_exec"
-      user = "projects_service"
-      vault {
-        role = "projects-service-runtime"
-      }
 
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
+    task "setup" {
+      driver = "raw_exec"
+      user   = "root"
 
       lifecycle {
-        hook = "prestart"
+        hook    = "prestart"
         sidecar = false
       }
-      artifact {
-        source = "verself-artifact://projects-service"
-        destination = "local"
-        chown = true
-      }
+
       config {
-        args = ["migrate", "up"]
-        command = "local/bin/projects-service"
+        command = "${var.guardian_repo_root}/bazel-bin/src/services/projects-service/cmd/projects-service/projects-service_/projects-service"
+        args = [
+          "recover",
+          "--repo-root=${var.guardian_repo_root}",
+          "--resource-graph=${var.guardian_repo_root}/workspace/.guardian/fly/document.json",
+          "--resource-name=${var.projects_service_resource_name}",
+          "--runtime-root=${var.projects_service_runtime_root}",
+          "--projected-graph=${var.projects_service_projected_graph}",
+          "--migrate",
+        ]
       }
-      env {
-        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
-        OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "projects-service-migration"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
-        VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
-        VERSELF_PG_DSN = "postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "8"
-        VERSELF_PG_MIN_CONNS = "1"
-        VERSELF_SERVICE_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_service_https}"
-        VERSELF_SUPERVISOR = "nomad"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
-      }
+
       resources {
-        cpu = 100
+        cpu    = 100
         memory = 128
       }
     }
+
     task "projects-service" {
-      driver = "raw_exec"
-      user = "projects_service"
-      kill_signal = "SIGTERM"
-      kill_timeout = "30s"
+      driver         = "raw_exec"
+      user           = "projects_service"
+      kill_signal    = "SIGTERM"
+      kill_timeout   = "30s"
       shutdown_delay = "5s"
+
       vault {
         role = "projects-service-runtime"
       }
@@ -85,86 +83,90 @@ EOT
         ttl  = "1h"
       }
 
-      artifact {
-        source = "verself-artifact://projects-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        command = "local/bin/projects-service"
+        command = "${var.projects_service_runtime_root}/current/bin/projects-service"
+        args = [
+          "--resource-graph=${var.projects_service_projected_graph}",
+          "--resource-name=${var.projects_service_resource_name}",
+          "--listen-addr=127.0.0.1:$${NOMAD_PORT_public_http}",
+          "--internal-listen-addr=127.0.0.1:$${NOMAD_PORT_internal_https}",
+        ]
       }
+
       env {
-        CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
+        CREDENTIALS_DIRECTORY        = "$${NOMAD_SECRETS_DIR}"
+        HOME                         = "/var/lib/projects-service/home"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
-        OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
-        OTEL_SERVICE_NAME = "projects-service"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
-        VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
-        VERSELF_INSTALLATION_ID = "__VERSELF_INSTALLATION_ID__"
-        VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
-        VERSELF_PG_CONN_MAX_IDLE_SECONDS = "300"
-        VERSELF_PG_CONN_MAX_LIFETIME_SECONDS = "1800"
-        VERSELF_PG_DSN = "postgres://projects_service@/projects_service?host=/var/run/postgresql&sslmode=disable"
-        VERSELF_PG_MAX_CONNS = "8"
-        VERSELF_PG_MIN_CONNS = "1"
-        VERSELF_SERVICE_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_service_https}"
-        VERSELF_SUPERVISOR = "nomad"
+        OTEL_RESOURCE_ATTRIBUTES     = "verself.supervisor=nomad"
+        OTEL_SERVICE_NAME            = "projects-service"
+        TMPDIR                       = "/var/lib/projects-service/home/tmp"
+        VERSELF_SUPERVISOR           = "nomad"
       }
+
       template {
         change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
+        destination = "secrets/iam-service.zitadel.auth_audience"
+        perms       = "0600"
+        uid         = "977"
+        gid         = "970"
+        data        = <<-EOT
 {{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
 EOT
       }
+
       resources {
-        cpu = 500
+        cpu    = 500
         memory = 256
       }
+
       restart {
         attempts = 3
-        delay = "15s"
+        delay    = "15s"
         interval = "300s"
-        mode = "delay"
+        mode     = "delay"
       }
+
       service {
-        name = "projects-service-internal-https"
-        port = "service_https"
-        provider = "nomad"
+        name         = "projects-service-internal-https"
+        port         = "internal_https"
+        provider     = "nomad"
         address_mode = "auto"
+
         check {
-          name = "projects-service-tcp-internal_https"
-          type = "tcp"
-          port = "service_https"
+          name     = "projects-service-tcp-internal_https"
+          type     = "tcp"
+          port     = "internal_https"
           interval = "1s"
-          timeout = "3s"
+          timeout  = "3s"
         }
       }
+
       service {
-        name = "projects-service-public-http"
-        port = "public_http"
-        provider = "nomad"
+        name         = "projects-service-public-http"
+        port         = "public_http"
+        provider     = "nomad"
         address_mode = "auto"
+
         check {
-          name = "projects-service-http-public_http"
-          type = "http"
-          path = "/readyz"
-          port = "public_http"
+          name     = "projects-service-http-public_http"
+          type     = "http"
+          path     = "/readyz"
+          port     = "public_http"
           interval = "1s"
-          timeout = "3s"
+          timeout  = "3s"
         }
       }
     }
+
     update {
-      max_parallel = 1
-      health_check = "checks"
-      min_healthy_time = "3s"
-      healthy_deadline = "300s"
+      max_parallel      = 1
+      health_check      = "checks"
+      min_healthy_time  = "3s"
+      healthy_deadline  = "300s"
       progress_deadline = "600s"
-      canary = 1
-      auto_revert = true
-      auto_promote = true
+      canary            = 1
+      auto_revert       = true
+      auto_promote      = true
     }
   }
 }

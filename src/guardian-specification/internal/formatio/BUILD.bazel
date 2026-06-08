@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "formatio",
+    srcs = ["formatio.go"],
+    importpath = "github.com/verself/guardian-specification/internal/formatio",
+    visibility = ["//src/guardian-specification:__subpackages__"],
+    deps = [
+        "@com_github_burntsushi_toml//:toml",
+        "@com_github_toon_format_toon_go//:toon-go",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)

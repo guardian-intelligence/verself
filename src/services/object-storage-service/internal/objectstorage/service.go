@@ -23,13 +23,14 @@ import (
 var tracer = otel.Tracer("object-storage-service/internal/objectstorage")
 
 type Config struct {
-	ServiceName      string
-	Environment      string
-	ServiceVersion   string
-	WriterInstanceID string
-	Provider         string
-	ProxyAccessKeyID string
-	ProxyRegion      string
+	ServiceName               string
+	Site                      string
+	ServiceVersion            string
+	WriterInstanceID          string
+	Provider                  string
+	ProxyAccessKeyID          string
+	ProxyRegion               string
+	DeploymentArtifactsBucket string
 }
 
 type Service struct {
@@ -626,7 +627,7 @@ func (s *Service) RecordAccessEvent(ctx context.Context, event ObjectAccessEvent
 	if sc := oteltrace.SpanContextFromContext(ctx); sc.HasSpanID() && event.SpanID == "" {
 		event.SpanID = sc.SpanID().String()
 	}
-	event.Environment = firstNonEmpty(s.Config.Environment, event.Environment)
+	event.Site = firstNonEmpty(s.Config.Site, event.Site)
 	event.ServiceVersion = firstNonEmpty(s.Config.ServiceVersion, event.ServiceVersion)
 	event.WriterInstanceID = firstNonEmpty(s.Config.WriterInstanceID, event.WriterInstanceID)
 	batch, err := s.CH.PrepareBatch(ctx, "INSERT INTO verself.object_access_events")

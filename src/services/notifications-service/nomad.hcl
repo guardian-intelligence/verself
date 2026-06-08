@@ -1,3 +1,8 @@
+variable "notifications_service_artifact_source" {
+  type    = string
+  default = ""
+}
+
 job "notifications-service" {
   name = "notifications-service"
   datacenters = ["*"]
@@ -31,7 +36,7 @@ job "notifications-service" {
         sidecar = false
       }
       artifact {
-        source = "verself-artifact://notifications-service"
+        source = var.notifications_service_artifact_source
         destination = "local"
         chown = true
       }
@@ -102,7 +107,7 @@ EOT
       }
 
       artifact {
-        source = "verself-artifact://notifications-service"
+        source = var.notifications_service_artifact_source
         destination = "local"
         chown = true
       }

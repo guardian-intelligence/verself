@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"cuelang.org/go/cue"
 	opch "github.com/verself/operator-runtime/clickhouse"
 	opruntime "github.com/verself/operator-runtime/runtime"
 )
@@ -32,7 +33,7 @@ type discoveryCanaryOptions struct {
 }
 
 type discoveryCanarySiteVars struct {
-	ServiceDiscoveryCanaryOrgSlug string `yaml:"service_discovery_canary_org_slug"`
+	ServiceDiscoveryCanaryOrgSlug string
 }
 
 func cmdDiscoveryCanary(args []string) error {
@@ -61,7 +62,12 @@ func cmdDiscoveryCanary(args []string) error {
 	return runOperatorRuntime("canary.service_discovery", opts.operatorRuntimeOptions, totalBudget, opch.Config{Database: "verself"}, func(rt *opruntime.Runtime, _ *opch.Client) error {
 		var vars discoveryCanarySiteVars
 		if strings.TrimSpace(opts.slug) == "" {
-			if err := readYAMLFile(siteVarsPath(rt.RepoRoot, rt.Site), &vars); err != nil {
+			facts, _, err := loadSiteFacts(rt.RepoRoot, rt.Site)
+			if err != nil {
+				return err
+			}
+			vars.ServiceDiscoveryCanaryOrgSlug, err = siteFactString(facts, cue.ParsePath("dogfood.serviceDiscoveryCanaryOrgSlug"), true)
+			if err != nil {
 				return err
 			}
 		}

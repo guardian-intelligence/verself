@@ -13,6 +13,7 @@ bazel_dep(name = "rules_java", version = "9.6.1")
 bazel_dep(name = "rules_jvm_external", version = "7.0")
 bazel_dep(name = "rules_nodejs", version = "6.7.4")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
@@ -20,16 +21,20 @@ bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_zig", version = "0.13.0")
 
 include("//src/tools/dev/binaries:dev_tools.MODULE.bazel")
-include("//src/host:host_tools.MODULE.bazel")
 include("//src/substrate/vm-orchestrator/guest-images:guest_images.MODULE.bazel")
 include("//src/infrastructure-components/forgejo:forgejo.MODULE.bazel")
 include("//src/infrastructure-components/grafana:grafana.MODULE.bazel")
 include("//src/infrastructure-components/haproxy:haproxy.MODULE.bazel")
+include("//src/infrastructure-components/nomad:nomad.MODULE.bazel")
 include("//src/infrastructure-components/nftables:nftables.MODULE.bazel")
 include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
+include("//src/infrastructure-components/podman:podman.MODULE.bazel")
 include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
+include("//src/infrastructure-components/spire:spire.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
 include("//src/infrastructure-components/verdaccio:verdaccio.MODULE.bazel")
+include("//src/guardian-specification:guardian_tools.MODULE.bazel")
+include("//src/services/deployment-service:deployment_service.MODULE.bazel")
 include("//src/viteplus-monorepo:website_tools.MODULE.bazel")
 
 component_tools = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
@@ -48,6 +53,10 @@ component_tools.hub(
 component_tools.hub(
     hub_name = "forgejo_tools",
     lockfile = "//src/infrastructure-components/forgejo:tools.lock.json",
+)
+component_tools.hub(
+    hub_name = "guardian_specification_tools",
+    lockfile = "//src/guardian-specification:tools.lock.json",
 )
 component_tools.hub(
     hub_name = "nats_tools",
@@ -90,6 +99,7 @@ use_repo(
     "clickhouse_tools",
     "electric_tools",
     "forgejo_tools",
+    "guardian_specification_tools",
     "mksk_release_tools",
     "multitool",
     "nats_tools",
@@ -102,6 +112,18 @@ use_repo(
     "zitadel_tools",
     "zot_tools",
 )
+
+# First libc-bearing OCI base in the repo: postgres/pgbackrest are dynamically
+# linked, so the scratch+static-Go image pattern does not apply. Pinned by the
+# ubuntu:24.04 multi-arch index digest; linux/amd64 is the only fleet platform.
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "ubuntu_noble_base",
+    digest = "sha256:786a8b558f7be160c6c8c4a54f9a57274f3b4fb1491cf65146521ae77ff1dc54",
+    image = "docker.io/library/ubuntu",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "ubuntu_noble_base", "ubuntu_noble_base_linux_amd64")
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
@@ -117,6 +139,8 @@ register_toolchains("@mksk_release_tools//toolchains:all")
 register_toolchains("@electric_tools//toolchains:all")
 
 register_toolchains("@forgejo_tools//toolchains:all")
+
+register_toolchains("@guardian_specification_tools//toolchains:all")
 
 register_toolchains("@nats_tools//toolchains:all")
 
@@ -221,14 +245,6 @@ python.toolchain(
 )
 use_repo(python, "python_3_13", "python_3_13_host")
 
-host_ansible_pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
-host_ansible_pip.parse(
-    hub_name = "host_ansible_pip",
-    python_version = "3.13",
-    requirements_lock = "//src/host:ansible/requirements_lock.txt",
-)
-use_repo(host_ansible_pip, "host_ansible_pip")
-
 sdk_generator_pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 sdk_generator_pip.parse(
     hub_name = "sdk_generator_pip",
@@ -280,7 +296,7 @@ go_deps.gazelle_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//patches:tigerbeetle-go-bazel-cgo.patch"],
+    patches = ["//src/infrastructure-components/tigerbeetle/patches:tigerbeetle-go-bazel-cgo.patch"],
     path = "github.com/tigerbeetle/tigerbeetle-go",
 )
 go_deps.module_override(
@@ -299,7 +315,7 @@ go_deps.gazelle_override(
 )
 go_deps.module_override(
     patch_strip = 1,
-    patches = ["//patches:pg-query-go-bazel-cgo.patch"],
+    patches = ["//src/tools/dev/patches:pg-query-go-bazel-cgo.patch"],
     path = "github.com/pganalyze/pg_query_go/v6",
 )
 go_deps.gazelle_override(
@@ -327,4 +343,4 @@ go_deps.gazelle_override(
     ],
     path = "github.com/pingcap/tidb/pkg/parser",
 )
-use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_authzed_authzed_go", "com_github_authzed_grpcutil", "com_github_aws_aws_sdk_go_v2", "com_github_clickhouse_clickhouse_go_v2", "com_github_coreos_go_oidc_v3", "com_github_danielgtaylor_huma_v2", "com_github_golang_jwt_jwt_v5", "com_github_golang_migrate_migrate_v4", "com_github_golangci_golangci_lint_v2", "com_github_google_go_attestation", "com_github_google_uuid", "com_github_hashicorp_nomad_api", "com_github_iancoleman_strcase", "com_github_jackc_pgx_v5", "com_github_jmoiron_sqlx", "com_github_lib_pq", "com_github_nats_io_nats_go", "com_github_oklog_ulid_v2", "com_github_opencontainers_image_spec", "com_github_riverqueue_river", "com_github_riverqueue_river_riverdriver_riverpgxv5", "com_github_riverqueue_river_rivertype", "com_github_riverqueue_rivercontrib_otelriver", "com_github_securego_gosec_v2", "com_github_spiffe_go_spiffe_v2", "com_github_sqlc_dev_sqlc", "com_github_stripe_stripe_go_v85", "com_github_telophasehq_go_ocsf", "com_github_tigerbeetle_tigerbeetle_go", "com_github_verself_integrations_hibp_pwned_passwords", "com_github_vishvananda_netlink", "in_gopkg_yaml_v3", "io_opentelemetry_go_contrib_bridges_otelslog", "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc", "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp", "io_opentelemetry_go_otel", "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploggrpc", "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc", "io_opentelemetry_go_otel_sdk", "io_opentelemetry_go_otel_sdk_log", "io_opentelemetry_go_otel_trace", "io_opentelemetry_go_proto_otlp", "io_temporal_go_api", "io_temporal_go_sdk", "io_temporal_go_sdk_contrib_opentelemetry", "io_temporal_go_server", "land_oras_oras_go_v2", "org_golang_google_grpc", "org_golang_google_grpc_cmd_protoc_gen_go_grpc", "org_golang_google_protobuf", "org_golang_x_crypto", "org_golang_x_net", "org_golang_x_oauth2", "org_golang_x_sys", "org_golang_x_text", "org_golang_x_tools", "org_modernc_sqlite")
+use_repo(go_deps, "cc_mvdan_gofumpt", "com_github_authzed_authzed_go", "com_github_authzed_grpcutil", "com_github_aws_aws_sdk_go_v2", "com_github_burntsushi_toml", "com_github_clickhouse_clickhouse_go_v2", "com_github_coreos_go_oidc_v3", "com_github_danielgtaylor_huma_v2", "com_github_golang_jwt_jwt_v5", "com_github_golang_migrate_migrate_v4", "com_github_golangci_golangci_lint_v2", "com_github_google_go_attestation", "com_github_google_uuid", "com_github_hashicorp_nomad_api", "com_github_iancoleman_strcase", "com_github_jackc_pgx_v5", "com_github_jmoiron_sqlx", "com_github_lib_pq", "com_github_nats_io_nats_go", "com_github_oklog_ulid_v2", "com_github_opencontainers_image_spec", "com_github_protonmail_go_crypto", "com_github_riverqueue_river", "com_github_riverqueue_river_riverdriver_riverpgxv5", "com_github_riverqueue_river_rivertype", "com_github_riverqueue_rivercontrib_otelriver", "com_github_securego_gosec_v2", "com_github_spiffe_go_spiffe_v2", "com_github_sqlc_dev_sqlc", "com_github_stripe_stripe_go_v85", "com_github_telophasehq_go_ocsf", "com_github_tigerbeetle_tigerbeetle_go", "com_github_toon_format_toon_go", "com_github_verself_integrations_hibp_pwned_passwords", "com_github_vishvananda_netlink", "in_gopkg_yaml_v3", "io_opentelemetry_go_contrib_bridges_otelslog", "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc", "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp", "io_opentelemetry_go_otel", "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploggrpc", "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracegrpc", "io_opentelemetry_go_otel_sdk", "io_opentelemetry_go_otel_sdk_log", "io_opentelemetry_go_otel_trace", "io_opentelemetry_go_proto_otlp", "io_temporal_go_api", "io_temporal_go_sdk", "io_temporal_go_sdk_contrib_opentelemetry", "io_temporal_go_server", "land_oras_oras_go_v2", "net_pgregory_rapid", "org_cuelang_go", "org_golang_google_grpc", "org_golang_google_grpc_cmd_protoc_gen_go_grpc", "org_golang_google_protobuf", "org_golang_x_crypto", "org_golang_x_net", "org_golang_x_oauth2", "org_golang_x_sys", "org_golang_x_text", "org_golang_x_tools", "org_modernc_sqlite")

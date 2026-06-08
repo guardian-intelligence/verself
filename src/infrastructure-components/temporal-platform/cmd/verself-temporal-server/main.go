@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	verselfotel "github.com/verself/observability/otel"
-	"github.com/verself/service-runtime/envconfig"
 	"go.temporal.io/server/common/authorization"
 	"go.temporal.io/server/common/config"
 	"go.temporal.io/server/temporal"
@@ -30,13 +33,24 @@ var temporalServices = []string{
 var version = "dev"
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+type options struct {
+	configPath     string
+	authConfigPath string
+	schemaBinary   string
+	spiffeSocket   string
+}
+
+func run(args []string) error {
+	opts, err := parseOptions(args)
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -52,26 +66,24 @@ func run() error {
 	}()
 	slog.SetDefault(logger)
 
-	l := envconfig.New()
-	cfgPath := l.RequireString("VERSELF_TEMPORAL_CONFIG_PATH")
-	spiffeSocket := l.String("SPIFFE_ENDPOINT_SOCKET", "")
-	if err := l.Err(); err != nil {
+	if err := migrateSchema(opts); err != nil {
 		return err
 	}
-	cfg, err := config.Load(config.WithConfigFile(cfgPath))
+
+	cfg, err := config.Load(config.WithConfigFile(opts.configPath))
 	if err != nil {
-		return fmt.Errorf("load temporal config %s: %w", cfgPath, err)
+		return fmt.Errorf("load temporal config %s: %w", opts.configPath, err)
 	}
 	if err := pgsocket.ConfigureTemporalDatastores(cfg); err != nil {
 		return fmt.Errorf("configure temporal postgres sockets: %w", err)
 	}
 
-	authzCfg, err := spiffeauth.LoadFromEnv()
+	authzCfg, err := spiffeauth.LoadFromFile(opts.authConfigPath)
 	if err != nil {
 		return fmt.Errorf("load temporal spiffe authorization config: %w", err)
 	}
 
-	tlsConfigProvider, err := tlsprovider.New(ctx, spiffeSocket)
+	tlsConfigProvider, err := tlsprovider.New(ctx, opts.spiffeSocket)
 	if err != nil {
 		return fmt.Errorf("build temporal tls provider: %w", err)
 	}
@@ -114,6 +126,39 @@ func run() error {
 	}
 	if err := server.Start(); err != nil {
 		return fmt.Errorf("start temporal server: %w", err)
+	}
+	return nil
+}
+
+func parseOptions(args []string) (options, error) {
+	opts := options{}
+	fs := flag.NewFlagSet("verself-temporal-server", flag.ContinueOnError)
+	fs.StringVar(&opts.configPath, "config", "", "Temporal server config path.")
+	fs.StringVar(&opts.authConfigPath, "auth-config", "", "Temporal SPIFFE authorization config path.")
+	fs.StringVar(&opts.schemaBinary, "schema-binary", "", "temporal-schema binary path.")
+	fs.StringVar(&opts.spiffeSocket, "spiffe-socket", "", "SPIFFE Workload API socket URL.")
+	if err := fs.Parse(args); err != nil {
+		return options{}, err
+	}
+	if fs.NArg() != 0 {
+		return options{}, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	opts.configPath = strings.TrimSpace(opts.configPath)
+	opts.authConfigPath = strings.TrimSpace(opts.authConfigPath)
+	opts.schemaBinary = strings.TrimSpace(opts.schemaBinary)
+	opts.spiffeSocket = strings.TrimSpace(opts.spiffeSocket)
+	if opts.configPath == "" || opts.authConfigPath == "" || opts.schemaBinary == "" || opts.spiffeSocket == "" {
+		return options{}, errors.New("--config, --auth-config, --schema-binary, and --spiffe-socket are required")
+	}
+	return opts, nil
+}
+
+func migrateSchema(opts options) error {
+	cmd := exec.Command(opts.schemaBinary, "migrate", "--config", opts.configPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("migrate temporal schema: %w", err)
 	}
 	return nil
 }

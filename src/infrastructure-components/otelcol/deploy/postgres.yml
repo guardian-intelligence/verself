@@ -1,2 +1,0 @@
-postgresql_peer_mappings:
-  - { system_user: otelcol, pg_user: otelcol }

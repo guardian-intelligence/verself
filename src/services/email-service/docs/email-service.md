@@ -75,17 +75,18 @@ to `zitadel.smtp.password`, and records non-secret key metadata in
 to OpenBao before revoking the prior Resend key and records pending revocation in
 metadata so retries complete the delete instead of creating another child key.
 
-The full-access Resend key is an external provider authority stored in site
-OpenBao under the email-service policy boundary. Runtime services receive only
-the generated child credentials through Nomad/OpenBao templates.
+The full-access Resend key is a prod/global external provider authority copied
+into site OpenBao under the email-service policy boundary during bootstrap or
+rotation. Runtime services receive only the generated child credentials through
+Nomad/OpenBao templates.
 
 ## Agent-To-Operator Email
 
-Agents working in the repo email the operator through the same internal send path. The sender is `agents@guardianintelligence.org`, owned by the dogfood org; on boot `email-service` provisions that identity (the otherwise-unused `ProvisionAddress`) and a `resend` / `guardianintelligence.org` provider binding from `EMAIL_SERVICE_AGENT_SENDER_*`, so `EnsureOutboundAddress` accepts it. `guardianintelligence.org` is a verified Resend sending domain; `anveio@guardianintelligence.org` is delivered to the operator inbox by Cloudflare Email Routing (`src/integrations/cloudflare/email-routing`), which forwards to the verified Gmail destination.
+Agents working in the repo email the operator through the same internal send path. The sender is `agents@guardianintelligence.org`, owned by the dogfood org; on boot `email-service` provisions that identity (the otherwise-unused `ProvisionAddress`) and a `resend` / `guardianintelligence.org` provider binding from `EMAIL_SERVICE_AGENT_SENDER_*`, so `EnsureOutboundAddress` accepts it. `guardianintelligence.org` is a verified Resend sending domain; `anveio@guardianintelligence.org` is delivered to the operator inbox by Cloudflare Email Routing reconciled through `cloudflare-integration-service`, which forwards to the verified Gmail destination.
 
 The agent-facing tool is `src/tools/operator/cmd/agent-mail`. It must run as the `agent_mail` user on a node so the SPIRE workload API issues `spiffe://<td>/svc/agent-mail`, which `email-service`'s internal peer allowlist trusts. The HTML body is a React Email template (`@verself/agent-email`) rendered to a Go `text/template` at build time; the plaintext alternative is assembled in the tool. Operators invoke it as `aspect mail send --subject ... --body ...`, which uploads the binary via the operator SSH plane and runs it as `agent_mail`.
 
-Provision the domains with `src/integrations/email/provision-email-domains.yml` (Resend verification for every `resend_sending_domains` entry plus Cloudflare Email Routing). The company apex carries one merged SPF covering both Resend and Cloudflare; the Gmail destination must complete Cloudflare's verification click once. The full runbook — Cloudflare token scopes, DNS layout, the `agent_mail` identity, and send verification — is in `src/integrations/email/README.md`.
+Cloudflare integration reconciles Email Routing and `email-service` owns Resend runtime sender credentials after site OpenBao is available. The company apex carries one merged SPF covering both Resend and Cloudflare; the Gmail destination must complete Cloudflare's verification click once. The runbook for DNS layout, Cloudflare authority, the `agent_mail` identity, and send verification is in `src/integrations/email/README.md`.
 
 ## Receiving And Forwarding
 

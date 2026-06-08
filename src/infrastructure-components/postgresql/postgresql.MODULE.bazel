@@ -27,3 +27,142 @@ http_file(
     sha256 = "74ab8be7aa487e5cc7d9d228212f538ff96658afcb080335c02fe0f3e384ff7c",
     url = "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxml2/libxml2_2.9.14+dfsg-1.3ubuntu3.7_amd64.deb",
 )
+
+http_file(
+    name = "postgresql_tool_libicu74",
+    downloaded_file_path = "libicu74_74.2-1ubuntu3.1_amd64.deb",
+    sha256 = "c9a70989678660eed9a1e904c74fa043da8bec8e2036856fc16e31ced79b04f8",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/i/icu/libicu74_74.2-1ubuntu3.1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_tool_pgbackrest",
+    downloaded_file_path = "pgbackrest_2.58.0-1.pgdg24.04+1_amd64.deb",
+    sha256 = "f2eddd27246e85fb4842a030fee21ebc036ba22a81627e932d2c01796f616546",
+    url = "https://apt.postgresql.org/pub/repos/apt/pool/main/p/pgbackrest/pgbackrest_2.58.0-1.pgdg24.04+1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_tool_libssh2_1t64",
+    downloaded_file_path = "libssh2-1t64_1.11.0-4.1ubuntu0.24.04.1_amd64.deb",
+    sha256 = "44754349d71a772416fb134c12dd8c08a2c1785f0344676eb936c89305ca5f26",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/libs/libssh2/libssh2-1t64_1.11.0-4.1ubuntu0.24.04.1_amd64.deb",
+)
+
+# OS-level closure beyond the minimal ubuntu:24.04 base, computed as the
+# dependency closure of {libgssapi-krb5-2, libldap2, python3.12} minus packages
+# the base already provides. krb5 + ldap satisfy postgres/pgbackrest dynamic
+# loads; python3.12 + stdlib run the in-container recovery orchestrator. These
+# install at their natural /usr paths (not the /opt/verself/postgresql prefix)
+# so the dynamic linker and python resolve normally.
+http_file(
+    name = "postgresql_os_libgssapi_krb5_2",
+    downloaded_file_path = "libgssapi-krb5-2.deb",
+    sha256 = "0f1b296f6731dc51569350dcb2971629f36e78a21015c73165eddc5af5c978ad",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libgssapi-krb5-2_1.20.1-6ubuntu2.6_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libkrb5_3",
+    downloaded_file_path = "libkrb5-3.deb",
+    sha256 = "e8c20d16598108c88495fde116eadb4be568f47ae2ab93cabccfbb220e6e926b",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libkrb5-3_1.20.1-6ubuntu2.6_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libk5crypto3",
+    downloaded_file_path = "libk5crypto3.deb",
+    sha256 = "5c3eb1fc954af26da4190204098af489eb558552a89cf5cf099e0ea6aab157c5",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libk5crypto3_1.20.1-6ubuntu2.6_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libkrb5support0",
+    downloaded_file_path = "libkrb5support0.deb",
+    sha256 = "e649ebef274cce86e6133144ce5f587db101f06828dbd88cb73350fe98160b0e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/k/krb5/libkrb5support0_1.20.1-6ubuntu2.6_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libkeyutils1",
+    downloaded_file_path = "libkeyutils1.deb",
+    sha256 = "0679f198b0128179e46cdf956fb2022c23c758664c00bc8efa0382d509683a8a",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/k/keyutils/libkeyutils1_1.6.3-3build1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libldap2",
+    downloaded_file_path = "libldap2.deb",
+    sha256 = "7f3f8e565401256f21d5aa562c9f92dbb63537b73aaea6283e4db5264f1598f4",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap2_2.6.10+dfsg-0ubuntu0.24.04.1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libsasl2_2",
+    downloaded_file_path = "libsasl2-2.deb",
+    sha256 = "eda097f98dcb3a08b9ce157d6191d140e4885c1cba47b683c94b8ca45e88f458",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28+dfsg1-5ubuntu3.1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libsasl2_modules_db",
+    downloaded_file_path = "libsasl2-modules-db.deb",
+    sha256 = "1f13548b1774cd9c70c50b8c3267204a101334a4d2f979338896ba5a4c6f81b8",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28+dfsg1-5ubuntu3.1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libexpat1",
+    downloaded_file_path = "libexpat1.deb",
+    sha256 = "126a5612e652bdc2edee19ae8fe4308db72b5b3b0a5581bf885b44a093baf3e5",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/e/expat/libexpat1_2.6.1-2ubuntu0.4_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libreadline8t64",
+    downloaded_file_path = "libreadline8t64.deb",
+    sha256 = "563977a16df03b611f5239cc1e9a0426e86479fcc616b5c9e200ea32063119e5",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/r/readline/libreadline8t64_8.2-4build1_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libsqlite3_0",
+    downloaded_file_path = "libsqlite3-0.deb",
+    sha256 = "9e4569a5b992e70899527023ec1871b5abe92afb41c9eb53b38c2ccae056f6db",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/s/sqlite3/libsqlite3-0_3.45.1-1ubuntu2.5_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libpython3_12_minimal",
+    downloaded_file_path = "libpython3.12-minimal.deb",
+    sha256 = "834bf1b933f97fd1395a71a9c21b6c7968244f07e5b491402d89e74d3b3c59cd",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/python3.12/libpython3.12-minimal_3.12.3-1ubuntu0.13_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_libpython3_12_stdlib",
+    downloaded_file_path = "libpython3.12-stdlib.deb",
+    sha256 = "6f369153d0651c1a2a6d085054210d87a5d4ec98da18211409b17409ce792fd4",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/python3.12/libpython3.12-stdlib_3.12.3-1ubuntu0.13_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_python3_12_minimal",
+    downloaded_file_path = "python3.12-minimal.deb",
+    sha256 = "817460227948b8aba8241d13169adbdc6c65677435dbcf8bd6d52bdda7f70778",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/python3.12/python3.12-minimal_3.12.3-1ubuntu0.13_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_python3_12",
+    downloaded_file_path = "python3.12.deb",
+    sha256 = "dc37b7b7fa3d4470274b0f3ea3a737e735677ded897010216fa428ca9fe5a84e",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/p/python3.12/python3.12_3.12.3-1ubuntu0.13_amd64.deb",
+)
+
+http_file(
+    name = "postgresql_os_tzdata",
+    downloaded_file_path = "tzdata.deb",
+    sha256 = "6098f2b57b40e9f4aea8b7d50fb9f989a98f938481546c915e9fa00d71aabc39",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/t/tzdata/tzdata_2026a-0ubuntu0.24.04.1_all.deb",
+)

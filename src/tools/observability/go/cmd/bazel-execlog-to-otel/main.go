@@ -1,4 +1,4 @@
-// bazel-execlog-to-otel parses a `bazelisk build --execution_log_json_file=<path>`
+// bazel-execlog-to-otel parses a `guardian run bazel -- build --execution_log_json_file=<path>`
 // JSON stream and emits one OTel span per spawn. The execution log is
 // Bazel's authoritative record of "what action ran with what inputs and
 // what outputs" — distinct from the Chrome-trace profile, which is a
@@ -36,7 +36,7 @@
 //
 // Usage:
 //
-//	bazelisk build \
+//	guardian run bazel -- build \
 //	  --execution_log_json_file=/path/to/exec_log.json \
 //	  //src/...
 //	bazel-execlog-to-otel \
@@ -92,7 +92,7 @@ type spawnMetrics struct {
 }
 
 func main() {
-	logPath := flag.String("execution-log", "", "Path to bazelisk --execution_log_json_file output (required)")
+	logPath := flag.String("execution-log", "", "Path to Bazel --execution_log_json_file output (required)")
 	serviceName := flag.String("service-name", "bazel", "OTel service.name for emitted spans")
 	flag.Parse()
 

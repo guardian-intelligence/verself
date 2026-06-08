@@ -1,14 +1,22 @@
 package main
 
 import (
-	"bytes"
+	"archive/tar"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
-	"regexp"
+	"os/user"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +24,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/hashicorp/nomad/api"
@@ -33,17 +40,17 @@ const (
 	serviceVersion = "0.1.0"
 	defaultNS      = "default"
 
-	maxTailBytes      = 1024 * 1024
-	dedupeMaxAge      = 24 * time.Hour
+	apiVersion      = "nomadobserver.guardianintelligence.org/v1alpha1"
+	kind            = "NomadObserver"
+	defaultRepoRoot = "/home/ubuntu/.local/state/guardian/repo"
+	defaultResource = "nomad-observer"
+
 	heartbeatInterval = 60 * time.Second
-	logCaptureTimeout = 5 * time.Second
+
+	maxUint32AsInt64 = int64(1<<32 - 1)
 )
 
 var (
-	bearerPattern      = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
-	jwtPattern         = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
-	secretLinePattern  = regexp.MustCompile(`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|token|jwt|access_token|id_token|refresh_token|client_secret|password|passwd|secret|api_key|private_key)\b\s*[:=]\s*([^\s]+)`)
-	privateKeyPattern  = regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`)
 	terminalAllocState = map[string]struct{}{
 		api.AllocClientStatusFailed: {},
 		api.AllocClientStatusLost:   {},
@@ -51,17 +58,87 @@ var (
 )
 
 type config struct {
+	runtimeArtifact       string
+	runtimeRoot           string
+	dataDir               string
+	graphPath             string
+	reportPath            string
+	user                  string
+	group                 string
+	supplementaryGroups   []string
 	nomadAddr             string
 	namespace             string
-	stderrTailBytes       int64
-	stdoutTailBytes       int64
-	captureWorkers        int
-	captureQueueSize      int
+	otlpEndpoint          string
 	clickhouseAddr        string
 	clickhouseUser        string
 	clickhouseCACertPath  string
 	spiffeSocket          string
 	fleetSnapshotInterval time.Duration
+}
+
+type graphOptions struct {
+	repoRoot      string
+	resourceGraph string
+	resourceName  string
+}
+
+type document struct {
+	Resources []resource `json:"resources"`
+}
+
+type resource struct {
+	APIVersion string          `json:"apiVersion"`
+	Kind       string          `json:"kind"`
+	Metadata   metadata        `json:"metadata"`
+	Spec       json.RawMessage `json:"spec"`
+}
+
+type metadata struct {
+	Name string `json:"name"`
+}
+
+type crdSpec struct {
+	RuntimeArtifact     string   `json:"runtimeArtifact"`
+	RuntimeRoot         string   `json:"runtimeRoot"`
+	DataDir             string   `json:"dataDir"`
+	GraphPath           string   `json:"graphPath"`
+	ReportPath          string   `json:"reportPath"`
+	User                string   `json:"user"`
+	Group               string   `json:"group"`
+	SupplementaryGroups []string `json:"supplementaryGroups"`
+	Nomad               struct {
+		Address   string `json:"address"`
+		Namespace string `json:"namespace"`
+	} `json:"nomad"`
+	OTel struct {
+		ExporterEndpoint string `json:"exporterEndpoint"`
+	} `json:"otel"`
+	Fleet struct {
+		SnapshotIntervalSeconds int `json:"snapshotIntervalSeconds"`
+	} `json:"fleet"`
+	ClickHouse struct {
+		Address    string `json:"address"`
+		User       string `json:"user"`
+		CACertPath string `json:"caCertPath"`
+	} `json:"clickhouse"`
+	SPIFFE struct {
+		EndpointSocket string `json:"endpointSocket"`
+	} `json:"spiffe"`
+}
+
+type condition struct {
+	Type     string `json:"type"`
+	Status   string `json:"status"`
+	Reason   string `json:"reason"`
+	Resource string `json:"resource"`
+	Message  string `json:"message,omitempty"`
+}
+
+type report struct {
+	Component             string      `json:"component"`
+	ResourceName          string      `json:"resourceName"`
+	RuntimeArtifactDigest string      `json:"runtimeArtifactDigest,omitempty"`
+	Conditions            []condition `json:"conditions"`
 }
 
 type deployMeta struct {
@@ -73,19 +150,6 @@ type deployMeta struct {
 
 func (m deployMeta) empty() bool {
 	return m.DeployRunKey == "" && m.DeploySHA == "" && m.SpecSHA256 == "" && m.ArtifactSHA256 == ""
-}
-
-type logCaptureRequest struct {
-	Namespace    string
-	AllocID      string
-	JobID        string
-	DeploymentID string
-	EvalID       string
-	TaskGroup    string
-	Task         string
-	Stream       string
-	TailBytes    int64
-	Meta         deployMeta
 }
 
 type jobMetaCache struct {
@@ -120,72 +184,54 @@ func jobCacheKey(namespace, jobID string) string {
 	return namespace + "\x00" + jobID
 }
 
-type captureDedupe struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
-}
-
-func newCaptureDedupe() *captureDedupe {
-	return &captureDedupe{seen: make(map[string]time.Time)}
-}
-
-func (d *captureDedupe) mark(req logCaptureRequest) bool {
-	key := req.Namespace + "\x00" + req.AllocID + "\x00" + req.Task + "\x00" + req.Stream
-	now := time.Now()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if firstSeen, ok := d.seen[key]; ok && now.Sub(firstSeen) < dedupeMaxAge {
-		return false
-	}
-	if len(d.seen) > 4096 {
-		for candidate, firstSeen := range d.seen {
-			if now.Sub(firstSeen) > dedupeMaxAge {
-				delete(d.seen, candidate)
-			}
-		}
-	}
-	d.seen[key] = now
-	return true
-}
-
 type observerStats struct {
 	events       atomic.Uint64
 	failures     atomic.Uint64
-	captures     atomic.Uint64
-	captureDrops atomic.Uint64
 	streamErrors atomic.Uint64
 }
 
 type observer struct {
-	cfg     config
-	client  *api.Client
-	logger  *slog.Logger
-	tracer  trace.Tracer
-	meta    *jobMetaCache
-	dedupe  *captureDedupe
-	stats   observerStats
-	capture chan logCaptureRequest
+	cfg    config
+	client *api.Client
+	logger *slog.Logger
+	tracer trace.Tracer
+	meta   *jobMetaCache
+	stats  observerStats
 }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cfg, err := configFromEnv()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	if err := run(ctx, cfg); err != nil && !errors.Is(err, context.Canceled) {
+	if err := dispatch(ctx, os.Args[1:]); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
+func dispatch(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: nomad-observer recover|run --resource-graph=<path>")
+	}
+	switch args[0] {
+	case "recover":
+		return recoverObserver(args[1:])
+	case "run":
+		cfg, err := configFromGraphArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return run(ctx, cfg)
+	default:
+		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
 func run(ctx context.Context, cfg config) error {
 	shutdown, logger, err := verselfotel.Init(ctx, verselfotel.Config{
-		ServiceName:    serviceName,
-		ServiceVersion: serviceVersion,
+		ServiceName:      serviceName,
+		ServiceVersion:   serviceVersion,
+		ExporterEndpoint: cfg.otlpEndpoint,
 	})
 	if err != nil {
 		return fmt.Errorf("otel init: %w", err)
@@ -196,13 +242,11 @@ func run(ctx context.Context, cfg config) error {
 		cancel()
 	}()
 	logger = logger.With(
-		slog.String("verself.supervisor", strings.TrimSpace(os.Getenv("VERSELF_SUPERVISOR"))),
+		slog.String("verself.supervisor", "nomad"),
 	)
 	slog.SetDefault(logger)
 
-	nomadConfig := api.DefaultConfig()
-	nomadConfig.Address = cfg.nomadAddr
-	nomadClient, err := api.NewClient(nomadConfig)
+	nomadClient, err := newNomadClient(cfg.nomadAddr)
 	if err != nil {
 		return fmt.Errorf("nomad client: %w", err)
 	}
@@ -212,28 +256,36 @@ func run(ctx context.Context, cfg config) error {
 	}
 
 	obs := &observer{
-		cfg:     cfg,
-		client:  nomadClient,
-		logger:  logger,
-		tracer:  otel.Tracer(serviceName),
-		meta:    newJobMetaCache(),
-		dedupe:  newCaptureDedupe(),
-		capture: make(chan logCaptureRequest, cfg.captureQueueSize),
-	}
-	for i := 0; i < cfg.captureWorkers; i++ {
-		go obs.captureWorker(ctx, i)
+		cfg:    cfg,
+		client: nomadClient,
+		logger: logger,
+		tracer: otel.Tracer(serviceName),
+		meta:   newJobMetaCache(),
 	}
 	go obs.heartbeat(ctx)
 
 	return obs.streamLoop(ctx)
 }
 
+func newNomadClient(address string) (*api.Client, error) {
+	nomadConfig := api.DefaultConfig()
+	nomadConfig.Address = address
+	nomadConfig.HttpClient = &http.Client{
+		Transport: &http.Transport{
+			MaxConnsPerHost:     8,
+			MaxIdleConnsPerHost: 4,
+			IdleConnTimeout:     30 * time.Second,
+		},
+	}
+	return api.NewClient(nomadConfig)
+}
+
 func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) error {
 	if cfg.clickhouseCACertPath == "" {
-		return errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
+		return errors.New("NomadObserver.spec.clickhouse.caCertPath must not be empty")
 	}
 	if cfg.spiffeSocket == "" {
-		return fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
+		return errors.New("NomadObserver.spec.spiffe.endpointSocket must not be empty")
 	}
 	spiffeSource, err := workloadauth.Source(ctx, cfg.spiffeSocket)
 	if err != nil {
@@ -282,91 +334,508 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 	return nil
 }
 
-func configFromEnv() (config, error) {
-	stderrTailBytes, err := envInt64("NOMAD_OBSERVER_STDERR_TAIL_BYTES", 64*1024, 0, maxTailBytes)
+func recoverObserver(args []string) error {
+	opts, cfg, err := loadGraphConfig(args)
 	if err != nil {
-		return config{}, err
+		return err
 	}
-	stdoutTailBytes, err := envInt64("NOMAD_OBSERVER_STDOUT_TAIL_BYTES", 32*1024, 0, maxTailBytes)
+	if os.Geteuid() != 0 {
+		return errors.New("nomad-observer recover must run as root")
+	}
+	if err := ensureAccount(cfg); err != nil {
+		return err
+	}
+	if err := prepareDirectories(cfg); err != nil {
+		return err
+	}
+	if err := projectGraph(opts.resourceGraph, cfg); err != nil {
+		return err
+	}
+	digest, err := installRuntime(opts.repoRoot, cfg)
 	if err != nil {
-		return config{}, err
+		return err
 	}
-	captureWorkers, err := envInt("NOMAD_OBSERVER_CAPTURE_WORKERS", 4, 1, 32)
-	if err != nil {
-		return config{}, err
+	rep := report{
+		Component:             "nomad-observer",
+		ResourceName:          opts.resourceName,
+		RuntimeArtifactDigest: digest,
+		Conditions: []condition{
+			conditionTrue("NomadObserverRuntimeInstalled", "RuntimeReady", "repo-built Nomad Observer runtime is installed"),
+			conditionTrue("NomadObserverAccountReady", "AccountReady", "Nomad Observer service account and directories are ready"),
+			conditionTrue("NomadObserverRecoveryComplete", "Recovered", "Nomad Observer is ready for Nomad to start"),
+		},
 	}
-	captureQueueSize, err := envInt("NOMAD_OBSERVER_CAPTURE_QUEUE_SIZE", 128, 1, 4096)
-	if err != nil {
-		return config{}, err
-	}
-	fleetIntervalSeconds, err := envInt("NOMAD_OBSERVER_FLEET_SNAPSHOT_INTERVAL_SECONDS", 30, 5, 3600)
-	if err != nil {
-		return config{}, err
-	}
-	cfg := config{
-		nomadAddr:             envString("NOMAD_ADDR", "http://127.0.0.1:4646"),
-		namespace:             envString("NOMAD_NAMESPACE", defaultNS),
-		stderrTailBytes:       stderrTailBytes,
-		stdoutTailBytes:       stdoutTailBytes,
-		captureWorkers:        captureWorkers,
-		captureQueueSize:      captureQueueSize,
-		clickhouseAddr:        envString("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440"),
-		clickhouseUser:        envString("VERSELF_CLICKHOUSE_USER", "nomad_observer"),
-		clickhouseCACertPath:  envString("VERSELF_CRED_CLICKHOUSE_CA_CERT", ""),
-		spiffeSocket:          envString(workloadauth.EndpointSocketEnv, ""),
-		fleetSnapshotInterval: time.Duration(fleetIntervalSeconds) * time.Second,
-	}
-	if cfg.nomadAddr == "" {
-		return config{}, errors.New("NOMAD_ADDR must not be empty")
-	}
-	if cfg.namespace == "" {
-		cfg.namespace = defaultNS
-	}
-	return cfg, nil
+	return writeReport(cfg.reportPath, rep, cfg)
 }
 
-func envString(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	return value
+func configFromGraphArgs(args []string) (config, error) {
+	_, cfg, err := loadGraphConfig(args)
+	return cfg, err
 }
 
-func envInt(key string, fallback, minValue, maxValue int) (int, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
+func loadGraphConfig(args []string) (graphOptions, config, error) {
+	opts, err := parseGraphOptions(args)
+	if err != nil {
+		return graphOptions{}, config{}, err
+	}
+	cfg, err := loadConfig(opts)
+	if err != nil {
+		return graphOptions{}, config{}, err
+	}
+	if err := validateConfig(cfg); err != nil {
+		return graphOptions{}, config{}, err
+	}
+	return opts, cfg, nil
+}
+
+func parseGraphOptions(args []string) (graphOptions, error) {
+	opts := graphOptions{
+		repoRoot:     defaultRepoRoot,
+		resourceName: defaultResource,
+	}
+	fs := flag.NewFlagSet("nomad-observer", flag.ContinueOnError)
+	fs.StringVar(&opts.repoRoot, "repo-root", opts.repoRoot, "Boarded repo root.")
+	fs.StringVar(&opts.resourceGraph, "resource-graph", "", "Guardian resource graph document path.")
+	fs.StringVar(&opts.resourceName, "resource-name", opts.resourceName, "NomadObserver resource name.")
+	if err := fs.Parse(args); err != nil {
+		return graphOptions{}, err
+	}
+	if fs.NArg() != 0 {
+		return graphOptions{}, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	opts.repoRoot = strings.TrimSpace(opts.repoRoot)
+	opts.resourceGraph = strings.TrimSpace(opts.resourceGraph)
+	opts.resourceName = strings.TrimSpace(opts.resourceName)
+	if opts.resourceGraph == "" {
+		opts.resourceGraph = filepath.Join(opts.repoRoot, "workspace/.guardian/fly/document.json")
+	}
+	if opts.repoRoot == "" || opts.resourceName == "" {
+		return graphOptions{}, errors.New("--repo-root and --resource-name are required")
+	}
+	repoRoot, err := filepath.Abs(opts.repoRoot)
+	if err != nil {
+		return graphOptions{}, fmt.Errorf("resolve repo root: %w", err)
+	}
+	opts.repoRoot = repoRoot
+	return opts, nil
+}
+
+func loadConfig(opts graphOptions) (config, error) {
+	body, err := os.ReadFile(opts.resourceGraph)
+	if err != nil {
+		return config{}, fmt.Errorf("read Guardian resource graph: %w", err)
+	}
+	var doc document
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return config{}, fmt.Errorf("decode Guardian resource graph: %w", err)
+	}
+	var matches []resource
+	for _, resource := range doc.Resources {
+		if resource.APIVersion == apiVersion && resource.Kind == kind && resource.Metadata.Name == opts.resourceName {
+			matches = append(matches, resource)
+		}
+	}
+	if len(matches) != 1 {
+		return config{}, fmt.Errorf("expected exactly one %s resource named %q, found %d", kind, opts.resourceName, len(matches))
+	}
+	var spec crdSpec
+	if err := json.Unmarshal(matches[0].Spec, &spec); err != nil {
+		return config{}, fmt.Errorf("decode NomadObserver spec: %w", err)
+	}
+	return config{
+		runtimeArtifact:       spec.RuntimeArtifact,
+		runtimeRoot:           spec.RuntimeRoot,
+		dataDir:               spec.DataDir,
+		graphPath:             spec.GraphPath,
+		reportPath:            spec.ReportPath,
+		user:                  spec.User,
+		group:                 spec.Group,
+		supplementaryGroups:   spec.SupplementaryGroups,
+		nomadAddr:             spec.Nomad.Address,
+		namespace:             spec.Nomad.Namespace,
+		otlpEndpoint:          spec.OTel.ExporterEndpoint,
+		clickhouseAddr:        spec.ClickHouse.Address,
+		clickhouseUser:        spec.ClickHouse.User,
+		clickhouseCACertPath:  spec.ClickHouse.CACertPath,
+		spiffeSocket:          spec.SPIFFE.EndpointSocket,
+		fleetSnapshotInterval: time.Duration(spec.Fleet.SnapshotIntervalSeconds) * time.Second,
+	}, nil
+}
+
+func validateConfig(cfg config) error {
+	for name, value := range map[string]string{
+		"runtimeArtifact":       cfg.runtimeArtifact,
+		"runtimeRoot":           cfg.runtimeRoot,
+		"dataDir":               cfg.dataDir,
+		"graphPath":             cfg.graphPath,
+		"reportPath":            cfg.reportPath,
+		"user":                  cfg.user,
+		"group":                 cfg.group,
+		"nomad.address":         cfg.nomadAddr,
+		"nomad.namespace":       cfg.namespace,
+		"otel.exporterEndpoint": cfg.otlpEndpoint,
+		"clickhouse.address":    cfg.clickhouseAddr,
+		"clickhouse.user":       cfg.clickhouseUser,
+		"clickhouse.caCertPath": cfg.clickhouseCACertPath,
+		"spiffe.endpointSocket": cfg.spiffeSocket,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("NomadObserver.spec.%s is required", name)
+		}
+	}
+	if filepath.IsAbs(cfg.runtimeArtifact) || strings.Contains(filepath.ToSlash(cfg.runtimeArtifact), "../") {
+		return errors.New("NomadObserver.spec.runtimeArtifact must be repo-relative")
+	}
+	for name, value := range map[string]string{
+		"runtimeRoot":           cfg.runtimeRoot,
+		"dataDir":               cfg.dataDir,
+		"graphPath":             cfg.graphPath,
+		"reportPath":            cfg.reportPath,
+		"clickhouse.caCertPath": cfg.clickhouseCACertPath,
+	} {
+		if !filepath.IsAbs(value) {
+			return fmt.Errorf("NomadObserver.spec.%s must be an absolute path", name)
+		}
+	}
+	if cfg.fleetSnapshotInterval < 5*time.Second || cfg.fleetSnapshotInterval > time.Hour {
+		return errors.New("NomadObserver.spec.fleet.snapshotIntervalSeconds must be between 5 and 3600")
+	}
+	return nil
+}
+
+func ensureAccount(cfg config) error {
+	if _, err := user.LookupGroup(cfg.group); err != nil {
+		if _, ok := err.(user.UnknownGroupError); !ok {
+			return fmt.Errorf("lookup Nomad Observer group: %w", err)
+		}
+		if err := command("/usr/sbin/groupadd", "--system", cfg.group); err != nil {
+			return err
+		}
+	}
+	groups := strings.Join(cfg.supplementaryGroups, ",")
+	if _, err := user.Lookup(cfg.user); err != nil {
+		if _, ok := err.(user.UnknownUserError); !ok {
+			return fmt.Errorf("lookup Nomad Observer user: %w", err)
+		}
+		args := []string{"--system", "--gid", cfg.group, "--home-dir", cfg.dataDir, "--shell", "/usr/sbin/nologin", "--create-home"}
+		if groups != "" {
+			args = append(args, "--groups", groups)
+		}
+		args = append(args, cfg.user)
+		return command("/usr/sbin/useradd", args...)
+	}
+	if groups != "" {
+		if err := command("/usr/sbin/usermod", "--gid", cfg.group, "-a", "-G", groups, cfg.user); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func prepareDirectories(cfg config) error {
+	uid, gid, err := ids(cfg.user, cfg.group)
+	if err != nil {
+		return err
+	}
+	for _, dir := range []string{
+		cfg.dataDir,
+		cfg.runtimeRoot,
+		filepath.Dir(cfg.graphPath),
+		filepath.Dir(cfg.reportPath),
+	} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+		if err := os.Chown(dir, uid, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", dir, err)
+		}
+	}
+	return nil
+}
+
+func projectGraph(source string, cfg config) error {
+	body, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("read Guardian resource graph for projection: %w", err)
+	}
+	if err := writeOwnedFile(cfg.graphPath, body, 0o640, cfg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ids(userName string, groupName string) (int, int, error) {
+	u, err := user.Lookup(userName)
+	if err != nil {
+		return 0, 0, fmt.Errorf("lookup user %s: %w", userName, err)
+	}
+	g, err := user.LookupGroup(groupName)
+	if err != nil {
+		return 0, 0, fmt.Errorf("lookup group %s: %w", groupName, err)
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse uid %s: %w", u.Uid, err)
+	}
+	gid, err := strconv.Atoi(g.Gid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse gid %s: %w", g.Gid, err)
+	}
+	return uid, gid, nil
+}
+
+func installRuntime(repoRoot string, cfg config) (string, error) {
+	artifact := filepath.Join(repoRoot, filepath.FromSlash(cfg.runtimeArtifact))
+	digest, err := fileSHA256(artifact)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(cfg.runtimeRoot, 0o755); err != nil {
+		return "", fmt.Errorf("create Nomad Observer runtime root: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(cfg.runtimeRoot, ".install.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("open Nomad Observer runtime install lock: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	lockFD, err := intFromFileDescriptor(lock.Fd(), "Nomad Observer runtime install lock")
+	if err != nil {
+		return "", err
+	}
+	if err := syscall.Flock(lockFD, syscall.LOCK_EX); err != nil {
+		return "", fmt.Errorf("lock Nomad Observer runtime install: %w", err)
+	}
+	defer func() { _ = syscall.Flock(lockFD, syscall.LOCK_UN) }()
+	release := filepath.Join(cfg.runtimeRoot, "releases", strings.ReplaceAll(digest, ":", "-"))
+	if !runtimeInstalled(release) {
+		if err := extractRuntimeTar(artifact, release); err != nil {
+			return "", err
+		}
+	}
+	if err := os.Chmod(release, 0o755); err != nil {
+		return "", fmt.Errorf("chmod Nomad Observer runtime release: %w", err)
+	}
+	if err := promoteRuntime(cfg.runtimeRoot, release); err != nil {
+		return "", err
+	}
+	return digest, nil
+}
+
+func runtimeInstalled(release string) bool {
+	stat, err := os.Stat(filepath.Join(release, "bin/nomad-observer"))
+	return err == nil && stat.Mode().IsRegular()
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open Nomad Observer runtime artifact: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return "", fmt.Errorf("hash Nomad Observer runtime artifact: %w", err)
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func extractRuntimeTar(artifact string, release string) error {
+	if err := os.MkdirAll(filepath.Dir(release), 0o755); err != nil {
+		return fmt.Errorf("create Nomad Observer runtime release parent: %w", err)
+	}
+	tmp, err := os.MkdirTemp(filepath.Dir(release), "."+filepath.Base(release)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create Nomad Observer runtime staging directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+	if err := extractTar(artifact, tmp); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return fmt.Errorf("chmod Nomad Observer runtime staging directory: %w", err)
+	}
+	if !runtimeInstalled(tmp) {
+		return errors.New("nomad observer runtime artifact missing bin/nomad-observer")
+	}
+	if err := os.RemoveAll(release); err != nil {
+		return fmt.Errorf("remove stale Nomad Observer runtime release: %w", err)
+	}
+	if err := os.Rename(tmp, release); err != nil {
+		return fmt.Errorf("publish Nomad Observer runtime release: %w", err)
+	}
+	return nil
+}
+
+func extractTar(artifact string, dest string) error {
+	file, err := os.Open(artifact)
+	if err != nil {
+		return fmt.Errorf("open Nomad Observer runtime artifact: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	destAbs, err := filepath.Abs(dest)
+	if err != nil {
+		return err
+	}
+	tr := tar.NewReader(file)
+	for {
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read Nomad Observer runtime tar: %w", err)
+		}
+		target, err := safeTarTarget(destAbs, header.Name)
+		if err != nil {
+			return err
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			mode, err := modeOrDefault(header.Mode, 0o755)
+			if err != nil {
+				return fmt.Errorf("runtime directory %s mode: %w", header.Name, err)
+			}
+			if err := os.MkdirAll(target, mode); err != nil {
+				return fmt.Errorf("create runtime directory %s: %w", header.Name, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				return fmt.Errorf("create runtime parent %s: %w", header.Name, err)
+			}
+			mode, err := modeOrDefault(header.Mode, 0o644)
+			if err != nil {
+				return fmt.Errorf("runtime file %s mode: %w", header.Name, err)
+			}
+			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+			if err != nil {
+				return fmt.Errorf("create runtime file %s: %w", header.Name, err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				_ = out.Close()
+				return fmt.Errorf("write runtime file %s: %w", header.Name, err)
+			}
+			if err := out.Close(); err != nil {
+				return fmt.Errorf("close runtime file %s: %w", header.Name, err)
+			}
+		default:
+			return fmt.Errorf("unsupported Nomad Observer runtime tar entry %s type %d", header.Name, header.Typeflag)
+		}
+	}
+}
+
+func safeTarTarget(destAbs string, name string) (string, error) {
+	if filepath.IsAbs(name) {
+		return "", fmt.Errorf("unsafe Nomad Observer runtime tar entry %s", name)
+	}
+	target := filepath.Join(destAbs, name)
+	targetAbs, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	if targetAbs != destAbs && !strings.HasPrefix(targetAbs, destAbs+string(os.PathSeparator)) {
+		return "", fmt.Errorf("unsafe Nomad Observer runtime tar entry %s", name)
+	}
+	return targetAbs, nil
+}
+
+func modeOrDefault(mode int64, fallback os.FileMode) (os.FileMode, error) {
+	if mode == 0 {
 		return fallback, nil
 	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+	if mode < 0 || mode > maxUint32AsInt64 {
+		return 0, fmt.Errorf("mode %d exceeds os.FileMode range", mode)
 	}
-	if parsed < minValue {
-		return 0, fmt.Errorf("%s must be >= %d", key, minValue)
-	}
-	if parsed > maxValue {
-		return 0, fmt.Errorf("%s must be <= %d", key, maxValue)
-	}
-	return parsed, nil
+	return os.FileMode(mode).Perm(), nil // #nosec G115 -- mode is checked against the uint32-backed os.FileMode range above.
 }
 
-func envInt64(key string, fallback, minValue, maxValue int64) (int64, error) {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback, nil
+// os.File.Fd is uintptr, but flock expects an int descriptor.
+func intFromFileDescriptor(fd uintptr, field string) (int, error) {
+	if strconv.IntSize == 32 && fd > uintptr(1<<31-1) {
+		return 0, fmt.Errorf("%s file descriptor exceeds int range: %d", field, fd)
 	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
+	return int(fd), nil // #nosec G115 -- fd is range-checked for 32-bit; on 64-bit uintptr and int have the same width.
+}
+
+func promoteRuntime(runtimeRoot string, release string) error {
+	if err := os.MkdirAll(runtimeRoot, 0o755); err != nil {
+		return fmt.Errorf("create Nomad Observer runtime root: %w", err)
+	}
+	next := filepath.Join(runtimeRoot, "current.next")
+	current := filepath.Join(runtimeRoot, "current")
+	if err := os.Remove(next); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove stale Nomad Observer current symlink: %w", err)
+	}
+	if err := os.Symlink(release, next); err != nil {
+		return fmt.Errorf("create Nomad Observer current symlink: %w", err)
+	}
+	if stat, err := os.Lstat(current); err == nil && stat.Mode()&os.ModeSymlink == 0 {
+		if err := os.RemoveAll(current); err != nil {
+			return fmt.Errorf("remove non-symlink Nomad Observer current runtime: %w", err)
+		}
+	}
+	if err := os.Rename(next, current); err != nil {
+		return fmt.Errorf("publish Nomad Observer current runtime: %w", err)
+	}
+	return nil
+}
+
+func writeReport(path string, rep report, cfg config) error {
+	body, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
-		return 0, fmt.Errorf("%s must be an integer: %w", key, err)
+		return fmt.Errorf("encode Nomad Observer report: %w", err)
 	}
-	if parsed < minValue {
-		return 0, fmt.Errorf("%s must be >= %d", key, minValue)
+	body = append(body, '\n')
+	return writeOwnedFile(path, body, 0o640, cfg)
+}
+
+func writeOwnedFile(path string, body []byte, mode os.FileMode, cfg config) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 	}
-	if parsed > maxValue {
-		return 0, fmt.Errorf("%s must be <= %d", key, maxValue)
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp file for %s: %w", path, err)
 	}
-	return parsed, nil
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write %s: %w", tmpName, err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod %s: %w", tmpName, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", tmpName, err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", tmpName, path, err)
+	}
+	if cfg.group != "" {
+		_, gid, err := ids(cfg.user, cfg.group)
+		if err != nil {
+			return err
+		}
+		if err := os.Chown(path, 0, gid); err != nil {
+			return fmt.Errorf("chown %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func conditionTrue(t string, reason string, message string) condition {
+	return condition{Type: t, Status: "True", Reason: reason, Resource: "nomad-observer", Message: message}
+}
+
+func command(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 func (o *observer) streamLoop(ctx context.Context) error {
@@ -380,7 +849,8 @@ func (o *observer) streamLoop(ctx context.Context) error {
 	var nextIndex uint64
 	backoff := time.Second
 	for ctx.Err() == nil {
-		streamCtx, span := o.tracer.Start(ctx, "nomad_observer.event_stream",
+		streamBaseCtx, cancelStream := context.WithCancel(ctx)
+		streamCtx, span := o.tracer.Start(streamBaseCtx, "nomad_observer.event_stream",
 			trace.WithAttributes(
 				attribute.String("nomad.namespace", o.cfg.namespace),
 				attribute.Int64("nomad.stream.index", int64(nextIndex)),
@@ -390,6 +860,7 @@ func (o *observer) streamLoop(ctx context.Context) error {
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
+			cancelStream()
 			span.End()
 			o.stats.streamErrors.Add(1)
 			o.logger.WarnContext(streamCtx, "nomad.observer.stream_open_failed",
@@ -432,6 +903,7 @@ func (o *observer) streamLoop(ctx context.Context) error {
 				o.handleEvent(streamCtx, event)
 			}
 		}
+		cancelStream()
 		span.End()
 		if !sleepContext(ctx, backoff) {
 			return ctx.Err()
@@ -471,8 +943,6 @@ func (o *observer) heartbeat(ctx context.Context) {
 			o.logger.InfoContext(ctx, "nomad.observer.heartbeat",
 				slog.Uint64("nomad.observer.events", o.stats.events.Load()),
 				slog.Uint64("nomad.observer.failures", o.stats.failures.Load()),
-				slog.Uint64("nomad.observer.log_captures", o.stats.captures.Load()),
-				slog.Uint64("nomad.observer.capture_drops", o.stats.captureDrops.Load()),
 				slog.Uint64("nomad.observer.stream_errors", o.stats.streamErrors.Load()),
 			)
 		}
@@ -648,7 +1118,6 @@ func (o *observer) handleAllocationEvent(ctx context.Context, event api.Event) {
 		if allocationFailed(alloc.ClientStatus) {
 			level = slog.LevelWarn
 			o.stats.failures.Add(1)
-			o.enqueueLogCaptures(ctx, alloc, meta)
 		}
 	}
 	o.logAttrs(ctx, level, "nomad.allocation.event", attrs)
@@ -721,21 +1190,6 @@ func appendMetaAttrs(attrs []slog.Attr, meta deployMeta) []slog.Attr {
 	return attrs
 }
 
-func setMetaSpanAttributes(span trace.Span, meta deployMeta) {
-	if meta.DeployRunKey != "" {
-		span.SetAttributes(attribute.String("verself.deploy_run_key", meta.DeployRunKey))
-	}
-	if meta.DeploySHA != "" {
-		span.SetAttributes(attribute.String("verself.deploy_sha", meta.DeploySHA))
-	}
-	if meta.SpecSHA256 != "" {
-		span.SetAttributes(attribute.String("verself.deploy_spec_sha256", meta.SpecSHA256))
-	}
-	if meta.ArtifactSHA256 != "" {
-		span.SetAttributes(attribute.String("verself.artifact_sha256", meta.ArtifactSHA256))
-	}
-}
-
 func (o *observer) metadataForJob(ctx context.Context, namespace, jobID string) (deployMeta, error) {
 	if jobID == "" {
 		return deployMeta{}, nil
@@ -774,252 +1228,6 @@ func metadataFromMap(values map[string]string) deployMeta {
 		SpecSHA256:     values["spec_sha256"],
 		ArtifactSHA256: values["artifact_sha256"],
 	}
-}
-
-func (o *observer) enqueueLogCaptures(ctx context.Context, alloc *api.Allocation, meta deployMeta) {
-	tasks := failedTaskNames(alloc.TaskStates)
-	if len(tasks) == 0 {
-		return
-	}
-	namespace := normalizeNamespace(alloc.Namespace, o.cfg.namespace)
-	for _, task := range tasks {
-		for _, stream := range []string{api.FSLogNameStderr, api.FSLogNameStdout} {
-			tailBytes := o.cfg.stderrTailBytes
-			if stream == api.FSLogNameStdout {
-				tailBytes = o.cfg.stdoutTailBytes
-			}
-			if tailBytes <= 0 {
-				continue
-			}
-			req := logCaptureRequest{
-				Namespace:    namespace,
-				AllocID:      alloc.ID,
-				JobID:        alloc.JobID,
-				DeploymentID: alloc.DeploymentID,
-				EvalID:       alloc.EvalID,
-				TaskGroup:    alloc.TaskGroup,
-				Task:         task,
-				Stream:       stream,
-				TailBytes:    tailBytes,
-				Meta:         meta,
-			}
-			if !o.dedupe.mark(req) {
-				continue
-			}
-			select {
-			case o.capture <- req:
-			default:
-				o.stats.captureDrops.Add(1)
-				o.logger.LogAttrs(ctx, slog.LevelWarn, "nomad.alloc.log_capture_dropped",
-					append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_capture_dropped"))...)
-			}
-		}
-	}
-}
-
-func (o *observer) captureWorker(ctx context.Context, workerID int) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req := <-o.capture:
-			o.captureLogTail(ctx, workerID, req)
-		}
-	}
-}
-
-func (o *observer) captureLogTail(ctx context.Context, workerID int, req logCaptureRequest) {
-	ctx, cancel := context.WithTimeout(ctx, logCaptureTimeout)
-	defer cancel()
-	ctx, span := o.tracer.Start(ctx, "nomad_observer.log_capture",
-		trace.WithAttributes(
-			attribute.String("nomad.namespace", req.Namespace),
-			attribute.String("nomad.alloc_id", req.AllocID),
-			attribute.String("nomad.job_id", req.JobID),
-			attribute.String("nomad.deployment_id", req.DeploymentID),
-			attribute.String("nomad.eval_id", req.EvalID),
-			attribute.String("nomad.task_group", req.TaskGroup),
-			attribute.String("nomad.task", req.Task),
-			attribute.String("nomad.log.stream", req.Stream),
-			attribute.Int64("nomad.log.tail_bytes", req.TailBytes),
-			attribute.Int("nomad.observer.worker_id", workerID),
-		),
-	)
-	defer span.End()
-
-	alloc, _, err := o.client.Allocations().Info(req.AllocID, (&api.QueryOptions{Namespace: req.Namespace}).WithContext(ctx))
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		o.logger.LogAttrs(ctx, slog.LevelWarn, "nomad.alloc.log_capture_failed",
-			append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_capture_failed"), slog.String("error", err.Error()))...)
-		return
-	}
-	if alloc != nil {
-		if req.JobID == "" {
-			req.JobID = alloc.JobID
-		}
-		if req.DeploymentID == "" {
-			req.DeploymentID = alloc.DeploymentID
-		}
-		if req.EvalID == "" {
-			req.EvalID = alloc.EvalID
-		}
-		if req.TaskGroup == "" {
-			req.TaskGroup = alloc.TaskGroup
-		}
-		if req.Meta.empty() {
-			req.Meta = metadataFromAlloc(alloc)
-		}
-		if req.Meta.empty() {
-			if meta, err := o.metadataForJob(ctx, req.Namespace, req.JobID); err == nil {
-				req.Meta = meta
-			}
-		}
-	}
-	setMetaSpanAttributes(span, req.Meta)
-
-	body, err := o.readLogTail(ctx, alloc, req)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		o.logger.LogAttrs(ctx, slog.LevelWarn, "nomad.alloc.log_capture_failed",
-			append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_capture_failed"), slog.String("error", err.Error()))...)
-		return
-	}
-	span.SetAttributes(attribute.Int("nomad.log.captured_bytes", len(body)))
-	if len(bytes.TrimSpace(body)) == 0 {
-		o.logger.LogAttrs(ctx, slog.LevelInfo, "nomad.alloc.log_tail_empty",
-			append(captureAttrs(req, 0), slog.String("nomad.event_name", "nomad.alloc.log_tail_empty"))...)
-		return
-	}
-	redacted := redactLogTail(string(body))
-	redacted = trimStringTail(redacted, req.TailBytes)
-	o.stats.captures.Add(1)
-	o.logger.LogAttrs(ctx, slog.LevelWarn, redacted,
-		append(captureAttrs(req, len(redacted)), slog.String("nomad.event_name", "nomad.alloc."+req.Stream+"_tail"))...)
-}
-
-func (o *observer) readLogTail(ctx context.Context, alloc *api.Allocation, req logCaptureRequest) ([]byte, error) {
-	if alloc == nil {
-		return nil, errors.New("allocation not found")
-	}
-	cancel := make(chan struct{})
-	defer close(cancel)
-	frames, errCh := o.client.AllocFS().Logs(
-		alloc,
-		false,
-		req.Task,
-		req.Stream,
-		api.OriginEnd,
-		req.TailBytes,
-		cancel,
-		(&api.QueryOptions{Namespace: req.Namespace}).WithContext(ctx),
-	)
-	if frames == nil {
-		select {
-		case err := <-errCh:
-			if err == nil {
-				err = errors.New("log stream unavailable")
-			}
-			return nil, err
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-	var buf bytes.Buffer
-	limit := int(req.TailBytes)
-	for {
-		select {
-		case frame, ok := <-frames:
-			if !ok {
-				if limit > 0 && buf.Len() > limit {
-					trimBuffer(&buf, limit)
-				}
-				return buf.Bytes(), nil
-			}
-			if frame == nil || len(frame.Data) == 0 {
-				continue
-			}
-			_, _ = buf.Write(frame.Data)
-			if limit > 0 && buf.Len() > limit*2 {
-				trimBuffer(&buf, limit)
-			}
-		case err := <-errCh:
-			if err != nil {
-				return nil, err
-			}
-		case <-ctx.Done():
-			if buf.Len() > 0 {
-				if limit > 0 && buf.Len() > limit {
-					trimBuffer(&buf, limit)
-				}
-				return buf.Bytes(), nil
-			}
-			return nil, ctx.Err()
-		}
-	}
-}
-
-func trimBuffer(buf *bytes.Buffer, limit int) {
-	if limit <= 0 || buf.Len() <= limit {
-		return
-	}
-	data := append([]byte(nil), buf.Bytes()[buf.Len()-limit:]...)
-	buf.Reset()
-	_, _ = buf.Write(data)
-}
-
-func trimStringTail(value string, maxBytes int64) string {
-	if maxBytes <= 0 || int64(len(value)) <= maxBytes {
-		return value
-	}
-	start := len(value) - int(maxBytes)
-	for start < len(value) && !utf8.RuneStart(value[start]) {
-		start++
-	}
-	return value[start:]
-}
-
-func captureAttrs(req logCaptureRequest, capturedBytes int) []slog.Attr {
-	attrs := []slog.Attr{
-		slog.String("nomad.namespace", req.Namespace),
-		slog.String("nomad.alloc_id", req.AllocID),
-		slog.String("nomad.job_id", req.JobID),
-		slog.String("nomad.deployment_id", req.DeploymentID),
-		slog.String("nomad.eval_id", req.EvalID),
-		slog.String("nomad.task_group", req.TaskGroup),
-		slog.String("nomad.task", req.Task),
-		slog.String("nomad.log.stream", req.Stream),
-		slog.Int64("nomad.log.tail_bytes", req.TailBytes),
-		slog.Int("nomad.log.captured_bytes", capturedBytes),
-	}
-	return appendMetaAttrs(attrs, req.Meta)
-}
-
-func failedTaskNames(states map[string]*api.TaskState) []string {
-	if len(states) == 0 {
-		return nil
-	}
-	tasks := make([]string, 0, len(states))
-	for name, state := range states {
-		if state == nil {
-			continue
-		}
-		if taskStateFailed(state) {
-			tasks = append(tasks, name)
-		}
-	}
-	if len(tasks) == 0 {
-		for name := range states {
-			tasks = append(tasks, name)
-		}
-	}
-	sort.Strings(tasks)
-	if len(tasks) > 8 {
-		tasks = tasks[:8]
-	}
-	return tasks
 }
 
 func latestTaskFailure(states map[string]*api.TaskState) (string, api.TaskState, *api.TaskEvent) {
@@ -1159,15 +1367,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func redactLogTail(value string) string {
-	if !utf8.ValidString(value) {
-		value = strings.ToValidUTF8(value, "\uFFFD")
-	}
-	value = privateKeyPattern.ReplaceAllString(value, "[redacted:private-key]")
-	value = bearerPattern.ReplaceAllString(value, "Bearer [redacted:jwt]")
-	value = jwtPattern.ReplaceAllString(value, "[redacted:jwt]")
-	value = secretLinePattern.ReplaceAllString(value, "$1=[redacted:secret]")
-	return strings.TrimRight(value, "\r\n")
 }

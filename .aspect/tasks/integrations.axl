@@ -36,10 +36,10 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--account-id=" + ctx.args.account_id)
     if ctx.args.bucket != "":
         args_list.append("--bucket=" + ctx.args.bucket)
-    if ctx.args.account_admin_a_openbao_path != "":
-        args_list.append("--account-admin-a-openbao-path=" + ctx.args.account_admin_a_openbao_path)
-    if ctx.args.account_admin_b_openbao_path != "":
-        args_list.append("--account-admin-b-openbao-path=" + ctx.args.account_admin_b_openbao_path)
+    if ctx.args.account_admin_openbao_path != "":
+        args_list.append("--account-admin-openbao-path=" + ctx.args.account_admin_openbao_path)
+    if ctx.args.account_admin_api_token_file != "":
+        args_list.append("--account-admin-api-token-file=" + (ctx.args.account_admin_api_token_file if ctx.args.account_admin_api_token_file.startswith("/") else ws_path(ctx, ctx.args.account_admin_api_token_file)))
     if ctx.args.openbao_addr != "":
         args_list.append("--openbao-addr=" + ctx.args.openbao_addr)
     if ctx.args.openbao_path != "":
@@ -90,10 +90,10 @@ def _cloudflare_control_plane_impl(ctx):
         args_list.append("--inventory-depth=" + str(ctx.args.inventory_depth))
     if ctx.args.child_token_ttl != "":
         args_list.append("--child-token-ttl=" + ctx.args.child_token_ttl)
-    if ctx.args.account_admin_ttl != "":
-        args_list.append("--account-admin-ttl=" + ctx.args.account_admin_ttl)
     if ctx.args.timeout != "":
         args_list.append("--timeout=" + ctx.args.timeout)
+    if ctx.args.recovery_config != "":
+        args_list.append("--recovery-config=" + (ctx.args.recovery_config if ctx.args.recovery_config.startswith("/") else ws_path(ctx, ctx.args.recovery_config)))
     args_list.append("--verify-temp-credentials=" + ("true" if ctx.args.verify_temp_credentials else "false"))
     return bazel_run(
         ctx,
@@ -110,19 +110,19 @@ cloudflare_control_plane = task(
     summary = "Manage Cloudflare DNS/R2 resources and public-edge certificate issuance.",
     args = {
         "site": args.string(default = "prod", description = "Target deployment site for DNS records, R2 prefixes, and scoped R2 credentials. Cloudflare authority is global and prod-owned."),
-        "action": args.string(default = "verify-admin-pair", description = "Action: verify-admin-pair, rotate-admin-pair, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-publisher, rotate-publisher, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
-        "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to site.json."),
+        "action": args.string(default = "verify-account-admin", description = "Action: recover, import-account-admin, verify-account-admin, verify-dns-authority, reconcile-dns, issue-site-certificates, provision-site, inventory, verify, ensure-bucket, ensure-recovery, rotate-recovery, or rotate-object-storage-provider."),
+        "account_id": args.string(default = "", description = "Cloudflare account ID. Defaults to src/integrations/cloudflare/account.json."),
         "bucket": args.string(default = "", description = "R2 bucket. Defaults to src/integrations/cloudflare/account.json."),
-        "account_admin_a_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/a", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot A."),
-        "account_admin_b_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin/b", description = "Prod controller OpenBao KV path for global Cloudflare account-admin slot B."),
+        "account_admin_openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/account-admin", description = "Prod controller OpenBao KV path for global Cloudflare account-admin authority."),
+        "account_admin_api_token_file": args.string(default = "", description = "File containing the Cloudflare account-admin API token for import-account-admin."),
         "openbao_addr": args.string(default = "", description = "Controller OpenBao address."),
-        "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2/capabilities/deployment-publisher", description = "Controller OpenBao KV path for R2 credentials."),
+        "openbao_path": args.string(default = "kv-controller/data/integrations/cloudflare/r2/capabilities/object-storage-admin", description = "Controller OpenBao KV path for R2 credentials."),
         "openbao_ca_cert": args.string(default = "", description = "Controller OpenBao CA certificate file. Defaults to BAO_CACERT or VAULT_CACERT."),
         "openbao_token_file": args.string(default = "", description = "File containing the OpenBao token."),
         "runtime_openbao_addr": args.string(default = "", description = "Runtime OpenBao address for service-required secret projection. Defaults to openbao_addr."),
         "runtime_openbao_ca_cert": args.string(default = "", description = "Runtime OpenBao CA certificate file. Defaults to openbao_ca_cert, BAO_CACERT, or VAULT_CACERT."),
         "runtime_openbao_token_file": args.string(default = "", description = "Runtime OpenBao token file. Defaults to openbao_token_file."),
-        "dns_inventory": args.string(default = "", description = "Site inventory used for DNS target IP fallback. Defaults to src/host/sites/<site>/inventory.ini."),
+        "dns_inventory": args.string(default = "", description = "Site inventory used for DNS target IP fallback. Defaults to src/sites/<site>/inventory.ini."),
         "dns_concurrency": args.int(default = 8, description = "Maximum parallel Cloudflare DNS write requests for reconcile-dns."),
         "dry_run": args.boolean(default = False, description = "Report the DNS diff without applying writes for reconcile-dns."),
         "provider": args.string(default = "", description = "Provider for direct certificate issuance. Supported value: cloudflare."),
@@ -140,8 +140,8 @@ cloudflare_control_plane = task(
         "inventory_prefix": args.string(default = "", description = "R2 object prefix for --action=inventory."),
         "inventory_depth": args.int(default = 2, description = "Prefix depth for --action=inventory summaries."),
         "child_token_ttl": args.string(default = "168h", description = "TTL for generated Cloudflare child API tokens."),
-        "account_admin_ttl": args.string(default = "168h", description = "TTL for account-admin token expiration updates during rotation."),
         "timeout": args.string(default = "", description = "Total timeout for Cloudflare R2 control-plane calls."),
+        "recovery_config": args.string(default = "", description = "Path to a recovery.verself.sh/v1alpha1 CloudflareRecovery document for --action=recover."),
         "verify_temp_credentials": args.boolean(default = True, description = "Mint scoped temporary credentials and verify with them."),
     },
 )

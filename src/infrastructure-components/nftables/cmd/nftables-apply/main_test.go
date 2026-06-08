@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -144,6 +146,95 @@ func TestInstallHostRuntimePublishesDurableCurrentSymlink(t *testing.T) {
 	}
 }
 
+func TestParseConfigLoadsNftablesFirewallFromGuardianGraph(t *testing.T) {
+	dir := t.TempDir()
+	graphPath := filepath.Join(dir, "document.json")
+	manageSystemd := true
+	doc := map[string]any{
+		"resources": []map[string]any{
+			{
+				"apiVersion": "nftables.guardianintelligence.org/v1alpha1",
+				"kind":       "NftablesFirewall",
+				"metadata": map[string]any{
+					"name": "nftables",
+				},
+				"spec": map[string]any{
+					"runtimeArtifact": "bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar",
+					"runtimeRoot":     "/opt/verself/nftables",
+					"configPath":      "/etc/nftables.conf",
+					"rulesDir":        "/etc/nftables.d",
+					"manageSystemd":   manageSystemd,
+					"systemd": map[string]any{
+						"serviceUnitPath":    "/etc/systemd/system/verself-nftables.service",
+						"firewallTargetPath": "/etc/systemd/system/verself-firewall.target",
+					},
+				},
+			},
+		},
+	}
+	body, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(graphPath, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := parseConfig([]string{
+		"--repo-root=" + dir,
+		"--resource-graph=" + graphPath,
+		"--resource-name=nftables",
+	})
+	if err != nil {
+		t.Fatalf("parseConfig: %v", err)
+	}
+	if cfg.runtimeArtifact != "bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar" {
+		t.Fatalf("runtimeArtifact = %q", cfg.runtimeArtifact)
+	}
+	if cfg.hostRuntimeRoot != "/opt/verself/nftables" || !cfg.manageSystemd {
+		t.Fatalf("unexpected runtime/systemd config: %#v", cfg)
+	}
+}
+
+func TestInstallRepoRuntimePublishesDurableCurrentSymlink(t *testing.T) {
+	repo := t.TempDir()
+	dest := t.TempDir()
+	artifact := filepath.Join(repo, "bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar")
+	if err := os.MkdirAll(filepath.Dir(artifact), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(artifact, runtimeTar(t), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{
+		repoRoot:        repo,
+		runtimeArtifact: "bazel-bin/src/infrastructure-components/nftables/nftables-runtime.tar",
+		destRoot:        dest,
+		hostRuntimeRoot: "/opt/verself/nftables",
+	}
+	if err := installRepoRuntime(&cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	current := filepath.Join(dest, "opt", "verself", "nftables", "current")
+	target, err := os.Readlink(current)
+	if err != nil {
+		t.Fatalf("current runtime is not a symlink: %v", err)
+	}
+	if filepath.IsAbs(target) {
+		t.Fatalf("current symlink should be relative inside staged roots: %s", target)
+	}
+	if _, err := os.Stat(filepath.Join(current, "bin", "nftables-apply")); err != nil {
+		t.Fatalf("durable runtime missing nftables-apply: %v", err)
+	}
+	if cfg.artifactRoot != current {
+		t.Fatalf("artifactRoot = %s, want %s", cfg.artifactRoot, current)
+	}
+	if cfg.nftBin != filepath.Join(current, "bin", "nft") {
+		t.Fatalf("nftBin = %s", cfg.nftBin)
+	}
+}
+
 func writeRuntimeArtifact(t *testing.T, artifact string) {
 	t.Helper()
 	mustWrite(t, filepath.Join(artifact, "etc", "nftables.conf"), managedHeader+"\ninclude \"/etc/nftables.d/*.nft\"\n")
@@ -152,6 +243,32 @@ func writeRuntimeArtifact(t *testing.T, artifact string) {
 	mustWrite(t, filepath.Join(artifact, "bin", "nftables-apply"), "#!/bin/sh\n")
 	mustWrite(t, filepath.Join(artifact, "bin", "nft"), "#!/bin/sh\n")
 	mustWrite(t, filepath.Join(artifact, "lib", "x86_64-linux-gnu", "libnftables.so.1"), "lib\n")
+}
+
+func runtimeTar(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	files := map[string]string{
+		"opt/verself/nftables/etc/nftables.conf":                     managedHeader + "\ninclude \"/etc/nftables.d/*.nft\"\n",
+		"opt/verself/nftables/etc/nftables.d/host-firewall.nft":      managedHeader + "\ntable inet verself_host {}\n",
+		"opt/verself/nftables/systemd/verself-firewall.target":       managedHeader + "\n[Unit]\nDescription=firewall\n",
+		"opt/verself/nftables/bin/nftables-apply":                    "#!/bin/sh\n",
+		"opt/verself/nftables/bin/nft":                               "#!/bin/sh\n",
+		"opt/verself/nftables/lib/x86_64-linux-gnu/libnftables.so.1": "lib\n",
+	}
+	for name, body := range files {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o755, Size: int64(len(body))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tw.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 func mustWrite(t *testing.T, path string, body string) {

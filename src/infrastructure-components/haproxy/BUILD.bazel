@@ -1,7 +1,6 @@
 # gazelle:prefix github.com/verself/infrastructure-components/haproxy
 
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 HAPROXY_RUNTIME_DEBS = [
     "@haproxy_tool_haproxy_deb//file",
@@ -15,6 +14,12 @@ HAPROXY_RUNTIME_DEBS = [
     "@haproxy_tool_libssl_awslc_deb//file",
     "@haproxy_tool_libstdcpp6_deb//file",
 ]
+
+filegroup(
+    name = "guardian_crd",
+    srcs = glob(["guardian/**/*.cue"]),
+    visibility = ["//visibility:public"],
+)
 
 genrule(
     name = "haproxy_bin",
@@ -100,77 +105,10 @@ tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = [
-        "//src/host:__pkg__",
-        "//src/infrastructure-components:__pkg__",
-    ],
-)
-
 go_test(
     name = "frontend_policy_test",
     srcs = ["frontend_policy_test.go"],
     data = [
         "nomad.hcl",
-        "templates/haproxy.cfg.j2",
-        "templates/nomad-upstreams.cfg.j2",
     ],
-)
-
-filegroup(
-    name = "public_route_declarations",
-    srcs = [
-        "//src/infrastructure-components/forgejo:deploy_declarations",
-        "//src/infrastructure-components/grafana:deploy_declarations",
-        "//src/infrastructure-components/pomerium:deploy_declarations",
-        "//src/infrastructure-components/stalwart:deploy_declarations",
-        "//src/infrastructure-components/verdaccio:deploy_declarations",
-        "//src/services/analytics-service:deploy_declarations",
-        "//src/services/billing-service:deploy_declarations",
-        "//src/services/deployment-service:deploy_declarations",
-        "//src/services/distribution-service:deploy_declarations",
-        "//src/services/email-service:deploy_declarations",
-        "//src/services/github-integration-service:deploy_declarations",
-        "//src/services/governance-service:deploy_declarations",
-        "//src/services/iam-service:deploy_declarations",
-        "//src/services/notifications-service:deploy_declarations",
-        "//src/services/profile-service:deploy_declarations",
-        "//src/services/projects-service:deploy_declarations",
-        "//src/services/sandbox-rental-service:deploy_declarations",
-        "//src/services/secrets-service:deploy_declarations",
-        "//src/services/source-code-hosting-service:deploy_declarations",
-        "//src/viteplus-monorepo/apps/company:deploy_declarations",
-        "//src/viteplus-monorepo/apps/verself-web:deploy_declarations",
-    ],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "haproxy-runtime",
-    },
-    component = "haproxy_upstreams",
-    deploy_phase = "platform",
-    digest_inputs = [
-        ":public_route_declarations",
-        ":role_sources",
-    ],
-    job_id = "haproxy-upstreams",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )
