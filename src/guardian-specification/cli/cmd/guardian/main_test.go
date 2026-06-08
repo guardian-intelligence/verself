@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -642,22 +643,46 @@ language: version: "v0.11.0"
 	if err := os.WriteFile(nomadRuntime, []byte("nomad runtime\n"), 0o644); err != nil {
 		t.Fatalf("write nomad runtime: %v", err)
 	}
-	uvxPath := filepath.Join(bazelOut, "src", "tools", "dev", "binaries", "uvx")
-	if err := os.MkdirAll(filepath.Dir(uvxPath), 0o755); err != nil {
-		t.Fatalf("mkdir uvx dir: %v", err)
+	// Hermetic ansible-core is a controller-side tar (python/bin interpreter +
+	// ansible-playbook + collections); fake it minimally and pack it as a tar the
+	// preflight extracts and invokes through the bundled interpreter.
+	ansibleStage := filepath.Join(dir, "ansible-stage")
+	ansibleBin := filepath.Join(ansibleStage, "python", "bin")
+	if err := os.MkdirAll(ansibleBin, 0o755); err != nil {
+		t.Fatalf("mkdir ansible bin: %v", err)
 	}
-	if err := os.WriteFile(uvxPath, []byte(`#!/bin/sh
+	if err := os.MkdirAll(filepath.Join(ansibleStage, "collections", "ansible_collections"), 0o755); err != nil {
+		t.Fatalf("mkdir ansible collections: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ansibleBin, "python3.13"), []byte("#!/bin/sh\nexec \"$@\"\n"), 0o755); err != nil {
+		t.Fatalf("write fake python: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ansibleBin, "ansible-playbook"), []byte(`#!/bin/sh
 set -eu
 found=0
 for arg in "$@"; do
-  if [ "$arg" = "ansible-playbook" ]; then
+  if [ "$arg" = "-i" ]; then
     found=1
   fi
 done
 test "$found" = 1
 printf 'ansible ran\n' > ansible-ran
 `), 0o755); err != nil {
-		t.Fatalf("write fake uvx: %v", err)
+		t.Fatalf("write fake ansible-playbook: %v", err)
+	}
+	ansibleRuntime := filepath.Join(bazelOut, "src", "guardian-specification", "ansible", "runtime", "ansible-runtime.tar")
+	if err := os.MkdirAll(filepath.Dir(ansibleRuntime), 0o755); err != nil {
+		t.Fatalf("mkdir ansible runtime dir: %v", err)
+	}
+	if out, err := exec.Command("tar", "-C", ansibleStage, "-cf", ansibleRuntime, ".").CombinedOutput(); err != nil {
+		t.Fatalf("tar ansible runtime: %v: %s", err, out)
+	}
+	podmanRuntime := filepath.Join(bazelOut, "src", "infrastructure-components", "podman", "podman-runtime.tar")
+	if err := os.MkdirAll(filepath.Dir(podmanRuntime), 0o755); err != nil {
+		t.Fatalf("mkdir podman runtime dir: %v", err)
+	}
+	if err := os.WriteFile(podmanRuntime, []byte("podman runtime\n"), 0o644); err != nil {
+		t.Fatalf("write podman runtime: %v", err)
 	}
 	rsyncPath := filepath.Join(bazelOut, "src", "guardian-specification", "tools", "rsync")
 	if err := os.MkdirAll(filepath.Dir(rsyncPath), 0o755); err != nil {
@@ -669,7 +694,8 @@ printf 'ansible ran\n' > ansible-ran
 	writeTestBuildEvents(t, dir, map[string]string{
 		openBaoRuntimeTargetPath: openBaoRuntime,
 		nomadRuntimeTargetPath:   nomadRuntime,
-		uvxTargetPath:            uvxPath,
+		podmanRuntimeTargetPath:  podmanRuntime,
+		ansibleRuntimeTargetPath: ansibleRuntime,
 		rsyncTargetPath:          rsyncPath,
 	})
 	if err := os.WriteFile(filepath.Join(dir, "preflight.yml"), []byte("---\n- hosts: all\n"), 0o644); err != nil {

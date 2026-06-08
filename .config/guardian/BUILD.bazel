@@ -1,0 +1,32 @@
+load("@bazel_lib//lib:write_source_files.bzl", "write_source_files")
+load("//src/guardian-specification/tools:catalog.bzl", "catalog_projection")
+
+# JSON projection of the single catalog source of truth (catalog.bzl), feeding
+# the CUE generator so the committed tools.cue is derived, never hand-authored.
+# The projection contains only [A-Za-z0-9/_-] so single-quoting it for the shell
+# is safe; this avoids a write_file/skylib dep on the root module graph.
+genrule(
+    name = "tools_catalog_json",
+    outs = ["tools.catalog.json"],
+    cmd = "printf '%s' '" + json.encode(catalog_projection()) + "' > $@",
+)
+
+genrule(
+    name = "tools_catalog_cue",
+    srcs = [":tools_catalog_json"],
+    outs = ["tools.generated.cue"],
+    cmd = "$(execpath //src/guardian-specification/cmd/gen-tools-catalog) -in $(location :tools_catalog_json) -out $@",
+    tools = ["//src/guardian-specification/cmd/gen-tools-catalog"],
+)
+
+# Staleness gate: `bazel test //.config/guardian:write_tools_catalog_tests` fails
+# when the committed tools.cue diverges from the generated catalog; `bazel run
+# //.config/guardian:write_tools_catalog` rewrites it in place. tools.cue is thus
+# provably a projection of the Bazel pin graph.
+write_source_files(
+    name = "write_tools_catalog",
+    files = {
+        "tools.cue": ":tools_catalog_cue",
+    },
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,279 @@
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+# Pinned podman runtime closure (Ubuntu 24.04 noble), resolved against a clean
+# base so disaster recovery works on a minimal host. Extracted into a self-
+# contained prefix by //src/infrastructure-components/podman:runtime_artifact;
+# never apt-installed from the archive at preflight time.
+
+http_file(
+    name = "podman_deb_adduser",
+    downloaded_file_path = "adduser_3.137ubuntu1_all.deb",
+    sha256 = "542aff2395eb912a56833e11a78076342779689d8fede7adcf08d1d6b0d0cd8b",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/a/adduser/adduser_3.137ubuntu1_all.deb",
+)
+
+http_file(
+    name = "podman_deb_conmon",
+    downloaded_file_path = "conmon_2.1.10+ds1-1build2_amd64.deb",
+    sha256 = "4bf1eebadfd32246d01e35ccd96d4c73af5103dfa4384a851b7b9b25401802db",
+    url = "http://archive.ubuntu.com/ubuntu/pool/universe/c/conmon/conmon_2.1.10%2bds1-1build2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_containernetworking_plugins",
+    downloaded_file_path = "containernetworking-plugins_1.1.1+ds1-3ubuntu0.24.04.3_amd64.deb",
+    sha256 = "0ffc31ebfa430615d2e35ad7cea6b3717faa8fdbc02debd773625cad83fcdd65",
+    url = "http://archive.ubuntu.com/ubuntu/pool/universe/g/golang-github-containernetworking-plugins/containernetworking-plugins_1.1.1%2bds1-3ubuntu0.24.04.3_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_crun",
+    downloaded_file_path = "crun_1.14.1-1_amd64.deb",
+    sha256 = "2263368dabe3d126189dffd9da7cc31159d8766c9a9a2e3ca8231ad3fcc11109",
+    url = "http://archive.ubuntu.com/ubuntu/pool/universe/c/crun/crun_1.14.1-1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_dirmngr",
+    downloaded_file_path = "dirmngr_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "4155be4f35ffc177ddf0282a635ebdbfd555ebb0dd3b6d8e7fd736e1fcedec0b",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/dirmngr_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_gnupg",
+    downloaded_file_path = "gnupg_2.4.4-2ubuntu17.4_all.deb",
+    sha256 = "24fa610ce3b7512d58def5bf6699c05b09fbd235b9432245c000036d70eebc97",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/gnupg_2.4.4-2ubuntu17.4_all.deb",
+)
+
+http_file(
+    name = "podman_deb_gnupg_utils",
+    downloaded_file_path = "gnupg-utils_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "a66520564376ebbe108603f0eaa3170962d53b201a4185b4f6ab1dfd1b34d655",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/gnupg-utils_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_golang_github_containers_common",
+    downloaded_file_path = "golang-github-containers-common_0.57.4+ds1-2ubuntu0.2_all.deb",
+    sha256 = "dae82b120f8a1b429c0a63a2ccd2ff3c91563f97e2188b1fbaf78ba76f7fb89c",
+    url = "http://archive.ubuntu.com/ubuntu/pool/universe/g/golang-github-containers-common/golang-github-containers-common_0.57.4%2bds1-2ubuntu0.2_all.deb",
+)
+
+http_file(
+    name = "podman_deb_golang_github_containers_image",
+    downloaded_file_path = "golang-github-containers-image_5.29.2-2_all.deb",
+    sha256 = "2059cd3836a417d2e770b810c507b9d29aa4e32759650138c6c8704c24749772",
+    url = "http://archive.ubuntu.com/ubuntu/pool/universe/g/golang-github-containers-image/golang-github-containers-image_5.29.2-2_all.deb",
+)
+
+http_file(
+    name = "podman_deb_gpg",
+    downloaded_file_path = "gpg_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "4c625bdbe37c734e744ceba2f2db18b197683de6d00b42e197b977b9a3caa215",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/gpg_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_gpg_agent",
+    downloaded_file_path = "gpg-agent_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "98a70e750ed790020a5c7066406c0e8d15646e262185ecd9c2f484dc95e9c860",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/gpg-agent_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_gpgconf",
+    downloaded_file_path = "gpgconf_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "7f7cc936ad298e70f6f406ff7e9d9c54ea4f8f9a850fe71b6257a79d97b67724",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/gpgconf_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_gpgsm",
+    downloaded_file_path = "gpgsm_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "47cdea6a8d2c35aea4ceb62e54e981b92309bd68fe517650637f68a634a2970f",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/gpgsm_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_iptables",
+    downloaded_file_path = "iptables_1.8.10-3ubuntu2_amd64.deb",
+    sha256 = "d341e8ffc42ca035f5aa0fd9a798c8d2b2edb019225dc11f4dac16edf9c57840",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/i/iptables/iptables_1.8.10-3ubuntu2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_keyboxd",
+    downloaded_file_path = "keyboxd_2.4.4-2ubuntu17.4_amd64.deb",
+    sha256 = "c97eb18b05c7a1d4f30efefc1d9896f06cf2632d62ade8bf750288fd48ad53bf",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gnupg2/keyboxd_2.4.4-2ubuntu17.4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libdevmapper1_02_1",
+    downloaded_file_path = "libdevmapper1.02.1_1.02.185-3ubuntu3.2_amd64.deb",
+    sha256 = "0d43a02b9030a50edbc49c9580f88f01eef2b043baad1c6200672c39643c0efe",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/l/lvm2/libdevmapper1.02.1_1.02.185-3ubuntu3.2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libglib2_0_0t64",
+    downloaded_file_path = "libglib2.0-0t64_2.80.0-6ubuntu3.8_amd64.deb",
+    sha256 = "ca4eda0e01c76ba2e5e501e77decce53d98a641234b517eb98fc5d74980f913f",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/glib2.0/libglib2.0-0t64_2.80.0-6ubuntu3.8_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libgpgme11t64",
+    downloaded_file_path = "libgpgme11t64_1.18.0-4.1ubuntu4_amd64.deb",
+    sha256 = "b3640068e8af3becf16faec886ff139880736ed23a7fc605c1f0cece405a5606",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/g/gpgme1.0/libgpgme11t64_1.18.0-4.1ubuntu4_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libip4tc2",
+    downloaded_file_path = "libip4tc2_1.8.10-3ubuntu2_amd64.deb",
+    sha256 = "eb381f8ff0469534df3f1b146c3eb8baa6e36f8cfcdf2e3e039398322930d0a4",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/i/iptables/libip4tc2_1.8.10-3ubuntu2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libip6tc2",
+    downloaded_file_path = "libip6tc2_1.8.10-3ubuntu2_amd64.deb",
+    sha256 = "b98b88eb6aa14a902ea1aebc3b12ddd140572545ae1fc6428cb0868c31671d05",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/i/iptables/libip6tc2_1.8.10-3ubuntu2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libksba8",
+    downloaded_file_path = "libksba8_1.6.6-1build1_amd64.deb",
+    sha256 = "7b0e1f2c2c5ee7b3ed1c1558c6338c6cdd77d27280020abc3e1f3159cf564106",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/libk/libksba/libksba8_1.6.6-1build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libldap2",
+    downloaded_file_path = "libldap2_2.6.10+dfsg-0ubuntu0.24.04.1_amd64.deb",
+    sha256 = "7f3f8e565401256f21d5aa562c9f92dbb63537b73aaea6283e4db5264f1598f4",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/o/openldap/libldap2_2.6.10%2bdfsg-0ubuntu0.24.04.1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libmnl0",
+    downloaded_file_path = "libmnl0_1.0.5-2build1_amd64.deb",
+    sha256 = "5170658bf0eaf54a8c7d53061ca6b47a6cf33a83543a75fa521de7046cb7197a",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/libm/libmnl/libmnl0_1.0.5-2build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libnetfilter_conntrack3",
+    downloaded_file_path = "libnetfilter-conntrack3_1.0.9-6build1_amd64.deb",
+    sha256 = "6d32a4c4618eb7d6c0d989591d28637a9acdfa86dfe22e42e9ac9cc25d882a97",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/libn/libnetfilter-conntrack/libnetfilter-conntrack3_1.0.9-6build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libnfnetlink0",
+    downloaded_file_path = "libnfnetlink0_1.0.2-2build1_amd64.deb",
+    sha256 = "f557a287af2ca00df5dbf632c6b77d77479139ffb51c83e3de9766eb609b5d63",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/libn/libnfnetlink/libnfnetlink0_1.0.2-2build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libnftnl11",
+    downloaded_file_path = "libnftnl11_1.2.6-2build1_amd64.deb",
+    sha256 = "e5bde5c9cbb95082700011f0b7ef2c0a41900b0a9fd7434f6e90448e2a7b4e50",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/libn/libnftnl/libnftnl11_1.2.6-2build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libpopt0",
+    downloaded_file_path = "libpopt0_1.19+dfsg-1build1_amd64.deb",
+    sha256 = "b3e7ea5192e57c847b77c527d51f5b8d4bce47988d2ba326a5c3193f6d173ded",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/p/popt/libpopt0_1.19%2bdfsg-1build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libreadline8t64",
+    downloaded_file_path = "libreadline8t64_8.2-4build1_amd64.deb",
+    sha256 = "563977a16df03b611f5239cc1e9a0426e86479fcc616b5c9e200ea32063119e5",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/r/readline/libreadline8t64_8.2-4build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libsasl2_2",
+    downloaded_file_path = "libsasl2-2_2.1.28+dfsg1-5ubuntu3.1_amd64.deb",
+    sha256 = "eda097f98dcb3a08b9ce157d6191d140e4885c1cba47b683c94b8ca45e88f458",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/c/cyrus-sasl2/libsasl2-2_2.1.28%2bdfsg1-5ubuntu3.1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libsasl2_modules_db",
+    downloaded_file_path = "libsasl2-modules-db_2.1.28+dfsg1-5ubuntu3.1_amd64.deb",
+    sha256 = "1f13548b1774cd9c70c50b8c3267204a101334a4d2f979338896ba5a4c6f81b8",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/c/cyrus-sasl2/libsasl2-modules-db_2.1.28%2bdfsg1-5ubuntu3.1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libsqlite3_0",
+    downloaded_file_path = "libsqlite3-0_3.45.1-1ubuntu2.5_amd64.deb",
+    sha256 = "9e4569a5b992e70899527023ec1871b5abe92afb41c9eb53b38c2ccae056f6db",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/s/sqlite3/libsqlite3-0_3.45.1-1ubuntu2.5_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libsubid4",
+    downloaded_file_path = "libsubid4_4.13+dfsg1-4ubuntu3.2_amd64.deb",
+    sha256 = "ba97fd28c53560a8d2a2261e8f75a7ab4112535b12f9fe1d50970c30051da0da",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/s/shadow/libsubid4_4.13%2bdfsg1-4ubuntu3.2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libxtables12",
+    downloaded_file_path = "libxtables12_1.8.10-3ubuntu2_amd64.deb",
+    sha256 = "c94063499d1b0b336f39607107efb7de95d52a5d4e7e6a9368a5f7308f05b714",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/i/iptables/libxtables12_1.8.10-3ubuntu2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_libyajl2",
+    downloaded_file_path = "libyajl2_2.1.0-5build1_amd64.deb",
+    sha256 = "faa268c632f7d2931509cf7b8b7ddd810aa775adc26ead88ea158e2ede5208f8",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/y/yajl/libyajl2_2.1.0-5build1_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_netbase",
+    downloaded_file_path = "netbase_6.4_all.deb",
+    sha256 = "8cdbc9c3dca01e660759bf9d840f72e45ac72faf5d19ca1faecacaf6a60c1a87",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/n/netbase/netbase_6.4_all.deb",
+)
+
+http_file(
+    name = "podman_deb_pinentry_curses",
+    downloaded_file_path = "pinentry-curses_1.2.1-3ubuntu5_amd64.deb",
+    sha256 = "d3df9109d1e8e4ca05630f3a6fb7d2231f71d97fc4205d0681e1c421cc77ce41",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/p/pinentry/pinentry-curses_1.2.1-3ubuntu5_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_podman",
+    downloaded_file_path = "podman_4.9.3+ds1-1ubuntu0.2_amd64.deb",
+    sha256 = "e5c1c37e387ed14c352a744a75fbb79fb2f82573ca7bf36886e3b7333fc9ef1a",
+    url = "http://archive.ubuntu.com/ubuntu/pool/universe/libp/libpod/podman_4.9.3%2bds1-1ubuntu0.2_amd64.deb",
+)
+
+http_file(
+    name = "podman_deb_readline_common",
+    downloaded_file_path = "readline-common_8.2-4build1_all.deb",
+    sha256 = "879bfd7f8a9bc4c0f7cdc777cdd8bc6de5f8c4a2ac80c060322a1b22f13504bb",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/r/readline/readline-common_8.2-4build1_all.deb",
+)
+
+http_file(
+    name = "podman_deb_rsync",
+    downloaded_file_path = "rsync_3.2.7-1ubuntu1.4_amd64.deb",
+    sha256 = "a2c92fc69ef4f646f2b267dacb456dbfec022bd32d5394e819c147548059627f",
+    url = "http://archive.ubuntu.com/ubuntu/pool/main/r/rsync/rsync_3.2.7-1ubuntu1.4_amd64.deb",
+)

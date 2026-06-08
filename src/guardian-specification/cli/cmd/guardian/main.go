@@ -43,8 +43,15 @@ const (
 
 	openBaoRuntimeTargetPath = "bazel-bin/src/infrastructure-components/openbao/openbao-runtime.tar"
 	nomadRuntimeTargetPath   = "bazel-bin/src/infrastructure-components/nomad/nomad-runtime.tar"
-	uvxTargetPath            = "bazel-bin/src/tools/dev/binaries/uvx"
+	podmanRuntimeTargetPath  = "bazel-bin/src/infrastructure-components/podman/podman-runtime.tar"
+	ansibleRuntimeTargetPath = "bazel-bin/src/guardian-specification/ansible/runtime/ansible-runtime.tar"
 	rsyncTargetPath          = "bazel-bin/src/guardian-specification/tools/rsync"
+
+	// Host prerequisites installed from pinned artifacts instead of the Ubuntu
+	// archive: rsync is seeded over ssh before the first rsync upload, and the
+	// podman runtime closure is extracted into a self-contained prefix.
+	remoteRsyncPath = "/opt/verself/bin/rsync"
+	podmanPrefix    = "/opt/verself/podman"
 )
 
 type guardianDocument struct {
@@ -977,13 +984,12 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 		result.Message = err.Error()
 		return result, err
 	}
-	uvxArtifact, err := requireRemoteArtifact(artifactsByTargetPath, uvxTargetPath)
+	ansibleArtifact, err := requireRemoteArtifact(artifactsByTargetPath, ansibleRuntimeTargetPath)
 	if err != nil {
 		result.Reason = "AnsibleRunnerMissing"
 		result.Message = err.Error()
 		return result, err
 	}
-	uvxPath := uvxArtifact.SourcePath
 	target, err := parseAnsibleSSHTarget(doc.Compiled.SubstrateSpec.Remote.SSH)
 	if err != nil {
 		result.Reason = "SubstrateSSHInvalid"
@@ -997,6 +1003,23 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 		return result, err
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
+	// The hermetic ansible-core runtime runs on the controller (it connects to the
+	// target over SSH), so it is extracted locally — not uploaded — and invoked
+	// through its bundled interpreter so the build-path shebang is bypassed.
+	ansiblePrefix := filepath.Join(tmpDir, "ansible")
+	if err := os.MkdirAll(ansiblePrefix, 0o755); err != nil {
+		result.Reason = "AnsibleRuntimeExtractFailed"
+		result.Message = err.Error()
+		return result, err
+	}
+	if out, err := exec.Command("tar", "-C", ansiblePrefix, "-xf", ansibleArtifact.SourcePath).CombinedOutput(); err != nil {
+		result.Reason = "AnsibleRuntimeExtractFailed"
+		result.Message = fmt.Sprintf("extract ansible runtime: %v: %s", err, out)
+		return result, err
+	}
+	ansiblePython := filepath.Join(ansiblePrefix, "python", "bin", "python3.13")
+	ansiblePlaybook := filepath.Join(ansiblePrefix, "python", "bin", "ansible-playbook")
+	ansibleCollections := filepath.Join(ansiblePrefix, "collections")
 	inventoryPath := filepath.Join(tmpDir, "inventory.ini")
 	if err := os.WriteFile(inventoryPath, []byte(ansibleInventory(doc.Compiled.Substrate.Metadata.Name, target)), 0o600); err != nil {
 		result.Reason = "InventoryWriteFailed"
@@ -1023,8 +1046,7 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 		return result, err
 	}
 	argv := []string{
-		"--from", "ansible-core==2.20.3",
-		"ansible-playbook",
+		ansiblePlaybook,
 		"-i", inventoryPath,
 		"--extra-vars", "@" + varsPath,
 		playbookPath,
@@ -1032,9 +1054,13 @@ func runPreflightPlaybook(doc guardianDocument, opts commandOptions, resourceDig
 	emitter.emit("preflight.ansible", "start", preflight.Ansible.Playbook, "running preflight playbook")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, uvxPath, argv...)
+	cmd := exec.CommandContext(ctx, ansiblePython, argv...)
 	cmd.Dir = opts.WorkspaceRoot
-	cmd.Env = append(os.Environ(), "ANSIBLE_RETRY_FILES_ENABLED=False")
+	cmd.Env = append(os.Environ(),
+		"ANSIBLE_RETRY_FILES_ENABLED=False",
+		"ANSIBLE_COLLECTIONS_PATH="+ansibleCollections,
+		"ANSIBLE_PYTHON_INTERPRETER="+ansiblePython,
+	)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -1194,6 +1220,10 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 	if err != nil {
 		return nil, err
 	}
+	podmanRuntime, err := requireRemoteArtifact(artifactsByTargetPath, podmanRuntimeTargetPath)
+	if err != nil {
+		return nil, err
+	}
 	nomadInputs, err := remoteNomadInputs(doc.Compiled.FlySpec.Nomad.Jobs, remote.RepoRoot, artifactsByTargetPath)
 	if err != nil {
 		return nil, err
@@ -1213,6 +1243,9 @@ func ansibleVars(doc guardianDocument, opts commandOptions, resourceDigest strin
 		"guardian_artifacts":              artifacts,
 		"guardian_openbao_runtime":        openBaoRuntime,
 		"guardian_nomad_runtime":          nomadRuntime,
+		"guardian_podman_runtime":         podmanRuntime,
+		"guardian_podman_prefix":          podmanPrefix,
+		"guardian_remote_rsync":           remoteRsyncPath,
 		"guardian_nomad_jobs":             nomadInputs,
 		"guardian_nomad_common_var_args":  nomadCommonVarArgs(remote.RepoRoot, doc.Compiled.Fly.Metadata.Name),
 		"guardian_remote_repo_root":       remote.RepoRoot,
@@ -1232,10 +1265,10 @@ func remoteArtifactsFromBuildEvents(workspaceRoot string, repoRoot string) ([]re
 	for _, output := range outputs {
 		targetPath := filepath.ToSlash(strings.TrimSpace(output.TargetPath))
 		if targetPath == "" {
-			return nil, nil, errors.New("Bazel build output omitted target path")
+			return nil, nil, errors.New("bazel build output omitted target path")
 		}
 		if _, exists := byTargetPath[targetPath]; exists {
-			return nil, nil, fmt.Errorf("Bazel build events contain duplicate output %s", targetPath)
+			return nil, nil, fmt.Errorf("bazel build events contain duplicate output %s", targetPath)
 		}
 		digest, err := normalizeSHA256Digest(output.Digest)
 		if err != nil {
@@ -1250,7 +1283,7 @@ func remoteArtifactsFromBuildEvents(workspaceRoot string, repoRoot string) ([]re
 			return nil, nil, fmt.Errorf("stat Bazel output %s: %w", targetPath, err)
 		}
 		if !stat.Mode().IsRegular() {
-			return nil, nil, fmt.Errorf("Bazel output %s must be a regular file for content-addressed upload", targetPath)
+			return nil, nil, fmt.Errorf("bazel output %s must be a regular file for content-addressed upload", targetPath)
 		}
 		artifact := remoteArtifact{
 			TargetPath: targetPath,
@@ -1271,11 +1304,11 @@ func normalizeSHA256Digest(raw string) (string, error) {
 	digest := strings.TrimSpace(raw)
 	digest = strings.TrimPrefix(digest, "sha256:")
 	if len(digest) != 64 {
-		return "", fmt.Errorf("Bazel output digest %q is not a sha256 digest", raw)
+		return "", fmt.Errorf("bazel output digest %q is not a sha256 digest", raw)
 	}
 	for _, r := range digest {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')) {
-			return "", fmt.Errorf("Bazel output digest %q is not lowercase hex", raw)
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return "", fmt.Errorf("bazel output digest %q is not lowercase hex", raw)
 		}
 	}
 	return digest, nil
@@ -1396,7 +1429,7 @@ func preparePreflightWorkspace(workspaceRoot string) error {
 	if err != nil {
 		return err
 	}
-	for _, targetPath := range []string{openBaoRuntimeTargetPath, nomadRuntimeTargetPath, uvxTargetPath, rsyncTargetPath} {
+	for _, targetPath := range []string{openBaoRuntimeTargetPath, nomadRuntimeTargetPath, podmanRuntimeTargetPath, ansibleRuntimeTargetPath, rsyncTargetPath} {
 		if _, err := requireRemoteArtifact(artifactsByTargetPath, targetPath); err != nil {
 			return err
 		}
@@ -1478,7 +1511,7 @@ func readBazelBuildOutputs(bepPath string) ([]bazelBuildOutput, error) {
 		}
 	}
 	if len(completedSets) == 0 {
-		return nil, errors.New("Bazel build did not report default output files")
+		return nil, errors.New("bazel build did not report default output files")
 	}
 	seenFiles := map[string]bool{}
 	seenSets := map[string]bool{}
@@ -1508,7 +1541,7 @@ func readBazelBuildOutputs(bepPath string) ([]bazelBuildOutput, error) {
 		return outputs[i].TargetPath < outputs[j].TargetPath
 	})
 	if len(outputs) == 0 {
-		return nil, errors.New("Bazel build reported no output files")
+		return nil, errors.New("bazel build reported no output files")
 	}
 	return outputs, nil
 }
@@ -1520,7 +1553,7 @@ func flattenBazelFileSet(setID string, namedSets map[string]bazelNamedSetOfFiles
 	seen[setID] = true
 	set, ok := namedSets[setID]
 	if !ok {
-		return nil, fmt.Errorf("Bazel build referenced missing file set %s", setID)
+		return nil, fmt.Errorf("bazel build referenced missing file set %s", setID)
 	}
 	files := append([]bazelOutputFile(nil), set.Files...)
 	for _, child := range set.FileSets {
@@ -1537,7 +1570,7 @@ func bazelOutputTargetPath(output bazelOutputFile) (string, error) {
 	nameParts := strings.Split(output.Name, "/")
 	for _, part := range append(append([]string(nil), output.PathPrefix...), nameParts...) {
 		if strings.TrimSpace(part) == "" || part == "." || part == ".." || strings.Contains(part, string(filepath.Separator)) || strings.Contains(part, "\x00") {
-			return "", fmt.Errorf("Bazel output has invalid path segment %q", part)
+			return "", fmt.Errorf("bazel output has invalid path segment %q", part)
 		}
 	}
 	if len(output.PathPrefix) >= 3 && output.PathPrefix[0] == "bazel-out" && output.PathPrefix[len(output.PathPrefix)-1] == "bin" {
@@ -1557,7 +1590,7 @@ func fileURIPath(uri string) (string, error) {
 		return "", fmt.Errorf("unsupported Bazel output URI scheme %q", parsed.Scheme)
 	}
 	if parsed.Path == "" {
-		return "", fmt.Errorf("Bazel output URI %q has no path", uri)
+		return "", fmt.Errorf("bazel output URI %q has no path", uri)
 	}
 	return parsed.Path, nil
 }

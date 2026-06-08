@@ -2,4 +2,11 @@
 
 load("//src/tools/build:go_module_checks.bzl", "go_module_checks")
 
+# The stage-zero bootstrap pivot. Exported so the bazel-pin consistency test can
+# assert its hand-mirrored digest matches the canonical Bazel pin.
+exports_files([
+    "bootstrap/bootstrap-linux-amd64",
+    "bootstrap/bootstrap-darwin-arm64",
+])
+
 go_module_checks()

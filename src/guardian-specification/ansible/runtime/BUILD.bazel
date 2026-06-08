@@ -1,0 +1,100 @@
+# Offline ansible-core runtime for `guardian preflight`.
+#
+# Preflight must run `ansible-playbook` with no PyPI access. This target seals a
+# self-contained, relocatable prefix into a single tar:
+#
+#   python/bin/python3.13            relocatable CPython 3.13 (rules_python standalone build)
+#   python/.../site-packages/        ansible-core 2.20.3 installed directly (hash-pinned lock)
+#   python/bin/ansible-playbook      console scripts (run via the interpreter, not the shebang)
+#   collections/ansible_collections/ the pinned Galaxy collections, installed offline
+#
+# ansible-core is installed straight into the standalone interpreter rather than a
+# venv: the standalone CPython locates its stdlib and site-packages from the
+# executable's own location, so the extracted prefix runs from any path with no
+# host Python and no network. The console-script shebangs hold the build path, so
+# preflight invokes them through the interpreter:
+#
+#   <prefix>/python/bin/python3.13 <prefix>/python/bin/ansible-playbook ...
+#   ANSIBLE_COLLECTIONS_PATH=<prefix>/collections
+#
+# Wheels are fetched at build time but every wheel is verified against
+# requirements_lock.txt (--require-hashes); nothing unpinned is ever installed.
+
+exports_files([
+    "requirements.in",
+    "requirements_lock.txt",
+])
+
+# Builds the sealed prefix as a deterministic tar. genrule (not py_binary) because
+# the output is an OS-level relocatable tree consumed by the remote host shell,
+# not a Bazel-internal runfiles graph. The tar IS the runtime artifact: preflight
+# unarchives it directly into a per-digest dir (python/, collections/ at the top
+# level), mirroring how the nomad runtime tar populates /opt/verself.
+genrule(
+    name = "runtime_artifact",
+    srcs = [
+        "requirements_lock.txt",
+        "@dev_tool_ansible_collection_ansible_posix//file",
+        "@dev_tool_ansible_collection_community_general//file",
+        "@dev_tool_ansible_collection_community_postgresql//file",
+        "@python_3_13//:files",
+    ],
+    outs = ["ansible-runtime.tar"],
+    cmd = """
+set -euo pipefail
+uv="$$(realpath $(location //src/tools/dev/binaries:uv))"
+lock="$$(realpath $(location requirements_lock.txt))"
+posix="$$(realpath $(location @dev_tool_ansible_collection_ansible_posix//file))"
+general="$$(realpath $(location @dev_tool_ansible_collection_community_general//file))"
+postgresql="$$(realpath $(location @dev_tool_ansible_collection_community_postgresql//file))"
+
+# @python_3_13//:files is the standalone CPython distribution root. Derive its
+# top directory from any one of its files.
+pyfile="$$(echo "$(locations @python_3_13//:files)" | tr ' ' '\\n' | grep '/bin/python3$$' | head -1)"
+pyroot="$$(cd "$$(dirname "$$pyfile")/.." && pwd)"
+
+work="$$(mktemp -d)"
+trap 'rm -rf "$$work"' EXIT
+prefix="$$work/prefix"
+mkdir -p "$$prefix"
+
+# Bundle a writable copy of the standalone interpreter so the artifact carries
+# its own Python with no host dependency. Bazel stages the distribution's files
+# as symlinks into the output base (some absolute), so dereference (-L) to embed
+# real file contents; the shipped tree must not point back into the build cache.
+cp -aL "$$pyroot" "$$prefix/python"
+chmod -R u+w "$$prefix/python"
+# Re-establish the relative interpreter aliases that -L flattened into copies.
+real_py="$$(cd "$$prefix/python/bin" && ls python3.* | grep -E 'python3\\.[0-9]+$$' | head -1)"
+ln -sfn "$$real_py" "$$prefix/python/bin/python3"
+ln -sfn "$$real_py" "$$prefix/python/bin/python"
+
+export HOME="$$work/home"
+export UV_CACHE_DIR="$$work/uv-cache"
+export UV_PYTHON_DOWNLOADS=never
+mkdir -p "$$HOME" "$$UV_CACHE_DIR"
+
+# Install ansible-core straight into the bundled interpreter from the hash-pinned
+# lock. --require-hashes rejects anything not present in the lock.
+"$$uv" pip install \
+  --python "$$prefix/python/bin/$$real_py" \
+  --require-hashes \
+  --no-managed-python \
+  -r "$$lock" >/dev/null
+
+# Install the pinned collections offline into the standard ansible_collections
+# layout. --offline forbids any Galaxy network access.
+mkdir -p "$$prefix/collections"
+"$$prefix/python/bin/$$real_py" "$$prefix/python/bin/ansible-galaxy" collection install \
+  "$$posix" "$$general" "$$postgresql" \
+  --offline \
+  --force \
+  -p "$$prefix/collections" >/dev/null
+
+# Deterministic tar: sorted entries, fixed metadata.
+tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
+  -C "$$prefix" -cf "$@" python collections
+""",
+    tools = ["//src/tools/dev/binaries:uv"],
+    visibility = ["//visibility:public"],
+)
