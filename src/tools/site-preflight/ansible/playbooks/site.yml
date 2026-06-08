@@ -56,6 +56,29 @@
         - spire
         - identity
 
+- name: "HAProxy edge bootstrap"
+  hosts: infra
+  become: true
+  gather_facts: false
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  tags:
+    - bootstrap
+    - edge
+    - haproxy
+  pre_tasks:
+    - name: Assert HAProxy host artifact input
+      ansible.builtin.assert:
+        that:
+          - haproxy_host_install_artifact is defined
+          - haproxy_host_install_artifact | length > 0
+        fail_msg: "site.yml requires haproxy_host_install_artifact from Bazel."
+  roles:
+    - role: haproxy
+      tags:
+        - edge
+        - haproxy
+
 - name: "Nomad bootstrap"
   hosts: infra
   become: true

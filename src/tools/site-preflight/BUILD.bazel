@@ -38,6 +38,7 @@ filegroup(
         ],
         allow_empty = False,
     ) + [
+        "//src/infrastructure-components/haproxy:role_sources",
         "//src/infrastructure-components/nomad:role_sources",
         "//src/infrastructure-components/spire:registration_sources",
         "//src/infrastructure-components/spire:role_sources",
@@ -231,7 +232,7 @@ tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_ansible_posix//file
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_general//file)" -C "$$collections_tmp/ansible_collections/community/general"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$collections_tmp/ansible_collections/community/postgresql"
 cd src/tools/site-preflight/ansible
-"$$execroot/$(execpath :ansible_lint_bin)" playbooks roles ../../../infrastructure-components/nomad ../../../infrastructure-components/spire ../../../infrastructure-components/spire/ansible
+"$$execroot/$(execpath :ansible_lint_bin)" playbooks roles ../../../infrastructure-components/haproxy ../../../infrastructure-components/nomad ../../../infrastructure-components/spire ../../../infrastructure-components/spire/ansible
 touch "$$out"
 """,
     tags = [
