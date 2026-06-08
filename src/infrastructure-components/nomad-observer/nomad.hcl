@@ -30,8 +30,9 @@ job "nomad-observer" {
         NOMAD_NAMESPACE = "default"
         NOMAD_OBSERVER_CAPTURE_WORKERS = "4"
         NOMAD_OBSERVER_CAPTURE_QUEUE_SIZE = "128"
-        NOMAD_OBSERVER_STDERR_TAIL_BYTES = "65536"
-        NOMAD_OBSERVER_STDOUT_TAIL_BYTES = "32768"
+        # Log capture uses Nomad streaming endpoints; keep it manual until the reader is bounded.
+        NOMAD_OBSERVER_STDERR_TAIL_BYTES = "0"
+        NOMAD_OBSERVER_STDOUT_TAIL_BYTES = "0"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_SERVICE_NAME = "nomad-observer"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
