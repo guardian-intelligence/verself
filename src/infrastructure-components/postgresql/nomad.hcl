@@ -288,6 +288,7 @@ maintenance_work_mem = 64MB
 effective_cache_size = 512MB
 wal_level = logical
 track_commit_timestamp = on
+dynamic_shared_memory_type = sysv
 max_wal_size = 1GB
 min_wal_size = 80MB
 unix_socket_directories = '{socket_dir}'

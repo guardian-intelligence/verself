@@ -276,10 +276,26 @@
         - podman.socket
       failed_when: false
 
+    - name: Unmount stale podman storage mounts
+      ansible.builtin.shell: |
+        set -eu
+        for root in /var/lib/containers/storage /run/containers/storage; do
+          [ -e "$root" ] || continue
+          findmnt -Rnr -o TARGET --target "$root" 2>/dev/null | sort -r | while IFS= read -r target; do
+            case "$target" in
+              "$root"|"$root"/*) umount -l "$target" 2>/dev/null || true ;;
+            esac
+          done
+        done
+      changed_when: false
+
     - name: Clear stale podman storage for a clean reconverge
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
+      ansible.builtin.command:
+        argv:
+          - rm
+          - -rf
+          - --one-file-system
+          - "{{ item }}"
       loop:
         - /var/lib/containers/storage
         - /run/containers/storage
