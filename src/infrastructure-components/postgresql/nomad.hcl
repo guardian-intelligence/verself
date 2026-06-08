@@ -38,6 +38,9 @@ install -d -o postgres -g postgres -m 0755 /var/run/postgresql
 if [ -e /var/lib/postgresql/16/verself/PG_VERSION ] && [ "$(stat -c '%U:%G' /var/lib/postgresql/16/verself/PG_VERSION)" != "postgres:postgres" ]; then
   chown -R postgres:postgres /var/lib/postgresql/16/verself
 fi
+if { [ -S /var/run/postgresql/.s.PGSQL.5432 ] || [ -e /var/run/postgresql/.s.PGSQL.5432.lock ]; } && ! ss -H -ltn sport = :5432 | grep -q .; then
+  rm -f /var/run/postgresql/.s.PGSQL.5432 /var/run/postgresql/.s.PGSQL.5432.lock
+fi
 
 cat >/etc/postgresql/verself/postgresql.conf <<PGCONF
 listen_addresses = '127.0.0.1'
