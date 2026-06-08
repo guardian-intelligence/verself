@@ -327,15 +327,15 @@ resources: [
 		metadata: name: "postgresql"
 		spec: {
 			dataDir:         "/var/lib/postgresql/16/verself"
-			configDir:       "/etc/postgresql/verself"
-			logDir:          "/var/log/postgresql"
+			configDir:       "/alloc/config"
+			logDir:          "/alloc/log/postgresql"
 			socketDir:       "/var/run/postgresql"
-			reportPath:      "/run/verself/recovery/postgresql/report.json"
+			reportPath:      "/alloc/recovery/report.json"
 			backup: {
 				stanza:                        "gamma"
-				configPath:                    "/run/verself/recovery/postgresql/pgbackrest.conf"
-				spoolDir:                      "/var/spool/pgbackrest"
-				logDir:                        "/var/log/pgbackrest"
+				configPath:                    "/alloc/recovery/pgbackrest.conf"
+				spoolDir:                      "/alloc/spool/pgbackrest"
+				logDir:                        "/alloc/log/pgbackrest"
 				archiveTimeout:                "60s"
 				processMax:                    2
 				retentionFull:                 2

@@ -44,8 +44,10 @@ job "postgresql" {
     count = 1
 
     reschedule {
-      attempts  = 0
-      unlimited = false
+      delay          = "15s"
+      delay_function = "exponential"
+      max_delay      = "5m"
+      unlimited      = true
     }
 
     network {
@@ -57,12 +59,48 @@ job "postgresql" {
       }
     }
 
+    # The podman driver does not create bind-mount sources (unlike `docker -v`);
+    # a missing host path fails container creation with `statfs: no such file or
+    # directory`. /var/run/postgresql is tmpfs, wiped every reboot, so this runs
+    # per-alloc, not once in preflight. setup chowns/chmods these in-container,
+    # so creating both at 0755 here is sufficient.
+    task "provision-host-dirs" {
+      driver = "raw_exec"
+      user   = "root"
+
+      lifecycle {
+        hook    = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/usr/bin/install"
+        args = [
+          "-d",
+          "-m",
+          "0755",
+          "/var/lib/postgresql/16/verself",
+          "/var/run/postgresql",
+        ]
+      }
+
+      resources {
+        cpu    = 25
+        memory = 16
+      }
+    }
+
     task "setup" {
       driver = "podman"
       user   = "postgres"
 
+      # Restart budget absorbs the prestart race with provision-host-dirs (which
+      # is near-instant vs. podman container creation) and transient podman
+      # socket flaps on reconverge; setup is idempotent.
       restart {
-        attempts = 0
+        attempts = 3
+        delay    = "5s"
+        interval = "1m"
         mode     = "fail"
       }
 
@@ -96,13 +134,11 @@ job "postgresql" {
         command      = "/usr/bin/python3"
         volumes = [
           "${var.repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
-          "/run/verself/recovery/postgresql:/run/verself/recovery/postgresql:rw",
+          # pgBackRest makes outbound TLS to R2; the image carries no CA roots, so
+          # mount the host trust store read-only (same pattern as cloudflare).
+          "/etc/ssl/certs:/etc/ssl/certs:ro,noexec",
           "/var/lib/postgresql/16/verself:/var/lib/postgresql/16/verself:rw",
-          "/etc/postgresql/verself:/etc/postgresql/verself:rw",
-          "/var/log/postgresql:/var/log/postgresql:rw",
           "/var/run/postgresql:/var/run/postgresql:rw",
-          "/var/spool/pgbackrest:/var/spool/pgbackrest:rw",
-          "/var/log/pgbackrest:/var/log/pgbackrest:rw",
         ]
         tmpfs = ["/tmp"]
         args = ["-c", <<-PY
@@ -118,7 +154,7 @@ import subprocess
 runtime_root = pathlib.Path("${local.runtime_root}")
 resource_name = "${var.postgresql_resource_name}"
 doc_path = pathlib.Path("/guardian/document.json")
-projected_doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
+projected_doc_path = pathlib.Path("/alloc/recovery/document.json")
 postgres_major = "16"
 identifier_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -229,6 +265,10 @@ def write_pgbackrest_config(backup, spec, data_dir, postgres_uid, postgres_gid):
         "repo1-s3-endpoint=" + backup["repository"]["endpoint"],
         "repo1-s3-region=" + backup["repository"]["region"],
         "repo1-s3-bucket=" + backup["repository"]["bucket"],
+        # pgBackRest/OpenSSL does not find the mounted trust store by default in
+        # the minimal image; point every repo command (including postgres's
+        # archive_command, which reads this same config) at the host CA bundle.
+        "repo1-s3-ca-file=/etc/ssl/certs/ca-certificates.crt",
         "repo1-s3-key=" + access_key,
         "repo1-s3-key-secret=" + secret_key,
         "repo1-path=" + str(backup["repository"]["path"]),
@@ -469,7 +509,7 @@ socket_dir = required_path(spec, "socketDir")
 report_path = required_path(spec, "reportPath")
 backup = optional_backup(spec)
 if report_path.parent != projected_doc_path.parent:
-    raise SystemExit("PostgreSQLCluster.spec.reportPath must be under /run/verself/recovery/postgresql")
+    raise SystemExit("PostgreSQLCluster.spec.reportPath must be under /alloc/recovery")
 
 # Initialize ownership of the durable bind-mounts; the initdb pwfile lands in
 # the socket dir which postgres owns.
@@ -537,9 +577,14 @@ EOT
       driver = "podman"
       user   = "postgres"
 
+      # Long-lived: "process running" is a maintained invariant (DR contract).
+      # mode=delay never gives up, so a killed postmaster or a transient podman
+      # socket flap is retried indefinitely instead of failing the alloc.
       restart {
-        attempts = 0
-        mode     = "fail"
+        attempts = 5
+        delay    = "10s"
+        interval = "5m"
+        mode     = "delay"
       }
 
       config {
@@ -552,10 +597,9 @@ EOT
         shm_size        = "512m"
         command         = "/usr/bin/python3"
         volumes = [
-          "/run/verself/recovery/postgresql:/run/verself/recovery/postgresql:rw",
+          # server runs archive_command (pgBackRest archive-push) to R2; needs CA roots.
+          "/etc/ssl/certs:/etc/ssl/certs:ro,noexec",
           "/var/lib/postgresql/16/verself:/var/lib/postgresql/16/verself:rw",
-          "/etc/postgresql/verself:/etc/postgresql/verself:rw",
-          "/var/log/postgresql:/var/log/postgresql:rw",
           "/var/run/postgresql:/var/run/postgresql:rw",
         ]
         tmpfs = ["/tmp"]
@@ -563,11 +607,12 @@ EOT
 import json
 import os
 import pathlib
+import socket
 import time
 
 resource_name = "${var.postgresql_resource_name}"
 runtime_root = pathlib.Path("${local.runtime_root}")
-doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
+doc_path = pathlib.Path("/alloc/recovery/document.json")
 postgres_major = "16"
 
 doc = json.loads(doc_path.read_text(encoding="utf-8"))
@@ -587,38 +632,35 @@ argv = [
     "-c", "config_file=" + spec["configDir"] + "/postgresql.conf",
 ]
 
-def pid_alive(pid):
+def postmaster_listening(socket_dir, port):
+    # The PID in postmaster.pid is container-PID-namespace-local; under init=true
+    # the fresh wrapper is itself pid 2, so os.kill(pid, 0) self-aliases and the
+    # stale file never clears. The socket is the namespace-independent authority
+    # for whether a postmaster is actually serving (host network).
+    sock_path = str(pathlib.Path(socket_dir) / (".s.PGSQL." + str(port)))
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(1)
     try:
-        os.kill(pid, 0)
+        probe.connect(sock_path)
         return True
-    except ProcessLookupError:
+    except OSError:
         return False
-    except PermissionError:
-        return True
+    finally:
+        probe.close()
 
-def wait_for_previous_postmaster(data_dir, socket_dir, port):
-    pid_file = data_dir / "postmaster.pid"
-    deadline = time.monotonic() + 90
-    while pid_file.exists():
+def clear_stale_postmaster(data_dir, socket_dir, port):
+    # Each task restart is a fresh container, so the previous postmaster died with
+    # it; a postmaster.pid without a live socket is stale by construction.
+    if postmaster_listening(socket_dir, port):
+        raise SystemExit("a PostgreSQL postmaster is already serving the socket; refusing to start a second")
+    socket_name = ".s.PGSQL." + str(port)
+    for path in [data_dir / "postmaster.pid", socket_dir / socket_name, socket_dir / (socket_name + ".lock")]:
         try:
-            pid = int(pid_file.read_text(encoding="utf-8").splitlines()[0])
-        except Exception as exc:
-            raise SystemExit(f"cannot parse PostgreSQL postmaster pid file {pid_file}: {exc}") from exc
-        if not pid_alive(pid):
-            pid_file.unlink()
-            break
-        if time.monotonic() >= deadline:
-            raise SystemExit(f"previous PostgreSQL postmaster pid {pid} did not exit before restart")
-        time.sleep(0.5)
-    if not pid_file.exists():
-        socket_name = ".s.PGSQL." + str(port)
-        for path in [socket_dir / socket_name, socket_dir / (socket_name + ".lock")]:
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                pass
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
-wait_for_previous_postmaster(pathlib.Path(spec["dataDir"]), pathlib.Path(spec["socketDir"]), spec["port"])
+clear_stale_postmaster(pathlib.Path(spec["dataDir"]), pathlib.Path(spec["socketDir"]), spec["port"])
 os.execv(str(postgres), argv)
 PY
         ]
@@ -653,9 +695,14 @@ PY
       driver = "podman"
       user   = "postgres"
 
+      # The reconcile loop is retry-tolerant: "server not ready yet" must restart
+      # this sidecar, not fail the alloc and SIGKILL the server. mode=delay keeps
+      # retrying until the server converges.
       restart {
-        attempts = 0
-        mode     = "fail"
+        attempts = 5
+        delay    = "10s"
+        interval = "5m"
+        mode     = "delay"
       }
 
       lifecycle {
@@ -674,8 +721,12 @@ PY
         command         = "/usr/bin/python3"
         volumes = [
           "${var.repo_root}/workspace/.guardian/fly/document.json:/guardian/document.json:ro,noexec",
-          "/run/verself/recovery/postgresql:/run/verself/recovery/postgresql:rw",
-          "/etc/postgresql/verself:/etc/postgresql/verself:rw",
+          # pgBackRest makes outbound TLS to R2; the image carries no CA roots, so
+          # mount the host trust store read-only (same pattern as cloudflare).
+          "/etc/ssl/certs:/etc/ssl/certs:ro,noexec",
+          # pgbackrest check/backup reads PGDATA (pg_control, data files); reconcile
+          # never writes it, so mount read-only.
+          "/var/lib/postgresql/16/verself:/var/lib/postgresql/16/verself:ro",
           "/var/run/postgresql:/var/run/postgresql:rw",
         ]
         tmpfs = ["/tmp"]
@@ -691,7 +742,7 @@ import time
 resource_name = "${var.postgresql_resource_name}"
 runtime_root = pathlib.Path("${local.runtime_root}")
 doc_path = pathlib.Path("/guardian/document.json")
-projected_doc_path = pathlib.Path("/run/verself/recovery/postgresql/document.json")
+projected_doc_path = pathlib.Path("/alloc/recovery/document.json")
 postgres_major = "16"
 identifier_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -779,16 +830,6 @@ def pgbackrest_backup_count(payload):
                 count += len(stanza.get("backup") or [])
     return count
 
-def pgbackrest_stanza_missing(payload):
-    if not isinstance(payload, list):
-        return False
-    for stanza in payload:
-        for repo in (stanza.get("repo") or []) if isinstance(stanza, dict) else []:
-            status = repo.get("status") or {}
-            if "missing stanza" in str(status.get("message", "")):
-                return True
-    return False
-
 def psql(spec, *args, input_text=None):
     command = [
         str(runtime_root / "usr/lib/postgresql" / postgres_major / "bin/psql"),
@@ -843,7 +884,9 @@ host    all       all   ::1/128      scram-sha-256
         os.replace(tmp, path)
 
 def wait_for_ready(spec):
-    deadline = time.monotonic() + 60
+    # Crash recovery after an unclean stop can exceed a minute; give the first
+    # readiness probe room so it does not prematurely fail the reconcile loop.
+    deadline = time.monotonic() + 300
     last_error = None
     while time.monotonic() < deadline:
         try:
@@ -854,6 +897,18 @@ def wait_for_ready(spec):
             time.sleep(1)
     raise RuntimeError("PostgreSQL did not become ready: " + str(last_error))
 
+def prime_first_archive(spec):
+    # Fresh-cluster ordering: archive_mode=on starts pushing WAL the moment the
+    # server is up, but a segment pushed before stanza-create exists is rejected
+    # and PostgreSQL retries it in order, ahead of any newer segment. pgbackrest
+    # check forces a WAL switch and waits archive-timeout for *that* segment to
+    # land, so it can time out behind that pre-stanza backlog. Forcing a
+    # checkpoint + WAL switch here, after stanza-create, drains the archiver
+    # through the now-existing stanza and proves the archive path end-to-end
+    # before check runs. Idempotent: a no-op switch on an already-warm archiver.
+    psql(spec, "-c", "checkpoint;")
+    psql(spec, "-c", "select pg_switch_wal();")
+
 def ensure_backup_discipline(spec):
     # Check: fully recovered PostgreSQL must have a reachable pgBackRest
     # repository and at least one usable physical backup.
@@ -863,9 +918,19 @@ def ensure_backup_discipline(spec):
     info = pgbackrest_info(backup)
     backup_count = pgbackrest_backup_count(info)
     if backup_count == 0:
-        if pgbackrest_stanza_missing(info):
-            run_recovery(backup, "stanza-create")
-        run_recovery(backup, "check")
+        # stanza-create is idempotent; gating it on a fragile "missing stanza"
+        # string match skipped it for a fresh (empty-list) repo and broke check.
+        run_recovery(backup, "stanza-create")
+        prime_first_archive(spec)
+        # On a brand-new cluster the archiver may still be draining a pre-stanza
+        # WAL backlog; a check failure here is a not-yet-converged condition, not
+        # a broken repo. Re-sample on the next loop tick instead of crash-looping
+        # the sidecar -- stanza-create and priming above are idempotent so the
+        # retry converges. pgBackRest writes the real error to its own stderr
+        # (inherited here), so a persistently failing check stays loud in logs.
+        check_result = run_recovery(backup, "check", check=False)
+        if check_result.returncode != 0:
+            return "awaiting_first_archive"
         run_recovery(backup, "backup", "--backup-type=full")
         return "initial_full_backup_created"
     run_recovery(backup, "check")
