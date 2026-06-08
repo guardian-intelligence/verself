@@ -65,12 +65,12 @@ After:
 
 | Component | Current convergence owner | Current status | Next proof |
 | --- | --- | --- | --- |
-| Guardian preflight | Guardian CLI + Ansible preflight playbook | Uploads the repo/workspace graph plus content-addressed Bazel outputs and prepares root services; verified on gamma from wiped OpenBao/Nomad state | Keep fast path and wiped-host path green |
+| Guardian preflight | Guardian CLI + Ansible preflight playbook | Hermetic: no `apt` and no PyPI on the preflight path. rsync is seeded over ssh from a pinned `.deb` and driven with `--rsync-path`; ansible-core runs from a reproducible, offline, controller-side bundle (no `uvx --from`). Uploads the workspace graph plus content-addressed Bazel outputs and prepares root services; verified on gamma from wiped OpenBao/Nomad state | Keep fast path and wiped-host path green |
 | OpenBao | Preflight root service via `openbao-recover` and systemd | Installs, starts, initializes/restores, unseals, bootstraps `SecretPath` KV mounts, generated secret values, import handoff, and Nomad JWT auth, then revokes fresh init root token | Fresh gamma wipe with Cloudflare import |
 | Nomad | Preflight root service via systemd | Starts the agent, exposes workload-identity JWKS before OpenBao JWT auth setup, and validates the Podman driver | Add the next component job to the fly loop |
-| Podman | Preflight root prerequisite | Nomad loads repo-local image archives through the Podman driver | More services run from repo-local image archives |
+| Podman | Preflight root prerequisite | Installed from the pinned 39-`.deb` noble closure (`//src/infrastructure-components/podman:runtime_artifact`) extracted into a self-contained `/opt/verself/podman` prefix with a CNI `containers.conf` + systemd `podman.socket`/`.service` — no `apt install podman`. Storage is cleared on each full reconverge so the prefix initializes overlay cleanly. Verified on gamma: the Nomad podman driver reports Detected+Healthy and a recovery batch (cloudflare) ran a container from the prefix | More services run from repo-local image archives |
 | Cloudflare Control Plane | Component-owned Nomad recovery job | Converged on gamma after operator import; account-admin and R2 recovery authority are now written through OpenBao | Re-run from wiped gamma and confirm same path |
-| PostgreSQL | Component-owned Nomad recovery job | Submitted by generic `guardian fly`; blocked before setup because the already-initialized gamma OpenBao instance lacks the `postgresql-runtime` Nomad JWT role | Re-run from wiped OpenBao or provide operator authority to reconcile existing OpenBao auth |
+| PostgreSQL | Component-owned Nomad recovery job | The `postgresql-runtime` Nomad JWT role drift is resolved by the disaster-recovery path: a wiped OpenBao re-initializes and `openbao-recover` fresh-init creates `postgresql-runtime` (and generates `postgresql.pgbackrest.cipher_pass`). Verified on gamma: after wiping the raft store and re-flying, the role-not-found error is gone and a fresh allocation starts. Full convergence then chains on the `cloudflare.r2.recovery` secret (`producedBy` the Cloudflare control plane for pgBackRest backups), which requires the `cloudflare.account-admin` `operatorImport` authority — a manual provider credential the OpenBao wipe clears by design | Provide the Cloudflare account-admin operator import after a wipe so the R2 recovery capability is produced |
 | Static deployment facts | Guardian CRDs and site graph | PostgreSQL databases, public routes, runtime credential references, and promotion signals are expressed in the graph instead of a separate declaration layer | Add graph validators for cross-resource invariants |
 | Runtime secrets | Producer-owned component recovery jobs plus OpenBao | Generated values are created by OpenBao bootstrap or by the provider integration that owns the external API; consumers reference `SecretPath` resources and fail their allocations when required credentials are absent or unhealthy | Add component-owned health conditions for produced credentials and consumer prestart checks |
 | Profile Service | Component-owned Nomad job | First service cutover to OCI/Podman; static auth audience is in the CRD | Nomad alloc runs migration and service from `docker-archive:` |
@@ -84,7 +84,8 @@ After:
 | OpenBao operator import | account-admin import returned OpenBao 403 after decrypting init material | the import token was a child of the transient initial root token and was revoked when the initial root token was revoked | create the short-lived operator-import token as an orphan token before revoking the initial root token |
 | Cloudflare recovery OCI task | Cloudflare API verification failed with `x509: certificate signed by unknown authority` | scratch-style OCI image had no CA trust roots | mount host `/etc/ssl/certs` read-only into the recovery task |
 | Cloudflare certificate issuance | certificate writer failed with `mkdir /etc/haproxy: read-only file system` | recovery task root filesystem is read-only, while TLS output is intentionally `/etc/haproxy/certs` for HAProxy consumption | component-owned root prestart creates `/etc/haproxy/certs`; recovery task mounts `/etc/haproxy` read-write |
-| PostgreSQL Nomad Vault token | allocation failed before task start with `role "postgresql-runtime" could not be found` | gamma OpenBao was initialized before PostgreSQL's workload role existed, and no operator authority was available to mutate auth roles in-place | fresh OpenBao bootstrap now creates `postgresql-runtime`; existing initialized stores need an explicit operator-authenticated reconcile |
+| PostgreSQL Nomad Vault token | allocation failed before task start with `role "postgresql-runtime" could not be found` | gamma OpenBao was initialized before PostgreSQL's workload role existed, and no operator authority was available to mutate auth roles in-place | fresh OpenBao bootstrap creates `postgresql-runtime`; the disaster-recovery path (wipe the raft store, re-fly) is the supported fix and was verified on gamma — the role-not-found error is gone and a fresh allocation starts |
+| Podman API service crash on reconverge | `database graph driver "" does not match our graph driver "overlay": database configuration mismatch`; the Nomad podman driver then reports `Cannot connect to any Podman socket` | a stale `/var/lib/containers/storage` left by a prior (apt) podman conflicts with the pinned prefix's overlay `storage.conf` | the full preflight path stops podman and clears `/var/lib/containers/storage` + `/run/containers/storage` before reconfiguring, so the prefix initializes storage cleanly |
 | Duplicate deployment facts | component facts were declared outside the component CRD/site graph contract | duplicate declaration layers split validation and ownership | express deployment facts once in component CRDs/site graph and component-owned Nomad vars |
 
 ## Current Rules
@@ -96,7 +97,12 @@ After:
   roles derived from root-service substrate needs.
 - OpenBao recovery does not import provider credentials. Existing initialized
   stores require operator authority before new OpenBao auth roles can be added.
-- Services run as OCI images through the Nomad Podman driver.
+- Services run as OCI images through the Nomad Podman driver. Podman, rsync, and
+  ansible-core are installed from pinned Bazel artifacts (deb closures / offline
+  bundle), never from the Ubuntu archive or PyPI during preflight.
+- `guardian run <tool>` resolves every pinned tool from the generated catalog
+  (`.config/guardian/tools.cue`, produced from the Bazel pin graph and gated by a
+  diff_test); tool digests are not authored in more than one place.
 - OCI-bound Go binaries are built static so scratch-style image layers do not
   depend on host distro libraries.
 - Image archive and runtime artifact digests must be part of component-owned

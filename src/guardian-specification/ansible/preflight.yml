@@ -267,6 +267,23 @@
         dest: "{{ guardian_podman_prefix }}"
         remote_src: true
 
+    - name: Stop podman before reconfiguring from the pinned prefix
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+      loop:
+        - podman.service
+        - podman.socket
+      failed_when: false
+
+    - name: Clear stale podman storage for a clean reconverge
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/containers/storage
+        - /run/containers/storage
+
     - name: Create podman host directories
       ansible.builtin.file:
         path: "{{ item }}"
