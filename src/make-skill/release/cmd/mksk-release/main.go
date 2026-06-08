@@ -39,7 +39,10 @@ const (
 	defaultPublicURL            = "https://oci.verself.sh"
 	defaultRepository           = "verself/mksk"
 	defaultRegistryUser         = "artifact-publisher"
-	defaultRegistryPasswordFile = "/etc/zot/publisher-password"
+	// Projected from the OpenBao SecretPath kv-runtime/data/secret/org/zot.publisher.password
+	// (the same plaintext zot-config bcrypts into the registry htpasswd). The old
+	// /etc/zot/publisher-password was never populated -- zot-recover discarded the plaintext.
+	defaultRegistryPasswordFile = "/run/verself/secrets/zot.publisher.password"
 	rulesRustToolsRepo          = "rules_rust++rust+rust_linux_x86_64__x86_64-unknown-linux-gnu__stable_tools"
 )
 

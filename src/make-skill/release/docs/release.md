@@ -46,8 +46,14 @@ identity:
 --registry=http://127.0.0.1:5080
 --repository=verself/mksk
 --registry-username=artifact-publisher
---registry-password-file=/etc/zot/publisher-password
+--registry-password-file=/run/verself/secrets/zot.publisher.password
 ```
+
+The publisher password is the plaintext at the OpenBao SecretPath
+`kv-runtime/data/secret/org/zot.publisher.password` — the same value `zot-config`
+bcrypts into the registry htpasswd at deploy time. Project it to the password
+file before publishing, e.g. `bao kv get -field=value
+kv-runtime/secret/org/zot.publisher.password > /run/verself/secrets/zot.publisher.password`.
 
 `--signing=disabled` is the current tracer-bullet mode. `--signing=openbao-transit`
 validates the OpenBao Transit configuration and then fails before building or

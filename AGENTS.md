@@ -1,5 +1,9 @@
 # Guardian
 
+<top_priority>
+We're trying to turn the repo's build artifacts into an OCI image and OCI-ing all our services and containerizing everything.
+</top_priority>
+
 This is a polyglot monorepo structured as a modular monolith. It contains all code for infrastructure, service, and client applications for a multi-tenant cloud computing company. It is the only repo for the entire company.
 
 All configuration is defined as CRDs authored in CUE.
@@ -36,54 +40,16 @@ IOW, disaster recovery is just like any other deployment, where the control loop
 
 The process is `guardian preflight` -> Guardian synchronous checks to make sure the remote workspace and artifact store are verified, OpenBao host integration inputs are prepared, and the Nomad agent is running -> `guardian fly` -> component-owned Nomad jobs converge.
 
-We accomplish this through the following two core techniques:
+We accomplish this by treating the repo + build artifacts as a golden image and then uploading them to the target host.
 
-1. The repo builds the system that is deployed, byte-for-byte via Bazel + commit-pinning every dependency including developer tooling.
+1. The repo builds a the system that is deployed, byte-for-byte via Bazel + commit-pinning every dependency including developer tooling.
 2. Deployment is the process of taking credentials and a deployment target (a remote + configuration), uploading the built repo, and running `nomad` to execute control loops to bring the system to the desired state.
-
-The only ingredients necessary to recover the system, therefore, are:
-
-0. Credentials (API keys)
-1. The source code
-2. Network ingress to download pinned dependencies (including build tools + OCI images)
-3. Network egress to a node
-
-Both day-to-day development + deployment, and disaster recovery from zero are fundamentally, therefore, figuring out where to resume the system from the following: clone repo -> configure external provider authority and root-of-trust automation -> build repo -> point to any bare metal node -> upload built repo -> run `guardian fly` -> let component Nomad jobs converge.
-
-Every deployable unit declares a component-owned recovery reconciler that runs as a long-lived sidecar in its `nomad.hcl` file. The reconciler observes live state, classifies it, and runs the idempotent action that converges to desired, re-sampling on an interval so the converged state is a maintained invariant. `spire` and `postgresql` are the reference implementations.
-
-```
-task "reconcile" {
-    lifecycle {
-      hook    = "poststart"
-      sidecar = true
-    }
-
-    config {
-      command = "<name>-recover"
-      args    = ["reconcile", "--loop", "--resource-graph=...", "--resource-name=<name>", "--report=/run/verself/recovery/<name>/report.json"]
-    }
-  }
-
-  task "serve" {
-    # normal service; restart enabled so "process running" is a maintained invariant
-  }
-```
 
 See `docs/architecture/disaster-recovery-reference.md` for the recovery lifecycle contract, the canonical topology, condition feedback, seal/unseal posture, and the reasoning behind each decision.
 
-The Guardian base specification stays narrow: the graph envelope, `FlyProcedure`, `Substrate`, shared `PublicOrigin` facts, command responses, and common cross-component conditions. Static configuration for an infrastructure component or service belongs in that component's `guardian/v1alpha1/schema.cue`. Runtime actions such as restore, initialize, unseal, migrate, import, publish, and health waiting belong in Nomad lifecycle tasks and component binaries.
+Keep the Guardian Specification as lean as possible. It's just a simple CRD -- do not add any concepts that should better be handled by Ansible, Nomad, or Bazel.
 
-## Unhealthy Node
-
-Procedure: provision a new node from available offsite backup (note that, by design, customer zvols/snapshots are not backed up). This procedure is also used to bootstrap a node
-
-1. Establish connection to node -- try in order: Pomerium -> WireGuard Fallback -> Latitude IPMI -> Latitude Reinstall
-2. Build repo locally
-
-<available_tooling>
-Integrations: `aspect integrations`
-</available_toling>
+We deliberately do not use Docker or the docker ecosystem and use more open, performant, efficient and lightweight solutions for containerization like Podman for services, OCI, 
 
 <coding_contract>
 * Always lean on open standards where possible. Avoid re-inventing the wheel.
@@ -128,7 +94,9 @@ Integrations: `aspect integrations`
 <repo_overview>
 See @README.md for mission and development orientation.
 
-See @src/services/iam-service/schema/verself.zed for Zanzibar policies
+See src/services/iam-service/schema/verself.zed for Zanzibar policies
+
+See src/guardian-specification/ansible/preflight.yml if installing a stateful binary that is needed prior to the Nomad agent being up (recall that the `guardian fly` command )
 
 The manifest of all discoverable public APIs is in `src/infrastructure-components/haproxy/templates/verself-discovery.json.j2`; all new public services must be registered there.
 
@@ -139,7 +107,7 @@ GitHub with `actions/cache` - ~20m
 Blacksmith.sh + Sticky Disks - ~2m10s
 our internal CI - ~11s
 
-If we ever become slower than either platform, that becomes a top concern as speeding up our customers is a top priority.
+If we ever become slower than either platform, that becomes a top concern as securely speeding up our customers is a top priority.
 
 ## General Structure:
 

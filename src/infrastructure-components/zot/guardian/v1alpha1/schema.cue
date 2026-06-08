@@ -2,7 +2,6 @@ package v1alpha1
 
 #NonEmptyString: string & !=""
 #AbsolutePath:   =~"^/[^\\s]*$"
-#RepoPath:       string & !~"^/" & !~"(^|/)\\.\\.(/|$)" & !=""
 #Host:           #NonEmptyString
 
 #Metadata: {
@@ -14,15 +13,13 @@ package v1alpha1
 	kind:       "ZotRegistry"
 	metadata:   #Metadata
 	spec: {
-		runtimeArtifact: #RepoPath
-		runtimeRoot:     #AbsolutePath
-		configPath:      #AbsolutePath
-		storageDir:      #AbsolutePath
-		htpasswdPath:    #AbsolutePath
-		reportPath:      #AbsolutePath
+		// Ephemeral derived state generated per-alloc into /alloc; not durable.
+		configPath:   #AbsolutePath
+		htpasswdPath: #AbsolutePath
 
-		user:  #NonEmptyString
-		group: #NonEmptyString
+		// Durable registry blob/manifest store; a host bind-mount that
+		// survives alloc GC.
+		storageDir: #AbsolutePath
 
 		host:          #Host
 		port:          int & >=1 & <=65535
