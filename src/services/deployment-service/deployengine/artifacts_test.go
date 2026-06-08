@@ -120,7 +120,26 @@ func TestApplyCompletedArtifactSourcesBindsDownloadURLs(t *testing.T) {
 	}
 }
 
-func TestApplyArtifactGetterSourcesAcceptsBootstrapFileURLs(t *testing.T) {
+func TestApplyArtifactGetterSourcesAcceptsBootstrapHTTPURLs(t *testing.T) {
+	inputs := &deployInputs{
+		Bindings: map[string]artifactBinding{
+			"openbao-runtime": {
+				Artifact: deploymodel.Artifact{Output: "openbao-runtime"},
+			},
+		},
+	}
+	err := applyArtifactGetterSources(inputs, map[string]string{
+		"openbao-runtime": "http://127.0.0.1:18733/gamma/sha/openbao-runtime.tar",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inputs.Bindings["openbao-runtime"].Artifact.GetterSource; !strings.HasPrefix(got, "http://127.0.0.1:18733/") {
+		t.Fatalf("getter source = %q", got)
+	}
+}
+
+func TestApplyArtifactGetterSourcesRejectsUnsupportedScheme(t *testing.T) {
 	inputs := &deployInputs{
 		Bindings: map[string]artifactBinding{
 			"openbao-runtime": {
@@ -131,11 +150,8 @@ func TestApplyArtifactGetterSourcesAcceptsBootstrapFileURLs(t *testing.T) {
 	err := applyArtifactGetterSources(inputs, map[string]string{
 		"openbao-runtime": "file:///var/lib/verself/bootstrap/artifacts/gamma/sha/openbao-runtime.tar",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := inputs.Bindings["openbao-runtime"].Artifact.GetterSource; !strings.HasPrefix(got, "file:///") {
-		t.Fatalf("getter source = %q", got)
+	if err == nil || !strings.Contains(err.Error(), "invalid getter source") {
+		t.Fatalf("error = %v, want invalid getter source", err)
 	}
 }
 

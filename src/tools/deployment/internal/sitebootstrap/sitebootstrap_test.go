@@ -91,6 +91,27 @@ func TestRemoteArtifactFileUsesDigestAndSafeSegments(t *testing.T) {
 	}
 }
 
+func TestRemoteArtifactGetterSourceUsesLoopbackHTTP(t *testing.T) {
+	remoteFile := remoteArtifactFile("/var/lib/verself/bootstrap/artifacts", "gamma", "abc", deployengine.ArtifactPublishCandidate{
+		Output: "openbao-runtime",
+		SHA256: strings.Repeat("b", 64),
+	})
+	got, err := remoteArtifactGetterSource("http://127.0.0.1:18733", "/var/lib/verself/bootstrap/artifacts", remoteFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "http://127.0.0.1:18733/gamma/abc/") || !strings.HasSuffix(got, "-openbao-runtime.tar") {
+		t.Fatalf("getter source = %q", got)
+	}
+}
+
+func TestRemoteArtifactGetterSourceRejectsOutsideRoot(t *testing.T) {
+	_, err := remoteArtifactGetterSource("http://127.0.0.1:18733", "/var/lib/verself/bootstrap/artifacts", "/tmp/openbao-runtime.tar")
+	if err == nil || !strings.Contains(err.Error(), "outside bootstrap root") {
+		t.Fatalf("error = %v, want outside root", err)
+	}
+}
+
 func TestParseRemotePasswdEntry(t *testing.T) {
 	identity, err := parseRemotePasswdEntry("deployment_service", "deployment_service:x:990:984::/home/deployment_service:/usr/sbin/nologin\n")
 	if err != nil {

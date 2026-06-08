@@ -23,6 +23,9 @@ import (
 const (
 	defaultNomadRemoteAddr   = "127.0.0.1:4646"
 	bootstrapArtifactRoot    = "/var/lib/verself/bootstrap/artifacts"
+	bootstrapArtifactServer  = "/opt/verself/bootstrap/bin/site-bootstrap"
+	bootstrapArtifactUnit    = "/etc/systemd/system/verself-bootstrap-artifacts.service"
+	bootstrapArtifactHTTP    = "http://127.0.0.1:18733"
 	openBaoRootKeyPath       = "/etc/verself/bootstrap/openbao-root.key"
 	bootstrapRemoteTmpPrefix = "/tmp/verself-bootstrap-artifacts-"
 )
@@ -37,8 +40,9 @@ type BootstrapDeployOptions struct {
 }
 
 type remoteBootstrapArtifactPublisher struct {
-	ssh  *opruntime.SSHClient
-	root string
+	ssh     *opruntime.SSHClient
+	root    string
+	baseURL string
 }
 
 func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err error) {
@@ -83,6 +87,10 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err := waitHTTP(ctx, nomadAddr+"/v1/status/leader", http.StatusOK, nil); err != nil {
 		return fmt.Errorf("nomad tunnel readiness: %w", err)
 	}
+	artifactBaseURL, err := ensureRemoteBootstrapArtifactServer(ctx, sshClient, bootstrapArtifactRoot)
+	if err != nil {
+		return err
+	}
 
 	deployRunKey, err := randomPrefixedID("bootstrap")
 	if err != nil {
@@ -93,7 +101,7 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 		SHA:               opts.SHA,
 		DeployRunKey:      deployRunKey,
 		RepoRoot:          opts.RepoRoot,
-		ArtifactPublisher: remoteBootstrapArtifactPublisher{ssh: sshClient, root: bootstrapArtifactRoot},
+		ArtifactPublisher: remoteBootstrapArtifactPublisher{ssh: sshClient, root: bootstrapArtifactRoot, baseURL: artifactBaseURL},
 		NomadAddr:         nomadAddr,
 		TaskUserResolver:  remoteTaskUserResolver(sshClient),
 	})
@@ -144,7 +152,11 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 		if err := installRemoteArtifact(ctx, p.ssh, remoteTmp, remoteFile); err != nil {
 			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
 		}
-		sources[output] = (&url.URL{Scheme: "file", Path: remoteFile}).String()
+		source, err := remoteArtifactGetterSource(p.baseURL, root, remoteFile)
+		if err != nil {
+			return deployengine.ArtifactPublishResult{}, fmt.Errorf("%s: %w", output, err)
+		}
+		sources[output] = source
 	}
 	return deployengine.ArtifactPublishResult{GetterSources: sources}, nil
 }
@@ -229,6 +241,20 @@ func remoteArtifactFile(root, site, sha string, artifact deployengine.ArtifactPu
 	return path.Join(root, safeRemoteArtifactName(site), safeRemoteArtifactName(sha), name+"-"+safeRemoteArtifactName(artifact.Output)+".tar")
 }
 
+func remoteArtifactGetterSource(baseURL, root, remoteFile string) (string, error) {
+	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid bootstrap artifact base URL %q", baseURL)
+	}
+	root = strings.TrimRight(root, "/")
+	rel, ok := strings.CutPrefix(remoteFile, root+"/")
+	if !ok || rel == "" {
+		return "", fmt.Errorf("remote artifact %s is outside bootstrap root %s", remoteFile, root)
+	}
+	parsed.Path = path.Join(parsed.Path, rel)
+	return parsed.String(), nil
+}
+
 func safeRemoteArtifactName(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -249,6 +275,74 @@ func safeRemoteArtifactName(value string) string {
 	return out
 }
 
+func ensureRemoteBootstrapArtifactServer(ctx context.Context, sshClient *opruntime.SSHClient, root string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve site-bootstrap executable: %w", err)
+	}
+	if _, err := sshClient.Exec(ctx, "sudo -n install -d -o root -g root -m 0755 "+shellQuote(root)); err != nil {
+		return "", fmt.Errorf("create bootstrap artifact root: %w", err)
+	}
+	remoteTmp, err := remoteTempArtifactPath("site-bootstrap")
+	if err != nil {
+		return "", err
+	}
+	if err := copyLocalFileToRemote(ctx, sshClient, exe, remoteTmp); err != nil {
+		return "", fmt.Errorf("upload bootstrap artifact server: %w", err)
+	}
+	if err := installRemoteFile(ctx, sshClient, remoteTmp, bootstrapArtifactServer, "0755"); err != nil {
+		return "", fmt.Errorf("install bootstrap artifact server: %w", err)
+	}
+	unit := bootstrapArtifactServerUnit(root)
+	if err := writeRemoteRootFile(ctx, sshClient, bootstrapArtifactUnit, unit, "0644"); err != nil {
+		return "", fmt.Errorf("install bootstrap artifact systemd unit: %w", err)
+	}
+	command := strings.Join([]string{
+		"sudo -n systemctl daemon-reload",
+		"sudo -n systemctl enable --now verself-bootstrap-artifacts.service",
+		"sudo -n systemctl restart verself-bootstrap-artifacts.service",
+	}, "; ")
+	if _, err := sshClient.Exec(ctx, command); err != nil {
+		return "", fmt.Errorf("start bootstrap artifact server: %w", err)
+	}
+	forward, err := sshClient.Forward(ctx, "bootstrap-artifacts", strings.TrimPrefix(bootstrapArtifactHTTP, "http://"))
+	if err != nil {
+		return "", fmt.Errorf("open bootstrap artifact readiness tunnel: %w", err)
+	}
+	defer func() { _ = forward.Close() }()
+	if err := waitHTTP(ctx, "http://"+forward.ListenAddr+"/", http.StatusOK, nil); err != nil {
+		return "", fmt.Errorf("bootstrap artifact server readiness: %w", err)
+	}
+	return bootstrapArtifactHTTP, nil
+}
+
+func bootstrapArtifactServerUnit(root string) string {
+	return `[Unit]
+Description=Verself bootstrap artifact server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=` + bootstrapArtifactServer + ` artifact-server --root=` + root + ` --listen=` + strings.TrimPrefix(bootstrapArtifactHTTP, "http://") + `
+Restart=always
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=` + root + `
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target
+`
+}
+
 func copyLocalFileToRemote(ctx context.Context, sshClient *opruntime.SSHClient, localPath, remotePath string) error {
 	local, err := os.Open(localPath)
 	if err != nil {
@@ -265,10 +359,29 @@ func copyLocalFileToRemote(ctx context.Context, sshClient *opruntime.SSHClient, 
 	return nil
 }
 
+func writeRemoteRootFile(ctx context.Context, sshClient *opruntime.SSHClient, remotePath, content, mode string) error {
+	remoteTmp, err := remoteTempArtifactPath(path.Base(remotePath))
+	if err != nil {
+		return err
+	}
+	tmpWord, err := opruntime.ShellWord(remoteTmp)
+	if err != nil {
+		return err
+	}
+	if err := sshClient.Run(ctx, "sudo -n /usr/bin/tee "+tmpWord+" >/dev/null", strings.NewReader(content), io.Discard, os.Stderr); err != nil {
+		return fmt.Errorf("copy remote file over SSH: %w", err)
+	}
+	return installRemoteFile(ctx, sshClient, remoteTmp, remotePath, mode)
+}
+
 func installRemoteArtifact(ctx context.Context, sshClient *opruntime.SSHClient, remoteTmp, remoteFile string) error {
-	command := "tmp=" + shellQuote(remoteTmp) + "; dest=" + shellQuote(remoteFile) + "; trap 'rm -f \"$tmp\"' EXIT; sudo -n install -D -o root -g root -m 0644 \"$tmp\" \"$dest\"; sudo -n test -s \"$dest\""
+	return installRemoteFile(ctx, sshClient, remoteTmp, remoteFile, "0644")
+}
+
+func installRemoteFile(ctx context.Context, sshClient *opruntime.SSHClient, remoteTmp, remoteFile, mode string) error {
+	command := "tmp=" + shellQuote(remoteTmp) + "; dest=" + shellQuote(remoteFile) + "; trap 'rm -f \"$tmp\"' EXIT; sudo -n install -D -o root -g root -m " + shellQuote(mode) + " \"$tmp\" \"$dest\"; sudo -n test -s \"$dest\""
 	if _, err := sshClient.Exec(ctx, command); err != nil {
-		return fmt.Errorf("install remote artifact: %w", err)
+		return fmt.Errorf("install remote file: %w", err)
 	}
 	return nil
 }

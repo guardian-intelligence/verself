@@ -294,6 +294,9 @@ func applyArtifactGetterSources(inputs *deployInputs, sources map[string]string)
 		if getterSource == "" {
 			return fmt.Errorf("artifact publisher omitted getter source for %q", output)
 		}
+		if !validArtifactGetterSource(getterSource) {
+			return fmt.Errorf("artifact publisher returned invalid getter source for %q", output)
+		}
 		binding.Artifact.GetterSource = getterSource
 		inputs.Bindings[output] = binding
 	}
@@ -305,14 +308,15 @@ func completedArtifactGetterSource(output string, object r2controlplane.UploadOb
 		return "", fmt.Errorf("R2 control-plane completed response returned mismatched object binding for %q", output)
 	}
 	getterSource := strings.TrimSpace(object.GetterSource)
-	if getterSource == "" {
-		return "", fmt.Errorf("R2 control-plane completed artifact %q without getter source", output)
-	}
-	parsed, err := url.Parse(getterSource)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+	if !validArtifactGetterSource(getterSource) {
 		return "", fmt.Errorf("R2 control-plane completed artifact %q with invalid download source", output)
 	}
 	return getterSource, nil
+}
+
+func validArtifactGetterSource(source string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(source))
+	return err == nil && parsed.Host != "" && (parsed.Scheme == "https" || parsed.Scheme == "http")
 }
 
 func uploadCandidates(inputs *deployInputs, repoRoot string) ([]uploadCandidate, error) {
