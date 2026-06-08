@@ -2,7 +2,27 @@ import { WINGS_PATH_D } from "@verself/brand";
 import { Box3, ExtrudeGeometry, Vector3 } from "three";
 import { SVGLoader } from "three/examples/jsm/loaders/SVGLoader.js";
 
-export function createGuardianLogoGeometries(): ExtrudeGeometry[] {
+type GuardianLogoGeometryCache = {
+  readonly bounds: Box3;
+  readonly geometries: readonly ExtrudeGeometry[];
+};
+
+let guardianLogoGeometryCache: GuardianLogoGeometryCache | undefined;
+
+export function createGuardianLogoGeometries(): readonly ExtrudeGeometry[] {
+  return getGuardianLogoGeometryCache().geometries;
+}
+
+export function getGuardianLogoLocalBounds(): Box3 {
+  return getGuardianLogoGeometryCache().bounds.clone();
+}
+
+function getGuardianLogoGeometryCache(): GuardianLogoGeometryCache {
+  guardianLogoGeometryCache ??= buildGuardianLogoGeometryCache();
+  return guardianLogoGeometryCache;
+}
+
+function buildGuardianLogoGeometryCache(): GuardianLogoGeometryCache {
   const loader = new SVGLoader();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="105 106 140 140"><path d="${WINGS_PATH_D}" /></svg>`;
   const data = loader.parse(svg);
@@ -43,7 +63,19 @@ export function createGuardianLogoGeometries(): ExtrudeGeometry[] {
     geometry.computeBoundingSphere();
   }
 
-  return geometries;
+  const normalizedBounds = new Box3();
+  for (const geometry of geometries) {
+    const box = geometry.boundingBox;
+    if (box) {
+      normalizedBounds.expandByPoint(box.min);
+      normalizedBounds.expandByPoint(box.max);
+    }
+  }
+
+  return {
+    bounds: normalizedBounds,
+    geometries,
+  };
 }
 
 function curveGuardianSurface(geometry: ExtrudeGeometry) {

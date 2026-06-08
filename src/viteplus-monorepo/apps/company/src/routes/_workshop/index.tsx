@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { GuardianGlowDemo } from "~/features/guardian-glow/GuardianGlowDemo";
 import { parseGuardianGlowSearch } from "~/features/guardian-glow/guardian-glow-config";
 import { ogMeta } from "~/lib/head";
@@ -16,7 +16,10 @@ export const Route = createFileRoute("/_workshop/")({
 });
 
 function LandingPage() {
-  const settings = parseGuardianGlowSearch(Route.useSearch() as Record<string, unknown>);
+  const location = useLocation();
+  const settings = parseGuardianGlowSearch(
+    Object.fromEntries(new URLSearchParams(location.searchStr)),
+  );
 
   return <GuardianGlowDemo settings={settings} />;
 }

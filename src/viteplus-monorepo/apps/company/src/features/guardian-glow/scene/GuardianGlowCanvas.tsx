@@ -1,7 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import { NoToneMapping, SRGBColorSpace } from "three";
 import { resolveGuardianGlowRuntime, type GuardianGlowSettings } from "../guardian-glow-config";
-import { GuardianComposer } from "../pipeline/GuardianComposer";
 import { FpsProbe } from "../telemetry/FpsProbe";
 import { GuardianGlowScene } from "./GuardianGlowScene";
 
@@ -15,7 +14,7 @@ export function GuardianGlowCanvas({ settings }: GuardianGlowCanvasProps) {
   return (
     <Canvas
       orthographic
-      camera={{ far: 30, near: 0.1, position: [0, 0, 8], zoom: 118 }}
+      camera={{ far: 30, near: 0.1, position: [0, 0, 8], zoom: 64 }}
       dpr={runtime.dpr}
       frameloop="always"
       gl={{
@@ -33,7 +32,6 @@ export function GuardianGlowCanvas({ settings }: GuardianGlowCanvasProps) {
     >
       <FpsProbe />
       <GuardianGlowScene runtime={runtime} settings={settings} />
-      <GuardianComposer runtime={runtime} settings={settings} />
     </Canvas>
   );
 }

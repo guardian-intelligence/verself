@@ -3,7 +3,9 @@ export const guardianGlowStages = [
   "cards",
   "probe",
   "reflections",
+  "eclipse",
   "highlight",
+  "rays",
   "bloom",
   "aberration",
   "composite",
@@ -21,7 +23,7 @@ export const guardianGlowProfiles = [
 
 export type GuardianGlowProfile = (typeof guardianGlowProfiles)[number];
 
-export type GuardianGlowDialGroup = "material" | "lighting" | "probe" | "post";
+export type GuardianGlowDialGroup = "material" | "lighting" | "eclipse" | "probe" | "post";
 
 export type GuardianGlowDialKey =
   | "threshold"
@@ -30,11 +32,18 @@ export type GuardianGlowDialKey =
   | "blur"
   | "bloom"
   | "aberration"
-  | "band"
-  | "bandWidth"
+  | "keyAzimuth"
+  | "keyElevation"
+  | "keyDistance"
+  | "cardSize"
+  | "rigMotion"
   | "warm"
   | "lightIntensity"
   | "cardIntensity"
+  | "sourceIntensity"
+  | "sourceRadius"
+  | "rayIntensity"
+  | "rayLength"
   | "probeCadence"
   | "metalness"
   | "roughness"
@@ -48,20 +57,27 @@ export type GuardianGlowSettings = {
   readonly debug?: "fps";
   readonly developmentMode?: "1";
   readonly aberration: number;
-  readonly band: number;
-  readonly bandWidth: number;
   readonly bloom: number;
   readonly blur: number;
   readonly cardIntensity: number;
+  readonly cardSize: number;
   readonly clearcoat: number;
   readonly env: number;
   readonly exposure: number;
   readonly gradient: number;
+  readonly keyAzimuth: number;
+  readonly keyDistance: number;
+  readonly keyElevation: number;
   readonly knee: number;
   readonly lightIntensity: number;
   readonly metalness: number;
   readonly probeCadence: number;
+  readonly rayIntensity: number;
+  readonly rayLength: number;
+  readonly rigMotion: number;
   readonly roughness: number;
+  readonly sourceIntensity: number;
+  readonly sourceRadius: number;
   readonly threshold: number;
   readonly warm: number;
 };
@@ -78,23 +94,30 @@ export type GuardianGlowDial = {
 export const guardianGlowDefaults: GuardianGlowSettings = {
   stage: "composite",
   profile: "no-msaa",
-  threshold: 1.06,
-  knee: 0.1,
-  gradient: 0.15,
-  blur: 12.5,
-  bloom: 2.0,
+  threshold: 0.38,
+  knee: 0.18,
+  gradient: 0.12,
+  blur: 14.5,
+  bloom: 3.0,
   aberration: 7.2,
-  band: 0.49,
-  bandWidth: 0.22,
+  keyAzimuth: -8,
+  keyElevation: 14,
+  keyDistance: 2.25,
+  cardSize: 1,
+  rigMotion: 0.65,
   warm: 0.62,
-  lightIntensity: 1,
-  cardIntensity: 1.2,
+  lightIntensity: 1.2,
+  cardIntensity: 1.6,
+  sourceIntensity: 2.1,
+  sourceRadius: 1.42,
+  rayIntensity: 0.55,
+  rayLength: 0.52,
   probeCadence: 6,
-  metalness: 0.82,
-  roughness: 0.18,
+  metalness: 0.62,
+  roughness: 0.32,
   clearcoat: 0.92,
-  env: 1.35,
-  exposure: 1,
+  env: 1.75,
+  exposure: 1.08,
 };
 
 export const guardianGlowDials: readonly GuardianGlowDial[] = [
@@ -105,8 +128,18 @@ export const guardianGlowDials: readonly GuardianGlowDial[] = [
   { group: "post", key: "bloom", label: "Bloom gain", min: 0, max: 4, step: 0.05 },
   { group: "post", key: "aberration", label: "Channel offset", min: 0, max: 14, step: 0.1 },
   { group: "post", key: "exposure", label: "Exposure", min: 0.55, max: 1.45, step: 0.01 },
-  { group: "lighting", key: "band", label: "Light position", min: 0, max: 1, step: 0.01 },
-  { group: "lighting", key: "bandWidth", label: "Light width", min: 0.06, max: 0.55, step: 0.01 },
+  { group: "lighting", key: "keyAzimuth", label: "Key azimuth", min: -70, max: 70, step: 1 },
+  { group: "lighting", key: "keyElevation", label: "Key elevation", min: -35, max: 55, step: 1 },
+  {
+    group: "lighting",
+    key: "keyDistance",
+    label: "Key distance",
+    min: 1.25,
+    max: 3.75,
+    step: 0.05,
+  },
+  { group: "lighting", key: "cardSize", label: "Card size", min: 0.45, max: 1.8, step: 0.01 },
+  { group: "lighting", key: "rigMotion", label: "Rig motion", min: 0, max: 1.5, step: 0.01 },
   { group: "lighting", key: "warm", label: "Warm glint", min: 0, max: 1.6, step: 0.02 },
   {
     group: "lighting",
@@ -123,6 +156,38 @@ export const guardianGlowDials: readonly GuardianGlowDial[] = [
     min: 0,
     max: 3,
     step: 0.02,
+  },
+  {
+    group: "eclipse",
+    key: "sourceIntensity",
+    label: "Source energy",
+    min: 0,
+    max: 6,
+    step: 0.05,
+  },
+  {
+    group: "eclipse",
+    key: "sourceRadius",
+    label: "Source radius",
+    min: 0.65,
+    max: 2.8,
+    step: 0.01,
+  },
+  {
+    group: "eclipse",
+    key: "rayIntensity",
+    label: "Ray gain",
+    min: 0,
+    max: 5,
+    step: 0.05,
+  },
+  {
+    group: "eclipse",
+    key: "rayLength",
+    label: "Ray length",
+    min: 0.15,
+    max: 1.8,
+    step: 0.01,
   },
   { group: "probe", key: "probeCadence", label: "Probe cadence", min: 1, max: 24, step: 1 },
   { group: "material", key: "metalness", label: "Metalness", min: 0, max: 1, step: 0.01 },
@@ -149,20 +214,27 @@ export function parseGuardianGlowSearch(search: Record<string, unknown>): Guardi
     stage: parseStage(search.stage),
     profile: parseProfile(search.profile),
     aberration: parseDial(search.aberration, "aberration"),
-    band: parseDial(search.band, "band"),
-    bandWidth: parseDial(search.bandWidth, "bandWidth"),
     bloom: parseDial(search.bloom, "bloom"),
     blur: parseDial(search.blur, "blur"),
     cardIntensity: parseDial(search.cardIntensity, "cardIntensity"),
+    cardSize: parseDial(search.cardSize, "cardSize"),
     clearcoat: parseDial(search.clearcoat, "clearcoat"),
     env: parseDial(search.env, "env"),
     exposure: parseDial(search.exposure, "exposure"),
     gradient: parseDial(search.gradient, "gradient"),
+    keyAzimuth: parseDial(search.keyAzimuth, "keyAzimuth"),
+    keyDistance: parseDial(search.keyDistance, "keyDistance"),
+    keyElevation: parseDial(search.keyElevation, "keyElevation"),
     knee: parseDial(search.knee, "knee"),
     lightIntensity: parseDial(search.lightIntensity, "lightIntensity"),
     metalness: parseDial(search.metalness, "metalness"),
     probeCadence: parseDial(search.probeCadence, "probeCadence"),
+    rayIntensity: parseDial(search.rayIntensity, "rayIntensity"),
+    rayLength: parseDial(search.rayLength, "rayLength"),
+    rigMotion: parseDial(search.rigMotion, "rigMotion"),
     roughness: parseDial(search.roughness, "roughness"),
+    sourceIntensity: parseDial(search.sourceIntensity, "sourceIntensity"),
+    sourceRadius: parseDial(search.sourceRadius, "sourceRadius"),
     threshold: parseDial(search.threshold, "threshold"),
     warm: parseDial(search.warm, "warm"),
   };
@@ -181,10 +253,11 @@ export function guardianGlowStageCode(stage: GuardianGlowStage): number {
 }
 
 export function resolveGuardianGlowRuntime(settings: GuardianGlowSettings): GuardianGlowRuntime {
-  const dynamicProbe = settings.stage !== "beauty" && settings.stage !== "cards";
+  const dynamicProbe = settings.stage !== "beauty";
   const composer =
     settings.profile !== "raw-scene" &&
     (settings.stage === "highlight" ||
+      settings.stage === "rays" ||
       settings.stage === "bloom" ||
       settings.stage === "aberration" ||
       settings.stage === "composite");
@@ -193,10 +266,10 @@ export function resolveGuardianGlowRuntime(settings: GuardianGlowSettings): Guar
     cardDebugVisible: settings.stage === "cards",
     composer,
     composerResolutionScale: composerResolutionScale(settings.profile),
-    directLights: settings.stage !== "cards",
+    directLights: true,
     dpr: settings.profile === "full" ? [1.5, 2] : [1, 1],
     dynamicProbe,
-    logoVisible: settings.stage !== "cards",
+    logoVisible: true,
     multisampling: settings.profile === "full" ? 4 : 0,
     probeFrameInterval: Math.max(
       1,

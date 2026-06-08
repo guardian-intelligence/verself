@@ -1,6 +1,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import type { JSX } from "react";
-import { useEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import {
   CubeCamera,
   CubeReflectionMapping,
@@ -12,13 +12,17 @@ import {
 import type { GuardianGlowRuntime } from "../guardian-glow-config";
 import { guardianGlowMetricIds, setGuardianGlowMetric } from "../telemetry/metrics";
 import { REFLECTION_PROBE_LAYER } from "./layers";
+import type { GuardianLightingRig } from "./lighting-rig-model";
 
 type ReflectionProbeResult = {
   readonly node: JSX.Element;
   readonly texture: WebGLCubeRenderTarget["texture"];
 };
 
-export function useReflectionProbe(runtime: GuardianGlowRuntime): ReflectionProbeResult {
+export function useReflectionProbe(
+  runtime: GuardianGlowRuntime,
+  lightingRig: GuardianLightingRig,
+): ReflectionProbeResult {
   const { gl, scene } = useThree();
   const frameRef = useRef(0);
   const updatesRef = useRef(0);
@@ -38,18 +42,17 @@ export function useReflectionProbe(runtime: GuardianGlowRuntime): ReflectionProb
   const cubeCamera = useMemo(() => {
     const camera = new CubeCamera(0.08, 24, renderTarget);
     camera.layers.set(REFLECTION_PROBE_LAYER);
-    camera.position.set(0, -0.06, 0.32);
     return camera;
   }, [renderTarget]);
 
-  useEffect(
+  useLayoutEffect(
     () => () => {
       renderTarget.dispose();
     },
     [renderTarget],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setGuardianGlowMetric(guardianGlowMetricIds.probeRes, `${runtime.probeResolution}px`);
     setGuardianGlowMetric(guardianGlowMetricIds.probeRate, `${runtime.probeFrameInterval}f`);
     if (!runtime.dynamicProbe) {
@@ -63,6 +66,7 @@ export function useReflectionProbe(runtime: GuardianGlowRuntime): ReflectionProb
       return;
     }
 
+    cubeCamera.position.set(...lightingRig.probePosition);
     frameRef.current += 1;
     if (updatesRef.current > 0 && frameRef.current % runtime.probeFrameInterval !== 0) {
       return;

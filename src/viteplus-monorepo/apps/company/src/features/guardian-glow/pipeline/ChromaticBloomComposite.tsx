@@ -1,6 +1,7 @@
 import { useMemo } from "react";
+import { useFrame } from "@react-three/fiber";
 import { BlendFunction, Effect } from "postprocessing";
-import { Uniform } from "three";
+import { Uniform, Vector2, Vector3 } from "three";
 import { guardianGlowStageCode, type GuardianGlowSettings } from "../guardian-glow-config";
 
 const chromaticBloomCompositeShader = /* glsl */ `
@@ -9,6 +10,9 @@ const chromaticBloomCompositeShader = /* glsl */ `
   uniform float uBlurRadius;
   uniform float uGradientGate;
   uniform float uKnee;
+  uniform vec2 uEclipseUv;
+  uniform float uRayIntensity;
+  uniform float uRayLength;
   uniform float uStage;
   uniform float uThreshold;
 
@@ -64,6 +68,10 @@ const chromaticBloomCompositeShader = /* glsl */ `
     return inner * 0.68 + outer * 0.32;
   }
 
+  float softRaySeedAt(vec2 uv) {
+    return blurExtract(uv, max(uBlurRadius * 1.1, 8.0));
+  }
+
   vec3 chromaticBloomAt(vec2 uv) {
     vec2 redOffset = texelSize.xy * uAberrationPx * vec2(-0.72, 0.46);
     vec2 blueOffset = texelSize.xy * uAberrationPx * vec2(0.9, -0.58);
@@ -73,31 +81,72 @@ const chromaticBloomCompositeShader = /* glsl */ `
     return vec3(redBloom * 0.92, greenBloom * 0.84, blueBloom * 1.18);
   }
 
+  float radialRaysAt(vec2 uv) {
+    vec2 delta = uv - uEclipseUv;
+    float distanceFromSource = length(delta);
+    vec2 direction = delta / max(distanceFromSource, 0.0001);
+    float stepPixels = max(uBlurRadius * (0.72 + clamp(uRayLength, 0.01, 1.8) * 3.2), 4.0);
+    float sum = 0.0;
+    float weightSum = 0.0;
+
+    for (int i = 0; i < 8; i += 1) {
+      float t = float(i) / 7.0;
+      vec2 sampleUv = uv - direction * texelSize.xy * stepPixels * float(i);
+      float sampleDistance = length(sampleUv - uEclipseUv);
+      float seedBand =
+        smoothstep(0.03, 0.12, sampleDistance) *
+        (1.0 - smoothstep(0.42, 0.82, sampleDistance));
+      float sampleWeight = pow(1.0 - t, 1.8) * seedBand;
+      float seed = extractBrightAt(sampleUv);
+
+      sum += seed * sampleWeight;
+      weightSum += sampleWeight;
+    }
+
+    float shaft = sum / max(weightSum, 0.001);
+    float localCorona = softRaySeedAt(uv) * (1.0 - smoothstep(0.48, 0.92, distanceFromSource));
+    float nearSourceGate = smoothstep(0.012, 0.08, distanceFromSource);
+    float farSourceGate = 1.0 - smoothstep(0.64, 1.02, distanceFromSource);
+    float scatter = pow(max(shaft, 0.0), 1.1) * 0.12 + pow(max(localCorona, 0.0), 0.86) * 0.52;
+    return scatter * nearSourceGate * farSourceGate * uRayIntensity;
+  }
+
+  vec3 radialRayColor(float ray) {
+    return ray * vec3(1.02, 0.92, 0.72);
+  }
+
   void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
     vec3 beauty = inputColor.rgb;
     float highlight = extractAt(uv);
+    float ray = radialRaysAt(uv);
+    vec3 rayColor = radialRayColor(ray);
 
-    if (uStage < 4.5) {
+    if (uStage < 5.5) {
       outputColor = vec4(vec3(highlight * 1.8), inputColor.a);
+      return;
+    }
+
+    if (uStage < 6.5) {
+      outputColor = vec4(rayColor, inputColor.a);
       return;
     }
 
     float centralBloom = bloomAt(uv) * uBloomIntensity;
 
-    if (uStage < 5.5) {
-      outputColor = vec4(vec3(centralBloom), inputColor.a);
+    if (uStage < 7.5) {
+      outputColor = vec4(vec3(centralBloom) + rayColor, inputColor.a);
       return;
     }
 
     float edgeGate = smoothstep(uGradientGate * 0.18, max(uGradientGate, 0.001), gradientAt(uv));
     vec3 dispersedBloom = chromaticBloomAt(uv) * edgeGate * uBloomIntensity;
 
-    if (uStage < 6.5) {
-      outputColor = vec4(dispersedBloom, inputColor.a);
+    if (uStage < 8.5) {
+      outputColor = vec4(rayColor + dispersedBloom, inputColor.a);
       return;
     }
 
-    outputColor = vec4(beauty + dispersedBloom, inputColor.a);
+    outputColor = vec4(beauty + rayColor + dispersedBloom, inputColor.a);
   }
 `;
 
@@ -105,12 +154,15 @@ class ChromaticBloomCompositeEffectImpl extends Effect {
   constructor(settings: GuardianGlowSettings) {
     super("ChromaticBloomComposite", chromaticBloomCompositeShader, {
       blendFunction: BlendFunction.NORMAL,
-      uniforms: new Map([
+      uniforms: new Map<string, Uniform>([
         ["uAberrationPx", new Uniform(settings.aberration)],
         ["uBloomIntensity", new Uniform(settings.bloom)],
         ["uBlurRadius", new Uniform(settings.blur)],
+        ["uEclipseUv", new Uniform(new Vector2(0.5, 0.5))],
         ["uGradientGate", new Uniform(settings.gradient)],
         ["uKnee", new Uniform(settings.knee)],
+        ["uRayIntensity", new Uniform(settings.rayIntensity)],
+        ["uRayLength", new Uniform(settings.rayLength)],
         ["uStage", new Uniform(guardianGlowStageCode(settings.stage))],
         ["uThreshold", new Uniform(settings.threshold)],
       ]),
@@ -119,11 +171,33 @@ class ChromaticBloomCompositeEffectImpl extends Effect {
 }
 
 type ChromaticBloomCompositeProps = {
+  readonly eclipseSourceWorldPosition: readonly [number, number, number];
   readonly settings: GuardianGlowSettings;
 };
 
-export function ChromaticBloomComposite({ settings }: ChromaticBloomCompositeProps) {
+export function ChromaticBloomComposite({
+  eclipseSourceWorldPosition,
+  settings,
+}: ChromaticBloomCompositeProps) {
   const effect = useMemo(() => new ChromaticBloomCompositeEffectImpl(settings), [settings]);
+  const sourceWorldPosition = useMemo(
+    () => new Vector3(...eclipseSourceWorldPosition),
+    [eclipseSourceWorldPosition],
+  );
+  const projectedSourcePosition = useMemo(() => new Vector3(), []);
+
+  useFrame(({ camera }) => {
+    const sourceUv = effect.uniforms.get("uEclipseUv")?.value;
+    if (!(sourceUv instanceof Vector2)) {
+      return;
+    }
+
+    projectedSourcePosition.copy(sourceWorldPosition).project(camera);
+    sourceUv.set(
+      projectedSourcePosition.x * 0.5 + 0.5,
+      projectedSourcePosition.y * 0.5 + 0.5,
+    );
+  });
 
   return <primitive object={effect} />;
 }

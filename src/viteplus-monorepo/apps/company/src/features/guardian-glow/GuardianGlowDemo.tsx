@@ -23,7 +23,13 @@ type GuardianGlowDemoProps = {
 export function GuardianGlowDemo({ settings }: GuardianGlowDemoProps) {
   const navigate = useNavigate();
   const showDebugPanel = settings.developmentMode === "1";
-  const dialGroups: readonly GuardianGlowDialGroup[] = ["lighting", "probe", "material", "post"];
+  const dialGroups: readonly GuardianGlowDialGroup[] = [
+    "lighting",
+    "eclipse",
+    "probe",
+    "material",
+    "post",
+  ];
 
   const updateDial = (dial: GuardianGlowDial) => async (event: ChangeEvent<HTMLInputElement>) => {
     await navigate({

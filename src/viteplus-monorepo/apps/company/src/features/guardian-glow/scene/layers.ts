@@ -11,3 +11,9 @@ export function setReflectionProbeLayers(root: Object3D, showToMainCamera: boole
     }
   });
 }
+
+export function enableReflectionProbeLayer(root: Object3D) {
+  root.traverse((object) => {
+    object.layers.enable(REFLECTION_PROBE_LAYER);
+  });
+}
