@@ -15,8 +15,6 @@ spire_identity(
     entry_id = "verself-analytics-service",
     key = "analytics_service.default",
     path = "/svc/analytics-service",
-    uid_policy_kind = "fixed",
-    uid_policy_value = 971,
     user = "analytics_service",
     visibility = ["//src/infrastructure-components/spire:__pkg__"],
 )
