@@ -113,7 +113,7 @@ func run() error {
 		return err
 	}
 	if verifier == nil {
-		return fmt.Errorf("deployment auth requires GitHub OIDC allow-lists")
+		logger.WarnContext(ctx, "deployment-service GitHub OIDC auth is disabled; protected deployment endpoints will reject bearer tokens")
 	}
 	spiffeSource, err := workloadauth.Source(ctx, "")
 	if err != nil {
