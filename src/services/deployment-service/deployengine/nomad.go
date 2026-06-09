@@ -31,7 +31,16 @@ func registerNomadJobs(ctx context.Context, exec execution, inputs *deployInputs
 	if err := publishArtifacts(ctx, exec, inputs); err != nil {
 		return nomadApplyResult{}, err
 	}
-	jobs, err := prepareNomadJobsForSite(ctx, client, exec.RepoRoot, inputs.SiteModel, inputs.Bindings, inputs.Components, exec.TaskUserResolver)
+	if err := publishOCIImages(ctx, exec, inputs); err != nil {
+		return nomadApplyResult{}, err
+	}
+	if err := admitOCIImages(ctx, exec, inputs); err != nil {
+		return nomadApplyResult{}, err
+	}
+	jobs, err := prepareNomadJobsForSite(ctx, client, exec.RepoRoot, inputs.SiteModel, inputs.Bindings, inputs.OCIImages, inputs.Components, exec.TaskUserResolver, deployJobMetadata{
+		DeployRunKey: inputs.DeployRunKey,
+		SHA:          inputs.SHA,
+	})
 	if err != nil {
 		return nomadApplyResult{}, err
 	}

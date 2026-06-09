@@ -26,6 +26,15 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
     "checksum_algorithm": "sha256",
     "public": false
   },
+  "oci_registry": {
+    "origin_registry_url": "http://127.0.0.1:5080",
+    "public_registry_url": "https://oci.verself.sh",
+    "push_registry": "127.0.0.1:5080",
+    "pull_registry": "127.0.0.1:5080",
+    "repository_prefix": "verself",
+    "docker_config_dir": "/var/lib/verself/deployment-service/.docker",
+    "insecure": true
+  },
   "nomad_addr": "http://127.0.0.1:4646"
 }`)
 
@@ -38,6 +47,9 @@ func TestLoadSiteConfigUsesGlobalCloudflareAccount(t *testing.T) {
 	}
 	if cfg.ArtifactDelivery.Bucket != "verself-deployment-artifacts" {
 		t.Fatalf("bucket = %q", cfg.ArtifactDelivery.Bucket)
+	}
+	if cfg.OCIRegistry.RepositoryPrefix != "verself" {
+		t.Fatalf("oci repository prefix = %q", cfg.OCIRegistry.RepositoryPrefix)
 	}
 }
 
@@ -59,6 +71,15 @@ func TestLoadSiteConfigRejectsSiteCloudflareGlobals(t *testing.T) {
     "key_prefix": "sha256",
     "checksum_algorithm": "sha256",
     "public": false
+  },
+  "oci_registry": {
+    "origin_registry_url": "http://127.0.0.1:5080",
+    "public_registry_url": "https://oci.verself.sh",
+    "push_registry": "127.0.0.1:5080",
+    "pull_registry": "127.0.0.1:5080",
+    "repository_prefix": "verself",
+    "docker_config_dir": "/var/lib/verself/deployment-service/.docker",
+    "insecure": true
   }
 }`)
 

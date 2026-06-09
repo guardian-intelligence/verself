@@ -50,6 +50,25 @@
   changed_when: false
   failed_when: podman_expected_version not in podman_installed_version.stdout
 
+- name: Create Podman registry configuration directory
+  ansible.builtin.file:
+    path: /etc/containers/registries.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Trust the loopback Zot registry for OCI runtime pulls
+  ansible.builtin.copy:
+    dest: /etc/containers/registries.conf.d/verself-zot.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [[registry]]
+      location = "127.0.0.1:5080"
+      insecure = true
+
 - name: Enable and start Podman system socket
   ansible.builtin.systemd:
     name: podman.socket

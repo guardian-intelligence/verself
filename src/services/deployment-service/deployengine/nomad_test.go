@@ -153,3 +153,27 @@ func TestApplyPodmanTaskUserIDsUsesResolvedNumericIdentity(t *testing.T) {
 		t.Fatalf("raw_exec task user = %q, want named user untouched", got)
 	}
 }
+
+func TestApplyDeploymentMetadataStampsJob(t *testing.T) {
+	jobID := "analytics-service"
+	job := &api.Job{ID: &jobID}
+
+	specSHA, err := nomadJobSpecSHA256(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyDeploymentMetadata(job, deployJobMetadata{
+		DeployRunKey: "bootstrap_123",
+		SHA:          strings.Repeat("a", 40),
+	}, specSHA)
+
+	if job.Meta["deploy_run_key"] != "bootstrap_123" {
+		t.Fatalf("deploy_run_key = %q", job.Meta["deploy_run_key"])
+	}
+	if job.Meta["deploy_sha"] != strings.Repeat("a", 40) {
+		t.Fatalf("deploy_sha = %q", job.Meta["deploy_sha"])
+	}
+	if job.Meta["spec_sha256"] != specSHA {
+		t.Fatalf("spec_sha256 = %q, want %q", job.Meta["spec_sha256"], specSHA)
+	}
+}

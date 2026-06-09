@@ -18,7 +18,34 @@ job "deployment-service" {
       }
       config {
         command = "/usr/bin/install"
-        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/home/deployment_service", "/var/lib/verself/deployment-service", "/var/lib/verself/deployment-service/.cache", "/var/lib/verself/deployment-service/.cache/bazelisk", "/var/lib/verself/deployment-service/tmp"]
+        args = ["-d", "-o", "deployment_service", "-g", "deployment_service", "-m", "0750", "/home/deployment_service", "/var/lib/verself/deployment-service", "/var/lib/verself/deployment-service/.cache", "/var/lib/verself/deployment-service/.cache/bazelisk", "/var/lib/verself/deployment-service/.docker", "/var/lib/verself/deployment-service/tmp"]
+      }
+      resources {
+        cpu = 50
+        memory = 32
+      }
+    }
+    task "deployment-service-zot-auth" {
+      driver = "raw_exec"
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+      artifact {
+        source = "verself-artifact://deployment-service"
+        destination = "local"
+        chown = true
+      }
+      config {
+        command = "local/bin/deployment-service-zot-auth"
+        args = [
+          "--registry=127.0.0.1:5080",
+          "--username=artifact-publisher",
+          "--password-file=/etc/zot/publisher-password",
+          "--output=/var/lib/verself/deployment-service/.docker/config.json",
+          "--owner=deployment_service",
+          "--group=deployment_service",
+        ]
       }
       resources {
         cpu = 50
@@ -68,6 +95,7 @@ job "deployment-service" {
         BAZELISK_HOME = "/var/lib/verself/deployment-service/.cache/bazelisk"
         HOME = "/var/lib/verself/deployment-service"
         LOGNAME = "deployment_service"
+        DOCKER_CONFIG = "/var/lib/verself/deployment-service/.docker"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "deployment-service"

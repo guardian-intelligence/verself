@@ -10,7 +10,8 @@ NomadComponentInfo = provider(
         "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
-        "oci_images": "label_keyed_string_dict of OCI image archive targets to release output names.",
+        "oci_image_pushes": "label_keyed_string_dict of oci_push targets to release output names.",
+        "oci_images": "label_keyed_string_dict of OCI image digest targets to release output names.",
         "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names kept as build outputs.",
     },
 )
@@ -85,18 +86,31 @@ def _nomad_component_impl(ctx):
             "output": output,
             "path": artifact_file.path,
         })
+    oci_push_labels = {}
+    for push_target, output in ctx.attr.oci_image_pushes.items():
+        if output in oci_push_labels:
+            fail("duplicate OCI image push output %s in %s" % (output, ctx.label))
+        oci_push_labels[output] = _repo_label(push_target.label)
     oci_images = []
+    oci_image_outputs = {}
     for image_target, output in ctx.attr.oci_images.items():
         if output in artifact_outputs:
             fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
+        if output not in oci_push_labels:
+            fail("OCI image output %s in %s requires a matching oci_image_pushes entry" % (output, ctx.label))
         artifact_outputs[output] = True
-        image_file = _single_file(image_target, "OCI image archive")
+        oci_image_outputs[output] = True
+        image_file = _single_file(image_target, "OCI image digest")
         default_outputs.append(image_file)
         oci_images.append({
-            "label": _repo_label(image_target.label),
+            "digest_path": image_file.path,
+            "image_label": _repo_label(image_target.label),
             "output": output,
-            "path": image_file.path,
+            "push_label": oci_push_labels[output],
         })
+    for output in oci_push_labels:
+        if output not in oci_image_outputs:
+            fail("OCI image push output %s in %s has no matching oci_images entry" % (output, ctx.label))
     pre_artifacts = []
     for artifact_target, output in ctx.attr.pre_artifacts.items():
         if output in artifact_outputs:
@@ -114,7 +128,7 @@ def _nomad_component_impl(ctx):
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 8,
+        "schema_version": 9,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "deploy_phase": ctx.attr.deploy_phase,
@@ -140,6 +154,7 @@ def _nomad_component_impl(ctx):
             digest_inputs = ctx.attr.digest_inputs,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
+            oci_image_pushes = ctx.attr.oci_image_pushes,
             oci_images = ctx.attr.oci_images,
             pre_artifacts = ctx.attr.pre_artifacts,
         ),
@@ -159,7 +174,10 @@ nomad_component = rule(
         ),
         "oci_images": attr.label_keyed_string_dict(
             allow_files = True,
-            doc = "Map of component-owned OCI image archive targets to release output names.",
+            doc = "Map of component-owned OCI image digest targets to release output names.",
+        ),
+        "oci_image_pushes": attr.label_keyed_string_dict(
+            doc = "Map of component-owned oci_push targets to release output names.",
         ),
         "component": attr.string(
             mandatory = True,

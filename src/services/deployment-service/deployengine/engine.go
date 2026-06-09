@@ -19,19 +19,26 @@ const tracerName = "github.com/verself/deployment-service/deployengine"
 var gitSHARE = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 type Options struct {
-	Site                      string
-	SHA                       string
-	DeployRunKey              string
-	RepoRoot                  string
-	ArtifactPublisher         ArtifactPublisher
-	R2ControlPlaneBearerToken string
-	R2ControlPlaneAddr        string
-	R2ControlPlaneHTTPClient  *http.Client
-	NomadAddr                 string
-	BazelBuildFlags           []string
-	TaskUserResolver          TaskUserResolver
-	Tracer                    trace.Tracer
-	Stdout                    io.Writer
+	Site                                          string
+	SHA                                           string
+	DeployRunKey                                  string
+	RepoRoot                                      string
+	ArtifactPublisher                             ArtifactPublisher
+	OCIPusher                                     OCIPusher
+	OCIEvidencePublisher                          OCIEvidencePublisher
+	DistributionAdmitter                          DistributionAdmitter
+	AllowBootstrapOCIWithoutDistributionAdmission bool
+	R2ControlPlaneBearerToken                     string
+	R2ControlPlaneAddr                            string
+	R2ControlPlaneHTTPClient                      *http.Client
+	NomadAddr                                     string
+	BazelBuildFlags                               []string
+	BuilderID                                     string
+	SourceRepository                              string
+	SourceRef                                     string
+	TaskUserResolver                              TaskUserResolver
+	Tracer                                        trace.Tracer
+	Stdout                                        io.Writer
 }
 
 type Result struct {
@@ -100,6 +107,9 @@ func newExecution(opts Options) (execution, error) {
 	opts.SHA = strings.ToLower(strings.TrimSpace(opts.SHA))
 	opts.DeployRunKey = strings.TrimSpace(opts.DeployRunKey)
 	opts.RepoRoot = strings.TrimSpace(opts.RepoRoot)
+	opts.BuilderID = strings.TrimSpace(opts.BuilderID)
+	opts.SourceRepository = strings.TrimSpace(opts.SourceRepository)
+	opts.SourceRef = strings.TrimSpace(opts.SourceRef)
 	if opts.Site == "" {
 		return execution{}, errors.New("site is required")
 	}

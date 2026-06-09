@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/hashicorp/nomad/api"
 	"go.opentelemetry.io/otel"
 
 	r2controlplane "github.com/verself/integrations/cloudflare/r2-control-plane/client"
@@ -153,57 +152,6 @@ func TestApplyArtifactGetterSourcesRejectsUnsupportedScheme(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid getter source") {
 		t.Fatalf("error = %v, want invalid getter source", err)
-	}
-}
-
-func TestBindArtifactsInSpecBindsOCIArchiveImage(t *testing.T) {
-	image := "verself-oci-archive://analytics-service-image"
-	job := &api.Job{
-		TaskGroups: []*api.TaskGroup{
-			{
-				Tasks: []*api.Task{
-					{
-						Name:   "analytics-service",
-						Driver: "podman",
-						Config: map[string]interface{}{
-							"image": image,
-						},
-					},
-				},
-			},
-		},
-	}
-	seen, err := bindArtifactsInSpec(job, map[string]artifactBinding{
-		"analytics-service-image": {
-			Artifact: deploymodel.Artifact{
-				Output:       "analytics-service-image",
-				GetterSource: "https://downloads.example.test/analytics-service-image.tar",
-			},
-			Checksum: "sha256:" + strings.Repeat("a", 64),
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !seen["analytics-service-image"] {
-		t.Fatal("OCI image archive was not marked as seen")
-	}
-	task := job.TaskGroups[0].Tasks[0]
-	if got := task.Config["image"]; got != "oci-archive:${NOMAD_TASK_DIR}/local/verself-artifacts/analytics-service-image.oci.tar" {
-		t.Fatalf("image = %q", got)
-	}
-	if len(task.Artifacts) != 1 {
-		t.Fatalf("artifacts = %d, want 1", len(task.Artifacts))
-	}
-	artifact := task.Artifacts[0]
-	if artifact.GetterMode == nil || *artifact.GetterMode != "file" {
-		t.Fatalf("artifact mode = %v, want file", artifact.GetterMode)
-	}
-	if artifact.GetterOptions["archive"] != "false" {
-		t.Fatalf("archive option = %q, want false", artifact.GetterOptions["archive"])
-	}
-	if artifact.RelativeDest == nil || *artifact.RelativeDest != "local/verself-artifacts/analytics-service-image.oci.tar" {
-		t.Fatalf("destination = %v", artifact.RelativeDest)
 	}
 }
 

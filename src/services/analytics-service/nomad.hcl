@@ -27,7 +27,7 @@ job "analytics-service" {
       }
 
       config {
-        image = "verself-oci-archive://analytics-service-image"
+        image = "verself-oci://analytics-service"
         network_mode = "host"
         volumes = [
           "/etc/verself/clickhouse:/etc/verself/clickhouse:ro",

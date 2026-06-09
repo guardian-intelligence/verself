@@ -315,7 +315,10 @@ func (m Model) TokenMap() map[string]string {
 	if m.GitHubRunnerClassPrefix != "" {
 		tokens["__VERSELF_GITHUB_RUNNER_CLASS_PREFIX__"] = m.GitHubRunnerClassPrefix
 	}
-	tokens["__VERSELF_DISTRIBUTION_TRUSTED_BUILDERS__"] = "spiffe://" + m.SpiffeTrustDomain + "/svc/release-builder"
+	tokens["__VERSELF_DISTRIBUTION_TRUSTED_BUILDERS__"] = strings.Join([]string{
+		"spiffe://" + m.SpiffeTrustDomain + "/svc/release-builder",
+		"spiffe://" + m.SpiffeTrustDomain + "/svc/deployment-service",
+	}, ",")
 	tokens["__VERSELF_TEMPORAL_NAMESPACE_ROLES__"] = strings.Join([]string{
 		"spiffe://" + m.SpiffeTrustDomain + "/svc/sandbox-rental-service|sandbox-rental-service|admin",
 		"spiffe://" + m.SpiffeTrustDomain + "/svc/billing-service|billing-service|admin",

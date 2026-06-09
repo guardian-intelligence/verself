@@ -7,9 +7,9 @@ host substrate tasks into container work.
 
 | Metric | Main Baseline | Phase 1 Branch | Target Direction |
 | --- | ---: | ---: | --- |
-| Nomad `raw_exec` tasks | 80 | 79 | Down for ordinary services |
-| Nomad `podman` tasks | 0 | 1 | Up for ordinary services |
-| OCI-converted deployables | 0 | 1 | Up |
+| Nomad job files with `raw_exec` | 40 | 39 | Down for ordinary services |
+| Nomad job files with `podman` | 1 | 1 | Up for ordinary services |
+| OCI-converted deployables | 1 | 1 | Up |
 | GitHub main-to-gamma deploy workflows | 1 | 0 | Stay zero until gamma recovery is explicit |
 
 The migration unit is a Nomad job file. Task counts are secondary because some
@@ -20,29 +20,31 @@ jobs correctly contain setup or host-bound `raw_exec` tasks.
 Each converted deployable owns:
 
 - a Bazel-built OCI image target;
-- an OCI archive artifact target for bootstrap/local artifact transport;
+- a generated rules_oci digest target;
+- a generated rules_oci `oci_push` target;
 - a pinned trust-store layer when the workload performs outbound TLS;
 - a Nomad `podman` task that refers to the image through
-  `verself-oci-archive://<output>`;
+  `verself-oci://<output>`;
 - the same health checks, canary policy, and service registrations it had before
   conversion.
 
-Deployment rewrites `verself-oci-archive://<output>` into a downloaded local file
-artifact and sets the Podman image transport to `oci-archive:<path>`. The archive
-artifact is downloaded with Nomad artifact `mode = "file"` and `archive = false`
-so Nomad does not unpack the image tarball.
+Deployment reads the digest file, pushes the image through the declared `oci_push`
+target to the site-local Zot registry, and rewrites `verself-oci://<output>` into
+`<registry>/<repository>@sha256:<digest>`. Nomad and Podman only see immutable
+digest references.
 
 References:
 
-- rules_oci `oci_image`, `oci_image_index`, and `oci_load(format = "oci")`
-- Nomad Podman driver `oci-archive` image transport
-- Nomad artifact `mode = "file"` and `archive = false`
+- rules_oci `oci_image`, `oci_image_index`, generated `[name].digest`, and
+  `oci_push`
+- OCI Distribution digest references
+- Nomad Podman driver image references
 
 ## Inventory
 
 | Deployable | Raw Exec Tasks | Classification | Phase 1 Status | Proof |
 | --- | ---: | --- | --- | --- |
-| `src/services/analytics-service/nomad.hcl` | 0 | ordinary service | converted | `driver = "podman"`; OCI archive target declared |
+| `src/services/analytics-service/nomad.hcl` | 0 | ordinary service | converted | `driver = "podman"`; image rendered from `verself-oci://analytics-service` to a digest reference |
 | `src/services/profile-service/nomad.hcl` | 2 | ordinary service | pending | Convert after analytics canary succeeds |
 | `src/services/notifications-service/nomad.hcl` | 2 | ordinary service | pending | Convert after analytics canary succeeds |
 | `src/services/projects-service/nomad.hcl` | 2 | ordinary service | pending | Convert after analytics canary succeeds |
@@ -62,7 +64,6 @@ References:
 | `src/viteplus-monorepo/apps/company/nomad.hcl` | 1 | web frontend | pending | Needs Vite output image target |
 | `src/viteplus-monorepo/apps/verself-web/nomad.hcl` | 1 | web frontend | pending | Needs Vite output image target |
 | `src/infrastructure-components/nomad-observer/nomad.hcl` | 1 | observer | pending | Low-risk follow-up conversion |
-| `src/infrastructure-components/zot/nomad.hcl` | 1 | registry substrate | pending | Convert after registry storage policy review |
 | `src/infrastructure-components/verdaccio/nomad.hcl` | 2 | registry substrate | pending | Convert after package cache volume review |
 | `src/infrastructure-components/spicedb/nomad.hcl` | 2 | datastore-adjacent substrate | pending | Convert after migration path review |
 | `src/infrastructure-components/grafana/nomad.hcl` | 3 | operator UI substrate | pending | Convert after plugin/data directory review |

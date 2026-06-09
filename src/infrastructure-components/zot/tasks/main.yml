@@ -35,6 +35,35 @@
     group: "{{ zot_group }}"
     mode: "0750"
 
+- name: Detect zot storage ownership drift
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ zot_storage_dir }}"
+      - -xdev
+      - "("
+      - "!"
+      - -user
+      - "{{ zot_user }}"
+      - -o
+      - "!"
+      - -group
+      - "{{ zot_group }}"
+      - ")"
+      - -print
+      - -quit
+  register: zot_storage_ownership_drift
+  changed_when: false
+
+- name: Repair zot storage ownership drift
+  ansible.builtin.file:
+    path: "{{ zot_storage_dir }}"
+    state: directory
+    owner: "{{ zot_user }}"
+    group: "{{ zot_group }}"
+    recurse: true
+  when: zot_storage_ownership_drift.stdout | length > 0
+
 - name: Check zot publisher credential files
   ansible.builtin.stat:
     path: "{{ item }}"
@@ -82,6 +111,7 @@
     mode: "0640"
   when: not zot_publisher_credential_files.results[1].stat.exists
   no_log: true
+  notify: restart zot
 
 - name: Converge zot publisher credential ownership
   ansible.builtin.file:
@@ -101,11 +131,31 @@
     owner: root
     group: "{{ zot_group }}"
     mode: "0640"
+  notify: restart zot
 
 - name: Verify zot configuration
   ansible.builtin.command:
     cmd: "{{ verself_bin }}/zot verify {{ zot_config_path }}"
   changed_when: false
+
+- name: Deploy zot systemd unit
+  ansible.builtin.template:
+    src: zot.service.j2
+    dest: /etc/systemd/system/zot.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart zot
+
+- name: Apply zot unit and config changes before readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start zot
+  ansible.builtin.systemd:
+    name: zot
+    enabled: true
+    state: started
+    daemon_reload: true
 
 - name: Wait for zot listener
   ansible.builtin.wait_for:
