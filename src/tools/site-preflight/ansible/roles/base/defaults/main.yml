@@ -7,6 +7,8 @@ base_legacy_component_systemd_units:
 base_nomad_runtime_users:
   - name: analytics_service
     home: /var/lib/analytics_service
+    uid: 971
+    gid: 961
   - name: billing
     home: /var/lib/billing
   - name: clickhouse_operator
