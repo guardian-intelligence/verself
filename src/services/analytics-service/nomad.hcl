@@ -31,7 +31,7 @@ job "analytics-service" {
         network_mode = "host"
         volumes = [
           "/etc/verself/clickhouse:/etc/verself/clickhouse:ro",
-          "/run/spire-agent/sockets:/run/spire-agent/sockets:ro",
+          "/run/spire-agent/sockets/agent.sock:/run/spire-agent.sock:ro",
         ]
       }
       env {
@@ -46,7 +46,7 @@ job "analytics-service" {
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "analytics-service"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "analytics_service"
