@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "ociidentity",
+    srcs = [
+        "archive.go",
+        "identity.go",
+    ],
+    importpath = "github.com/verself/deployment-tools/internal/ociidentity",
+    visibility = ["//src/tools/deployment:__subpackages__"],
+)
+
+go_test(
+    name = "ociidentity_test",
+    srcs = [
+        "archive_test.go",
+        "identity_test.go",
+    ],
+    embed = [":ociidentity"],
+)

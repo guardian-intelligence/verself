@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "oci-identity-trace_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/deployment-tools/cmd/oci-identity-trace",
+    visibility = ["//visibility:private"],
+    deps = ["//src/tools/deployment/internal/ociidentity"],
+)
+
+go_binary(
+    name = "oci-identity-trace",
+    embed = [":oci-identity-trace_lib"],
+    visibility = ["//visibility:public"],
+)
