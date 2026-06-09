@@ -1,6 +1,6 @@
 -- ClickHouse initial schema for verself.
 --
--- The ansible clickhouse role applies this file with --database verself,
+-- The ClickHouse host installer applies this file with --database verself,
 -- so bare table names land in verself; OTel-compatible tables use fully
 -- qualified default.* since the OTel ClickHouse exporter runs with
 -- create_schema: false and expects tables in `default`.

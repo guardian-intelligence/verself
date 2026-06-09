@@ -10,12 +10,16 @@ pkg_tar(
     name = "host_install_artifact",
     out = "clickhouse-host-install.tar",
     files = {
+        "//src/infrastructure-components/clickhouse/cmd/clickhouse-host-apply:clickhouse-host-apply": "opt/verself/profile/bin/clickhouse-host-apply",
         "@clickhouse_tools//tools/clickhouse": "opt/verself/profile/bin/clickhouse",
         "//src/infrastructure-components/clickhouse/cmd/clickhouse-spiffe-bundle-reload:clickhouse-spiffe-bundle-reload": "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload",
+        "migrations/001_initial_schema.up.sql": "share/verself/clickhouse/migrations/001_initial_schema.up.sql",
     },
     modes = {
         "opt/verself/profile/bin/clickhouse": "0755",
+        "opt/verself/profile/bin/clickhouse-host-apply": "0755",
         "opt/verself/profile/bin/clickhouse-spiffe-bundle-reload": "0755",
+        "share/verself/clickhouse/migrations/001_initial_schema.up.sql": "0644",
     },
     symlinks = {
         "opt/verself/profile/bin/clickhouse-benchmark": "/opt/verself/profile/bin/clickhouse",
@@ -25,25 +29,6 @@ pkg_tar(
         "opt/verself/profile/bin/clickhouse-server": "/opt/verself/profile/bin/clickhouse",
     },
     visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "role_sources",
-    srcs = glob(
-        [
-            "defaults/**",
-            "deploy/**",
-            "files/**",
-            "handlers/**",
-            "meta/**",
-            "migrations/**",
-            "tasks/**",
-            "templates/**",
-            "vars/**",
-        ],
-        allow_empty = True,
-    ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
 )
 
 pkg_tar(

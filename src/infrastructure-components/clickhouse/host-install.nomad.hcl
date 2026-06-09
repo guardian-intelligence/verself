@@ -20,8 +20,13 @@ job "clickhouse-host-install" {
       user = "root"
 
       config {
-        command = "/bin/sh"
-        args = ["-euc", "src=\"$VERSELF_CLICKHOUSE_HOST_INSTALL/opt\"\ntest -x \"$src/verself/profile/bin/clickhouse\"\ntest -x \"$src/verself/profile/bin/clickhouse-spiffe-bundle-reload\"\ninstall -d -m 0755 /opt\ntar -C \"$src\" -cf - . | tar -C /opt -xf -\n/opt/verself/profile/bin/clickhouse client --version >/dev/null\n"]
+        command = "local/verself-artifacts/clickhouse-host-install/opt/verself/profile/bin/clickhouse-host-apply"
+        args = [
+          "--artifact-root",
+          "local/verself-artifacts/clickhouse-host-install",
+          "--spiffe-service-prefix",
+          "__VERSELF_SPIFFE_SERVICE_PREFIX__",
+        ]
       }
 
       env {
@@ -29,6 +34,7 @@ job "clickhouse-host-install" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "clickhouse-host-install"
         VERSELF_CLICKHOUSE_HOST_INSTALL = "verself-artifact://clickhouse-host-install"
+        VERSELF_SPIFFE_SERVICE_PREFIX = "__VERSELF_SPIFFE_SERVICE_PREFIX__"
         VERSELF_SUPERVISOR = "nomad"
       }
 
