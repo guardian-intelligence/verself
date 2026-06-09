@@ -74,8 +74,17 @@ job "otelcol" {
       }
 
       config {
-        command = "local/bin/otelcol-contrib"
-        args = ["--config", "local/config/config.yaml"]
+        command = "local/bin/wait-files-exec"
+        args = [
+          "--timeout=30s",
+          "/var/lib/otelcol/clickhouse-spiffe/svid.pem",
+          "/var/lib/otelcol/clickhouse-spiffe/svid_key.pem",
+          "/var/lib/otelcol/clickhouse-spiffe/bundle.pem",
+          "--",
+          "local/bin/otelcol-contrib",
+          "--config",
+          "local/config/config.yaml",
+        ]
       }
 
       env {

@@ -26,6 +26,7 @@ cp -a "$$grafana_root/." "$$tmp/runtime/grafana/"
 (cd "$$tmp" && "$$zipper" x "$$plugin_archive" -d plugin)
 test -d "$$tmp/plugin/grafana-clickhouse-datasource"
 cp -a "$$tmp/plugin/grafana-clickhouse-datasource" "$$tmp/runtime/plugins/grafana-clickhouse-datasource"
+test -f "$$tmp/runtime/plugins/grafana-clickhouse-datasource/CHANGELOG.md" || printf 'Bundled from pinned grafana-clickhouse-datasource 4.17.0.\\n' > "$$tmp/runtime/plugins/grafana-clickhouse-datasource/CHANGELOG.md"
 printf '4.17.0\\n' > "$$tmp/runtime/plugins/.grafana-clickhouse-datasource-version"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp/runtime" .
 """,
@@ -73,6 +74,7 @@ nomad_component(
     deploy_phase = "platform",
     digest_inputs = [
         ":deploy_declarations",
+        ":runtime_artifact",
     ],
     job_id = "grafana",
     job_spec = "nomad.hcl",

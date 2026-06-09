@@ -197,7 +197,7 @@ EOH
         destination = "secrets/replication-roles.json"
         perms = "0600"
         data = <<EOH
-{"roles":__VERSELF_POSTGRESQL_REPLICATION_ROLES_JSON__}
+__VERSELF_POSTGRESQL_REPLICATION_ROLES_JSON__
 EOH
       }
 

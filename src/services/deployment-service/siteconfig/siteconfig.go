@@ -27,9 +27,10 @@ type CloudflareProvider struct {
 }
 
 type PostgresBootstrap struct {
-	ServiceDatabases []PostgresServiceDatabase
-	ReplicationRoles []PostgresReplicationRole
-	PeerMappings     []PostgresPeerMapping
+	ServiceDatabases    []PostgresServiceDatabase
+	ReplicationRoles    []PostgresReplicationRole
+	LogicalPublications []PostgresLogicalPublication
+	PeerMappings        []PostgresPeerMapping
 }
 
 type PostgresServiceDatabase struct {
@@ -47,6 +48,15 @@ type PostgresReplicationRole struct {
 	ConnectionLimit int    `yaml:"connection_limit" json:"connection_limit"`
 	OpenBaoSecret   string `yaml:"openbao_secret" json:"-"`
 	PasswordEnv     string `yaml:"-" json:"password_env"`
+}
+
+type PostgresLogicalPublication struct {
+	Database         string   `yaml:"database" json:"database"`
+	Publication      string   `yaml:"publication" json:"publication"`
+	PublicationOwner string   `yaml:"publication_owner" json:"publication_owner"`
+	TableOwner       string   `yaml:"table_owner" json:"table_owner"`
+	ReplicationRole  string   `yaml:"replication_role" json:"replication_role"`
+	Tables           []string `yaml:"tables" json:"tables"`
 }
 
 type Model struct {
@@ -240,9 +250,10 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 				return fmt.Errorf("read %s: %w", path, err)
 			}
 			var doc struct {
-				ServiceDatabases []PostgresServiceDatabase `yaml:"postgresql_service_databases"`
-				ReplicationRoles []PostgresReplicationRole `yaml:"postgresql_replication_roles"`
-				PeerMappings     []PostgresPeerMapping     `yaml:"postgresql_peer_mappings"`
+				ServiceDatabases    []PostgresServiceDatabase    `yaml:"postgresql_service_databases"`
+				ReplicationRoles    []PostgresReplicationRole    `yaml:"postgresql_replication_roles"`
+				LogicalPublications []PostgresLogicalPublication `yaml:"postgresql_logical_publications"`
+				PeerMappings        []PostgresPeerMapping        `yaml:"postgresql_peer_mappings"`
 			}
 			if err := yaml.Unmarshal(body, &doc); err != nil {
 				return fmt.Errorf("decode %s: %w", path, err)
@@ -278,6 +289,32 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 				role.PasswordEnv = postgresReplicationRolePasswordEnv(role.Name)
 				out.ReplicationRoles = append(out.ReplicationRoles, role)
 			}
+			for _, publication := range doc.LogicalPublications {
+				if err := validatePostgresIdentifier(path, "postgresql_logical_publications.database", publication.Database); err != nil {
+					return err
+				}
+				if err := validatePostgresIdentifier(path, "postgresql_logical_publications.publication", publication.Publication); err != nil {
+					return err
+				}
+				if err := validatePostgresIdentifier(path, "postgresql_logical_publications.publication_owner", publication.PublicationOwner); err != nil {
+					return err
+				}
+				if err := validatePostgresIdentifier(path, "postgresql_logical_publications.table_owner", publication.TableOwner); err != nil {
+					return err
+				}
+				if err := validatePostgresIdentifier(path, "postgresql_logical_publications.replication_role", publication.ReplicationRole); err != nil {
+					return err
+				}
+				if len(publication.Tables) == 0 {
+					return fmt.Errorf("%s: postgresql_logical_publications.tables must not be empty for %s", path, publication.Publication)
+				}
+				for _, table := range publication.Tables {
+					if err := validatePostgresIdentifier(path, "postgresql_logical_publications.tables", table); err != nil {
+						return err
+					}
+				}
+				out.LogicalPublications = append(out.LogicalPublications, publication)
+			}
 			for _, mapping := range doc.PeerMappings {
 				if err := validatePostgresIdentifier(path, "postgresql_peer_mappings.system_user", mapping.SystemUser); err != nil {
 					return err
@@ -311,6 +348,14 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 	})
 	sort.Slice(out.ReplicationRoles, func(i, j int) bool {
 		return out.ReplicationRoles[i].Name < out.ReplicationRoles[j].Name
+	})
+	sort.Slice(out.LogicalPublications, func(i, j int) bool {
+		left := out.LogicalPublications[i]
+		right := out.LogicalPublications[j]
+		if left.Database == right.Database {
+			return left.Publication < right.Publication
+		}
+		return left.Database < right.Database
 	})
 	return out, nil
 }
@@ -552,12 +597,18 @@ func postgresReplicationRolePasswordEnv(roleName string) string {
 }
 
 func (p PostgresBootstrap) RenderReplicationRolesJSON() string {
-	roles := make([]PostgresReplicationRole, len(p.ReplicationRoles))
-	copy(roles, p.ReplicationRoles)
-	for index := range roles {
-		roles[index].PasswordEnv = postgresReplicationRolePasswordEnv(roles[index].Name)
+	payload := struct {
+		Roles        []PostgresReplicationRole    `json:"roles"`
+		Publications []PostgresLogicalPublication `json:"publications"`
+	}{
+		Roles:        make([]PostgresReplicationRole, len(p.ReplicationRoles)),
+		Publications: p.LogicalPublications,
 	}
-	body, err := json.Marshal(roles)
+	copy(payload.Roles, p.ReplicationRoles)
+	for index := range payload.Roles {
+		payload.Roles[index].PasswordEnv = postgresReplicationRolePasswordEnv(payload.Roles[index].Name)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		panic(err)
 	}
