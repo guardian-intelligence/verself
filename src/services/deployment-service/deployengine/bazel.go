@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	nomadComponentsQuery = `kind("nomad_component rule", //src/...)`
+	nomadComponentsQuery = `kind("_nomad_component rule", //src/...)`
 )
 
 func queryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, error) {

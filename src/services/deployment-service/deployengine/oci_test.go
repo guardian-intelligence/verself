@@ -15,7 +15,7 @@ import (
 
 func TestBindNomadOCIImagesBuildsDigestReferences(t *testing.T) {
 	root := t.TempDir()
-	digestPath := filepath.Join(root, "bazel-out", "analytics_service_image.json.sha256")
+	digestPath := filepath.Join(root, "bazel-out", "image.json.sha256")
 	manifestBody := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json"}`)
 	sum := sha256.Sum256(manifestBody)
 	digestHex := hex.EncodeToString(sum[:])
@@ -39,10 +39,10 @@ func TestBindNomadOCIImagesBuildsDigestReferences(t *testing.T) {
 			Label: "analytics",
 			OCIImages: []nomadDescriptorOCIImage{
 				{
-					ImageLabel: "//src/services/analytics-service/cmd/analytics-service:analytics_service_image.digest",
+					ImageLabel: "//src/services/analytics-service/cmd/analytics-service:image.digest",
 					Output:     "analytics-service",
-					DigestPath: "bazel-out/analytics_service_image.json.sha256",
-					PushLabel:  "//src/services/analytics-service/cmd/analytics-service:analytics_service_image_push",
+					DigestPath: "bazel-out/image.json.sha256",
+					PushLabel:  "//src/services/analytics-service/cmd/analytics-service:image_push",
 				},
 			},
 		},
@@ -86,8 +86,8 @@ func TestAdmitOCIImagesPublishesEvidenceBeforeDistributionAdmission(t *testing.T
 		OCIImages: map[string]ociImageBinding{
 			"analytics-service": {
 				Output:            "analytics-service",
-				ImageLabel:        "//src/services/analytics-service/cmd/analytics-service:analytics_service_image.digest",
-				PushLabel:         "//src/services/analytics-service/cmd/analytics-service:analytics_service_image_push",
+				ImageLabel:        "//src/services/analytics-service/cmd/analytics-service:image.digest",
+				PushLabel:         "//src/services/analytics-service/cmd/analytics-service:image_push",
 				Digest:            digest,
 				MediaType:         "application/vnd.oci.image.index.v1+json",
 				SizeBytes:         512,
@@ -140,8 +140,8 @@ func TestAdmitOCIImagesAllowsExplicitBootstrapWithoutDistributionAdmission(t *te
 		OCIImages: map[string]ociImageBinding{
 			"analytics-service": {
 				Output:         "analytics-service",
-				ImageLabel:     "//src/services/analytics-service/cmd/analytics-service:analytics_service_image.digest",
-				PushLabel:      "//src/services/analytics-service/cmd/analytics-service:analytics_service_image_push",
+				ImageLabel:     "//src/services/analytics-service/cmd/analytics-service:image.digest",
+				PushLabel:      "//src/services/analytics-service/cmd/analytics-service:image_push",
 				Digest:         digest,
 				MediaType:      "application/vnd.oci.image.index.v1+json",
 				SizeBytes:      512,
@@ -222,7 +222,7 @@ func TestPublishOCIImagesUsesDeclaredPusher(t *testing.T) {
 				Repository:      "verself/analytics-service",
 				PushRepository:  "127.0.0.1:5080/verself/analytics-service",
 				PullReference:   "127.0.0.1:5080/verself/analytics-service@" + digest,
-				PushLabel:       "//src/services/analytics-service/cmd/analytics-service:analytics_service_image_push",
+				PushLabel:       "//src/services/analytics-service/cmd/analytics-service:image_push",
 				DockerConfigDir: "/var/lib/verself/deployment-service/.docker",
 				Insecure:        true,
 			},
