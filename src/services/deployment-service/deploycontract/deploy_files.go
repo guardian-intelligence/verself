@@ -189,9 +189,9 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
 			}
 			switch declaration.Generated.Encoding {
-			case "base64url", "hex", "alphanumeric":
+			case "base64url", "hex", "alphanumeric", "password":
 			default:
-				v.add(rel, prefix+".generated.encoding must be base64url, hex, or alphanumeric")
+				v.add(rel, prefix+".generated.encoding must be base64url, hex, alphanumeric, or password")
 			}
 		}
 		if err := validateRuntimeSecretDeclaration(rel, declaration); err != nil {

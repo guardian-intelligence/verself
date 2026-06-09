@@ -192,6 +192,26 @@ func TestGenerateRuntimeSecretValue(t *testing.T) {
 	if len(value) != 16 {
 		t.Fatalf("alphanumeric length = %d", len(value))
 	}
+	value, err = generateRuntimeSecretValue(openBaoGeneratedSecret{Name: "secret.password", Bytes: 24, Encoding: "password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(value) != 24 {
+		t.Fatalf("password length = %d", len(value))
+	}
+	assertContainsClass := func(name string, ok func(rune) bool) {
+		t.Helper()
+		for _, r := range value {
+			if ok(r) {
+				return
+			}
+		}
+		t.Fatalf("password missing %s: %q", name, value)
+	}
+	assertContainsClass("lowercase", func(r rune) bool { return r >= 'a' && r <= 'z' })
+	assertContainsClass("uppercase", func(r rune) bool { return r >= 'A' && r <= 'Z' })
+	assertContainsClass("digit", func(r rune) bool { return r >= '0' && r <= '9' })
+	assertContainsClass("symbol", func(r rune) bool { return strings.ContainsRune("!@#$%^&*_-+=", r) })
 }
 
 func TestPruneNomadRuntimeRolesDeletesOnlyStaleRuntimeEntries(t *testing.T) {

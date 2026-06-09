@@ -746,7 +746,7 @@ func validateGeneratedSecretSpec(secret openBaoGeneratedSecret) error {
 		return fmt.Errorf("generated secret %s bytes must be between 16 and 96", secret.Name)
 	}
 	switch secret.Encoding {
-	case "base64url", "hex", "alphanumeric":
+	case "base64url", "hex", "alphanumeric", "password":
 		return nil
 	default:
 		return fmt.Errorf("generated secret %s encoding %q is not supported", secret.Name, secret.Encoding)
@@ -868,6 +868,8 @@ func generateRuntimeSecretValue(secret openBaoGeneratedSecret) (string, error) {
 		return hex.EncodeToString(raw), nil
 	case "alphanumeric":
 		return randomAlphanumeric(secret.Bytes)
+	case "password":
+		return randomPassword(secret.Bytes)
 	default:
 		return "", fmt.Errorf("generated secret %s encoding %q is not supported", secret.Name, secret.Encoding)
 	}
@@ -883,16 +885,74 @@ func randomBytes(length int) ([]byte, error) {
 
 func randomAlphanumeric(length int) (string, error) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	limit := big.NewInt(int64(len(alphabet)))
 	out := make([]byte, length)
 	for i := range out {
-		index, err := rand.Int(rand.Reader, limit)
+		value, err := randomAlphabetByte(alphabet)
 		if err != nil {
 			return "", fmt.Errorf("generate alphanumeric runtime secret material: %w", err)
 		}
-		out[i] = alphabet[index.Int64()]
+		out[i] = value
 	}
 	return string(out), nil
+}
+
+func randomPassword(length int) (string, error) {
+	const (
+		lower   = "abcdefghijklmnopqrstuvwxyz"
+		upper   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		digit   = "0123456789"
+		symbol  = "!@#$%^&*_-+="
+		all     = lower + upper + digit + symbol
+		minimum = 4
+	)
+	if length < minimum {
+		return "", fmt.Errorf("password runtime secret length must be at least %d", minimum)
+	}
+	out := make([]byte, length)
+	for i, alphabet := range []string{lower, upper, digit, symbol} {
+		value, err := randomAlphabetByte(alphabet)
+		if err != nil {
+			return "", fmt.Errorf("generate password runtime secret material: %w", err)
+		}
+		out[i] = value
+	}
+	for i := minimum; i < length; i++ {
+		value, err := randomAlphabetByte(all)
+		if err != nil {
+			return "", fmt.Errorf("generate password runtime secret material: %w", err)
+		}
+		out[i] = value
+	}
+	for i := len(out) - 1; i > 0; i-- {
+		j, err := randomIndex(i + 1)
+		if err != nil {
+			return "", fmt.Errorf("shuffle password runtime secret material: %w", err)
+		}
+		out[i], out[j] = out[j], out[i]
+	}
+	return string(out), nil
+}
+
+func randomAlphabetByte(alphabet string) (byte, error) {
+	if alphabet == "" {
+		return 0, errors.New("alphabet is empty")
+	}
+	index, err := randomIndex(len(alphabet))
+	if err != nil {
+		return 0, err
+	}
+	return alphabet[index], nil
+}
+
+func randomIndex(limit int) (int, error) {
+	if limit <= 0 {
+		return 0, errors.New("random limit must be positive")
+	}
+	index, err := rand.Int(rand.Reader, big.NewInt(int64(limit)))
+	if err != nil {
+		return 0, err
+	}
+	return int(index.Int64()), nil
 }
 
 func runtimeSecretAPIPath(name string) string {

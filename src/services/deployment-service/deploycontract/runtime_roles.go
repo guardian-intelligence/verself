@@ -222,9 +222,9 @@ func validateRuntimeSecretDeclaration(path string, declaration RuntimeSecretDecl
 			return fmt.Errorf("%s: runtime secret %s generated.bytes must be between 16 and 96", path, declaration.Name)
 		}
 		switch declaration.Generated.Encoding {
-		case "base64url", "hex", "alphanumeric":
+		case "base64url", "hex", "alphanumeric", "password":
 		default:
-			return fmt.Errorf("%s: runtime secret %s generated.encoding must be base64url, hex, or alphanumeric", path, declaration.Name)
+			return fmt.Errorf("%s: runtime secret %s generated.encoding must be base64url, hex, alphanumeric, or password", path, declaration.Name)
 		}
 	}
 	seen := map[string]bool{declaration.JobID: true}
