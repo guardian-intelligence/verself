@@ -56,6 +56,7 @@
 - name: Create non-SPIFFE Nomad runtime groups
   ansible.builtin.group:
     name: "{{ item.name }}"
+    gid: "{{ item.gid | default(omit) }}"
     system: true
     state: present
   loop: "{{ base_nomad_runtime_users }}"
@@ -65,6 +66,7 @@
 - name: Create non-SPIFFE Nomad runtime users
   ansible.builtin.user:
     name: "{{ item.name }}"
+    uid: "{{ item.uid | default(omit) }}"
     group: "{{ item.name }}"
     system: true
     shell: /usr/sbin/nologin
