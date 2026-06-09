@@ -118,12 +118,27 @@ RETURNING *;
 -- name: GetArtifactByDigest :one
 SELECT *
 FROM distribution_artifacts
-WHERE oci_digest = @oci_digest;
+WHERE oci_digest = @oci_digest
+ORDER BY available_at DESC, artifact_id DESC
+LIMIT 1;
 
 -- name: GetArtifactByRepositoryDigest :one
 SELECT *
 FROM distribution_artifacts
-WHERE oci_repository = @oci_repository AND oci_digest = @oci_digest;
+WHERE oci_repository = @oci_repository AND oci_digest = @oci_digest
+ORDER BY available_at DESC, artifact_id DESC
+LIMIT 1;
+
+-- name: GetArtifactByCoordinateDigest :one
+SELECT *
+FROM distribution_artifacts
+WHERE package_name = @package_name
+  AND package_version = @package_version
+  AND channel_name = @channel_name
+  AND platform_os = @platform_os
+  AND platform_arch = @platform_arch
+  AND flavor = @flavor
+  AND oci_digest = @oci_digest;
 
 -- name: ListEvidenceForArtifact :many
 SELECT *
@@ -175,8 +190,7 @@ WHERE package_name = @package_name
   AND platform_os = @platform_os
   AND platform_arch = @platform_arch
   AND flavor = @flavor
-  AND state IN ('published', 'rollback_target_published')
-  AND artifact_digest <> @superseded_by_digest;
+  AND state IN ('published', 'rollback_target_published');
 
 -- name: UpsertPublishedTarget :one
 INSERT INTO distribution_channel_targets (
@@ -218,7 +232,7 @@ INSERT INTO distribution_channel_targets (
     @created_at,
     @updated_at
 )
-ON CONFLICT (package_name, channel_name, platform_os, platform_arch, flavor, artifact_digest) DO UPDATE
+ON CONFLICT (package_name, channel_name, platform_os, platform_arch, flavor, package_version, artifact_digest) DO UPDATE
 SET
     state = EXCLUDED.state,
     public_oci_reference = EXCLUDED.public_oci_reference,

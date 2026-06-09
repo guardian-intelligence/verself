@@ -88,6 +88,7 @@ type AdmitArtifactRequest struct {
 
 type PromoteTargetRequest struct {
 	PackageName    string `json:"-"`
+	PackageVersion string `json:"package_version"`
 	ChannelName    string `json:"-"`
 	ArtifactDigest string `json:"artifact_digest"`
 	PlatformOS     string `json:"platform_os"`
@@ -99,7 +100,7 @@ type PromoteTargetRequest struct {
 }
 
 type ArtifactRecord struct {
-	ResourceName       string `json:"resource_name"`
+	ResourceName       string `json:"resourceName"`
 	PackageName        string `json:"package_name"`
 	PackageVersion     string `json:"package_version"`
 	ChannelName        string `json:"channel_name"`
@@ -107,7 +108,7 @@ type ArtifactRecord struct {
 	PlatformArch       string `json:"platform_arch"`
 	Flavor             string `json:"flavor"`
 	OCIRepository      string `json:"oci_repository"`
-	OCIDigest          string `json:"oci_digest"`
+	OCIDigest          string `json:"artifact_digest"`
 	OCIMediaType       string `json:"oci_media_type"`
 	OCISizeBytes       int64  `json:"oci_size_bytes"`
 	PublicOCIReference string `json:"public_oci_reference"`
@@ -115,7 +116,7 @@ type ArtifactRecord struct {
 }
 
 type TargetRecord struct {
-	ResourceName       string `json:"resource_name"`
+	ResourceName       string `json:"resourceName"`
 	PackageName        string `json:"package_name"`
 	ChannelName        string `json:"channel_name"`
 	PlatformOS         string `json:"platform_os"`

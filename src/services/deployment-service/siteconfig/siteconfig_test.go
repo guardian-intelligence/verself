@@ -3,6 +3,7 @@ package siteconfig
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,16 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 	if err := os.WriteFile(filepath.Join(siteDir, "vars.yml"), vars, 0o644); err != nil {
 		t.Fatalf("write vars: %v", err)
 	}
+	write(t, root, "src/services/deployment-service/deploy/postgres.yml", `postgresql_service_databases:
+  - { name: deployment_service, owner: deployment_service }
+postgresql_peer_mappings:
+  - { system_user: deployment_service, pg_user: deployment_service }
+`)
+	write(t, root, "src/services/distribution-service/deploy/postgres.yml", `postgresql_service_databases:
+  - { name: distribution_service, owner: distribution_service }
+postgresql_peer_mappings:
+  - { system_user: distribution_service, pg_user: distribution_service }
+`)
 	model, err := Load(root, "gamma")
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -76,6 +87,20 @@ deployment_github_allowed_workflow_refs: guardian-intelligence/verself/.github/w
 	if tokens["__VERSELF_NOMAD_ARTIFACT_BUCKET__"] != "verself-deployment-artifacts" {
 		t.Fatalf("artifact bucket token = %q", tokens["__VERSELF_NOMAD_ARTIFACT_BUCKET__"])
 	}
+	identRows := tokens["__VERSELF_POSTGRESQL_BOOTSTRAP_IDENT_ROWS__"]
+	if !strings.Contains(identRows, "verself_services      deployment_service") {
+		t.Fatalf("postgres ident rows missing deployment_service: %q", identRows)
+	}
+	if !strings.Contains(identRows, "verself_services      distribution_service") {
+		t.Fatalf("postgres ident rows missing distribution_service: %q", identRows)
+	}
+	databaseSQL := tokens["__VERSELF_POSTGRESQL_BOOTSTRAP_DATABASE_SQL__"]
+	if !strings.Contains(databaseSQL, "CREATE ROLE deployment_service LOGIN") {
+		t.Fatalf("postgres database SQL missing deployment_service role: %q", databaseSQL)
+	}
+	if !strings.Contains(databaseSQL, "CREATE DATABASE distribution_service OWNER distribution_service") {
+		t.Fatalf("postgres database SQL missing distribution_service database: %q", databaseSQL)
+	}
 }
 
 func writeCloudflareAccountConfig(t *testing.T, root string) {
@@ -96,5 +121,16 @@ func writeCloudflareAccountConfig(t *testing.T, root string) {
 `)
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatalf("write cloudflare config: %v", err)
+	}
+}
+
+func write(t *testing.T, root, rel, body string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
 	}
 }

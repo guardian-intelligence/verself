@@ -21,7 +21,6 @@ import (
 	distributionreleaseattest "github.com/verself/distribution-service/internal/releaseattest"
 	"github.com/verself/distribution-service/migrations"
 	verselfotel "github.com/verself/observability/otel"
-	auth "github.com/verself/service-runtime/auth"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
 	workloadauth "github.com/verself/service-runtime/workload"
@@ -73,8 +72,6 @@ func run() error {
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4280")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4281")
-	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	trustedBuilders := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_BUILDERS"))
 	trustedSigners := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_SIGNERS"))
@@ -138,7 +135,8 @@ func run() error {
 			TrustedAKs:  map[string]distributionreleaseattest.TrustedAK{},
 			PCRPolicies: map[string]distributionreleaseattest.PCRPolicy{},
 		},
-		InstallationID: installationID,
+		DeploymentVerifier: distribution.DeploymentOCIEvidenceVerifier{},
+		InstallationID:     installationID,
 	}
 	if err := svc.Ready(ctx); err != nil {
 		return fmt.Errorf("distribution readiness: %w", err)
@@ -163,9 +161,7 @@ func run() error {
 
 	publicMux := http.NewServeMux()
 	distributionapi.RegisterPublicRoutes(publicMux, distributionapi.Config{Service: svc, InstallationID: installationID})
-	authenticated := auth.Middleware(auth.Config{IssuerURL: authIssuerURL, Audience: authAudience})(publicMux)
 	rootMux.Handle("/api/v1/distribution/", publicMux)
-	rootMux.Handle("/api/", authenticated)
 	rootMux.Handle("/v2/", publicMux)
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(

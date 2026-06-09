@@ -102,7 +102,7 @@ plugin "nomad-driver-podman" {
 vault {
   enabled               = true
   address               = "https://127.0.0.1:8200"
-  ca_file               = "/etc/openbao/tls/cert.pem"
+  ca_file               = "/etc/openbao/tls/ca.pem"
   jwt_auth_backend_path = "jwt-nomad"
 
   default_identity {

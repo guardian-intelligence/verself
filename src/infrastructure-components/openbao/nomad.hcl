@@ -80,9 +80,24 @@ mkdir("/var/lib/openbao", openbao.pw_uid, openbao.pw_gid, 0o700)
 mkdir("/var/lib/openbao/raft", openbao.pw_uid, openbao.pw_gid, 0o700)
 mkdir("/var/log/openbao", openbao.pw_uid, openbao.pw_gid, 0o700)
 
+ca_cert = pathlib.Path("/etc/openbao/tls/ca.pem")
+ca_key = pathlib.Path("/etc/openbao/tls/ca-key.pem")
 cert = pathlib.Path("/etc/openbao/tls/cert.pem")
 key = pathlib.Path("/etc/openbao/tls/key.pem")
-if not cert.exists() or not key.exists():
+
+def usable_tls_material():
+    for path in (ca_cert, ca_key, cert, key):
+        if not path.exists():
+            return False
+    verify = subprocess.run(
+        ["/usr/bin/openssl", "verify", "-CAfile", str(ca_cert), str(cert)],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return verify.returncode == 0
+
+if not usable_tls_material():
     tmp = pathlib.Path("/etc/openbao/tls/.next")
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(mode=0o700)
@@ -90,22 +105,52 @@ if not cert.exists() or not key.exists():
         "/usr/bin/openssl", "req", "-x509", "-newkey", "ec",
         "-pkeyopt", "ec_paramgen_curve:prime256v1",
         "-days", "3650", "-nodes",
+        "-keyout", str(tmp / "ca-key.pem"),
+        "-out", str(tmp / "ca.pem"),
+        "-subj", "/CN=Verself OpenBao local CA",
+        "-addext", "basicConstraints=critical,CA:TRUE",
+        "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+    ])
+    run([
+        "/usr/bin/openssl", "req", "-newkey", "ec",
+        "-pkeyopt", "ec_paramgen_curve:prime256v1",
+        "-nodes",
         "-keyout", str(tmp / "key.pem"),
-        "-out", str(tmp / "cert.pem"),
-        "-subj", "/CN=127.0.0.1",
+        "-out", str(tmp / "server.csr"),
+        "-subj", "/CN=localhost",
         "-addext", "subjectAltName=IP:127.0.0.1,DNS:localhost",
     ])
+    (tmp / "server.ext").write_text(
+        "basicConstraints=critical,CA:FALSE\n"
+        "keyUsage=critical,digitalSignature,keyEncipherment\n"
+        "extendedKeyUsage=serverAuth\n"
+        "subjectAltName=IP:127.0.0.1,DNS:localhost\n",
+        encoding="utf-8",
+    )
+    run([
+        "/usr/bin/openssl", "x509", "-req",
+        "-in", str(tmp / "server.csr"),
+        "-CA", str(tmp / "ca.pem"),
+        "-CAkey", str(tmp / "ca-key.pem"),
+        "-CAcreateserial",
+        "-out", str(tmp / "cert.pem"),
+        "-days", "3650",
+        "-sha256",
+        "-extfile", str(tmp / "server.ext"),
+    ])
+    os.replace(tmp / "ca-key.pem", ca_key)
+    os.replace(tmp / "ca.pem", ca_cert)
     os.replace(tmp / "key.pem", key)
     os.replace(tmp / "cert.pem", cert)
     shutil.rmtree(tmp, ignore_errors=True)
-for path, mode in ((cert, 0o640), (key, 0o640)):
+for path, mode in ((ca_cert, 0o640), (ca_key, 0o640), (cert, 0o640), (key, 0o640)):
     os.chown(path, 0, openbao.pw_gid)
     os.chmod(path, mode)
 
 public_ca_dir = pathlib.Path("/etc/verself/openbao")
 public_ca_dir.mkdir(parents=True, exist_ok=True)
 public_ca = public_ca_dir / "ca.pem"
-shutil.copyfile(cert, public_ca)
+shutil.copyfile(ca_cert, public_ca)
 os.chown(public_ca_dir, 0, 0)
 os.chmod(public_ca_dir, 0o755)
 os.chown(public_ca, 0, 0)
@@ -222,14 +267,14 @@ PY
           "--state-dir=/var/lib/verself/bootstrap/openbao",
           "--root-key-file=/etc/verself/bootstrap/openbao-root.key",
           "--addr=https://127.0.0.1:8200",
-          "--ca-cert=/etc/openbao/tls/cert.pem",
+          "--ca-cert=/etc/openbao/tls/ca.pem",
           "--runtime-catalog-file=local/etc/openbao-runtime-catalog.json",
         ]
       }
 
       env {
         BAO_ADDR = "https://127.0.0.1:8200"
-        BAO_CACERT = "/etc/openbao/tls/cert.pem"
+        BAO_CACERT = "/etc/openbao/tls/ca.pem"
       }
 
       resources {

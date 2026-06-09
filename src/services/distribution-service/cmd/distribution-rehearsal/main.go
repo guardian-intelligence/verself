@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	trustedBuilder = "spiffe://prod.verself.sh/svc/release-builder"
-	trustedSigner  = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
+	defaultBuilderID      = "spiffe://prod.verself.sh/svc/release-builder"
+	defaultSignerIdentity = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
 )
 
 type config struct {
@@ -37,6 +37,8 @@ type config struct {
 	sourceCommit      string
 	sourceRef         string
 	policyRef         string
+	builderID         string
+	signerIdentity    string
 	submittedBy       string
 }
 
@@ -67,6 +69,8 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&cfg.sourceCommit, "source-commit", "", "Source commit.")
 	fs.StringVar(&cfg.sourceRef, "source-ref", "", "Source ref.")
 	fs.StringVar(&cfg.policyRef, "policy-ref", "", "Policy reference.")
+	fs.StringVar(&cfg.builderID, "builder-id", defaultBuilderID, "Trusted builder identity.")
+	fs.StringVar(&cfg.signerIdentity, "signer-identity", defaultSignerIdentity, "Trusted signer identity.")
 	fs.StringVar(&cfg.submittedBy, "submitted-by", "", "Submitting actor.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -105,15 +109,15 @@ func run(ctx context.Context, args []string) error {
 		OCIDigest:         cfg.ociDigest,
 		OCIMediaType:      cfg.ociMediaType,
 		OCISizeBytes:      cfg.ociSizeBytes,
-		BuilderID:         trustedBuilder,
-		SignerIdentity:    trustedSigner,
+		BuilderID:         cfg.builderID,
+		SignerIdentity:    cfg.signerIdentity,
 		SourceRepository:  cfg.sourceRepository,
 		SourceCommit:      cfg.sourceCommit,
 		SourceRef:         cfg.sourceRef,
 		PolicyRef:         cfg.policyRef,
 		Evidence:          evidence(cfg.ociDigest),
 		SubmittedBy:       cfg.submittedBy,
-	}, "distribution-rehearsal-admit-"+digestKey(cfg.ociDigest))
+	}, idempotencyKey("admit", cfg))
 	if err != nil {
 		return err
 	}
@@ -123,6 +127,7 @@ func run(ctx context.Context, args []string) error {
 
 	target, err := client.PromoteTarget(ctx, distributioninternalclient.PromoteTargetRequest{
 		PackageName:    cfg.packageName,
+		PackageVersion: cfg.packageVersion,
 		ChannelName:    cfg.channelName,
 		ArtifactDigest: cfg.ociDigest,
 		PlatformOS:     cfg.platformOS,
@@ -131,7 +136,7 @@ func run(ctx context.Context, args []string) error {
 		PolicyRef:      cfg.policyRef,
 		PromotedBy:     cfg.submittedBy,
 		Reason:         "distribution rehearsal",
-	}, "distribution-rehearsal-promote-"+digestKey(cfg.ociDigest))
+	}, idempotencyKey("promote", cfg))
 	if err != nil {
 		return err
 	}
@@ -163,6 +168,8 @@ func require(cfg config) error {
 		"source-commit":       cfg.sourceCommit,
 		"source-ref":          cfg.sourceRef,
 		"policy-ref":          cfg.policyRef,
+		"builder-id":          cfg.builderID,
+		"signer-identity":     cfg.signerIdentity,
 		"submitted-by":        cfg.submittedBy,
 	}
 	for key, value := range check {
@@ -193,8 +200,18 @@ func digestFor(kind string, subject string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-func digestKey(digest string) string {
-	return strings.ReplaceAll(digest, ":", "-")
+func idempotencyKey(operation string, cfg config) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		operation,
+		cfg.packageName,
+		cfg.packageVersion,
+		cfg.channelName,
+		cfg.platformOS,
+		cfg.platformArch,
+		cfg.flavor,
+		cfg.ociDigest,
+	}, "\n")))
+	return "distribution-rehearsal-" + operation + "-" + hex.EncodeToString(sum[:16])
 }
 
 func problemDetail(problem *distributioninternalclient.ErrorModel) string {
