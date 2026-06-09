@@ -4,6 +4,9 @@ base_legacy_component_systemd_units:
 
 # Direct Nomad task users that must exist before deployment submission.
 # root/nobody are OS defaults; postgres is created by the PostgreSQL prestart task.
+base_nomad_runtime_groups:
+  - vm-clients
+
 base_nomad_runtime_users:
   - name: analytics_service
     home: /var/lib/analytics_service

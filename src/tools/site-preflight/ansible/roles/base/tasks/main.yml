@@ -53,6 +53,15 @@
   loop_control:
     label: "{{ item }}"
 
+- name: Create non-SPIFFE Nomad runtime-only groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+    state: present
+  loop: "{{ base_nomad_runtime_groups }}"
+  loop_control:
+    label: "{{ item }}"
+
 - name: Create non-SPIFFE Nomad runtime groups
   ansible.builtin.group:
     name: "{{ item.name }}"
