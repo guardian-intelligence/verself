@@ -83,7 +83,8 @@ job "verself-web" {
 EOT
       }
       template {
-        change_mode = "restart"
+        # Service membership churn must not restart the public frontend.
+        change_mode = "noop"
         destination = "secrets/upstreams.env"
         data = <<-EOT
 BILLING_SERVICE_BASE_URL=http://{{- with nomadService "billing-public-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
