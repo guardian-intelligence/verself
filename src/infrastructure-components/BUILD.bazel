@@ -16,7 +16,6 @@ filegroup(
         ],
         allow_empty = True,
     ) + [
-        "//src/infrastructure-components/clickhouse:role_sources",
         "//src/infrastructure-components/forgejo:role_sources",
         "//src/infrastructure-components/grafana:role_sources",
         "//src/infrastructure-components/haproxy:role_sources",
