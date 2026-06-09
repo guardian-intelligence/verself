@@ -7,6 +7,7 @@ go_library(
         "fleet.go",
         "main.go",
         "oci_attestation.go",
+        "podman_measurement.go",
     ],
     importpath = "github.com/verself/infrastructure-components/nomad-observer/cmd/nomad-observer",
     visibility = ["//visibility:private"],

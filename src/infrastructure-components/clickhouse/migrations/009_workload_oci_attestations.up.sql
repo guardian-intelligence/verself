@@ -1,9 +1,9 @@
 -- Append-only OCI image evidence observed from Nomad allocation events.
 --
 -- This table is intentionally observe-only: rows record the declared immutable
--- image digest from the Nomad job payload and leave measured_digest empty until
--- an on-host runtime measurement source is wired in. Policy engines should
--- treat decision='unmeasured' as non-admissible for secret gating.
+-- image digest from the Nomad job payload and the measured Podman image digest
+-- when the host runtime can observe a matching container. Policy engines should
+-- treat any decision other than 'matched' as non-admissible for secret gating.
 CREATE TABLE IF NOT EXISTS verself.workload_oci_attestations
 (
     site                LowCardinality(String) CODEC(ZSTD(3)),

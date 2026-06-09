@@ -55,6 +55,7 @@ type config struct {
 	site                  string
 	nomadAddr             string
 	namespace             string
+	podmanMeasureSocket   string
 	stderrTailBytes       int64
 	stdoutTailBytes       int64
 	captureWorkers        int
@@ -173,6 +174,19 @@ type observer struct {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if envString("NOMAD_OBSERVER_MODE", "observer") == "podman-measurer" {
+		cfg, err := podmanMeasurerConfigFromEnv()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := runPodmanMeasurer(ctx, cfg); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := configFromEnv()
 	if err != nil {
@@ -321,6 +335,7 @@ func configFromEnv() (config, error) {
 		site:                  envString("VERSELF_SITE", ""),
 		nomadAddr:             envString("NOMAD_ADDR", "http://127.0.0.1:4646"),
 		namespace:             envString("NOMAD_NAMESPACE", defaultNS),
+		podmanMeasureSocket:   envString(podmanMeasureSocketEnv, ""),
 		stderrTailBytes:       stderrTailBytes,
 		stdoutTailBytes:       stdoutTailBytes,
 		captureWorkers:        captureWorkers,
