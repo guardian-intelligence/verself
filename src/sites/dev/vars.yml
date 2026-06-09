@@ -54,6 +54,8 @@ source_code_hosting_service_domain: "{{ source_code_hosting_service_subdomain }}
 stalwart_subdomain: mail
 stalwart_domain: "{{ stalwart_subdomain }}.{{ verself_domain }}"
 zitadel_domain: "{{ verself_domain }}"
+# Public Zitadel project ID used as the product API audience.
+zitadel_product_project_id: verself-api
 
 cloudflare_dns_records: []
 postgresql_host: 127.0.0.1

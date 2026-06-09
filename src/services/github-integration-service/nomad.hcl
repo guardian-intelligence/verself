@@ -91,6 +91,7 @@ job "github-integration" {
         OTEL_SERVICE_NAME = "github-integration-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
+        VERSELF_PRODUCT_API_AUTH_AUDIENCE = "__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "github_integration_service"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
@@ -101,14 +102,6 @@ job "github-integration" {
         VERSELF_PG_MAX_CONNS = "8"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
       resources {
         cpu = 500

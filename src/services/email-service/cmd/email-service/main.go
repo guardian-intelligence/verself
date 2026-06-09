@@ -215,7 +215,7 @@ func loadConfig() (config, error) {
 		SyncDiscoveryInterval: l.Duration("EMAIL_SERVICE_SYNC_DISCOVERY_INTERVAL", 2*time.Minute),
 		SyncReconcileInterval: l.Duration("EMAIL_SERVICE_SYNC_RECONCILE_INTERVAL", 10*time.Minute),
 		AuthIssuerURL:         l.RequireURL("VERSELF_AUTH_ISSUER_URL"),
-		AuthAudience:          l.RequireCredential("auth-audience"),
+		AuthAudience:          l.RequireString("VERSELF_PRODUCT_API_AUTH_AUDIENCE"),
 		SPIFFEEndpoint:        l.String(workloadauth.EndpointSocketEnv, ""),
 		AgentSenderAddress:    l.String("EMAIL_SERVICE_AGENT_SENDER_ADDRESS", ""),
 		AgentSenderOrgID:      l.String("EMAIL_SERVICE_AGENT_SENDER_ORG_ID", ""),

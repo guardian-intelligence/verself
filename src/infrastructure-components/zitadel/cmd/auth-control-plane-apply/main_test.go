@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -59,6 +61,7 @@ func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
 		zitadelHost:      "verself.sh",
 		adminPAT:         "token",
 		verselfDomain:    "verself.sh",
+		productProjectID: "verself-api",
 		projectName:      "verself-api",
 		browserAppName:   "verself-web",
 		cliAppName:       "verself-cli",
@@ -66,6 +69,7 @@ func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
 		claimsActionPath: "/internal/zitadel/actions/product-token-claims",
 		openBaoAddr:      "https://127.0.0.1:8200",
 		openBaoToken:     "token",
+		publicStateDir:   t.TempDir(),
 	}
 	if err := cfg.validate(); err == nil {
 		t.Fatalf("validate succeeded without IAM service domain")
@@ -73,6 +77,112 @@ func TestConfigValidateRequiresIAMServiceDomain(t *testing.T) {
 	cfg.iamServiceDomain = "iam.api.verself.sh"
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("validate: %v", err)
+	}
+}
+
+func TestEnsureProjectCreatesConfiguredID(t *testing.T) {
+	var gotRequests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequests = append(gotRequests, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "POST /zitadel.project.v2.ProjectService/GetProject":
+			if r.Header.Get("Connect-Protocol-Version") != "1" {
+				t.Fatalf("missing connect header")
+			}
+			assertJSONBody(t, r, map[string]any{"projectId": "verself-api"})
+			http.Error(w, `{"code":"not_found"}`, http.StatusNotFound)
+		case "GET /management/v1/orgs/me":
+			writeJSON(t, w, map[string]any{"org": map[string]any{"id": "org-1"}})
+		case "POST /zitadel.project.v2.ProjectService/CreateProject":
+			if r.Header.Get("Connect-Protocol-Version") != "1" {
+				t.Fatalf("missing connect header")
+			}
+			assertJSONBody(t, r, map[string]any{
+				"organizationId":        "org-1",
+				"projectId":             "verself-api",
+				"name":                  "verself-api",
+				"projectRoleAssertion":  false,
+				"authorizationRequired": false,
+				"projectAccessRequired": false,
+			})
+			writeJSON(t, w, map[string]any{"projectId": "verself-api"})
+		case "POST /zitadel.project.v2.ProjectService/UpdateProject":
+			if r.Header.Get("Connect-Protocol-Version") != "1" {
+				t.Fatalf("missing connect header")
+			}
+			assertJSONBody(t, r, map[string]any{
+				"projectId":             "verself-api",
+				"name":                  "verself-api",
+				"projectRoleAssertion":  false,
+				"authorizationRequired": false,
+				"projectAccessRequired": false,
+			})
+			writeJSON(t, w, map[string]any{})
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := zitadelClient{baseURL: server.URL, token: "token", client: server.Client()}
+	project, err := client.EnsureProject(context.Background(), "verself-api", "verself-api")
+	if err != nil {
+		t.Fatalf("EnsureProject: %v", err)
+	}
+	if project.ID != "verself-api" {
+		t.Fatalf("project ID = %q", project.ID)
+	}
+	wantRequests := []string{
+		"POST /zitadel.project.v2.ProjectService/GetProject",
+		"GET /management/v1/orgs/me",
+		"POST /zitadel.project.v2.ProjectService/CreateProject",
+		"POST /zitadel.project.v2.ProjectService/UpdateProject",
+	}
+	if !reflect.DeepEqual(gotRequests, wantRequests) {
+		t.Fatalf("requests = %#v, want %#v", gotRequests, wantRequests)
+	}
+}
+
+func TestPublishPublicAuthIdentifiers(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "verself")
+	if err := os.WriteFile(manifestPath, []byte(`{"auth":{"issuer_url":"https://verself.sh"},"public_apis":{"iam":{"base_url":"https://iam.api.verself.sh"}}}`), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "zitadel-github-idp-id"), []byte("stale\n"), 0o644); err != nil {
+		t.Fatalf("write stale idp id: %v", err)
+	}
+	if err := publishPublicAuthIdentifiers(publicAuthIdentifiers{
+		StateDir:            dir,
+		ProductProjectID:    "verself-api",
+		BrowserOIDCAppID:    "browser-app",
+		BrowserOIDCClientID: "browser-client",
+		CLIOIDCAppID:        "cli-app",
+		CLIOIDCClientID:     "cli-client",
+		DiscoveryManifest:   manifestPath,
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	assertFile(t, filepath.Join(dir, "auth-audience"), "verself-api\n")
+	assertFile(t, filepath.Join(dir, "oidc-cli-client-id"), "cli-client\n")
+	var manifest map[string]any
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("decode manifest: %v", err)
+	}
+	auth := manifest["auth"].(map[string]any)
+	if auth["cli_client_id"] != "cli-client" || auth["product_api_audience"] != "verself-api" {
+		t.Fatalf("manifest auth = %#v", auth)
+	}
+	publicAPIs := manifest["public_apis"].(map[string]any)
+	if _, ok := publicAPIs["iam"]; !ok {
+		t.Fatalf("manifest public apis = %#v", publicAPIs)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "zitadel-github-idp-id")); !os.IsNotExist(err) {
+		t.Fatalf("github idp stale file err = %v, want not exist", err)
 	}
 }
 
@@ -154,6 +264,17 @@ func TestPolicyIntUnmarshal(t *testing.T) {
 				t.Fatalf("got %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func assertFile(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("%s = %q, want %q", path, got, want)
 	}
 }
 

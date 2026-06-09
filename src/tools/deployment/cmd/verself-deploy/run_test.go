@@ -24,6 +24,7 @@ verself_domain: gamma.verself.test
 company_domain: gamma.guardianintelligence.test
 spire_trust_domain: gamma.verself.test
 verself_installation_id: inst_gamma_test
+zitadel_product_project_id: verself-api
 deployment_service_domain: deployments.api.gamma.verself.test
 `)
 	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "https://token.actions.test/oidc")

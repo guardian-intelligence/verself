@@ -45,6 +45,7 @@ type Model struct {
 	ProductDomain           string
 	CompanyDomain           string
 	ZitadelDomain           string
+	ZitadelProductProjectID string
 	SpiffeTrustDomain       string
 	InstallationID          string
 	GitHubAppID             string
@@ -119,7 +120,7 @@ func Load(repoRoot, site string) (Model, error) {
 		return Model{}, fmt.Errorf("decode %s: %w", path, err)
 	}
 	required := map[string]string{}
-	for _, key := range []string{"verself_site", "verself_domain", "company_domain", "spire_trust_domain", "verself_installation_id"} {
+	for _, key := range []string{"verself_site", "verself_domain", "company_domain", "spire_trust_domain", "verself_installation_id", "zitadel_product_project_id"} {
 		value := resolveString(values, key)
 		if value == "" {
 			return Model{}, fmt.Errorf("%s: %s is required", path, key)
@@ -127,12 +128,13 @@ func Load(repoRoot, site string) (Model, error) {
 		required[key] = value
 	}
 	model := Model{
-		Site:              required["verself_site"],
-		ProductDomain:     required["verself_domain"],
-		CompanyDomain:     required["company_domain"],
-		SpiffeTrustDomain: required["spire_trust_domain"],
-		InstallationID:    required["verself_installation_id"],
-		Domains:           map[string]string{},
+		Site:                    required["verself_site"],
+		ProductDomain:           required["verself_domain"],
+		CompanyDomain:           required["company_domain"],
+		ZitadelProductProjectID: required["zitadel_product_project_id"],
+		SpiffeTrustDomain:       required["spire_trust_domain"],
+		InstallationID:          required["verself_installation_id"],
+		Domains:                 map[string]string{},
 	}
 	if model.Site != site {
 		return Model{}, fmt.Errorf("%s: verself_site=%q does not match selected site %q", path, model.Site, site)
@@ -148,6 +150,9 @@ func Load(repoRoot, site string) (Model, error) {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
 	if err := validateDNSName("spire_trust_domain", model.SpiffeTrustDomain); err != nil {
+		return Model{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := validateZitadelPublicID("zitadel_product_project_id", model.ZitadelProductProjectID); err != nil {
 		return Model{}, fmt.Errorf("%s: %w", path, err)
 	}
 	zitadel := resolveString(values, "zitadel_domain")
@@ -353,6 +358,20 @@ func validateDNSName(field, value string) error {
 	return nil
 }
 
+func validateZitadelPublicID(field, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if len(value) > 200 {
+		return fmt.Errorf("%s=%q must be 200 characters or less", field, value)
+	}
+	if strings.ContainsAny(value, " \t\r\n/:?#") {
+		return fmt.Errorf("%s=%q contains an unsupported delimiter", field, value)
+	}
+	return nil
+}
+
 func isCloudflareAccountID(value string) bool {
 	if len(value) != 32 {
 		return false
@@ -391,6 +410,7 @@ func (m Model) TokenMap() map[string]string {
 		"__VERSELF_PRODUCT_BASE_URL__":                    productBase,
 		"__VERSELF_COMPANY_BASE_URL__":                    companyBase,
 		"__VERSELF_ZITADEL_DOMAIN__":                      m.ZitadelDomain,
+		"__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__":          m.ZitadelProductProjectID,
 		"__VERSELF_AUTH_ISSUER_URL__":                     "https://" + m.ZitadelDomain,
 		"__VERSELF_CLOUDFLARE_ACCOUNT_ID__":               m.CloudflareAccountID,
 		"__VERSELF_SPIFFE_TRUST_DOMAIN__":                 m.SpiffeTrustDomain,

@@ -147,7 +147,7 @@ func runAdmin(
 	l := envconfig.New()
 	adminListenAddr := l.String("OBJECT_STORAGE_ADMIN_LISTEN_ADDR", "127.0.0.1:4257")
 	authIssuerURL := l.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := l.RequireCredential("auth-audience")
+	authAudience := l.RequireString("VERSELF_PRODUCT_API_AUTH_AUDIENCE")
 	provider, proxyAccessKeyID, err := newBucketProviderFromEnv(ctx, l, cfg)
 	if err := l.Err(); err != nil {
 		return err

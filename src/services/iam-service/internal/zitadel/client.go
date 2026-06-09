@@ -31,6 +31,17 @@ type Config struct {
 	HTTPClient *http.Client
 }
 
+type ProductPublicIdentifiersConfig struct {
+	ProjectID          string
+	BrowserAppName     string
+	GitHubLoginIDPName string
+}
+
+type ProductPublicIdentifiers struct {
+	BrowserOIDCClientID string
+	GitHubLoginIDPID    string
+}
+
 type Client struct {
 	baseURL    *url.URL
 	hostHeader string
@@ -59,6 +70,89 @@ func New(cfg Config) (*Client, error) {
 		adminToken: strings.TrimSpace(cfg.AdminToken),
 		httpClient: httpClient,
 	}, nil
+}
+
+func (c *Client) ProductPublicIdentifiers(ctx context.Context, cfg ProductPublicIdentifiersConfig) (ProductPublicIdentifiers, error) {
+	projectID := strings.TrimSpace(cfg.ProjectID)
+	browserAppName := strings.TrimSpace(cfg.BrowserAppName)
+	if projectID == "" || browserAppName == "" {
+		return ProductPublicIdentifiers{}, fmt.Errorf("%w: project_id and browser_app_name are required", identity.ErrInvalidInput)
+	}
+	browserClientID, err := c.OIDCClientIDByAppName(ctx, projectID, browserAppName)
+	if err != nil {
+		return ProductPublicIdentifiers{}, err
+	}
+	githubIDPID := ""
+	if name := strings.TrimSpace(cfg.GitHubLoginIDPName); name != "" {
+		var found bool
+		githubIDPID, found, err = c.IDPIDByName(ctx, name)
+		if err != nil {
+			return ProductPublicIdentifiers{}, err
+		}
+		if !found {
+			return ProductPublicIdentifiers{}, fmt.Errorf("%w: IdP %s is missing", identity.ErrZitadelUnavailable, name)
+		}
+	}
+	return ProductPublicIdentifiers{
+		BrowserOIDCClientID: browserClientID,
+		GitHubLoginIDPID:    githubIDPID,
+	}, nil
+}
+
+func (c *Client) OIDCClientIDByAppName(ctx context.Context, projectID, name string) (string, error) {
+	projectID = strings.TrimSpace(projectID)
+	name = strings.TrimSpace(name)
+	if projectID == "" || name == "" {
+		return "", fmt.Errorf("%w: project_id and app name are required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		Result []struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			OIDCConfig struct {
+				ClientID string `json:"clientId"`
+			} `json:"oidcConfig"`
+		} `json:"result"`
+	}
+	body := map[string]any{"queries": []map[string]any{{"nameQuery": map[string]string{"name": name, "method": "TEXT_QUERY_METHOD_EQUALS"}}}}
+	path := "/management/v1/projects/" + url.PathEscape(projectID) + "/apps/_search"
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &out); err != nil {
+		return "", fmt.Errorf("%w: search OIDC application %s: %v", identity.ErrZitadelUnavailable, name, err)
+	}
+	for _, item := range out.Result {
+		if !strings.EqualFold(strings.TrimSpace(item.Name), name) {
+			continue
+		}
+		clientID := strings.TrimSpace(item.OIDCConfig.ClientID)
+		if clientID == "" {
+			break
+		}
+		return clientID, nil
+	}
+	return "", fmt.Errorf("%w: OIDC application %s is missing", identity.ErrZitadelUnavailable, name)
+}
+
+func (c *Client) IDPIDByName(ctx context.Context, name string) (string, bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false, fmt.Errorf("%w: idp name is required", identity.ErrInvalidInput)
+	}
+	var out struct {
+		Result []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"result"`
+	}
+	body := map[string]any{"queries": []map[string]any{{"idpNameQuery": map[string]string{"name": name, "method": "TEXT_QUERY_METHOD_EQUALS"}}}}
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/idps/_search", body, &out); err != nil {
+		return "", false, fmt.Errorf("%w: search IdP %s: %v", identity.ErrZitadelUnavailable, name, err)
+	}
+	for _, item := range out.Result {
+		if strings.EqualFold(strings.TrimSpace(item.Name), name) && strings.TrimSpace(item.ID) != "" {
+			return strings.TrimSpace(item.ID), true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func (c *Client) ListMembers(ctx context.Context, orgID string) ([]identity.Member, error) {

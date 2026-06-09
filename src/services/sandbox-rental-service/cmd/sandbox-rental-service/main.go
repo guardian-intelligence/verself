@@ -92,7 +92,7 @@ func run() error {
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "sandbox_rental")
 	publicBaseURL := cfg.RequireString("SANDBOX_PUBLIC_BASE_URL")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
+	authAudience := cfg.RequireString("VERSELF_PRODUCT_API_AUTH_AUDIENCE")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	temporalFrontendAddress := cfg.RequireString("SANDBOX_TEMPORAL_FRONTEND_ADDRESS")
 	temporalNamespace := cfg.String("SANDBOX_TEMPORAL_NAMESPACE", recurring.DefaultNamespace)

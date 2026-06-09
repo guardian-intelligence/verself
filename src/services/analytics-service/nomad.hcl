@@ -16,16 +16,6 @@ job "analytics-service" {
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
-      vault {
-        role = "analytics-service-runtime"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
       config {
         image = "verself-oci://analytics-service"
         network_mode = "host"
@@ -48,19 +38,12 @@ job "analytics-service" {
         OTEL_SERVICE_NAME = "analytics-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
+        VERSELF_PRODUCT_API_AUTH_AUDIENCE = "__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "analytics_service"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
         VERSELF_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_public_http}"
         VERSELF_SUPERVISOR = "nomad"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
       resources {
         cpu = 250

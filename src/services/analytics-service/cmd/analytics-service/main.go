@@ -66,7 +66,7 @@ func run() error {
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
+	authAudience := cfg.RequireString("VERSELF_PRODUCT_API_AUTH_AUDIENCE")
 	oidcAudience := cfg.RequireURL("ANALYTICS_GITHUB_OIDC_AUDIENCE")
 	allowedRepositories := cfg.RequireString("ANALYTICS_GITHUB_ALLOWED_REPOSITORIES")
 	allowedPrefixes := analytics.ParseAllowedPrefixes(cfg.String("ANALYTICS_ALLOWED_EVENT_PREFIXES", "build."))
