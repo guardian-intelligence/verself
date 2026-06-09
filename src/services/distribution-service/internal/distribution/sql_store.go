@@ -129,6 +129,26 @@ func (s SQLStore) GetArtifactByRepositoryDigest(ctx context.Context, repository 
 	return s.artifactWithEvidence(ctx, q, row)
 }
 
+func (s SQLStore) GetArtifactByCoordinateDigest(ctx context.Context, packageName, packageVersion, channelName, platformOS, platformArch, flavor, digest string) (Artifact, error) {
+	q, err := s.queries()
+	if err != nil {
+		return Artifact{}, err
+	}
+	row, err := q.GetArtifactByCoordinateDigest(ctx, distributionstore.GetArtifactByCoordinateDigestParams{
+		PackageName:    packageName,
+		PackageVersion: packageVersion,
+		ChannelName:    channelName,
+		PlatformOs:     platformOS,
+		PlatformArch:   platformArch,
+		Flavor:         flavor,
+		OciDigest:      digest,
+	})
+	if err != nil {
+		return Artifact{}, storeError(err)
+	}
+	return s.artifactWithEvidence(ctx, q, row)
+}
+
 func (s SQLStore) ListArtifactsByRepository(ctx context.Context, repository string) ([]Artifact, error) {
 	if s.PG == nil {
 		return nil, ErrStoreUnavailable

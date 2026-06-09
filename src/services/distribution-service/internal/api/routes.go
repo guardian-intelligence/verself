@@ -313,6 +313,7 @@ func (a internalAPI) promoteTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	target, err := a.cfg.Service.PromoteTarget(r.Context(), internalPrincipal(r.Context()), distribution.PromoteTargetRequest{
 		PackageName:    r.PathValue("package_name"),
+		PackageVersion: body.PackageVersion,
 		ChannelName:    r.PathValue("channel_name"),
 		ArtifactDigest: body.ArtifactDigest,
 		PlatformOS:     body.PlatformOS,

@@ -349,10 +349,82 @@ func (q *Queries) EnsureArtifactReplication(ctx context.Context, arg EnsureArtif
 	return i, err
 }
 
+const getArtifactByCoordinateDigest = `-- name: GetArtifactByCoordinateDigest :one
+SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
+FROM distribution_artifacts
+WHERE package_name = $1
+  AND package_version = $2
+  AND channel_name = $3
+  AND platform_os = $4
+  AND platform_arch = $5
+  AND flavor = $6
+  AND oci_digest = $7
+`
+
+type GetArtifactByCoordinateDigestParams struct {
+	PackageName    string
+	PackageVersion string
+	ChannelName    string
+	PlatformOs     string
+	PlatformArch   string
+	Flavor         string
+	OciDigest      string
+}
+
+func (q *Queries) GetArtifactByCoordinateDigest(ctx context.Context, arg GetArtifactByCoordinateDigestParams) (DistributionArtifact, error) {
+	row := q.db.QueryRow(ctx, getArtifactByCoordinateDigest,
+		arg.PackageName,
+		arg.PackageVersion,
+		arg.ChannelName,
+		arg.PlatformOs,
+		arg.PlatformArch,
+		arg.Flavor,
+		arg.OciDigest,
+	)
+	var i DistributionArtifact
+	err := row.Scan(
+		&i.ArtifactID,
+		&i.PackageName,
+		&i.PackageVersion,
+		&i.ChannelName,
+		&i.PlatformOs,
+		&i.PlatformArch,
+		&i.Flavor,
+		&i.OriginRegistryUrl,
+		&i.PublicRegistryUrl,
+		&i.OciRepository,
+		&i.OciDigest,
+		&i.OciMediaType,
+		&i.OciSizeBytes,
+		&i.PublicOciReference,
+		&i.BuilderID,
+		&i.SignerIdentity,
+		&i.SourceRepository,
+		&i.SourceCommit,
+		&i.SourceRef,
+		&i.PolicyRef,
+		&i.State,
+		&i.VerificationDecision,
+		&i.VerificationReason,
+		&i.RetentionClass,
+		&i.ReplicationState,
+		&i.SubmittedBy,
+		&i.AdmittedAt,
+		&i.AvailableAt,
+		&i.QuarantinedAt,
+		&i.QuarantineReason,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getArtifactByDigest = `-- name: GetArtifactByDigest :one
 SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 FROM distribution_artifacts
 WHERE oci_digest = $1
+ORDER BY available_at DESC, artifact_id DESC
+LIMIT 1
 `
 
 type GetArtifactByDigestParams struct {
@@ -403,6 +475,8 @@ const getArtifactByRepositoryDigest = `-- name: GetArtifactByRepositoryDigest :o
 SELECT artifact_id, package_name, package_version, channel_name, platform_os, platform_arch, flavor, origin_registry_url, public_registry_url, oci_repository, oci_digest, oci_media_type, oci_size_bytes, public_oci_reference, builder_id, signer_identity, source_repository, source_commit, source_ref, policy_ref, state, verification_decision, verification_reason, retention_class, replication_state, submitted_by, admitted_at, available_at, quarantined_at, quarantine_reason, created_at, updated_at
 FROM distribution_artifacts
 WHERE oci_repository = $1 AND oci_digest = $2
+ORDER BY available_at DESC, artifact_id DESC
+LIMIT 1
 `
 
 type GetArtifactByRepositoryDigestParams struct {
@@ -727,7 +801,6 @@ WHERE package_name = $4
   AND platform_arch = $7
   AND flavor = $8
   AND state IN ('published', 'rollback_target_published')
-  AND artifact_digest <> $2
 `
 
 type SupersedeCurrentTargetsParams struct {
@@ -795,7 +868,7 @@ INSERT INTO distribution_channel_targets (
     $17,
     $18
 )
-ON CONFLICT (package_name, channel_name, platform_os, platform_arch, flavor, artifact_digest) DO UPDATE
+ON CONFLICT (package_name, channel_name, platform_os, platform_arch, flavor, package_version, artifact_digest) DO UPDATE
 SET
     state = EXCLUDED.state,
     public_oci_reference = EXCLUDED.public_oci_reference,

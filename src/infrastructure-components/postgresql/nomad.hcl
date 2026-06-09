@@ -79,8 +79,7 @@ PGHBA
 
 # Postgres only seeds bootstrap auth; services own later access changes.
 cat >/etc/postgresql/verself/pg_ident.conf <<PGIDENT
-verself_services      postgres            postgres
-verself_services      deployment_service  deployment_service
+__VERSELF_POSTGRESQL_BOOTSTRAP_IDENT_ROWS__
 PGIDENT
 
 chown postgres:postgres /etc/postgresql/verself/postgresql.conf /etc/postgresql/verself/pg_hba.conf /etc/postgresql/verself/pg_ident.conf
@@ -145,16 +144,7 @@ if [ "$ready" != "1" ]; then
 fi
 
 "$runtime/usr/lib/postgresql/16/bin/psql" -h /var/run/postgresql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'deployment_service') THEN
-    CREATE ROLE deployment_service LOGIN;
-  END IF;
-END
-$$;
-
-SELECT 'CREATE DATABASE deployment_service OWNER deployment_service'
-WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'deployment_service')\gexec
+__VERSELF_POSTGRESQL_BOOTSTRAP_DATABASE_SQL__
 SQL
 EOH
         ]

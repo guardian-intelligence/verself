@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -14,12 +15,29 @@ import (
 
 const cloudflareAccountConfigVersion = "verself.cloudflare.account.v1"
 
+var postgresIdentifierRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
 type CloudflareProvider struct {
 	ControlPlaneSite          string
 	AccountID                 string
 	R2Endpoint                string
 	DeploymentArtifactsBucket string
 	RecoveryBucket            string
+}
+
+type PostgresBootstrap struct {
+	ServiceDatabases []PostgresServiceDatabase
+	PeerMappings     []PostgresPeerMapping
+}
+
+type PostgresServiceDatabase struct {
+	Name  string `yaml:"name"`
+	Owner string `yaml:"owner"`
+}
+
+type PostgresPeerMapping struct {
+	SystemUser string `yaml:"system_user"`
+	PGUser     string `yaml:"pg_user"`
 }
 
 type Model struct {
@@ -42,6 +60,7 @@ type Model struct {
 	CloudflareR2Endpoint    string
 	NomadArtifactBucket     string
 	Domains                 map[string]string
+	PostgresBootstrap       PostgresBootstrap
 }
 
 func LoadCloudflareProvider(repoRoot string) (CloudflareProvider, error) {
@@ -169,7 +188,101 @@ func Load(repoRoot, site string) (Model, error) {
 	model.CloudflareAccountID = cloudflare.AccountID
 	model.CloudflareR2Endpoint = cloudflare.R2Endpoint
 	model.NomadArtifactBucket = cloudflare.DeploymentArtifactsBucket
+	postgres, err := LoadPostgresBootstrap(repoRoot)
+	if err != nil {
+		return Model{}, err
+	}
+	model.PostgresBootstrap = postgres
 	return model, nil
+}
+
+func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
+	roots := []string{
+		"src/infrastructure-components",
+		"src/integrations",
+		"src/services",
+		"src/viteplus-monorepo/apps",
+	}
+	out := PostgresBootstrap{}
+	seenDBs := map[string]string{}
+	seenPeers := map[string]bool{}
+	for _, relRoot := range roots {
+		root := filepath.Join(repoRoot, filepath.FromSlash(relRoot))
+		if _, err := os.Stat(root); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return PostgresBootstrap{}, fmt.Errorf("stat %s: %w", root, err)
+		}
+		if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || filepath.Base(path) != "postgres.yml" || filepath.Base(filepath.Dir(path)) != "deploy" {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", path, err)
+			}
+			var doc struct {
+				ServiceDatabases []PostgresServiceDatabase `yaml:"postgresql_service_databases"`
+				PeerMappings     []PostgresPeerMapping     `yaml:"postgresql_peer_mappings"`
+			}
+			if err := yaml.Unmarshal(body, &doc); err != nil {
+				return fmt.Errorf("decode %s: %w", path, err)
+			}
+			for _, db := range doc.ServiceDatabases {
+				if err := validatePostgresIdentifier(path, "postgresql_service_databases.name", db.Name); err != nil {
+					return err
+				}
+				if err := validatePostgresIdentifier(path, "postgresql_service_databases.owner", db.Owner); err != nil {
+					return err
+				}
+				if prior := seenDBs[db.Name]; prior != "" {
+					return fmt.Errorf("%s: duplicate PostgreSQL service database %q previously declared by %s", path, db.Name, prior)
+				}
+				seenDBs[db.Name] = path
+				out.ServiceDatabases = append(out.ServiceDatabases, db)
+			}
+			for _, mapping := range doc.PeerMappings {
+				if err := validatePostgresIdentifier(path, "postgresql_peer_mappings.system_user", mapping.SystemUser); err != nil {
+					return err
+				}
+				if err := validatePostgresIdentifier(path, "postgresql_peer_mappings.pg_user", mapping.PGUser); err != nil {
+					return err
+				}
+				peerKey := mapping.SystemUser + "\x00" + mapping.PGUser
+				if seenPeers[peerKey] {
+					continue
+				}
+				seenPeers[peerKey] = true
+				out.PeerMappings = append(out.PeerMappings, mapping)
+			}
+			return nil
+		}); err != nil {
+			return PostgresBootstrap{}, fmt.Errorf("walk %s: %w", relRoot, err)
+		}
+	}
+	sort.Slice(out.ServiceDatabases, func(i, j int) bool {
+		if out.ServiceDatabases[i].Name == out.ServiceDatabases[j].Name {
+			return out.ServiceDatabases[i].Owner < out.ServiceDatabases[j].Owner
+		}
+		return out.ServiceDatabases[i].Name < out.ServiceDatabases[j].Name
+	})
+	sort.Slice(out.PeerMappings, func(i, j int) bool {
+		if out.PeerMappings[i].SystemUser == out.PeerMappings[j].SystemUser {
+			return out.PeerMappings[i].PGUser < out.PeerMappings[j].PGUser
+		}
+		return out.PeerMappings[i].SystemUser < out.PeerMappings[j].SystemUser
+	})
+	return out, nil
+}
+
+func validatePostgresIdentifier(path, field, value string) error {
+	if !postgresIdentifierRE.MatchString(strings.TrimSpace(value)) {
+		return fmt.Errorf("%s: %s must match %s", path, field, postgresIdentifierRE.String())
+	}
+	return nil
 }
 
 func resolveString(values map[string]any, key string) string {
@@ -297,6 +410,8 @@ func (m Model) TokenMap() map[string]string {
 		"__VERSELF_DEPLOY_GITHUB_ALLOWED_REFS__":          m.DeployGitHubRefs,
 		"__VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS__": m.DeployGitHubWorkflows,
 		"__VERSELF_DEPLOY_REPO_URL__":                     m.DeployRepoURL,
+		"__VERSELF_POSTGRESQL_BOOTSTRAP_IDENT_ROWS__":     m.PostgresBootstrap.RenderIdentRows(),
+		"__VERSELF_POSTGRESQL_BOOTSTRAP_DATABASE_SQL__":   m.PostgresBootstrap.RenderDatabaseSQL(),
 		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":           "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
 	}
 	if m.GitHubAppID != "" && m.GitHubAppID != "0" {
@@ -318,6 +433,7 @@ func (m Model) TokenMap() map[string]string {
 	tokens["__VERSELF_DISTRIBUTION_TRUSTED_BUILDERS__"] = strings.Join([]string{
 		"spiffe://" + m.SpiffeTrustDomain + "/svc/release-builder",
 		"spiffe://" + m.SpiffeTrustDomain + "/svc/deployment-service",
+		"verself://site-bootstrap/" + m.Site,
 	}, ",")
 	tokens["__VERSELF_TEMPORAL_NAMESPACE_ROLES__"] = strings.Join([]string{
 		"spiffe://" + m.SpiffeTrustDomain + "/svc/sandbox-rental-service|sandbox-rental-service|admin",
@@ -330,6 +446,51 @@ func (m Model) TokenMap() map[string]string {
 		tokens[strings.TrimSuffix(tokenKey, "_DOMAIN__")+"_BASE_URL__"] = "https://" + domain
 	}
 	return tokens
+}
+
+func (p PostgresBootstrap) RenderIdentRows() string {
+	var b strings.Builder
+	b.WriteString("verself_services      postgres                 postgres")
+	for _, mapping := range p.PeerMappings {
+		if mapping.SystemUser == "postgres" && mapping.PGUser == "postgres" {
+			continue
+		}
+		fmt.Fprintf(&b, "\nverself_services      %-24s %s", mapping.SystemUser, mapping.PGUser)
+	}
+	return b.String()
+}
+
+func (p PostgresBootstrap) RenderDatabaseSQL() string {
+	if len(p.ServiceDatabases) == 0 {
+		return ""
+	}
+	owners := make([]string, 0, len(p.ServiceDatabases))
+	seenOwners := map[string]bool{}
+	for _, db := range p.ServiceDatabases {
+		if seenOwners[db.Owner] {
+			continue
+		}
+		seenOwners[db.Owner] = true
+		owners = append(owners, db.Owner)
+	}
+	sort.Strings(owners)
+
+	var b strings.Builder
+	b.WriteString("DO $$\nBEGIN")
+	for _, owner := range owners {
+		fmt.Fprintf(&b, `
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%s') THEN
+    CREATE ROLE %s LOGIN;
+  END IF;`, owner, owner)
+	}
+	b.WriteString("\nEND\n$$;\n")
+	for _, db := range p.ServiceDatabases {
+		fmt.Fprintf(&b, `
+SELECT 'CREATE DATABASE %s OWNER %s'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '%s')\gexec
+`, db.Name, db.Owner, db.Name)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m Model) domain(key string) string {

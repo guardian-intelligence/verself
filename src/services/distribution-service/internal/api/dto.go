@@ -54,6 +54,7 @@ type admitArtifactBody struct {
 
 type promoteTargetBody struct {
 	ArtifactDigest string `json:"artifact_digest"`
+	PackageVersion string `json:"package_version"`
 	PlatformOS     string `json:"platform_os"`
 	PlatformArch   string `json:"platform_arch"`
 	Flavor         string `json:"flavor"`
@@ -141,6 +142,7 @@ type artifactRecord struct {
 	ResourceName       string             `json:"resourceName"`
 	PackageName        string             `json:"package_name"`
 	PackageVersion     string             `json:"package_version"`
+	ChannelName        string             `json:"channel_name"`
 	PlatformOS         string             `json:"platform_os"`
 	PlatformArch       string             `json:"platform_arch"`
 	Flavor             string             `json:"flavor"`
@@ -250,6 +252,7 @@ func artifactDTO(installationID string, artifact distribution.Artifact) artifact
 		ResourceName:       artifactResourceName(installationID, artifact),
 		PackageName:        artifact.PackageName,
 		PackageVersion:     artifact.PackageVersion,
+		ChannelName:        artifact.ChannelName,
 		PlatformOS:         artifact.PlatformOS,
 		PlatformArch:       artifact.PlatformArch,
 		Flavor:             artifact.Flavor,
@@ -314,11 +317,11 @@ func targetDTO(installationID string, target distribution.Target) targetRecord {
 }
 
 func artifactResourceName(installationID string, artifact distribution.Artifact) string {
-	return "urn:verself:" + installationID + ":distribution/packages/" + artifact.PackageName + "/artifacts/" + digestRef(artifact.OCIDigest)
+	return "urn:verself:" + installationID + ":distribution/packages/" + artifact.PackageName + "/versions/" + artifact.PackageVersion + "/artifacts/" + digestRef(artifact.OCIDigest)
 }
 
 func targetResourceName(installationID string, target distribution.Target) string {
-	return "urn:verself:" + installationID + ":distribution/packages/" + target.PackageName + "/channels/" + target.ChannelName + "/targets/" + digestRef(target.ArtifactDigest)
+	return "urn:verself:" + installationID + ":distribution/packages/" + target.PackageName + "/channels/" + target.ChannelName + "/versions/" + target.PackageVersion + "/targets/" + digestRef(target.ArtifactDigest)
 }
 
 func digestRef(digest string) string {

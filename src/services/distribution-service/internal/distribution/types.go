@@ -50,6 +50,10 @@ type ReleaseAttestationVerifier interface {
 	Verify(context.Context, releaseattest.Request) (releaseattest.Result, error)
 }
 
+type DeploymentEvidenceVerifier interface {
+	VerifyDeploymentEvidence(context.Context, AdmitArtifactRequest) ([]Evidence, error)
+}
+
 type Principal struct {
 	Actor string
 }
@@ -178,6 +182,7 @@ type ReleaseAttestation struct {
 
 type PromoteTargetRequest struct {
 	PackageName    string
+	PackageVersion string
 	ChannelName    string
 	ArtifactDigest string
 	PlatformOS     string

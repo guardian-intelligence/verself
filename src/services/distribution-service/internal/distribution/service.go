@@ -22,14 +22,15 @@ import (
 var serviceTracer = otel.Tracer("distribution-service/distribution")
 
 type Service struct {
-	Store           SQLStore
-	CH              driver.Conn
-	Logger          *slog.Logger
-	TrustedBuilders map[string]struct{}
-	TrustedSigners  map[string]struct{}
-	ReleaseVerifier ReleaseAttestationVerifier
-	InstallationID  string
-	Now             func() time.Time
+	Store              SQLStore
+	CH                 driver.Conn
+	Logger             *slog.Logger
+	TrustedBuilders    map[string]struct{}
+	TrustedSigners     map[string]struct{}
+	ReleaseVerifier    ReleaseAttestationVerifier
+	DeploymentVerifier DeploymentEvidenceVerifier
+	InstallationID     string
+	Now                func() time.Time
 }
 
 func (s *Service) Ready(ctx context.Context) error {
@@ -51,6 +52,9 @@ func (s *Service) Ready(ctx context.Context) error {
 			return fmt.Errorf("%w: clickhouse readiness: %v", ErrStoreUnavailable, err)
 		}
 	}
+	if s.DeploymentVerifier == nil {
+		return fmt.Errorf("%w: deployment evidence verifier is required", ErrAttestationFailed)
+	}
 	return nil
 }
 
@@ -65,6 +69,13 @@ func (s *Service) AdmitArtifact(ctx context.Context, principal Principal, req Ad
 	}
 	s.emit(ctx, event{EventType: "distribution.artifact.verification_started", Decision: "started", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor})
 	if req.ChannelName == ChannelDeployment {
+		evidence, err := s.verifyDeploymentEvidence(ctx, req)
+		if err != nil {
+			err = fmt.Errorf("%w: %w", ErrAttestationFailed, err)
+			s.emit(ctx, event{EventType: "distribution.artifact.deployment_evidence_denied", Decision: "denied", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: err.Error()})
+			return Artifact{}, err
+		}
+		req.Evidence = evidence
 		s.emit(ctx, event{EventType: "distribution.artifact.deployment_evidence_verified", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: "policy_ref=" + req.PolicyRef})
 	} else {
 		attestation, err := s.verifyReleaseAttestation(ctx, req)
@@ -81,6 +92,13 @@ func (s *Service) AdmitArtifact(ctx context.Context, principal Principal, req Ad
 		s.emit(ctx, event{EventType: "distribution.artifact.available", Decision: "available", PackageName: artifact.PackageName, ChannelName: artifact.ChannelName, PlatformOS: artifact.PlatformOS, PlatformArch: artifact.PlatformArch, ArtifactDigest: artifact.OCIDigest, Actor: principal.Actor})
 	}
 	return artifact, err
+}
+
+func (s *Service) verifyDeploymentEvidence(ctx context.Context, req AdmitArtifactRequest) ([]Evidence, error) {
+	if s.DeploymentVerifier == nil {
+		return nil, fmt.Errorf("deployment evidence verifier is not configured")
+	}
+	return s.DeploymentVerifier.VerifyDeploymentEvidence(ctx, req)
 }
 
 func (s *Service) verifyReleaseAttestation(ctx context.Context, req AdmitArtifactRequest) (releaseattest.Result, error) {
@@ -120,7 +138,7 @@ func (s *Service) PromoteTarget(ctx context.Context, principal Principal, req Pr
 		s.emit(ctx, event{EventType: "distribution.target.resolve_denied", Decision: "denied", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.ArtifactDigest, Actor: principal.Actor, Reason: err.Error()})
 		return Target{}, err
 	}
-	artifact, err := s.Store.GetArtifactByDigest(ctx, req.ArtifactDigest)
+	artifact, err := s.Store.GetArtifactByCoordinateDigest(ctx, req.PackageName, req.PackageVersion, req.ChannelName, req.PlatformOS, req.PlatformArch, req.Flavor, req.ArtifactDigest)
 	if err != nil {
 		return Target{}, err
 	}
@@ -316,6 +334,7 @@ func normalizeAdmit(req AdmitArtifactRequest) AdmitArtifactRequest {
 
 func normalizePromote(req PromoteTargetRequest) PromoteTargetRequest {
 	req.PackageName = clean(req.PackageName)
+	req.PackageVersion = clean(req.PackageVersion)
 	req.ChannelName = clean(req.ChannelName)
 	req.ArtifactDigest = clean(req.ArtifactDigest)
 	req.PlatformOS = clean(req.PlatformOS)

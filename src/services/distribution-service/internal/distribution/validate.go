@@ -84,22 +84,6 @@ func validateDeploymentAdmit(req AdmitArtifactRequest) error {
 	if req.SubmittedBy == "" {
 		return fmt.Errorf("%w: submitted_by is required", ErrInvalid)
 	}
-	required := map[string]bool{
-		EvidenceSLSA: false,
-	}
-	for _, evidence := range req.Evidence {
-		if err := validateEvidence(req.OCIDigest, evidence); err != nil {
-			return err
-		}
-		if _, ok := required[evidence.EvidenceKind]; ok {
-			required[evidence.EvidenceKind] = true
-		}
-	}
-	for kind, present := range required {
-		if !present {
-			return fmt.Errorf("%w: missing %s evidence", ErrMissingReferrers, kind)
-		}
-	}
 	return nil
 }
 
@@ -113,6 +97,9 @@ func validateEvidence(artifactDigest string, evidence Evidence) error {
 	if err := validateDigest(evidence.SubjectDigest); err != nil {
 		return err
 	}
+	if err := validateDigest(evidence.DocumentDigest); err != nil {
+		return err
+	}
 	if err := validateDigest(evidence.OCIReferrerDigest); err != nil {
 		return err
 	}
@@ -123,8 +110,8 @@ func validateEvidence(artifactDigest string, evidence Evidence) error {
 }
 
 func validatePromote(req PromoteTargetRequest) error {
-	if req.PackageName == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" || req.Flavor == "" {
-		return fmt.Errorf("%w: package, channel, platform, and flavor are required", ErrInvalid)
+	if req.PackageName == "" || req.PackageVersion == "" || req.ChannelName == "" || req.PlatformOS == "" || req.PlatformArch == "" || req.Flavor == "" {
+		return fmt.Errorf("%w: package, version, channel, platform, and flavor are required", ErrInvalid)
 	}
 	if err := validateDigest(req.ArtifactDigest); err != nil {
 		return err

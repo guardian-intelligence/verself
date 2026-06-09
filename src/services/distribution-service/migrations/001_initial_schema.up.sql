@@ -31,12 +31,14 @@ CREATE TABLE distribution_artifacts (
     quarantine_reason TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    UNIQUE (oci_repository, oci_digest),
-    UNIQUE (package_name, platform_os, platform_arch, flavor, oci_digest)
+    UNIQUE (package_name, package_version, channel_name, platform_os, platform_arch, flavor)
 );
 
 CREATE INDEX distribution_artifacts_package_platform_idx
     ON distribution_artifacts (package_name, platform_os, platform_arch, flavor, state, updated_at DESC);
+
+CREATE INDEX distribution_artifacts_repository_digest_idx
+    ON distribution_artifacts (oci_repository, oci_digest, available_at DESC);
 
 CREATE TABLE distribution_artifact_evidence (
     evidence_id UUID PRIMARY KEY,
@@ -74,7 +76,7 @@ CREATE TABLE distribution_channel_targets (
     superseded_by_digest TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
-    UNIQUE (package_name, channel_name, platform_os, platform_arch, flavor, artifact_digest)
+    UNIQUE (package_name, channel_name, platform_os, platform_arch, flavor, package_version, artifact_digest)
 );
 
 CREATE UNIQUE INDEX distribution_channel_targets_current_idx
