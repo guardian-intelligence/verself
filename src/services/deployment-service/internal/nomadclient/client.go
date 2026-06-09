@@ -309,6 +309,82 @@ func (c *Client) WaitForBatchComplete(ctx context.Context, jobID string, timeout
 	}
 }
 
+func (c *Client) WaitForServiceDeployment(ctx context.Context, jobID string, timeout time.Duration) error {
+	if jobID == "" {
+		return errors.New("nomad job id is required")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.wait_service_deployment",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		deployment, err := c.latestDeployment(waitCtx, jobID)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if deployment != nil {
+			span.SetAttributes(attribute.String("nomad.deployment_id", deployment.ID))
+			switch deployment.Status {
+			case "successful":
+				span.SetStatus(codes.Ok, "")
+				return nil
+			case "failed", "cancelled":
+				err := fmt.Errorf("%s deployment %s %s: %s", jobID, deployment.ID, deployment.Status, deployment.StatusDescription)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return err
+			}
+			if deploymentHasUnhealthyOnlyTaskGroup(deployment) {
+				err := fmt.Errorf("%s deployment %s has unhealthy allocations and no healthy allocations: %s", jobID, deployment.ID, deployment.StatusDescription)
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return err
+			}
+		}
+		select {
+		case <-waitCtx.Done():
+			err := fmt.Errorf("wait for %s deployment readiness: %w", jobID, waitCtx.Err())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		case <-ticker.C:
+		}
+	}
+}
+
+func deploymentHasUnhealthyOnlyTaskGroup(deployment *api.Deployment) bool {
+	if deployment == nil {
+		return false
+	}
+	for _, state := range deployment.TaskGroups {
+		if state == nil {
+			continue
+		}
+		if state.UnhealthyAllocs > 0 && state.HealthyAllocs == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) latestDeployment(ctx context.Context, jobID string) (*api.Deployment, error) {
+	deployment, _, err := c.api.Jobs().LatestDeployment(jobID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("read %s latest deployment: %w", jobID, err)
+	}
+	return deployment, nil
+}
+
 type batchStatus struct {
 	dead     bool
 	active   int
