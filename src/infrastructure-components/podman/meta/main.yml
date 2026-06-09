@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: Verself
-  description: Nomad single-node server+client supervisor for host and Podman workloads.
+  description: Pinned Podman runtime closure for Nomad Podman-driver workloads.
   license: Proprietary
   min_ansible_version: "2.20"
   platforms:

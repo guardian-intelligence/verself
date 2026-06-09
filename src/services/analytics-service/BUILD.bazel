@@ -21,12 +21,12 @@ spire_identity(
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        "//src/services/analytics-service/cmd/analytics-service:analytics-service_nomad_artifact": "analytics-service",
-    },
     component = "analytics_service",
     digest_inputs = [":deploy_declarations"],
     job_id = "analytics-service",
     job_spec = "nomad.hcl",
+    oci_images = {
+        "//src/services/analytics-service/cmd/analytics-service:analytics_service_image_archive": "analytics-service-image",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

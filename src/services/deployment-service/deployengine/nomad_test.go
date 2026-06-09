@@ -115,3 +115,41 @@ func TestApplyTaskSecretTemplateOwnershipRejectsExplicitMismatch(t *testing.T) {
 		t.Fatalf("error = %v, want explicit uid mismatch", err)
 	}
 }
+
+func TestApplyPodmanTaskUserIDsUsesResolvedNumericIdentity(t *testing.T) {
+	jobID := "analytics-service"
+	groupName := "analytics-service"
+	job := &api.Job{
+		ID: &jobID,
+		TaskGroups: []*api.TaskGroup{
+			{
+				Name: &groupName,
+				Tasks: []*api.Task{
+					{
+						Name:   "analytics-service",
+						Driver: "podman",
+						User:   "analytics_service",
+					},
+					{
+						Name:   "host-helper",
+						Driver: "raw_exec",
+						User:   "analytics_service",
+					},
+				},
+			},
+		},
+	}
+
+	err := applyPodmanTaskUserIDs(context.Background(), job, func(context.Context, string) (TaskUserIdentity, error) {
+		return TaskUserIdentity{UID: 123, GID: 456}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := job.TaskGroups[0].Tasks[0].User; got != "123:456" {
+		t.Fatalf("podman task user = %q, want numeric uid:gid", got)
+	}
+	if got := job.TaskGroups[0].Tasks[1].User; got != "analytics_service" {
+		t.Fatalf("raw_exec task user = %q, want named user untouched", got)
+	}
+}

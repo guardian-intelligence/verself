@@ -12,6 +12,7 @@ bazel_dep(name = "rules_cc", version = "0.2.18")
 bazel_dep(name = "rules_java", version = "9.6.1")
 bazel_dep(name = "rules_jvm_external", version = "7.0")
 bazel_dep(name = "rules_nodejs", version = "6.7.4")
+bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "1.7.0")
 bazel_dep(name = "rules_multitool", version = "1.11.1")
@@ -27,6 +28,7 @@ include("//src/infrastructure-components/haproxy:haproxy.MODULE.bazel")
 include("//src/infrastructure-components/nftables:nftables.MODULE.bazel")
 include("//src/infrastructure-components/nomad:nomad.MODULE.bazel")
 include("//src/infrastructure-components/openbao:openbao.MODULE.bazel")
+include("//src/infrastructure-components/podman:podman.MODULE.bazel")
 include("//src/infrastructure-components/postgresql:postgresql.MODULE.bazel")
 include("//src/infrastructure-components/spire:spire.MODULE.bazel")
 include("//src/infrastructure-components/stalwart:stalwart.MODULE.bazel")
@@ -103,6 +105,26 @@ use_repo(
     "tigerbeetle_tools",
     "zitadel_tools",
     "zot_tools",
+)
+
+# First OCI base for stateless Go service images. Pinned by the ubuntu:24.04
+# multi-arch index digest; linux/amd64 is the only fleet platform today.
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "ubuntu_noble_base",
+    digest = "sha256:786a8b558f7be160c6c8c4a54f9a57274f3b4fb1491cf65146521ae77ff1dc54",
+    image = "docker.io/library/ubuntu",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "ubuntu_noble_base", "ubuntu_noble_base_linux_amd64")
+
+ubuntu_http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+ubuntu_http_file(
+    name = "ubuntu_noble_deb_ca_certificates",
+    downloaded_file_path = "ca-certificates_20240203_all.deb",
+    sha256 = "641de77d8f142cfd62a1a6f964ba67b20754d3337c480efb529d086075a06c9a",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/c/ca-certificates/ca-certificates_20240203_all.deb",
 )
 
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")

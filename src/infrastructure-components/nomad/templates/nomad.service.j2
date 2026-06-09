@@ -21,8 +21,7 @@ Restart=on-failure
 RestartSec=2
 # Delegate the cgroup-v2 hierarchy to Nomad so it can create child
 # cgroups for each alloc. Required for cgroup-managed drivers and
-# harmless for raw_exec; needed before we add the docker / exec
-# drivers that actually depend on it.
+# harmless for raw_exec; Podman depends on it.
 Delegate=yes
 
 [Install]

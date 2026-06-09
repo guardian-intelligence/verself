@@ -1,0 +1,4 @@
+---
+podman_expected_version: 4.9.3
+podman_deb_archive: /opt/verself/profile/artifacts/podman-debs.tar
+podman_deb_stage: /var/lib/verself/bootstrap/podman-debs

@@ -27,6 +27,7 @@
     "https://bcr.bazel.build/modules/apple_support/1.24.2/source.json": "2c22c9827093250406c5568da6c54e6fdf0ef06238def3d99c71b12feb057a8d",
     "https://bcr.bazel.build/modules/aspect_bazel_lib/2.14.0/MODULE.bazel": "2b31ffcc9bdc8295b2167e07a757dbbc9ac8906e7028e5170a3708cecaac119f",
     "https://bcr.bazel.build/modules/aspect_bazel_lib/2.19.3/MODULE.bazel": "253d739ba126f62a5767d832765b12b59e9f8d2bc88cc1572f4a73e46eb298ca",
+    "https://bcr.bazel.build/modules/aspect_bazel_lib/2.21.1/MODULE.bazel": "07e3ce3eaaa50dbd0be7fa0094e36890478937adc780ec53e77fd9fe543af8b1",
     "https://bcr.bazel.build/modules/aspect_bazel_lib/2.22.5/MODULE.bazel": "004ba890363d05372a97248c37205ae64b6fa31047629cd2c0895a9d0c7779e8",
     "https://bcr.bazel.build/modules/aspect_bazel_lib/2.22.5/source.json": "ac2c3213df8f985785f1d0aeb7f0f73d5324e6e67d593d9b9470fb74a25d4a9b",
     "https://bcr.bazel.build/modules/aspect_bazel_lib/2.8.1/MODULE.bazel": "812d2dd42f65dca362152101fbec418029cc8fd34cbad1a2fde905383d705838",
@@ -124,6 +125,7 @@
     "https://bcr.bazel.build/modules/package_metadata/0.0.2/MODULE.bazel": "fb8d25550742674d63d7b250063d4580ca530499f045d70748b1b142081ebb92",
     "https://bcr.bazel.build/modules/package_metadata/0.0.3/MODULE.bazel": "77890552ecea9e284b5424c9de827a58099348763a4359e975c359a83d4faa83",
     "https://bcr.bazel.build/modules/package_metadata/0.0.5/MODULE.bazel": "ef4f9439e3270fdd6b9fd4dbc3d2f29d13888e44c529a1b243f7a31dfbc2e8e4",
+    "https://bcr.bazel.build/modules/package_metadata/0.0.6/MODULE.bazel": "341dab6f417197494517d54c8e557c0baee1de7aec83543a4fbefe57900acb7e",
     "https://bcr.bazel.build/modules/package_metadata/0.0.7/MODULE.bazel": "7adb03933fc8401f495800cf4eafcff0edc6da0ff55c7db223ef69d19f689486",
     "https://bcr.bazel.build/modules/package_metadata/0.0.7/source.json": "50639625e937b56115012674c797cca7a05a96b4878c87d803c13dc2b31de8a0",
     "https://bcr.bazel.build/modules/platforms/0.0.10/MODULE.bazel": "8cb8efaf200bdeb2150d93e162c40f388529a25852b332cec879373771e48ed5",
@@ -255,6 +257,8 @@
     "https://bcr.bazel.build/modules/rules_nodejs/6.7.3/MODULE.bazel": "c22a48b2a0dbf05a9dc5f83837bbc24c226c1f6e618de3c3a610044c9f336056",
     "https://bcr.bazel.build/modules/rules_nodejs/6.7.4/MODULE.bazel": "e6a241a55c82e999145553d2e00a08fc6ebadf62b63d108fb5e984696ffd0bd2",
     "https://bcr.bazel.build/modules/rules_nodejs/6.7.4/source.json": "34e7a8a3b4c8d630ac0e0492b3fed9dba41fe008a0edf220b7d88fa38ac53698",
+    "https://bcr.bazel.build/modules/rules_oci/2.3.0/MODULE.bazel": "49075197960c924c0a4d759b7c765c3d00a41d2fdd4a943b42823c1d016ab4ec",
+    "https://bcr.bazel.build/modules/rules_oci/2.3.0/source.json": "47710c28446211b5e61a24015a4669c50c6862d5f91e6bdbc710de8d750cf613",
     "https://bcr.bazel.build/modules/rules_pkg/0.7.0/MODULE.bazel": "df99f03fc7934a4737122518bb87e667e62d780b610910f0447665a7e2be62dc",
     "https://bcr.bazel.build/modules/rules_pkg/1.0.1/MODULE.bazel": "5b1df97dbc29623bccdf2b0dcd0f5cb08e2f2c9050aab1092fd39a41e82686ff",
     "https://bcr.bazel.build/modules/rules_pkg/1.2.0/MODULE.bazel": "c7db3c2b407e673c7a39e3625dc05dc9f12d6682cbd82a3a5924a13b491eda7e",
@@ -313,6 +317,7 @@
     "https://bcr.bazel.build/modules/tar.bzl/0.10.4/source.json": "20143442376c03426f6135292ba02d825cb75308aa47e6bf42dd4cc5a435c2ff",
     "https://bcr.bazel.build/modules/tar.bzl/0.2.1/MODULE.bazel": "52d1c00a80a8cc67acbd01649e83d8dd6a9dc426a6c0b754a04fe8c219c76468",
     "https://bcr.bazel.build/modules/tar.bzl/0.5.1/MODULE.bazel": "7c2eb3dcfc53b0f3d6f9acdfd911ca803eaf92aadf54f8ca6e4c1f3aee288351",
+    "https://bcr.bazel.build/modules/tar.bzl/0.7.0/MODULE.bazel": "cc1acd85da33c80e430b65219a620d54d114628df24a618c3a5fa0b65e988da9",
     "https://bcr.bazel.build/modules/toml.bzl/0.3.0/MODULE.bazel": "5016e5dd1ad2200e119a4b28b2b3935e276c4b480f2fe3e952bea7eeba88f578",
     "https://bcr.bazel.build/modules/toml.bzl/0.3.0/source.json": "0cf7c878c419b37ddb55f3dd93dd7c0c409bd7c4efacb3da504e0748780b2fa9",
     "https://bcr.bazel.build/modules/upb/0.0.0-20220923-a547704/MODULE.bazel": "7298990c00040a0e2f121f6c32544bab27d4452f80d9ce51349b1a28f3005c43",
@@ -1115,6 +1120,105 @@
               "toolchain_target_settings": {}
             }
           }
+        }
+      }
+    },
+    "@@rules_rust+//crate_universe/private:internal_extensions.bzl%cu_nr": {
+      "general": {
+        "bzlTransitiveDigest": "B6FYWznh9TdRDi0MQT6fE9nH5UHHXY74zYk6PsBhXMA=",
+        "usagesDigest": "ZmL90WEq2B6/NJ8rtHAqdnDPn+/9xG/GWR5K4UU4tyo=",
+        "recordedInputs": [
+          "REPO_MAPPING:bazel_features+,bazel_features_globals bazel_features++version_extension+bazel_features_globals",
+          "REPO_MAPPING:bazel_features+,bazel_features_version bazel_features++version_extension+bazel_features_version",
+          "REPO_MAPPING:rules_cc+,bazel_skylib bazel_skylib+",
+          "REPO_MAPPING:rules_cc+,bazel_tools bazel_tools",
+          "REPO_MAPPING:rules_cc+,cc_compatibility_proxy rules_cc++compatibility_proxy+cc_compatibility_proxy",
+          "REPO_MAPPING:rules_cc+,platforms platforms",
+          "REPO_MAPPING:rules_cc+,rules_cc rules_cc+",
+          "REPO_MAPPING:rules_cc++compatibility_proxy+cc_compatibility_proxy,rules_cc rules_cc+",
+          "REPO_MAPPING:rules_rust+,bazel_features bazel_features+",
+          "REPO_MAPPING:rules_rust+,bazel_skylib bazel_skylib+",
+          "REPO_MAPPING:rules_rust+,bazel_tools bazel_tools",
+          "REPO_MAPPING:rules_rust+,cui rules_rust++cu+cui",
+          "REPO_MAPPING:rules_rust+,rrc rules_rust++i2+rrc",
+          "REPO_MAPPING:rules_rust+,rules_cc rules_cc+",
+          "REPO_MAPPING:rules_rust+,rules_rust rules_rust+"
+        ],
+        "generatedRepoSpecs": {
+          "cargo_bazel_bootstrap": {
+            "repoRuleId": "@@rules_rust+//cargo/private:cargo_bootstrap.bzl%cargo_bootstrap_repository",
+            "attributes": {
+              "srcs": [
+                "@@rules_rust+//crate_universe:src/api.rs",
+                "@@rules_rust+//crate_universe:src/api/lockfile.rs",
+                "@@rules_rust+//crate_universe:src/cli.rs",
+                "@@rules_rust+//crate_universe:src/cli/generate.rs",
+                "@@rules_rust+//crate_universe:src/cli/query.rs",
+                "@@rules_rust+//crate_universe:src/cli/render.rs",
+                "@@rules_rust+//crate_universe:src/cli/splice.rs",
+                "@@rules_rust+//crate_universe:src/cli/vendor.rs",
+                "@@rules_rust+//crate_universe:src/config.rs",
+                "@@rules_rust+//crate_universe:src/context.rs",
+                "@@rules_rust+//crate_universe:src/context/crate_context.rs",
+                "@@rules_rust+//crate_universe:src/context/platforms.rs",
+                "@@rules_rust+//crate_universe:src/lib.rs",
+                "@@rules_rust+//crate_universe:src/lockfile.rs",
+                "@@rules_rust+//crate_universe:src/main.rs",
+                "@@rules_rust+//crate_universe:src/metadata.rs",
+                "@@rules_rust+//crate_universe:src/metadata/cargo_bin.rs",
+                "@@rules_rust+//crate_universe:src/metadata/cargo_tree_resolver.rs",
+                "@@rules_rust+//crate_universe:src/metadata/cargo_tree_rustc_wrapper.bat",
+                "@@rules_rust+//crate_universe:src/metadata/cargo_tree_rustc_wrapper.sh",
+                "@@rules_rust+//crate_universe:src/metadata/dependency.rs",
+                "@@rules_rust+//crate_universe:src/metadata/metadata_annotation.rs",
+                "@@rules_rust+//crate_universe:src/rendering.rs",
+                "@@rules_rust+//crate_universe:src/rendering/template_engine.rs",
+                "@@rules_rust+//crate_universe:src/rendering/templates/module_bzl.j2",
+                "@@rules_rust+//crate_universe:src/rendering/templates/partials/header.j2",
+                "@@rules_rust+//crate_universe:src/rendering/templates/partials/module/aliases_map.j2",
+                "@@rules_rust+//crate_universe:src/rendering/templates/partials/module/deps_map.j2",
+                "@@rules_rust+//crate_universe:src/rendering/templates/partials/module/repo_git.j2",
+                "@@rules_rust+//crate_universe:src/rendering/templates/partials/module/repo_http.j2",
+                "@@rules_rust+//crate_universe:src/rendering/templates/vendor_module.j2",
+                "@@rules_rust+//crate_universe:src/rendering/verbatim/alias_rules.bzl",
+                "@@rules_rust+//crate_universe:src/select.rs",
+                "@@rules_rust+//crate_universe:src/splicing.rs",
+                "@@rules_rust+//crate_universe:src/splicing/cargo_config.rs",
+                "@@rules_rust+//crate_universe:src/splicing/crate_index_lookup.rs",
+                "@@rules_rust+//crate_universe:src/splicing/splicer.rs",
+                "@@rules_rust+//crate_universe:src/test.rs",
+                "@@rules_rust+//crate_universe:src/utils.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/glob.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/label.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/select.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/select_dict.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/select_list.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/select_scalar.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/select_set.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/serialize.rs",
+                "@@rules_rust+//crate_universe:src/utils/starlark/target_compatible_with.rs",
+                "@@rules_rust+//crate_universe:src/utils/symlink.rs",
+                "@@rules_rust+//crate_universe:src/utils/target_triple.rs"
+              ],
+              "binary": "cargo-bazel",
+              "cargo_lockfile": "@@rules_rust+//crate_universe:Cargo.lock",
+              "cargo_toml": "@@rules_rust+//crate_universe:Cargo.toml",
+              "version": "1.95.0",
+              "timeout": 900,
+              "rust_toolchain_cargo_template": "@rust_host_tools//:bin/{tool}",
+              "rust_toolchain_rustc_template": "@rust_host_tools//:bin/{tool}",
+              "compressed_windows_toolchain_names": false
+            }
+          }
+        },
+        "moduleExtensionMetadata": {
+          "explicitRootModuleDirectDeps": [
+            "cargo_bazel_bootstrap"
+          ],
+          "explicitRootModuleDirectDevDeps": [],
+          "useAllRepos": "NO",
+          "reproducible": false
         }
       }
     },

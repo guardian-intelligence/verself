@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	nomadComponentSchemaVersion = 7
+	nomadComponentSchemaVersion = 8
 	artifactSourcePrefix        = "verself-artifact://"
+	ociArchiveSourcePrefix      = "verself-oci-archive://"
 
 	deployPhasePreArtifact = "pre_artifact"
 	deployPhasePlatform    = "platform"
@@ -68,6 +69,7 @@ type nomadComponentDescriptor struct {
 	JobSpecPath   string                    `json:"job_spec_path"`
 	Sites         []string                  `json:"sites"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
+	OCIImages     []nomadDescriptorArtifact `json:"oci_images"`
 	PreArtifacts  []nomadDescriptorArtifact `json:"pre_artifacts"`
 	DigestInputs  []nomadDescriptorInput    `json:"digest_inputs"`
 }
@@ -224,6 +226,11 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 				return nil, fmt.Errorf("%s: artifact entries require label, output, and path", path)
 			}
 		}
+		for _, artifact := range component.OCIImages {
+			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
+				return nil, fmt.Errorf("%s: oci_images entries require label, output, and path", path)
+			}
+		}
 		for _, artifact := range component.PreArtifacts {
 			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
 				return nil, fmt.Errorf("%s: pre_artifacts entries require label, output, and path", path)
@@ -278,6 +285,9 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 			}
 		}
 		if err := applyTaskSecretTemplateOwnership(ctx, job, taskUserResolver); err != nil {
+			return nil, fmt.Errorf("%s: %w", component.Label, err)
+		}
+		if err := applyPodmanTaskUserIDs(ctx, job, taskUserResolver); err != nil {
 			return nil, fmt.Errorf("%s: %w", component.Label, err)
 		}
 		parsedID := ""

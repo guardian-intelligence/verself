@@ -11,7 +11,7 @@ job "analytics-service" {
       }
     }
     task "analytics-service" {
-      driver = "raw_exec"
+      driver = "podman"
       user = "analytics_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
@@ -26,13 +26,13 @@ job "analytics-service" {
         ttl  = "1h"
       }
 
-      artifact {
-        source = "verself-artifact://analytics-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        command = "local/bin/analytics-service"
+        image = "verself-oci-archive://analytics-service-image"
+        network_mode = "host"
+        volumes = [
+          "/etc/verself/clickhouse:/etc/verself/clickhouse:ro",
+          "/run/spire-agent/sockets:/run/spire-agent/sockets:ro",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
