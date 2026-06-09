@@ -16,16 +16,6 @@ job "billing" {
     task "billing-service-migrate" {
       driver = "raw_exec"
       user = "billing"
-      vault {
-        role = "billing-runtime"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
       lifecycle {
         hook = "prestart"
         sidecar = false
@@ -48,6 +38,7 @@ job "billing" {
         OTEL_SERVICE_NAME = "billing-service-migration"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
+        VERSELF_PRODUCT_API_AUTH_AUDIENCE = "__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "billing_service"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
@@ -60,14 +51,6 @@ job "billing" {
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
       resources {
         cpu = 100
@@ -89,14 +72,6 @@ EOT
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
-      vault {
-        role = "billing-runtime"
-      }
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
       artifact {
         source = "verself-artifact://billing-service"
         destination = "local"
@@ -114,6 +89,7 @@ EOT
         OTEL_SERVICE_NAME = "billing-service"
         SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
+        VERSELF_PRODUCT_API_AUTH_AUDIENCE = "__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "billing_service"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
@@ -126,14 +102,6 @@ EOT
         VERSELF_PG_MAX_CONNS = "12"
         VERSELF_PG_MIN_CONNS = "1"
         VERSELF_SUPERVISOR = "nomad"
-      }
-      template {
-        change_mode = "restart"
-        destination = "secrets/auth-audience"
-        perms = "0600"
-        data = <<-EOT
-{{ with secret "kv-runtime/data/secret/org/iam-service.zitadel.auth_audience" }}{{ .Data.data.value }}{{ end }}
-EOT
       }
       resources {
         cpu = 500

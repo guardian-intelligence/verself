@@ -20,14 +20,14 @@ func TestNomadApplyResultCountsSubmittedJobs(t *testing.T) {
 
 func TestOrderNomadJobsByRuntimeSecretDependencies(t *testing.T) {
 	jobs := []nomadJob{
-		testNomadJob("analytics-service", "service"),
+		testNomadJob("iam-service", "service"),
 		testNomadJob("auth-control-plane", "batch"),
 		testNomadJob("zitadel", "service"),
 		testNomadJob("email-service-resend-keys", "batch"),
 		testNomadJob("openbao", "service"),
 	}
 	dependencies := []deploycontract.OpenBaoRuntimeSecretDependency{
-		{SecretName: "iam-service.zitadel.auth_audience", ProducerJobID: "auth-control-plane", ReaderJobID: "analytics-service"},
+		{SecretName: "iam-service.zitadel.oidc_client_secret", ProducerJobID: "auth-control-plane", ReaderJobID: "iam-service"},
 		{SecretName: "auth-control-plane.zitadel.admin_token", ProducerJobID: "zitadel", ReaderJobID: "auth-control-plane"},
 		{SecretName: "zitadel.smtp.password", ProducerJobID: "email-service-resend-keys", ReaderJobID: "zitadel"},
 	}
@@ -40,7 +40,7 @@ func TestOrderNomadJobsByRuntimeSecretDependencies(t *testing.T) {
 	for _, job := range plan.jobs {
 		got = append(got, job.JobID)
 	}
-	want := []string{"email-service-resend-keys", "zitadel", "auth-control-plane", "analytics-service", "openbao"}
+	want := []string{"email-service-resend-keys", "zitadel", "auth-control-plane", "iam-service", "openbao"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("job order = %v, want %v", got, want)
 	}
@@ -53,9 +53,9 @@ func TestOrderNomadJobsByRuntimeSecretDependencies(t *testing.T) {
 
 func TestOrderNomadJobsByRuntimeSecretDependenciesRequiresParticipatingProducer(t *testing.T) {
 	_, err := orderNomadJobsByRuntimeSecretDependencies([]nomadJob{
-		testNomadJob("analytics-service", "service"),
+		testNomadJob("iam-service", "service"),
 	}, []deploycontract.OpenBaoRuntimeSecretDependency{
-		{SecretName: "iam-service.zitadel.auth_audience", ProducerJobID: "auth-control-plane", ReaderJobID: "analytics-service"},
+		{SecretName: "iam-service.zitadel.oidc_client_secret", ProducerJobID: "auth-control-plane", ReaderJobID: "iam-service"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "producer job is not in this deployment") {
 		t.Fatalf("error = %v, want missing producer error", err)

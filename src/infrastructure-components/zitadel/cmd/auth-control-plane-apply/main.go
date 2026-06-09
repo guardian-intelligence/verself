@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -37,21 +38,15 @@ const (
 	defaultGithubLoginIDPName      = "GitHub"
 	defaultOpenBaoAddr             = "https://127.0.0.1:8200"
 	defaultOpenBaoCACert           = "/etc/verself/openbao/ca.pem"
+	defaultPublicStateDir          = "/var/lib/verself/bootstrap/iam-service"
+	defaultDiscoveryManifestPath   = "/var/www/verself/.well-known/verself"
 	desiredPasswordMinLength       = 8
 	desiredPasswordLockoutAttempts = 10
 )
 
 const (
-	iamAuthAudienceSecret     = "iam-service.zitadel.auth_audience"
-	iamOIDCAppIDSecret        = "iam-service.zitadel.oidc_app_id"
-	iamOIDCClientIDSecret     = "iam-service.zitadel.oidc_client_id"
 	iamOIDCClientSecretSecret = "iam-service.zitadel.oidc_client_secret"
-	iamOIDCProjectIDSecret    = "iam-service.zitadel.oidc_project_id"
-	iamOIDCCLIAppIDSecret     = "iam-service.zitadel.oidc_cli_app_id"
-	iamOIDCCLIClientIDSecret  = "iam-service.zitadel.oidc_cli_client_id"
-	iamOIDCCLIProjectIDSecret = "iam-service.zitadel.oidc_cli_project_id"
 	iamActionSigningKeySecret = "iam-service.zitadel.action_signing_key"
-	iamGithubLoginIDPIDSecret = "iam-service.zitadel.github_login_idp_id"
 )
 
 type config struct {
@@ -61,6 +56,7 @@ type config struct {
 	adminPATFile        string
 	verselfDomain       string
 	iamServiceDomain    string
+	productProjectID    string
 	projectName         string
 	browserAppName      string
 	cliAppName          string
@@ -72,6 +68,8 @@ type config struct {
 	openBaoCACert       string
 	openBaoToken        string
 	openBaoTokenFile    string
+	publicStateDir      string
+	discoveryManifest   string
 	// GitHub login IdP ("Sign in with GitHub"). Optional: when either value is
 	// empty, GitHub IdP provisioning is skipped so deployments without GitHub
 	// login still converge. Values come from site metadata plus OpenBao-rendered
@@ -181,6 +179,7 @@ func run(args []string) error {
 		zitadelHost:         envOr("AUTH_CONTROL_PLANE_ZITADEL_HOST", ""),
 		verselfDomain:       envOr("AUTH_CONTROL_PLANE_VERSELF_DOMAIN", ""),
 		iamServiceDomain:    envOr("AUTH_CONTROL_PLANE_IAM_SERVICE_DOMAIN", ""),
+		productProjectID:    envOr("AUTH_CONTROL_PLANE_PRODUCT_PROJECT_ID", ""),
 		projectName:         defaultProjectName,
 		browserAppName:      defaultBrowserAppName,
 		cliAppName:          defaultCLIAppName,
@@ -190,6 +189,8 @@ func run(args []string) error {
 		zitadelReadyBackoff: time.Second,
 		openBaoAddr:         envOr("BAO_ADDR", envOr("VAULT_ADDR", defaultOpenBaoAddr)),
 		openBaoCACert:       envOr("BAO_CACERT", envOr("VAULT_CACERT", defaultOpenBaoCACert)),
+		publicStateDir:      envOr("AUTH_CONTROL_PLANE_PUBLIC_STATE_DIR", defaultPublicStateDir),
+		discoveryManifest:   envOr("AUTH_CONTROL_PLANE_DISCOVERY_MANIFEST_PATH", defaultDiscoveryManifestPath),
 
 		githubLoginIDPName:  envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_IDP_NAME", defaultGithubLoginIDPName),
 		githubLoginClientID: envOr("AUTH_CONTROL_PLANE_GITHUB_LOGIN_CLIENT_ID", ""),
@@ -200,6 +201,7 @@ func run(args []string) error {
 	fs.StringVar(&cfg.adminPATFile, "admin-pat-file", cfg.adminPATFile, "File containing the Zitadel admin PAT.")
 	fs.StringVar(&cfg.verselfDomain, "verself-domain", cfg.verselfDomain, "Product apex domain.")
 	fs.StringVar(&cfg.iamServiceDomain, "iam-service-domain", cfg.iamServiceDomain, "Public IAM service domain.")
+	fs.StringVar(&cfg.productProjectID, "product-project-id", cfg.productProjectID, "Zitadel project ID used as the product API audience.")
 	fs.StringVar(&cfg.projectName, "project-name", cfg.projectName, "Zitadel project for product API audiences.")
 	fs.StringVar(&cfg.browserAppName, "browser-app-name", cfg.browserAppName, "Browser OIDC app name.")
 	fs.StringVar(&cfg.cliAppName, "cli-app-name", cfg.cliAppName, "CLI OIDC app name.")
@@ -208,6 +210,8 @@ func run(args []string) error {
 	fs.StringVar(&cfg.openBaoAddr, "openbao-addr", cfg.openBaoAddr, "OpenBao address for publishing Zitadel outputs.")
 	fs.StringVar(&cfg.openBaoCACert, "openbao-ca-cert", cfg.openBaoCACert, "OpenBao CA certificate path.")
 	fs.StringVar(&cfg.openBaoTokenFile, "openbao-token-file", cfg.openBaoTokenFile, "File containing the OpenBao workload token.")
+	fs.StringVar(&cfg.publicStateDir, "public-state-dir", cfg.publicStateDir, "Directory for public Zitadel identifiers consumed by discovery.")
+	fs.StringVar(&cfg.discoveryManifest, "discovery-manifest", cfg.discoveryManifest, "Existing Verself discovery manifest to patch with public auth identifiers.")
 	fs.StringVar(&cfg.githubLoginIDPName, "github-login-idp-name", cfg.githubLoginIDPName, "Zitadel IdP display name for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientID, "github-login-client-id", cfg.githubLoginClientID, "GitHub OAuth App client id for Sign in with GitHub.")
 	fs.StringVar(&cfg.githubLoginClientSecretFile, "github-login-client-secret-file", cfg.githubLoginClientSecretFile, "File containing the GitHub OAuth App client secret.")
@@ -290,6 +294,7 @@ func (cfg config) validate() error {
 		"--admin-pat-file":     cfg.adminPAT,
 		"--verself-domain":     cfg.verselfDomain,
 		"--iam-service-domain": cfg.iamServiceDomain,
+		"--product-project-id": cfg.productProjectID,
 		"--project-name":       cfg.projectName,
 		"--browser-app-name":   cfg.browserAppName,
 		"--cli-app-name":       cfg.cliAppName,
@@ -297,6 +302,7 @@ func (cfg config) validate() error {
 		"--claims-action-path": cfg.claimsActionPath,
 		"--openbao-addr":       cfg.openBaoAddr,
 		"--openbao-token-file": cfg.openBaoToken,
+		"--public-state-dir":   cfg.publicStateDir,
 	} {
 		if strings.TrimSpace(value) == "" {
 			missing = append(missing, name)
@@ -309,6 +315,9 @@ func (cfg config) validate() error {
 		return err
 	}
 	if err := validateDomainFlag("--iam-service-domain", cfg.iamServiceDomain); err != nil {
+		return err
+	}
+	if err := validatePublicIdentifier("--product-project-id", cfg.productProjectID); err != nil {
 		return err
 	}
 	if !strings.HasPrefix(cfg.claimsActionPath, "/") {
@@ -327,6 +336,20 @@ func validateDomainFlag(name, value string) error {
 	}
 	if _, err := url.ParseRequestURI("https://" + value); err != nil {
 		return fmt.Errorf("invalid %s: %w", name, err)
+	}
+	return nil
+}
+
+func validatePublicIdentifier(name, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fmt.Errorf("invalid %s: required", name)
+	}
+	if len(value) > 200 {
+		return fmt.Errorf("invalid %s: must be 200 characters or less", name)
+	}
+	if strings.ContainsAny(value, " \t\r\n/:?#") {
+		return fmt.Errorf("invalid %s: contains unsupported delimiter", name)
 	}
 	return nil
 }
@@ -376,23 +399,20 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	project, err := client.EnsureProject(ctx, cfg.projectName)
+	project, err := client.EnsureProject(ctx, cfg.productProjectID, cfg.projectName)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureRuntimeAudiences(ctx, secrets, project.ID); err != nil {
+	browserApp, err := ensureBrowserOIDCApplication(ctx, secrets, client, project.ID, cfg)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureBrowserOIDCApplication(ctx, secrets, client, project.ID, cfg); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return err
-	}
-	if err := ensureCLIOIDCApplication(ctx, secrets, client, project.ID, cfg); err != nil {
+	cliApp, err := ensureCLIOIDCApplication(ctx, client, project.ID, cfg)
+	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -407,7 +427,22 @@ func apply(ctx context.Context, cfg config) error {
 		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
-	if err := ensureGitHubLoginIDP(ctx, secrets, client, cfg); err != nil {
+	githubIDPID, err := ensureGitHubLoginIDP(ctx, client, cfg)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+	if err := publishPublicAuthIdentifiers(publicAuthIdentifiers{
+		StateDir:            cfg.publicStateDir,
+		ProductProjectID:    project.ID,
+		BrowserOIDCAppID:    browserApp.ID,
+		BrowserOIDCClientID: browserApp.ClientID,
+		CLIOIDCAppID:        cliApp.ID,
+		CLIOIDCClientID:     cliApp.ClientID,
+		GitHubLoginIDPID:    githubIDPID,
+		DiscoveryManifest:   cfg.discoveryManifest,
+	}); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
@@ -447,13 +482,6 @@ func waitForZitadel(ctx context.Context, cfg config) error {
 		lastErr = errors.New("deadline elapsed")
 	}
 	return fmt.Errorf("wait for Zitadel health: %w", lastErr)
-}
-
-func ensureRuntimeAudiences(ctx context.Context, secrets *runtimeSecretStore, projectID string) error {
-	if err := secrets.writeRuntimeSecret(ctx, iamAuthAudienceSecret, projectID); err != nil {
-		return fmt.Errorf("write iam-service auth audience: %w", err)
-	}
-	return nil
 }
 
 func (c zitadelClient) EnsurePasswordPolicies(ctx context.Context) error {
@@ -565,22 +593,18 @@ func desiredLockoutPolicyBody() map[string]any {
 	}
 }
 
-func ensureBrowserOIDCApplication(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, projectID string, cfg config) error {
+func ensureBrowserOIDCApplication(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, projectID string, cfg config) (zitadelOIDCApp, error) {
 	app, found, err := client.FindOIDCAppByName(ctx, projectID, cfg.browserAppName)
 	if err != nil {
-		return err
-	}
-	storedProjectID, _, err := secrets.readRuntimeSecret(ctx, iamOIDCProjectIDSecret)
-	if err != nil {
-		return fmt.Errorf("read browser OIDC project id: %w", err)
+		return zitadelOIDCApp{}, err
 	}
 	storedSecret, _, err := secrets.readRuntimeSecret(ctx, iamOIDCClientSecretSecret)
 	if err != nil {
-		return fmt.Errorf("read browser OIDC client secret: %w", err)
+		return zitadelOIDCApp{}, fmt.Errorf("read browser OIDC client secret: %w", err)
 	}
-	if found && strings.TrimSpace(app.ClientSecret) == "" && (storedProjectID != projectID || storedSecret == "") {
+	if found && strings.TrimSpace(app.ClientSecret) == "" && storedSecret == "" {
 		if err := client.DeleteOIDCApp(ctx, projectID, app.ID); err != nil {
-			return err
+			return zitadelOIDCApp{}, err
 		}
 		found = false
 	}
@@ -590,55 +614,36 @@ func ensureBrowserOIDCApplication(ctx context.Context, secrets *runtimeSecretSto
 	if !found || strings.TrimSpace(app.ClientID) == "" {
 		app, err = client.CreateBrowserOIDCApp(ctx, projectID, cfg.browserAppName, redirectURIs, postLogout, loginBaseURI)
 		if err != nil {
-			return err
+			return zitadelOIDCApp{}, err
 		}
 	} else if err := client.ReconcileBrowserOIDCApp(ctx, projectID, app.ID, cfg.browserAppName, redirectURIs, postLogout, loginBaseURI); err != nil {
-		return err
-	}
-	values := map[string]string{
-		iamOIDCAppIDSecret:     app.ID,
-		iamOIDCClientIDSecret:  app.ClientID,
-		iamOIDCProjectIDSecret: projectID,
+		return zitadelOIDCApp{}, err
 	}
 	if strings.TrimSpace(app.ClientSecret) != "" {
-		values[iamOIDCClientSecretSecret] = app.ClientSecret
+		storedSecret = app.ClientSecret
 	} else if storedSecret == "" {
-		return fmt.Errorf("browser OIDC app exists but no client secret is available in OpenBao")
+		return zitadelOIDCApp{}, fmt.Errorf("browser OIDC app exists but no client secret is available in OpenBao")
 	}
-	for secret, value := range values {
-		if err := secrets.writeRuntimeSecret(ctx, secret, value); err != nil {
-			name := strings.TrimPrefix(secret, "iam-service.zitadel.")
-			return fmt.Errorf("write browser OIDC %s: %w", name, err)
-		}
+	if err := secrets.writeRuntimeSecret(ctx, iamOIDCClientSecretSecret, storedSecret); err != nil {
+		return zitadelOIDCApp{}, fmt.Errorf("write browser OIDC client secret: %w", err)
 	}
-	return nil
+	return app, nil
 }
 
-func ensureCLIOIDCApplication(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, projectID string, cfg config) error {
+func ensureCLIOIDCApplication(ctx context.Context, client zitadelClient, projectID string, cfg config) (zitadelOIDCApp, error) {
 	app, found, err := client.FindOIDCAppByName(ctx, projectID, cfg.cliAppName)
 	if err != nil {
-		return err
+		return zitadelOIDCApp{}, err
 	}
 	if !found || strings.TrimSpace(app.ClientID) == "" {
 		app, err = client.CreateNativeOIDCApp(ctx, projectID, cfg.cliAppName, "https://"+cfg.verselfDomain)
 		if err != nil {
-			return err
+			return zitadelOIDCApp{}, err
 		}
 	} else if err := client.ReconcileNativeOIDCApp(ctx, projectID, app.ID, cfg.cliAppName, "https://"+cfg.verselfDomain); err != nil {
-		return err
+		return zitadelOIDCApp{}, err
 	}
-	values := map[string]string{
-		iamOIDCCLIAppIDSecret:     app.ID,
-		iamOIDCCLIClientIDSecret:  app.ClientID,
-		iamOIDCCLIProjectIDSecret: projectID,
-	}
-	for secret, value := range values {
-		if err := secrets.writeRuntimeSecret(ctx, secret, value); err != nil {
-			name := strings.TrimPrefix(secret, "iam-service.zitadel.")
-			return fmt.Errorf("write CLI OIDC %s: %w", name, err)
-		}
-	}
-	return nil
+	return app, nil
 }
 
 func ensureProductTokenClaimsAction(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, cfg config) error {
@@ -671,48 +676,93 @@ func productTokenClaimsEndpoint(cfg config) string {
 	return "https://" + strings.TrimRight(strings.TrimSpace(cfg.iamServiceDomain), "/") + cfg.claimsActionPath
 }
 
-func (c zitadelClient) EnsureProject(ctx context.Context, name string) (zitadelProject, error) {
-	project, found, err := c.FindProjectByName(ctx, name)
+func (c zitadelClient) EnsureProject(ctx context.Context, id, name string) (zitadelProject, error) {
+	project, found, err := c.GetProjectByID(ctx, id)
 	if err != nil {
 		return zitadelProject{}, err
 	}
 	if !found {
-		var out struct {
-			ID string `json:"id"`
+		orgID, err := c.MyOrgID(ctx)
+		if err != nil {
+			return zitadelProject{}, err
 		}
-		body := map[string]any{"name": strings.TrimSpace(name), "projectRoleAssertion": false, "projectRoleCheck": false}
-		if err := c.doJSON(ctx, http.MethodPost, "/management/v1/projects", body, &out); err != nil {
-			return zitadelProject{}, fmt.Errorf("create Zitadel project %s: %w", name, err)
+		project, err = c.CreateProjectWithID(ctx, orgID, id, name)
+		if err != nil {
+			return zitadelProject{}, err
 		}
-		if strings.TrimSpace(out.ID) == "" {
-			return zitadelProject{}, fmt.Errorf("create Zitadel project %s returned no id", name)
-		}
-		return zitadelProject{ID: strings.TrimSpace(out.ID), Name: strings.TrimSpace(name), State: "PROJECT_STATE_ACTIVE"}, nil
 	}
-	body := map[string]any{"name": strings.TrimSpace(name), "projectRoleAssertion": false, "projectRoleCheck": false}
-	if err := c.doJSON(ctx, http.MethodPut, "/management/v1/projects/"+url.PathEscape(project.ID), body, nil); err != nil && !isNoChanges(err) {
+	body := map[string]any{
+		"projectId":             strings.TrimSpace(project.ID),
+		"name":                  strings.TrimSpace(name),
+		"projectRoleAssertion":  false,
+		"authorizationRequired": false,
+		"projectAccessRequired": false,
+	}
+	if err := c.doConnectJSON(ctx, "/zitadel.project.v2.ProjectService/UpdateProject", body, nil); err != nil && !isNoChanges(err) {
 		return zitadelProject{}, fmt.Errorf("update Zitadel project %s defaults: %w", name, err)
 	}
+	project.Name = strings.TrimSpace(name)
 	return project, nil
 }
 
-func (c zitadelClient) FindProjectByName(ctx context.Context, name string) (zitadelProject, bool, error) {
+func (c zitadelClient) GetProjectByID(ctx context.Context, id string) (zitadelProject, bool, error) {
 	var out struct {
-		Result []struct {
-			ID    string `json:"id"`
-			Name  string `json:"name"`
-			State string `json:"state"`
-		} `json:"result"`
+		Project struct {
+			ProjectID string `json:"projectId"`
+			Name      string `json:"name"`
+			State     string `json:"state"`
+		} `json:"project"`
 	}
-	body := map[string]any{"queries": []map[string]any{{"nameQuery": map[string]string{"name": strings.TrimSpace(name), "method": "TEXT_QUERY_METHOD_EQUALS"}}}}
-	if err := c.doJSON(ctx, http.MethodPost, "/management/v1/projects/_search", body, &out); err != nil {
-		return zitadelProject{}, false, fmt.Errorf("search Zitadel project %s: %w", name, err)
+	body := map[string]any{"projectId": strings.TrimSpace(id)}
+	if err := c.doConnectJSON(ctx, "/zitadel.project.v2.ProjectService/GetProject", body, &out); err != nil {
+		if isNotFound(err) {
+			return zitadelProject{}, false, nil
+		}
+		return zitadelProject{}, false, fmt.Errorf("get Zitadel project %s: %w", id, err)
 	}
-	if len(out.Result) == 0 || strings.TrimSpace(out.Result[0].ID) == "" {
-		return zitadelProject{}, false, nil
+	projectID := strings.TrimSpace(out.Project.ProjectID)
+	if projectID == "" {
+		return zitadelProject{}, false, fmt.Errorf("get Zitadel project %s returned no id", id)
 	}
-	item := out.Result[0]
-	return zitadelProject{ID: item.ID, Name: item.Name, State: item.State}, true, nil
+	return zitadelProject{ID: projectID, Name: strings.TrimSpace(out.Project.Name), State: strings.TrimSpace(out.Project.State)}, true, nil
+}
+
+func (c zitadelClient) CreateProjectWithID(ctx context.Context, orgID, id, name string) (zitadelProject, error) {
+	var out struct {
+		ProjectID string `json:"projectId"`
+	}
+	body := map[string]any{
+		"organizationId":        strings.TrimSpace(orgID),
+		"projectId":             strings.TrimSpace(id),
+		"name":                  strings.TrimSpace(name),
+		"projectRoleAssertion":  false,
+		"authorizationRequired": false,
+		"projectAccessRequired": false,
+	}
+	if err := c.doConnectJSON(ctx, "/zitadel.project.v2.ProjectService/CreateProject", body, &out); err != nil {
+		return zitadelProject{}, fmt.Errorf("create Zitadel project %s: %w", name, err)
+	}
+	projectID := strings.TrimSpace(out.ProjectID)
+	if projectID == "" {
+		return zitadelProject{}, fmt.Errorf("create Zitadel project %s returned no id", name)
+	}
+	return zitadelProject{ID: projectID, Name: strings.TrimSpace(name), State: "PROJECT_STATE_ACTIVE"}, nil
+}
+
+func (c zitadelClient) MyOrgID(ctx context.Context) (string, error) {
+	var out struct {
+		Org struct {
+			ID string `json:"id"`
+		} `json:"org"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, "/management/v1/orgs/me", nil, &out); err != nil {
+		return "", fmt.Errorf("resolve Zitadel token org: %w", err)
+	}
+	orgID := strings.TrimSpace(out.Org.ID)
+	if orgID == "" {
+		return "", fmt.Errorf("resolve Zitadel token org returned no id")
+	}
+	return orgID, nil
 }
 
 func (c zitadelClient) FindOIDCAppByName(ctx context.Context, projectID, name string) (zitadelOIDCApp, bool, error) {
@@ -888,6 +938,16 @@ func (c zitadelClient) SetFunctionExecution(ctx context.Context, function string
 }
 
 func (c zitadelClient) doJSON(ctx context.Context, method, path string, body any, out any) error {
+	return c.doJSONWithHeaders(ctx, method, path, body, out, nil)
+}
+
+func (c zitadelClient) doConnectJSON(ctx context.Context, path string, body any, out any) error {
+	return c.doJSONWithHeaders(ctx, http.MethodPost, path, body, out, map[string]string{
+		"Connect-Protocol-Version": "1",
+	})
+}
+
+func (c zitadelClient) doJSONWithHeaders(ctx context.Context, method, path string, body any, out any, headers map[string]string) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -904,6 +964,9 @@ func (c zitadelClient) doJSON(ctx context.Context, method, path string, body any
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 	if c.hostHeader != "" {
 		req.Host = c.hostHeader
@@ -1018,6 +1081,106 @@ func runtimeSecretPath(name string) string {
 	return "v1/kv-runtime/data/secret/org/" + url.PathEscape(name)
 }
 
+type publicAuthIdentifiers struct {
+	StateDir            string
+	ProductProjectID    string
+	BrowserOIDCAppID    string
+	BrowserOIDCClientID string
+	CLIOIDCAppID        string
+	CLIOIDCClientID     string
+	GitHubLoginIDPID    string
+	DiscoveryManifest   string
+}
+
+func publishPublicAuthIdentifiers(ids publicAuthIdentifiers) error {
+	stateDir := strings.TrimSpace(ids.StateDir)
+	if stateDir == "" {
+		return errors.New("public auth identifier state dir is required")
+	}
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return fmt.Errorf("create public auth identifier state dir: %w", err)
+	}
+	values := map[string]string{
+		"auth-audience":           ids.ProductProjectID,
+		"oidc-browser-app-id":     ids.BrowserOIDCAppID,
+		"oidc-browser-client-id":  ids.BrowserOIDCClientID,
+		"oidc-cli-app-id":         ids.CLIOIDCAppID,
+		"oidc-cli-client-id":      ids.CLIOIDCClientID,
+		"zitadel-github-idp-id":   ids.GitHubLoginIDPID,
+		"zitadel-product-project": ids.ProductProjectID,
+	}
+	for name, value := range values {
+		if err := writePublicIdentifier(stateDir, name, value); err != nil {
+			return err
+		}
+	}
+	if err := patchDiscoveryManifestAuthIdentifiers(ids); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writePublicIdentifier(stateDir, name, value string) error {
+	path := filepath.Join(stateDir, name)
+	value = strings.TrimSpace(value)
+	if value == "" {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove stale public auth identifier %s: %w", name, err)
+		}
+		return nil
+	}
+	if err := validatePublicIdentifier(name, value); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(value+"\n"), 0o644); err != nil {
+		return fmt.Errorf("write public auth identifier %s: %w", name, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("publish public auth identifier %s: %w", name, err)
+	}
+	return nil
+}
+
+func patchDiscoveryManifestAuthIdentifiers(ids publicAuthIdentifiers) error {
+	path := strings.TrimSpace(ids.DiscoveryManifest)
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		fmt.Printf("auth-control-plane-apply: discovery manifest %s is absent; HAProxy convergence will publish auth identifiers from state files\n", path)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read discovery manifest: %w", err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("decode discovery manifest: %w", err)
+	}
+	auth, ok := manifest["auth"].(map[string]any)
+	if !ok {
+		auth = map[string]any{}
+		manifest["auth"] = auth
+	}
+	auth["cli_client_id"] = strings.TrimSpace(ids.CLIOIDCClientID)
+	auth["product_api_audience"] = strings.TrimSpace(ids.ProductProjectID)
+	out, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode discovery manifest: %w", err)
+	}
+	out = append(out, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return fmt.Errorf("write discovery manifest: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("publish discovery manifest: %w", err)
+	}
+	return nil
+}
+
 func browserOIDCConfigBody(redirectURIs, postLogoutRedirectURIs []string, loginBaseURI string) map[string]any {
 	return map[string]any{
 		"redirectUris":           redirectURIs,
@@ -1065,33 +1228,32 @@ func productTokenClaimsTargetBody(name, endpoint string) map[string]any {
 }
 
 // ensureGitHubLoginIDP provisions (or reconciles) the instance GitHub identity
-// provider used for "Sign in with GitHub", links it to the login policy, and
-// publishes its id to OpenBao for iam-service.
-func ensureGitHubLoginIDP(ctx context.Context, secrets *runtimeSecretStore, client zitadelClient, cfg config) error {
+// provider used for "Sign in with GitHub" and links it to the login policy.
+func ensureGitHubLoginIDP(ctx context.Context, client zitadelClient, cfg config) (string, error) {
 	clientID := strings.TrimSpace(cfg.githubLoginClientID)
 	clientSecret := strings.TrimSpace(cfg.githubLoginClientSecret)
 	if clientID == "" || clientSecret == "" {
 		fmt.Println("auth-control-plane-apply: github login idp not configured; skipping")
-		return nil
+		return "", nil
 	}
 	idpID, found, err := client.FindIDPByName(ctx, cfg.githubLoginIDPName)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if found {
 		if err := client.UpdateGitHubIDP(ctx, idpID, cfg.githubLoginIDPName, clientID, clientSecret); err != nil {
-			return err
+			return "", err
 		}
 	} else {
 		idpID, err = client.CreateGitHubIDP(ctx, cfg.githubLoginIDPName, clientID, clientSecret)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 	if err := client.AddIDPToLoginPolicy(ctx, idpID); err != nil {
-		return err
+		return "", err
 	}
-	return secrets.writeRuntimeSecret(ctx, iamGithubLoginIDPIDSecret, idpID)
+	return idpID, nil
 }
 
 func githubIDPBody(name, clientID, clientSecret string) map[string]any {
@@ -1356,6 +1518,18 @@ func isAlreadyExists(err error) bool {
 		return true
 	}
 	return status.Status == http.StatusBadRequest && strings.Contains(strings.ToLower(status.Body), "already")
+}
+
+func isNotFound(err error) bool {
+	var status statusError
+	if !errors.As(err, &status) {
+		return false
+	}
+	if status.Status == http.StatusNotFound {
+		return true
+	}
+	body := strings.ToLower(status.Body)
+	return strings.Contains(body, "not_found") || strings.Contains(body, "not found") || strings.Contains(body, "notexisting")
 }
 
 func isNoChanges(err error) bool {

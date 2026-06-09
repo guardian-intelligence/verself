@@ -21,6 +21,7 @@ company_domain: gamma.guardianintelligence.org
 verself_installation_id: inst_gamma
 spire_trust_domain: gamma.verself.sh
 zitadel_domain: "{{ verself_domain }}"
+zitadel_product_project_id: verself-api
 billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
 resend_subdomain: notify
@@ -56,6 +57,9 @@ postgresql_peer_mappings:
 	tokens := model.TokenMap()
 	if tokens["__VERSELF_AUTH_ISSUER_URL__"] != "https://gamma.verself.sh" {
 		t.Fatalf("issuer token = %q", tokens["__VERSELF_AUTH_ISSUER_URL__"])
+	}
+	if tokens["__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"] != "verself-api" {
+		t.Fatalf("zitadel product project token = %q", tokens["__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"])
 	}
 	if tokens["__VERSELF_BILLING_SERVICE_BASE_URL__"] != "https://billing.api.gamma.verself.sh" {
 		t.Fatalf("billing base token = %q", tokens["__VERSELF_BILLING_SERVICE_BASE_URL__"])

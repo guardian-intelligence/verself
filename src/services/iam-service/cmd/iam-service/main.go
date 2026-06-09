@@ -38,6 +38,8 @@ const (
 	serviceName                        = "iam-service"
 	serviceVersion                     = "1.0.1"
 	defaultPwnedPasswordsRangeEndpoint = "https://api.pwnedpasswords.com"
+	defaultZitadelBrowserAppName       = "verself-web"
+	defaultZitadelGitHubLoginIDPName   = "GitHub"
 	requestBodyLimit                   = 1 << 20
 )
 
@@ -173,21 +175,21 @@ func run() error {
 	pgDSN := cfg.RequireString("VERSELF_PG_DSN")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 8)
 	zitadelActionSigningKey := cfg.RequireCredential("zitadel-action-signing-key")
-	browserOIDCClientID := cfg.RequireCredential("oidc-client-id")
 	browserOIDCClientSecret := cfg.RequireCredential("oidc-client-secret")
-	githubLoginIDPID := cfg.RequireCredential("github-login-idp-id")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "iam_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
 	listenAddr := cfg.String("VERSELF_LISTEN_ADDR", "127.0.0.1:4248")
 	internalListenAddr := cfg.String("VERSELF_INTERNAL_LISTEN_ADDR", "127.0.0.1:4241")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
+	authAudience := cfg.RequireString("VERSELF_PRODUCT_API_AUTH_AUDIENCE")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	browserAuthPublicBaseURL := cfg.RequireURL("IAM_BROWSER_AUTH_PUBLIC_BASE_URL")
 	pwnedPasswordsRangeEndpoint := cfg.URL("IAM_HIBP_PWNED_PASSWORDS_RANGE_ENDPOINT", defaultPwnedPasswordsRangeEndpoint)
 	zitadelBaseURL := cfg.RequireURL("IAM_ZITADEL_BASE_URL")
 	zitadelHostHeader := cfg.RequireString("IAM_ZITADEL_HOST")
+	zitadelBrowserAppName := cfg.String("IAM_ZITADEL_BROWSER_APP_NAME", defaultZitadelBrowserAppName)
+	zitadelGitHubLoginIDPName := cfg.String("IAM_ZITADEL_GITHUB_LOGIN_IDP_NAME", defaultZitadelGitHubLoginIDPName)
 	spiceDBEndpoint := cfg.RequireString("IAM_SPICEDB_GRPC_ENDPOINT")
 	zitadelAdminToken := cfg.RequireCredential("zitadel-admin-token")
 	spiceDBPresharedKey := cfg.RequireCredential("spicedb-grpc-preshared-key")
@@ -227,6 +229,14 @@ func run() error {
 	})
 	if err != nil {
 		return err
+	}
+	zitadelPublic, err := zitadelClient.ProductPublicIdentifiers(ctx, zitadel.ProductPublicIdentifiersConfig{
+		ProjectID:          authAudience,
+		BrowserAppName:     zitadelBrowserAppName,
+		GitHubLoginIDPName: zitadelGitHubLoginIDPName,
+	})
+	if err != nil {
+		return fmt.Errorf("iam zitadel public identifiers: %w", err)
 	}
 	pwnedPasswordsClient, err := pwnedpasswords.New(pwnedpasswords.Config{
 		RangeEndpoint: pwnedPasswordsRangeEndpoint,
@@ -316,7 +326,7 @@ func run() error {
 		PG:                 pg,
 		Logger:             logger,
 		IssuerURL:          authIssuerURL,
-		ClientID:           browserOIDCClientID,
+		ClientID:           zitadelPublic.BrowserOIDCClientID,
 		ClientSecret:       browserOIDCClientSecret,
 		PublicBaseURL:      browserAuthPublicBaseURL,
 		ProductAudience:    authAudience,
@@ -325,7 +335,7 @@ func run() error {
 		ProviderLogin:      zitadelClient,
 		AccountProvisioner: identityService,
 		PasswordReset:      signupNotifier,
-		GithubLoginIDPID:   githubLoginIDPID,
+		GithubLoginIDPID:   zitadelPublic.GitHubLoginIDPID,
 		HTTPClient: &http.Client{
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 			Timeout:   5 * time.Second,

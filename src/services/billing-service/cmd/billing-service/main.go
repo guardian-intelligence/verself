@@ -67,7 +67,7 @@ func run() error {
 	tbClusterID := cfg.Uint64("BILLING_TB_CLUSTER_ID", 0)
 	billingReturnOriginsRaw := cfg.RequireString("BILLING_RETURN_ORIGINS")
 	authIssuerURL := cfg.RequireURL("VERSELF_AUTH_ISSUER_URL")
-	authAudience := cfg.RequireCredential("auth-audience")
+	authAudience := cfg.RequireString("VERSELF_PRODUCT_API_AUTH_AUDIENCE")
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 12)
 	pgMinConns := cfg.Int("VERSELF_PG_MIN_CONNS", 1)

@@ -97,6 +97,50 @@ func TestStartDeviceAuthorizationMapsInvalidClientToInvalidInput(t *testing.T) {
 	}
 }
 
+func TestProductPublicIdentifiersResolveFromZitadel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/management/v1/projects/verself-api/apps/_search":
+			if r.Method != http.MethodPost {
+				t.Fatalf("app search method = %s", r.Method)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": []map[string]any{
+					{"id": "app-1", "name": "verself-web", "oidcConfig": map[string]any{"clientId": "browser-client"}},
+				},
+			})
+		case "/admin/v1/idps/_search":
+			if r.Method != http.MethodPost {
+				t.Fatalf("idp search method = %s", r.Method)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": []map[string]any{
+					{"id": "github-idp", "name": "GitHub"},
+				},
+			})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(Config{BaseURL: server.URL, AdminToken: "admin-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	got, err := client.ProductPublicIdentifiers(context.Background(), ProductPublicIdentifiersConfig{
+		ProjectID:          "verself-api",
+		BrowserAppName:     "verself-web",
+		GitHubLoginIDPName: "GitHub",
+	})
+	if err != nil {
+		t.Fatalf("ProductPublicIdentifiers: %v", err)
+	}
+	if got.BrowserOIDCClientID != "browser-client" || got.GitHubLoginIDPID != "github-idp" {
+		t.Fatalf("identifiers = %#v", got)
+	}
+}
+
 func TestCompleteMemberInviteVerifiesEmail(t *testing.T) {
 	var verifyBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
