@@ -144,7 +144,7 @@ func (c *Client) IDPIDByName(ctx context.Context, name string) (string, bool, er
 		} `json:"result"`
 	}
 	body := map[string]any{"queries": []map[string]any{{"idpNameQuery": map[string]string{"name": name, "method": "TEXT_QUERY_METHOD_EQUALS"}}}}
-	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/idps/_search", body, &out); err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, "/admin/v1/idps/templates/_search", body, &out); err != nil {
 		return "", false, fmt.Errorf("%w: search IdP %s: %v", identity.ErrZitadelUnavailable, name, err)
 	}
 	for _, item := range out.Result {
