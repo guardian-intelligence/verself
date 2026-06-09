@@ -111,6 +111,7 @@ func TestValidateRepoRejectsUnknownDeployShape(t *testing.T) {
 	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
   - name: example-service.provider.api_key
+    job_id: example-service
     external_openbao: true
     fallback: ignored
 `)
@@ -272,6 +273,121 @@ func TestValidateRepoAcceptsBootstrapRuntimeSecretContracts(t *testing.T) {
 	}
 }
 
+func TestOpenBaoRuntimeCatalogBuildsRuntimeRoles(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "runtime-secrets.yml")
+	write(t, root, "runtime-secrets.yml", `
+openbao_runtime_secret_declarations:
+  - name: source-service.produced.value
+    job_id: consumer-service
+    consumer_job_ids: [observer-service]
+    produced_by_job: producer-service
+  - name: consumer-service.generated.value
+    job_id: consumer-service
+    generated:
+      bytes: 32
+      encoding: hex
+`)
+
+	catalog, err := OpenBaoRuntimeCatalogFromFiles([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.SchemaVersion != OpenBaoRuntimeCatalogSchemaVersion {
+		t.Fatalf("schema_version = %d", catalog.SchemaVersion)
+	}
+	if len(catalog.GeneratedSecrets) != 1 || catalog.GeneratedSecrets[0].Name != "consumer-service.generated.value" {
+		t.Fatalf("generated secrets = %#v", catalog.GeneratedSecrets)
+	}
+	role := findRuntimeRole(catalog, "producer-service-runtime")
+	if role.JobID != "producer-service" {
+		t.Fatalf("producer role = %#v", role)
+	}
+	pathPolicy := findRuntimeRolePath(role, "kv-runtime/data/secret/org/source-service.produced.value")
+	if strings.Join(pathPolicy.Capabilities, ",") != "create,read,update" {
+		t.Fatalf("producer capabilities = %#v", pathPolicy.Capabilities)
+	}
+	role = findRuntimeRole(catalog, "observer-service-runtime")
+	pathPolicy = findRuntimeRolePath(role, "kv-runtime/data/secret/org/source-service.produced.value")
+	if strings.Join(pathPolicy.Capabilities, ",") != "read" {
+		t.Fatalf("observer capabilities = %#v", pathPolicy.Capabilities)
+	}
+}
+
+func TestValidateRepoRejectsRuntimeSecretWithoutJobID(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
+openbao_runtime_secret_declarations:
+  - name: example-service.provider.api_key
+    external_openbao: true
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "job_id must match") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRepoRejectsNomadRuntimeSecretReaderDrift(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
+openbao_runtime_secret_declarations:
+  - name: example-service.provider.api_key
+    job_id: writer-service
+    external_openbao: true
+`)
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "reader-service" {
+  group "reader-service" {
+    task "reader-service" {
+      vault {
+        role = "reader-service-runtime"
+      }
+      template {
+        data = <<-EOT
+{{ with secret "kv-runtime/data/secret/org/example-service.provider.api_key" }}{{ .Data.data.value }}{{ end }}
+        EOT
+      }
+    }
+  }
+}
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), `renders OpenBao runtime secret example-service.provider.api_key but is not a reader`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateRepoRejectsNomadVaultRoleWithoutDeclaration(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/nomad.hcl", `
+job "example-service" {
+  group "example-service" {
+    task "example-service" {
+      vault {
+        role = "example-service-runtime"
+      }
+    }
+  }
+}
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), `Nomad vault role "example-service-runtime" has no OpenBao runtime secret declaration`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateRepoRejectsBootstrapNomadJobWithoutRuntimeSecretRender(t *testing.T) {
 	root := t.TempDir()
 	writeBootstrapRuntimeContracts(t, root)
@@ -368,8 +484,10 @@ func writeBootstrapRuntimeContracts(t *testing.T, root string) {
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/deploy/runtime-secrets.yml", `
 openbao_runtime_secret_declarations:
   - name: cloudflare-r2-control-plane.publisher_token_id
+    job_id: cloudflare-r2-control-plane
     external_openbao: true
   - name: cloudflare-r2-control-plane.publisher_secret_access_key
+    job_id: cloudflare-r2-control-plane
     external_openbao: true
 `)
 	write(t, root, "src/integrations/cloudflare/r2-control-plane/nomad.hcl", `
@@ -381,6 +499,9 @@ job "cloudflare-r2-control-plane" {
       }
     }
     task "cloudflare-r2-control-plane" {
+      vault {
+        role = "cloudflare-r2-control-plane-runtime"
+      }
       config {
         args = [
           "--action=serve",
@@ -413,6 +534,24 @@ job "cloudflare-r2-control-plane" {
 		  }
 		}
 	`)
+}
+
+func findRuntimeRole(catalog OpenBaoRuntimeCatalog, name string) OpenBaoRuntimeRole {
+	for _, role := range catalog.Roles {
+		if role.Name == name {
+			return role
+		}
+	}
+	return OpenBaoRuntimeRole{}
+}
+
+func findRuntimeRolePath(role OpenBaoRuntimeRole, path string) OpenBaoRuntimePolicyPath {
+	for _, policyPath := range role.Paths {
+		if policyPath.Path == path {
+			return policyPath
+		}
+	}
+	return OpenBaoRuntimePolicyPath{}
 }
 
 func gammaDeployWorkflow() string {

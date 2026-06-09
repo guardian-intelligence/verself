@@ -16,14 +16,17 @@ import (
 )
 
 var (
-	nameRE      = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-	jobIDRE     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	secretRE    = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9_]+)+$`)
-	durationRE  = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
-	siteNameRE  = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
-	apiKeyRE    = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
-	taskUserRE  = regexp.MustCompile(`(?m)^      user\s*=\s*"([^"]+)"`)
-	allowedRoot = map[string]bool{
+	nameRE               = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	jobIDRE              = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	secretRE             = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9_]+)+$`)
+	durationRE           = regexp.MustCompile(`^[1-9][0-9]*(ms|s|m|h)$`)
+	siteNameRE           = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	apiKeyRE             = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	taskUserRE           = regexp.MustCompile(`(?m)^      user\s*=\s*"([^"]+)"`)
+	nomadJobRE           = regexp.MustCompile(`(?m)^\s*job\s+"([^"]+)"`)
+	vaultRoleRE          = regexp.MustCompile(`(?m)^\s*role\s*=\s*"([^"]+)"`)
+	kvRuntimeSecretRefRE = regexp.MustCompile(`kv-runtime/data/secret/org/([a-z][a-z0-9-]*(?:\.[a-z0-9_]+)+)`)
+	allowedRoot          = map[string]bool{
 		"src/infrastructure-components": true,
 		"src/integrations":              true,
 		"src/services":                  true,
@@ -60,6 +63,9 @@ type Validator struct {
 	report                  Report
 	errs                    []ValidationError
 	seen                    seenClaims
+	runtimeSecretClaims     []runtimeSecretClaim
+	nomadRuntimeSecretRefs  []nomadRuntimeSecretRef
+	nomadVaultRoles         []nomadVaultRoleRef
 	generatedRuntimeSecrets bool
 }
 
@@ -81,6 +87,18 @@ type postgresPeerClaim struct {
 	pgUser        string
 	purpose       string
 	justification string
+}
+
+type nomadRuntimeSecretRef struct {
+	path   string
+	jobID  string
+	secret string
+}
+
+type nomadVaultRoleRef struct {
+	path  string
+	jobID string
+	role  string
 }
 
 type githubWorkflowFile struct {
@@ -146,6 +164,7 @@ func ValidateRepo(root string) (Report, error) {
 	if err := v.walkNomadSpecs(); err != nil {
 		return Report{}, err
 	}
+	v.validateNomadRuntimeSecretContracts()
 	v.validatePreflightNomadRuntimeUsers()
 	if len(v.errs) > 0 {
 		sort.Slice(v.errs, func(i, j int) bool {
@@ -614,7 +633,7 @@ func (v *Validator) walkNomadSpecs() error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || filepath.Base(path) != "nomad.hcl" {
+		if d.IsDir() || !isNomadSpecName(filepath.Base(path)) {
 			return nil
 		}
 		rel := v.rel(path)
@@ -630,11 +649,125 @@ func (v *Validator) walkNomadSpecs() error {
 				v.add(rel, fmt.Sprintf("authored Nomad spec contains environment literal %q; use __VERSELF_* site tokens", literal))
 			}
 		}
+		v.collectNomadRuntimeSecretContracts(rel, text)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("walk src nomad specs: %w", err)
 	}
 	return nil
+}
+
+func isNomadSpecName(name string) bool {
+	return name == "nomad.hcl" || strings.HasSuffix(name, ".nomad.hcl")
+}
+
+func (v *Validator) collectNomadRuntimeSecretContracts(rel string, text string) {
+	matches := nomadJobRE.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return
+	}
+	if len(matches) > 1 {
+		v.add(rel, "authored Nomad spec must declare exactly one job")
+		return
+	}
+	jobID := strings.TrimSpace(matches[0][1])
+	if !jobIDRE.MatchString(jobID) {
+		v.add(rel, fmt.Sprintf("Nomad job id %q must match %s", jobID, jobIDRE.String()))
+		return
+	}
+	seenRoles := map[string]bool{}
+	for _, match := range vaultRoleRE.FindAllStringSubmatch(text, -1) {
+		role := strings.TrimSpace(match[1])
+		if seenRoles[role] {
+			continue
+		}
+		seenRoles[role] = true
+		v.nomadVaultRoles = append(v.nomadVaultRoles, nomadVaultRoleRef{
+			path:  rel,
+			jobID: jobID,
+			role:  role,
+		})
+	}
+	seenRefs := map[string]bool{}
+	for _, match := range kvRuntimeSecretRefRE.FindAllStringSubmatch(text, -1) {
+		secret := strings.TrimSpace(match[1])
+		if seenRefs[secret] {
+			continue
+		}
+		seenRefs[secret] = true
+		v.nomadRuntimeSecretRefs = append(v.nomadRuntimeSecretRefs, nomadRuntimeSecretRef{
+			path:   rel,
+			jobID:  jobID,
+			secret: secret,
+		})
+	}
+}
+
+func (v *Validator) validateNomadRuntimeSecretContracts() {
+	if len(v.runtimeSecretClaims) == 0 {
+		for _, ref := range v.nomadVaultRoles {
+			v.add(ref.path, fmt.Sprintf("Nomad vault role %q has no OpenBao runtime secret declaration", ref.role))
+		}
+		return
+	}
+	catalog, err := openBaoRuntimeCatalogFromClaims(v.runtimeSecretClaims)
+	if err != nil {
+		v.add("", "build OpenBao runtime catalog: "+err.Error())
+		return
+	}
+	declaredSecrets := map[string]bool{}
+	for _, claim := range v.runtimeSecretClaims {
+		declaredSecrets[normalizeRuntimeSecretDeclaration(claim.declaration).Name] = true
+	}
+	roleJobs := map[string]string{}
+	readers := map[string]map[string]bool{}
+	for _, role := range catalog.Roles {
+		roleJobs[role.Name] = role.JobID
+		for _, policyPath := range role.Paths {
+			secret, ok := strings.CutPrefix(policyPath.Path, "kv-runtime/data/secret/org/")
+			if !ok || !capabilityContains(policyPath.Capabilities, "read") {
+				continue
+			}
+			if readers[secret] == nil {
+				readers[secret] = map[string]bool{}
+			}
+			readers[secret][role.JobID] = true
+		}
+	}
+	usedVaultRoles := map[string]bool{}
+	for _, ref := range v.nomadVaultRoles {
+		usedVaultRoles[ref.role] = true
+		expectedRole := ref.jobID + "-runtime"
+		if ref.role != expectedRole {
+			v.add(ref.path, fmt.Sprintf("Nomad vault role %q must be %q", ref.role, expectedRole))
+		}
+		if roleJobs[ref.role] == "" {
+			v.add(ref.path, fmt.Sprintf("Nomad vault role %q has no OpenBao runtime secret declaration", ref.role))
+		}
+	}
+	for _, role := range catalog.Roles {
+		if !usedVaultRoles[role.Name] {
+			v.add("src", fmt.Sprintf("OpenBao runtime role %q is generated but no Nomad task declares vault.role = %q", role.Name, role.Name))
+		}
+	}
+	for _, ref := range v.nomadRuntimeSecretRefs {
+		if !declaredSecrets[ref.secret] {
+			v.add(ref.path, fmt.Sprintf("Nomad job %q renders undeclared OpenBao runtime secret %s", ref.jobID, ref.secret))
+			continue
+		}
+		if !readers[ref.secret][ref.jobID] {
+			v.add(ref.path, fmt.Sprintf("Nomad job %q renders OpenBao runtime secret %s but is not a reader in runtime-secrets.yml", ref.jobID, ref.secret))
+		}
+	}
+}
+
+func capabilityContains(capabilities []string, want string) bool {
+	for _, capability := range capabilities {
+		if capability == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *Validator) validatePreflightNomadRuntimeUsers() {
