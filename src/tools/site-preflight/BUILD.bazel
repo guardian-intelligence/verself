@@ -12,7 +12,9 @@ pkg_tar(
         "//src/infrastructure-components/nomad:nomad_bin": "opt/verself/profile/bin/nomad",
         "//src/infrastructure-components/nomad:nomad_driver_podman_bin": "opt/verself/profile/nomad/plugins/nomad-driver-podman",
         "//src/infrastructure-components/podman:runtime_artifact": "opt/verself/profile/artifacts/podman-debs.tar",
+        "//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd": "opt/verself/profile/bin/zot-htpasswd",
         "@otelcol_tools//tools/spiffe-helper": "opt/verself/profile/bin/spiffe-helper",
+        "@zot_tools//tools/zot": "opt/verself/profile/bin/zot",
         "//src/infrastructure-components/spire:spire_agent_bin": "opt/verself/profile/bin/spire-agent",
         "//src/infrastructure-components/spire:spire_server_bin": "opt/verself/profile/bin/spire-server",
     },
@@ -23,6 +25,8 @@ pkg_tar(
         "opt/verself/profile/bin/spiffe-helper": "0755",
         "opt/verself/profile/bin/spire-agent": "0755",
         "opt/verself/profile/bin/spire-server": "0755",
+        "opt/verself/profile/bin/zot": "0755",
+        "opt/verself/profile/bin/zot-htpasswd": "0755",
     },
 )
 
@@ -47,6 +51,7 @@ filegroup(
         "//src/infrastructure-components/podman:role_sources",
         "//src/infrastructure-components/spire:registration_sources",
         "//src/infrastructure-components/spire:role_sources",
+        "//src/infrastructure-components/zot:role_sources",
     ],
 )
 
@@ -237,7 +242,7 @@ tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_ansible_posix//file
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_general//file)" -C "$$collections_tmp/ansible_collections/community/general"
 tar -xzf "$$execroot/$(location @dev_tool_ansible_collection_community_postgresql//file)" -C "$$collections_tmp/ansible_collections/community/postgresql"
 cd src/tools/site-preflight/ansible
-"$$execroot/$(execpath :ansible_lint_bin)" playbooks roles ../../../infrastructure-components/haproxy ../../../infrastructure-components/nomad ../../../infrastructure-components/podman ../../../infrastructure-components/spire ../../../infrastructure-components/spire/ansible
+"$$execroot/$(execpath :ansible_lint_bin)" playbooks roles ../../../infrastructure-components/haproxy ../../../infrastructure-components/nomad ../../../infrastructure-components/podman ../../../infrastructure-components/spire ../../../infrastructure-components/spire/ansible ../../../infrastructure-components/zot
 touch "$$out"
 """,
     tags = [

@@ -5,6 +5,7 @@ go 1.25.8
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/hashicorp/nomad/api v0.0.0-20260501195443-d922fcdd63e4
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/verself/observability v0.0.0
 	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/otel v1.43.0

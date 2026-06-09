@@ -97,6 +97,11 @@
       tags:
         - podman
         - scheduler
+    - role: zot
+      tags:
+        - registry
+        - zot
+        - scheduler
     - role: nomad
       tags:
         - nomad

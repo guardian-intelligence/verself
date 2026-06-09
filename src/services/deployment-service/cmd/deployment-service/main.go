@@ -15,8 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/verself/deployment-service/deployengine"
 	deploymentapi "github.com/verself/deployment-service/internal/deployment"
 	"github.com/verself/deployment-service/migrations"
+	distributioninternalclient "github.com/verself/distribution-service/internalclient"
 	verselfotel "github.com/verself/observability/otel"
 	"github.com/verself/service-runtime/envconfig"
 	"github.com/verself/service-runtime/httpserver"
@@ -76,6 +78,7 @@ func run() error {
 	nomadAllocID := cfg.String("NOMAD_ALLOC_ID", "")
 	recoverySSHReady := cfg.String("VERSELF_RECOVERY_SSH_READY", "")
 	r2ControlPlaneAddr := cfg.String("VERSELF_R2_CONTROL_PLANE_ADDR", workloadauth.InternalURL(workloadauth.ServiceCloudflareR2))
+	distributionAddr := cfg.String("VERSELF_DISTRIBUTION_ADDR", workloadauth.InternalURL(workloadauth.ServiceDistribution))
 	bazelJobsRaw := cfg.RequireString("VERSELF_DEPLOY_BAZEL_JOBS")
 	githubAudience := cfg.URL("VERSELF_DEPLOY_GITHUB_OIDC_AUDIENCE", "")
 	githubRepositories := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_REPOSITORIES", "")
@@ -117,6 +120,10 @@ func run() error {
 		return fmt.Errorf("deployment-service spiffe source: %w", err)
 	}
 	defer func() { _ = spiffeSource.Close() }()
+	deploymentID, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceDeployment)
+	if err != nil {
+		return err
+	}
 	r2HTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceCloudflareR2, nil, workloadauth.ServiceClientTimeouts{
 		Dial:           500 * time.Millisecond,
 		TLSHandshake:   time.Second,
@@ -125,6 +132,19 @@ func run() error {
 	})
 	if err != nil {
 		return fmt.Errorf("deployment-service R2 control-plane mtls: %w", err)
+	}
+	distributionHTTPClient, err := workloadauth.MTLSClientForServiceWithTimeouts(spiffeSource, workloadauth.ServiceDistribution, nil, workloadauth.ServiceClientTimeouts{
+		Dial:           500 * time.Millisecond,
+		TLSHandshake:   time.Second,
+		ResponseHeader: 2 * time.Minute,
+		Total:          2 * time.Minute,
+	})
+	if err != nil {
+		return fmt.Errorf("deployment-service distribution mtls: %w", err)
+	}
+	distributionClient, err := distributioninternalclient.NewClient(distributionAddr, distributioninternalclient.WithHTTPClient(distributionHTTPClient))
+	if err != nil {
+		return err
 	}
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
@@ -136,8 +156,12 @@ func run() error {
 			NomadAllocID:       nomadAllocID,
 			RecoverySSHReady:   recoverySSHReady,
 			BazelJobs:          bazelJobs,
+			BuilderID:          deploymentID.String(),
 		},
 		R2ControlPlaneHTTPClient: r2HTTPClient,
+		DistributionAdmitter: deploymentDistributionAdmitter{
+			client: distributionClient,
+		},
 	}
 	if err := svc.Store.Ready(ctx); err != nil {
 		return fmt.Errorf("deployment postgres readiness: %w", err)
@@ -220,4 +244,65 @@ func int32FromInt(value int, field string) (int32, error) {
 		return 0, fmt.Errorf("%s exceeds int32 range: %d", field, value)
 	}
 	return int32(value), nil // #nosec G115 -- value is checked against the int32 range above.
+}
+
+type deploymentDistributionAdmitter struct {
+	client *distributioninternalclient.Client
+}
+
+func (a deploymentDistributionAdmitter) AdmitDeploymentImage(ctx context.Context, req deployengine.DeploymentImageAdmissionRequest) (deployengine.DeploymentImageAdmissionResult, error) {
+	if a.client == nil {
+		return deployengine.DeploymentImageAdmissionResult{}, fmt.Errorf("distribution client is required")
+	}
+	evidence := make([]distributioninternalclient.Evidence, 0, len(req.Evidence))
+	for _, item := range req.Evidence {
+		evidence = append(evidence, distributioninternalclient.Evidence{
+			EvidenceKind:      item.EvidenceKind,
+			PredicateType:     item.PredicateType,
+			SubjectDigest:     item.SubjectDigest,
+			DocumentDigest:    item.DocumentDigest,
+			OCIReferrerDigest: item.OCIReferrerDigest,
+		})
+	}
+	resp, err := a.client.AdmitArtifact(ctx, distributioninternalclient.AdmitArtifactRequest{
+		PackageName:       req.Output,
+		PackageVersion:    req.SHA,
+		ChannelName:       "deployment",
+		PlatformOS:        "linux",
+		PlatformArch:      "amd64",
+		Flavor:            req.Site,
+		OriginRegistryURL: req.OriginRegistryURL,
+		PublicRegistryURL: req.PublicRegistryURL,
+		OCIRepository:     req.Repository,
+		OCIDigest:         req.Digest,
+		OCIMediaType:      req.MediaType,
+		OCISizeBytes:      req.SizeBytes,
+		BuilderID:         req.BuilderID,
+		SignerIdentity:    req.BuilderID,
+		SourceRepository:  req.SourceRepository,
+		SourceCommit:      req.SHA,
+		SourceRef:         req.SourceRef,
+		PolicyRef:         req.PolicyRef,
+		Evidence:          evidence,
+		SubmittedBy:       "deployment-service",
+	}, "deployment-image-"+req.Site+"-"+req.Output+"-"+strings.TrimPrefix(req.Digest, "sha256:"))
+	if err != nil {
+		return deployengine.DeploymentImageAdmissionResult{}, err
+	}
+	if resp.Problem != nil {
+		return deployengine.DeploymentImageAdmissionResult{}, fmt.Errorf("distribution admission rejected: %s", firstNonEmptyString(resp.Problem.Detail, resp.Problem.Title, resp.Problem.Code))
+	}
+	if resp.Result == nil {
+		return deployengine.DeploymentImageAdmissionResult{}, fmt.Errorf("distribution admission response missing artifact")
+	}
+	return deployengine.DeploymentImageAdmissionResult{PublicOCIReference: resp.Result.Artifact.PublicOCIReference}, nil
+}
+
+func firstNonEmptyString(values ...*string) string {
+	for _, value := range values {
+		if value != nil && strings.TrimSpace(*value) != "" {
+			return strings.TrimSpace(*value)
+		}
+	}
+	return "unknown distribution problem"
 }

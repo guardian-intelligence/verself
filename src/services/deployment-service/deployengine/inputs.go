@@ -2,6 +2,8 @@ package deployengine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,9 +20,9 @@ import (
 )
 
 const (
-	nomadComponentSchemaVersion = 8
+	nomadComponentSchemaVersion = 9
 	artifactSourcePrefix        = "verself-artifact://"
-	ociArchiveSourcePrefix      = "verself-oci-archive://"
+	ociImageSourcePrefix        = "verself-oci://"
 
 	deployPhasePreArtifact = "pre_artifact"
 	deployPhasePlatform    = "platform"
@@ -36,15 +38,18 @@ type deployInputs struct {
 	Components   []nomadComponentDescriptor
 	Artifacts    []deploymodel.Artifact
 	Bindings     map[string]artifactBinding
+	OCIImages    map[string]ociImageBinding
 }
 
 type siteConfig struct {
 	NomadAddr        string
 	ArtifactDelivery artifactDeliveryPolicy
+	OCIRegistry      ociRegistryPolicy
 }
 
 type rawSiteConfig struct {
 	ArtifactDelivery artifactDeliveryPolicy `json:"artifact_delivery"`
+	OCIRegistry      ociRegistryPolicy      `json:"oci_registry"`
 	NomadAddr        string                 `json:"nomad_addr"`
 }
 
@@ -69,7 +74,7 @@ type nomadComponentDescriptor struct {
 	JobSpecPath   string                    `json:"job_spec_path"`
 	Sites         []string                  `json:"sites"`
 	Artifacts     []nomadDescriptorArtifact `json:"artifacts"`
-	OCIImages     []nomadDescriptorArtifact `json:"oci_images"`
+	OCIImages     []nomadDescriptorOCIImage `json:"oci_images"`
 	PreArtifacts  []nomadDescriptorArtifact `json:"pre_artifacts"`
 	DigestInputs  []nomadDescriptorInput    `json:"digest_inputs"`
 }
@@ -78,6 +83,13 @@ type nomadDescriptorArtifact struct {
 	Label  string `json:"label"`
 	Output string `json:"output"`
 	Path   string `json:"path"`
+}
+
+type nomadDescriptorOCIImage struct {
+	ImageLabel string `json:"image_label"`
+	Output     string `json:"output"`
+	DigestPath string `json:"digest_path"`
+	PushLabel  string `json:"push_label"`
 }
 
 type nomadDescriptorInput struct {
@@ -91,6 +103,11 @@ type nomadJob struct {
 	JobID     string
 	Source    string
 	Job       *api.Job
+}
+
+type deployJobMetadata struct {
+	DeployRunKey string
+	SHA          string
 }
 
 type authoredNomadSpecParser interface {
@@ -131,6 +148,10 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 	if err != nil {
 		return nil, err
 	}
+	ociImages, err := bindNomadOCIImages(repoRoot, cfg.OCIRegistry, descriptors)
+	if err != nil {
+		return nil, err
+	}
 	return &deployInputs{
 		SHA:          sha,
 		DeployRunKey: deployRunKey,
@@ -139,6 +160,7 @@ func buildDeployInputs(ctx context.Context, exec execution) (*deployInputs, erro
 		Components:   descriptors,
 		Artifacts:    artifacts,
 		Bindings:     bindings,
+		OCIImages:    ociImages,
 	}, nil
 }
 
@@ -181,13 +203,16 @@ func loadSiteConfig(repoRoot, site string) (siteConfig, error) {
 	if raw.ArtifactDelivery.ChecksumAlgorithm != "sha256" {
 		return siteConfig{}, fmt.Errorf("%s: only sha256 artifact checksums are supported", path)
 	}
+	if err := validateOCIRegistryPolicy(path, raw.OCIRegistry); err != nil {
+		return siteConfig{}, err
+	}
 	if strings.TrimSpace(raw.ArtifactDelivery.ControlPlaneAddr) == "" {
 		raw.ArtifactDelivery.ControlPlaneAddr = "http://127.0.0.1:18732"
 	}
 	if raw.NomadAddr == "" {
 		raw.NomadAddr = "http://127.0.0.1:4646"
 	}
-	return siteConfig{NomadAddr: raw.NomadAddr, ArtifactDelivery: raw.ArtifactDelivery}, nil
+	return siteConfig{NomadAddr: raw.NomadAddr, ArtifactDelivery: raw.ArtifactDelivery, OCIRegistry: raw.OCIRegistry}, nil
 }
 
 func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponentDescriptor, error) {
@@ -227,8 +252,8 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 			}
 		}
 		for _, artifact := range component.OCIImages {
-			if artifact.Label == "" || artifact.Output == "" || artifact.Path == "" {
-				return nil, fmt.Errorf("%s: oci_images entries require label, output, and path", path)
+			if artifact.ImageLabel == "" || artifact.Output == "" || artifact.DigestPath == "" || artifact.PushLabel == "" {
+				return nil, fmt.Errorf("%s: oci_images entries require image_label, output, digest_path, and push_label", path)
 			}
 		}
 		for _, artifact := range component.PreArtifacts {
@@ -261,7 +286,7 @@ func componentInSite(sites []string, site string) bool {
 	return false
 }
 
-func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, model siteconfig.Model, bindings map[string]artifactBinding, components []nomadComponentDescriptor, taskUserResolver TaskUserResolver) ([]nomadJob, error) {
+func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser, repoRoot string, model siteconfig.Model, bindings map[string]artifactBinding, ociImages map[string]ociImageBinding, components []nomadComponentDescriptor, taskUserResolver TaskUserResolver, deployMeta deployJobMetadata) ([]nomadJob, error) {
 	seenJobIDs := map[string]bool{}
 	jobs := make([]nomadJob, 0, len(components))
 	for _, component := range components {
@@ -279,6 +304,11 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 				return nil, fmt.Errorf("%s: %w", component.Label, err)
 			}
 		}
+		if ociImages != nil {
+			if _, err := bindOCIImagesInSpec(job, ociImages); err != nil {
+				return nil, fmt.Errorf("%s: %w", component.Label, err)
+			}
+		}
 		if model.Site != "" {
 			if err := siteinject.Apply(job, model); err != nil {
 				return nil, fmt.Errorf("%s: %w", component.Label, err)
@@ -290,6 +320,11 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 		if err := applyPodmanTaskUserIDs(ctx, job, taskUserResolver); err != nil {
 			return nil, fmt.Errorf("%s: %w", component.Label, err)
 		}
+		specSHA256, err := nomadJobSpecSHA256(job)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", component.Label, err)
+		}
+		applyDeploymentMetadata(job, deployMeta, specSHA256)
 		parsedID := ""
 		if job.ID != nil {
 			parsedID = *job.ID
@@ -305,6 +340,24 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 		})
 	}
 	return jobs, nil
+}
+
+func applyDeploymentMetadata(job *api.Job, meta deployJobMetadata, specSHA256 string) {
+	if job.Meta == nil {
+		job.Meta = map[string]string{}
+	}
+	job.Meta["deploy_run_key"] = meta.DeployRunKey
+	job.Meta["deploy_sha"] = meta.SHA
+	job.Meta["spec_sha256"] = specSHA256
+}
+
+func nomadJobSpecSHA256(job *api.Job) (string, error) {
+	body, err := json.Marshal(job)
+	if err != nil {
+		return "", fmt.Errorf("marshal rendered Nomad job for spec fingerprint: %w", err)
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func loadAuthoredNomadSpec(ctx context.Context, parser authoredNomadSpecParser, path string) (*api.Job, error) {

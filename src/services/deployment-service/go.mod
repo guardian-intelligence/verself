@@ -8,6 +8,9 @@ require (
 	github.com/hashicorp/nomad/api v0.0.0-20260501195443-d922fcdd63e4
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/lib/pq v1.10.9
+	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.1.1
+	github.com/verself/distribution-service v0.0.0
 	github.com/verself/integrations/cloudflare/r2-control-plane v0.0.0-00010101000000-000000000000
 	github.com/verself/observability v0.0.0
 	github.com/verself/service-runtime v0.0.0
@@ -15,6 +18,7 @@ require (
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	gopkg.in/yaml.v3 v3.0.1
+	oras.land/oras-go/v2 v2.6.0
 )
 
 require (
@@ -40,7 +44,6 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
@@ -64,6 +67,8 @@ require (
 )
 
 replace github.com/verself/integrations/cloudflare/r2-control-plane => ../../integrations/cloudflare/r2-control-plane
+
+replace github.com/verself/distribution-service => ../distribution-service
 
 replace github.com/verself/service-runtime => ../service-runtime/go
 

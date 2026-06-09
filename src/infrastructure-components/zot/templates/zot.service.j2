@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Verself Zot OCI registry
+Documentation=https://zotregistry.dev/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ zot_user }}
+Group={{ zot_group }}
+ExecStart={{ verself_bin }}/zot serve {{ zot_config_path }}
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ zot_storage_dir }}
+
+[Install]
+WantedBy=multi-user.target

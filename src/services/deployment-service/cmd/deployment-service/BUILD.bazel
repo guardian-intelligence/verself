@@ -7,8 +7,10 @@ go_library(
     importpath = "github.com/verself/deployment-service/cmd/deployment-service",
     visibility = ["//visibility:private"],
     deps = [
+        "//src/services/deployment-service/deployengine",
         "//src/services/deployment-service/internal/deployment",
         "//src/services/deployment-service/migrations",
+        "//src/services/distribution-service/internalclient",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
         "//src/services/service-runtime/go/workload",
@@ -37,10 +39,12 @@ pkg_tar(
     files = {
         ":bazelisk_bin": "bin/bazelisk",
         ":deployment-service": "bin/deployment-service",
+        "//src/services/deployment-service/cmd/deployment-service-zot-auth": "bin/deployment-service-zot-auth",
     },
     modes = {
         "bin/bazelisk": "0755",
         "bin/deployment-service": "0755",
+        "bin/deployment-service-zot-auth": "0755",
     },
     visibility = ["//visibility:public"],
 )

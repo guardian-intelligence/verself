@@ -34,12 +34,14 @@ type Config struct {
 	NomadAllocID       string
 	RecoverySSHReady   string
 	BazelJobs          int
+	BuilderID          string
 }
 
 type Service struct {
 	Store                    Store
 	Config                   Config
 	R2ControlPlaneHTTPClient *http.Client
+	DistributionAdmitter     deployengine.DistributionAdmitter
 
 	mu      sync.Mutex
 	running bool
@@ -190,6 +192,10 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 		R2ControlPlaneHTTPClient: s.R2ControlPlaneHTTPClient,
 		NomadAddr:                s.Config.NomadAddr,
 		BazelBuildFlags:          bazelBuildFlags(s.Config.BazelJobs),
+		BuilderID:                s.Config.BuilderID,
+		SourceRepository:         record.Repository,
+		SourceRef:                record.Ref,
+		DistributionAdmitter:     s.DistributionAdmitter,
 	})
 	if err != nil {
 		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {

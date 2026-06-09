@@ -1,23 +1,6 @@
 # gazelle:prefix github.com/verself/infrastructure-components/zot
 
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
-
 exports_files(["tools.lock.json"])
-
-pkg_tar(
-    name = "runtime_artifact",
-    out = "zot-runtime.tar",
-    files = {
-        "@zot_tools//tools/zot": "bin/zot",
-        "//src/infrastructure-components/zot/cmd/zot-htpasswd:zot-htpasswd": "bin/zot-htpasswd",
-    },
-    modes = {
-        "bin/zot": "0755",
-        "bin/zot-htpasswd": "0755",
-    },
-    visibility = ["//visibility:public"],
-)
 
 filegroup(
     name = "role_sources",
@@ -35,17 +18,8 @@ filegroup(
         ],
         allow_empty = True,
     ),
-    visibility = ["//src/infrastructure-components:__pkg__"],
-)
-
-nomad_component(
-    name = "nomad_component",
-    artifacts = {
-        ":runtime_artifact": "zot-runtime",
-    },
-    component = "zot",
-    deploy_phase = "platform",
-    job_id = "zot",
-    job_spec = "nomad.hcl",
-    visibility = ["//src/tools/deployment/nomad:__pkg__"],
+    visibility = [
+        "//src/infrastructure-components:__pkg__",
+        "//src/tools/site-preflight:__pkg__",
+    ],
 )

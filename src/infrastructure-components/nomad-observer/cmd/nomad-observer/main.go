@@ -52,6 +52,7 @@ var (
 )
 
 type config struct {
+	site                  string
 	nomadAddr             string
 	namespace             string
 	stderrTailBytes       int64
@@ -160,6 +161,7 @@ type observerStats struct {
 type observer struct {
 	cfg     config
 	client  *api.Client
+	ch      clickhouse.Conn
 	logger  *slog.Logger
 	tracer  trace.Tracer
 	meta    *jobMetaCache
@@ -209,13 +211,15 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("nomad client: %w", err)
 	}
 
-	if err := startFleetProjector(ctx, cfg, nomadClient, logger); err != nil {
+	chConn, err := startFleetProjector(ctx, cfg, nomadClient, logger)
+	if err != nil {
 		logger.Warn("nomad-observer clickhouse sink disabled", slog.Any("error", err))
 	}
 
 	obs := &observer{
 		cfg:     cfg,
 		client:  nomadClient,
+		ch:      chConn,
 		logger:  logger,
 		tracer:  otel.Tracer(serviceName),
 		meta:    newJobMetaCache(),
@@ -238,21 +242,21 @@ func nomadHTTPClient() *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) error {
+func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) (clickhouse.Conn, error) {
 	if cfg.clickhouseCACertPath == "" {
-		return errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
+		return nil, errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
 	}
 	if cfg.spiffeSocket == "" {
-		return fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
+		return nil, fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
 	}
 	spiffeSource, err := workloadauth.Source(ctx, cfg.spiffeSocket)
 	if err != nil {
-		return fmt.Errorf("spiffe source: %w", err)
+		return nil, fmt.Errorf("spiffe source: %w", err)
 	}
 	chTLS, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, cfg.clickhouseCACertPath)
 	if err != nil {
 		_ = spiffeSource.Close()
-		return fmt.Errorf("clickhouse tls: %w", err)
+		return nil, fmt.Errorf("clickhouse tls: %w", err)
 	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{cfg.clickhouseAddr},
@@ -261,7 +265,7 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 	})
 	if err != nil {
 		_ = spiffeSource.Close()
-		return fmt.Errorf("open clickhouse: %w", err)
+		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
 	err = chConn.Ping(pingCtx)
@@ -269,13 +273,13 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 	if err != nil {
 		_ = chConn.Close()
 		_ = spiffeSource.Close()
-		return fmt.Errorf("ping clickhouse: %w", err)
+		return nil, fmt.Errorf("ping clickhouse: %w", err)
 	}
 	region, err := nomadClient.Agent().Region()
 	if err != nil {
 		_ = chConn.Close()
 		_ = spiffeSource.Close()
-		return fmt.Errorf("nomad region: %w", err)
+		return nil, fmt.Errorf("nomad region: %w", err)
 	}
 	go func() {
 		<-ctx.Done()
@@ -289,7 +293,7 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 		interval: cfg.fleetSnapshotInterval,
 		logger:   logger,
 	}).run(ctx)
-	return nil
+	return chConn, nil
 }
 
 func configFromEnv() (config, error) {
@@ -314,6 +318,7 @@ func configFromEnv() (config, error) {
 		return config{}, err
 	}
 	cfg := config{
+		site:                  envString("VERSELF_SITE", ""),
 		nomadAddr:             envString("NOMAD_ADDR", "http://127.0.0.1:4646"),
 		namespace:             envString("NOMAD_NAMESPACE", defaultNS),
 		stderrTailBytes:       stderrTailBytes,
@@ -328,6 +333,9 @@ func configFromEnv() (config, error) {
 	}
 	if cfg.nomadAddr == "" {
 		return config{}, errors.New("NOMAD_ADDR must not be empty")
+	}
+	if cfg.site == "" {
+		return config{}, errors.New("VERSELF_SITE must not be empty")
 	}
 	if cfg.namespace == "" {
 		cfg.namespace = defaultNS
@@ -658,6 +666,7 @@ func (o *observer) handleAllocationEvent(ctx context.Context, event api.Event) {
 			)
 		}
 		attrs = appendMetaAttrs(attrs, meta)
+		o.recordWorkloadOCIEvidence(ctx, alloc, meta)
 		if allocationFailed(alloc.ClientStatus) {
 			level = slog.LevelWarn
 			o.stats.failures.Add(1)

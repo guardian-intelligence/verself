@@ -38,6 +38,9 @@ func validateAdmit(req AdmitArtifactRequest, trustedBuilders map[string]struct{}
 	if _, ok := trustedBuilders[req.BuilderID]; !ok {
 		return fmt.Errorf("%w: builder_id %q is not trusted", ErrUntrustedBuilder, req.BuilderID)
 	}
+	if req.ChannelName == ChannelDeployment {
+		return validateDeploymentAdmit(req)
+	}
 	if _, ok := trustedSigners[req.SignerIdentity]; !ok {
 		return fmt.Errorf("%w: signer_identity %q is not trusted", ErrUntrustedSigner, req.SignerIdentity)
 	}
@@ -54,6 +57,35 @@ func validateAdmit(req AdmitArtifactRequest, trustedBuilders map[string]struct{}
 	}
 	if req.ChannelName == "stable" || req.ChannelName == "rc" {
 		required[EvidenceTest] = false
+	}
+	for _, evidence := range req.Evidence {
+		if err := validateEvidence(req.OCIDigest, evidence); err != nil {
+			return err
+		}
+		if _, ok := required[evidence.EvidenceKind]; ok {
+			required[evidence.EvidenceKind] = true
+		}
+	}
+	for kind, present := range required {
+		if !present {
+			return fmt.Errorf("%w: missing %s evidence", ErrMissingReferrers, kind)
+		}
+	}
+	return nil
+}
+
+func validateDeploymentAdmit(req AdmitArtifactRequest) error {
+	if req.SourceRepository == "" || req.SourceCommit == "" || req.SourceRef == "" {
+		return fmt.Errorf("%w: source fields are required", ErrSourcePolicyFailure)
+	}
+	if req.PolicyRef != PolicyDeploymentOCI {
+		return fmt.Errorf("%w: deployment OCI policy ref is required", ErrSourcePolicyFailure)
+	}
+	if req.SubmittedBy == "" {
+		return fmt.Errorf("%w: submitted_by is required", ErrInvalid)
+	}
+	required := map[string]bool{
+		EvidenceSLSA: false,
 	}
 	for _, evidence := range req.Evidence {
 		if err := validateEvidence(req.OCIDigest, evidence); err != nil {

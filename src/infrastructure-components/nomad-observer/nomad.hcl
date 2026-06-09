@@ -39,6 +39,7 @@ job "nomad-observer" {
         VERSELF_CLICKHOUSE_ADDRESS = "127.0.0.1:9440"
         VERSELF_CLICKHOUSE_USER = "nomad_observer"
         VERSELF_CRED_CLICKHOUSE_CA_CERT = "/etc/verself/clickhouse/server-ca.pem"
+        VERSELF_SITE = "__VERSELF_SITE__"
         VERSELF_SUPERVISOR = "nomad"
       }
 

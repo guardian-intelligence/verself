@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +30,9 @@ const (
 	bootstrapArtifactServer  = "/opt/verself/bootstrap/bin/site-bootstrap"
 	bootstrapArtifactUnit    = "/etc/systemd/system/verself-bootstrap-artifacts.service"
 	bootstrapArtifactHTTP    = "http://127.0.0.1:18733"
+	bootstrapZotRemoteAddr   = "127.0.0.1:5080"
+	bootstrapZotPublisher    = "artifact-publisher"
+	bootstrapZotPasswordPath = "/etc/zot/publisher-password"
 	openBaoRootKeyPath       = "/etc/verself/bootstrap/openbao-root.key"
 	bootstrapRemoteTmpPrefix = "/tmp/verself-bootstrap-artifacts-"
 )
@@ -91,19 +98,30 @@ func RunBootstrapDeploy(ctx context.Context, opts BootstrapDeployOptions) (err e
 	if err != nil {
 		return err
 	}
+	ociRegistry, err := newBootstrapOCIRegistry(ctx, sshClient, opts.RepoRoot)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, ociRegistry.Close()) }()
 
 	deployRunKey, err := randomPrefixedID("bootstrap")
 	if err != nil {
 		return err
 	}
 	_, err = deployengine.Run(ctx, deployengine.Options{
-		Site:              opts.Site,
-		SHA:               opts.SHA,
-		DeployRunKey:      deployRunKey,
-		RepoRoot:          opts.RepoRoot,
-		ArtifactPublisher: remoteBootstrapArtifactPublisher{ssh: sshClient, root: bootstrapArtifactRoot, baseURL: artifactBaseURL},
-		NomadAddr:         nomadAddr,
-		TaskUserResolver:  remoteTaskUserResolver(sshClient),
+		Site:                 opts.Site,
+		SHA:                  opts.SHA,
+		DeployRunKey:         deployRunKey,
+		RepoRoot:             opts.RepoRoot,
+		ArtifactPublisher:    remoteBootstrapArtifactPublisher{ssh: sshClient, root: bootstrapArtifactRoot, baseURL: artifactBaseURL},
+		OCIPusher:            ociRegistry,
+		OCIEvidencePublisher: ociRegistry,
+		AllowBootstrapOCIWithoutDistributionAdmission: true,
+		BuilderID:        bootstrapBuilderID(opts.Site),
+		SourceRepository: "guardian-intelligence/verself",
+		SourceRef:        bootstrapSourceRef(ctx, opts.RepoRoot, opts.Site),
+		NomadAddr:        nomadAddr,
+		TaskUserResolver: remoteTaskUserResolver(sshClient),
 	})
 	if err != nil {
 		return err
@@ -159,6 +177,144 @@ func (p remoteBootstrapArtifactPublisher) PublishDeploymentArtifacts(ctx context
 		sources[output] = source
 	}
 	return deployengine.ArtifactPublishResult{GetterSources: sources}, nil
+}
+
+type bootstrapOCIRegistry struct {
+	repoRoot        string
+	localRegistry   string
+	dockerConfigDir string
+	forward         *opruntime.Forward
+	cleanup         func()
+}
+
+func newBootstrapOCIRegistry(ctx context.Context, sshClient *opruntime.SSHClient, repoRoot string) (*bootstrapOCIRegistry, error) {
+	forward, err := sshClient.Forward(ctx, "zot", bootstrapZotRemoteAddr)
+	if err != nil {
+		return nil, fmt.Errorf("start Zot recovery tunnel: %w", err)
+	}
+	passwordRaw, err := sshClient.Exec(ctx, "sudo -n cat "+shellQuote(bootstrapZotPasswordPath))
+	if err != nil {
+		_ = forward.Close()
+		return nil, fmt.Errorf("read remote Zot publisher password: %w", err)
+	}
+	dockerConfigDir, cleanup, err := writeBootstrapDockerConfig(forward.ListenAddr, strings.TrimSpace(string(passwordRaw)))
+	if err != nil {
+		_ = forward.Close()
+		return nil, err
+	}
+	return &bootstrapOCIRegistry{
+		repoRoot:        repoRoot,
+		localRegistry:   forward.ListenAddr,
+		dockerConfigDir: dockerConfigDir,
+		forward:         forward,
+		cleanup:         cleanup,
+	}, nil
+}
+
+func (r *bootstrapOCIRegistry) PushDeploymentImage(ctx context.Context, req deployengine.OCIPushRequest) error {
+	if r == nil {
+		return errors.New("bootstrap OCI registry is nil")
+	}
+	pushRepository, err := r.localRepository(req.PushRepository)
+	if err != nil {
+		return err
+	}
+	args := make([]string, 0, len(req.BazelBuildFlags)+8)
+	args = append(args, "run")
+	args = append(args, req.BazelBuildFlags...)
+	args = append(args, req.PushLabel, "--", "--repository", pushRepository)
+	if req.Insecure {
+		args = append(args, "--insecure")
+	}
+	cmd := exec.CommandContext(ctx, "bazelisk", args...)
+	cmd.Dir = r.repoRoot
+	cmd.Env = append(os.Environ(), "DOCKER_CONFIG="+r.dockerConfigDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("push bootstrap OCI image %s to %s: %w", req.Output, pushRepository, err)
+	}
+	return nil
+}
+
+func (r *bootstrapOCIRegistry) PublishDeploymentEvidence(ctx context.Context, req deployengine.DeploymentEvidencePublishRequest) ([]deployengine.DeploymentImageEvidence, error) {
+	if r == nil {
+		return nil, errors.New("bootstrap OCI registry is nil")
+	}
+	pushRepository, err := r.localRepository(req.PushRepository)
+	if err != nil {
+		return nil, err
+	}
+	req.PushRepository = pushRepository
+	req.DockerConfigDir = r.dockerConfigDir
+	return deployengine.DefaultOCIEvidencePublisher{}.PublishDeploymentEvidence(ctx, req)
+}
+
+func (r *bootstrapOCIRegistry) localRepository(repository string) (string, error) {
+	_, repoPath, ok := strings.Cut(strings.TrimSpace(repository), "/")
+	if !ok || repoPath == "" {
+		return "", fmt.Errorf("OCI repository %q must include a host and repository path", repository)
+	}
+	return strings.TrimRight(r.localRegistry, "/") + "/" + repoPath, nil
+}
+
+func (r *bootstrapOCIRegistry) Close() error {
+	if r == nil {
+		return nil
+	}
+	if r.cleanup != nil {
+		r.cleanup()
+	}
+	return r.forward.Close()
+}
+
+func writeBootstrapDockerConfig(registry, password string) (string, func(), error) {
+	registry = strings.TrimSpace(registry)
+	password = strings.TrimSpace(password)
+	if registry == "" {
+		return "", nil, errors.New("bootstrap Docker auth registry is required")
+	}
+	if password == "" {
+		return "", nil, errors.New("zot publisher password file is empty")
+	}
+	dir, err := os.MkdirTemp("", "verself-bootstrap-docker-*")
+	if err != nil {
+		return "", nil, fmt.Errorf("create bootstrap Docker auth dir: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	body, err := json.MarshalIndent(map[string]any{
+		"auths": map[string]map[string]string{
+			registry: {
+				"auth": base64.StdEncoding.EncodeToString([]byte(bootstrapZotPublisher + ":" + password)),
+			},
+		},
+	}, "", "  ")
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("encode bootstrap Docker auth config: %w", err)
+	}
+	body = append(body, '\n')
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), body, 0o600); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("write bootstrap Docker auth config: %w", err)
+	}
+	return dir, cleanup, nil
+}
+
+func bootstrapBuilderID(site string) string {
+	return "verself://site-bootstrap/" + safeRemoteArtifactName(site)
+}
+
+func bootstrapSourceRef(ctx context.Context, repoRoot, site string) string {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "symbolic-ref", "--quiet", "HEAD")
+	body, err := cmd.Output()
+	if err == nil {
+		ref := strings.TrimSpace(string(body))
+		if ref != "" {
+			return ref
+		}
+	}
+	return "refs/verself/bootstrap/" + safeRemoteArtifactName(site)
 }
 
 func verifyArtifactCandidate(artifact deployengine.ArtifactPublishCandidate) error {

@@ -145,6 +145,37 @@ func TestAdmissionRequiresCompleteTrustedEvidence(t *testing.T) {
 	}
 }
 
+func TestDeploymentAdmissionUsesDeploymentPolicy(t *testing.T) {
+	ctx, svc := newTestService(t)
+	req := admitRequest("c")
+	req.PackageName = "analytics-service"
+	req.PackageVersion = req.SourceCommit
+	req.ChannelName = ChannelDeployment
+	req.Flavor = "gamma"
+	req.OCIRepository = "verself/analytics-service"
+	req.BuilderID = "spiffe://prod.verself.sh/svc/deployment-service"
+	req.SignerIdentity = req.BuilderID
+	req.PolicyRef = PolicyDeploymentOCI
+	req.SubmittedBy = "deployment-service"
+	req.ReleaseAttestation = ReleaseAttestation{}
+	req.Evidence = []Evidence{
+		evidence(EvidenceSLSA, PredicateSLSAProvenance, req.OCIDigest, "d"),
+	}
+	svc.TrustedBuilders[req.BuilderID] = struct{}{}
+	svc.ReleaseVerifier = failingReleaseVerifier{}
+
+	artifact, err := svc.AdmitArtifact(ctx, Principal{Actor: req.BuilderID}, req)
+	if err != nil {
+		t.Fatalf("admit deployment artifact: %v", err)
+	}
+	if artifact.ChannelName != ChannelDeployment || artifact.PackageName != "analytics-service" {
+		t.Fatalf("artifact identity = %s/%s", artifact.PackageName, artifact.ChannelName)
+	}
+	if artifact.Verification.Decision != DecisionAllowed {
+		t.Fatalf("verification decision = %s", artifact.Verification.Decision)
+	}
+}
+
 func newTestService(t *testing.T) (context.Context, *Service) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -288,4 +319,10 @@ func (testReleaseVerifier) Verify(_ context.Context, req distributionreleaseatte
 		TPMReleasePublicDigest: req.TPM.ReleasePublicBlobDigest,
 		CheckedAt:              req.CheckedAt,
 	}, nil
+}
+
+type failingReleaseVerifier struct{}
+
+func (failingReleaseVerifier) Verify(context.Context, distributionreleaseattest.Request) (distributionreleaseattest.Result, error) {
+	return distributionreleaseattest.Result{}, errors.New("release verifier should not run")
 }

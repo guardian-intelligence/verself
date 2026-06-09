@@ -170,6 +170,7 @@ func run() error {
 
 	internalPeerIDs, err := workloadauth.PeerIDsForSource(
 		spiffeSource,
+		workloadauth.ServiceDeployment,
 		workloadauth.ServiceGovernance,
 	)
 	if err != nil {

@@ -34,12 +34,16 @@ const (
 	RetentionStable           = "stable"
 	RetentionSecurityRetained = "security_retained"
 
+	ChannelDeployment = "deployment"
+
 	EvidenceCosign = "cosign_signature"
 	EvidenceSLSA   = "slsa_provenance"
 	EvidenceSBOM   = "sbom"
 	EvidenceTest   = "test"
 
 	PredicateSLSAProvenance = "https://slsa.dev/provenance/v1"
+
+	PolicyDeploymentOCI = "distribution-policies/deployments/oci-digest-v1"
 )
 
 type ReleaseAttestationVerifier interface {

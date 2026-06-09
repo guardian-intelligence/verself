@@ -64,13 +64,17 @@ func (s *Service) AdmitArtifact(ctx context.Context, principal Principal, req Ad
 		return Artifact{}, err
 	}
 	s.emit(ctx, event{EventType: "distribution.artifact.verification_started", Decision: "started", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor})
-	attestation, err := s.verifyReleaseAttestation(ctx, req)
-	if err != nil {
-		err = fmt.Errorf("%w: %v", ErrAttestationFailed, err)
-		s.emit(ctx, event{EventType: "distribution.artifact.attestation_denied", Decision: "denied", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: err.Error()})
-		return Artifact{}, err
+	if req.ChannelName == ChannelDeployment {
+		s.emit(ctx, event{EventType: "distribution.artifact.deployment_evidence_verified", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: "policy_ref=" + req.PolicyRef})
+	} else {
+		attestation, err := s.verifyReleaseAttestation(ctx, req)
+		if err != nil {
+			err = fmt.Errorf("%w: %v", ErrAttestationFailed, err)
+			s.emit(ctx, event{EventType: "distribution.artifact.attestation_denied", Decision: "denied", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: err.Error()})
+			return Artifact{}, err
+		}
+		s.emit(ctx, event{EventType: "distribution.artifact.attestation_verified", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: "release_input_digest=" + attestation.ReleaseInputDigest + " pcr_policy=" + attestation.PCRPolicyID})
 	}
-	s.emit(ctx, event{EventType: "distribution.artifact.attestation_verified", Decision: "allowed", PackageName: req.PackageName, ChannelName: req.ChannelName, PlatformOS: req.PlatformOS, PlatformArch: req.PlatformArch, ArtifactDigest: req.OCIDigest, Actor: principal.Actor, Reason: "release_input_digest=" + attestation.ReleaseInputDigest + " pcr_policy=" + attestation.PCRPolicyID})
 	artifact, err = s.Store.AdmitArtifact(ctx, req, requestDigest(req), s.now())
 	if err == nil {
 		s.emit(ctx, event{EventType: "distribution.artifact.verification_allowed", Decision: "allowed", PackageName: artifact.PackageName, ChannelName: artifact.ChannelName, PlatformOS: artifact.PlatformOS, PlatformArch: artifact.PlatformArch, ArtifactDigest: artifact.OCIDigest, Actor: principal.Actor})
