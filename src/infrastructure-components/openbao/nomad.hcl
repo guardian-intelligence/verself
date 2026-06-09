@@ -156,6 +156,14 @@ os.chmod(public_ca_dir, 0o755)
 os.chown(public_ca, 0, 0)
 os.chmod(public_ca, 0o644)
 
+spire_jwks_ca_src = pathlib.Path("/etc/spire/bundle-endpoint/ca.pem")
+spire_jwks_ca = pathlib.Path("/etc/openbao/tls/spire-jwks-ca.pem")
+if not spire_jwks_ca_src.exists():
+    raise RuntimeError(f"SPIRE JWT bundle endpoint CA is required at {spire_jwks_ca_src}")
+shutil.copyfile(spire_jwks_ca_src, spire_jwks_ca)
+os.chown(spire_jwks_ca, 0, openbao.pw_gid)
+os.chmod(spire_jwks_ca, 0o640)
+
 hosts = pathlib.Path("/etc/openbao/hosts")
 hosts.write_text("127.0.0.1 localhost\\n::1 localhost ip6-localhost ip6-loopback\\n", encoding="utf-8")
 os.chown(hosts, 0, openbao.pw_gid)
@@ -269,6 +277,10 @@ PY
           "--addr=https://127.0.0.1:8200",
           "--ca-cert=/etc/openbao/tls/ca.pem",
           "--runtime-catalog-file=local/etc/openbao-runtime-catalog.json",
+          "--spiffe-jwks-url=https://127.0.0.1:8082",
+          "--spiffe-jwks-ca-cert=/etc/openbao/tls/spire-jwks-ca.pem",
+          "--spiffe-jwt-issuer=https://127.0.0.1:8082",
+          "--spiffe-service-prefix=__VERSELF_SPIFFE_SERVICE_PREFIX__",
         ]
       }
 

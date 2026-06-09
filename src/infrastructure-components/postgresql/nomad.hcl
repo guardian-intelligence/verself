@@ -161,6 +161,62 @@ EOH
       }
     }
 
+    task "replication-roles" {
+      driver = "raw_exec"
+      user = "postgres"
+
+      lifecycle {
+        hook = "poststart"
+        sidecar = false
+      }
+
+      vault {
+        role = "postgresql-runtime"
+      }
+
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+
+      config {
+        command = "$${VERSELF_POSTGRESQL_RUNTIME}/opt/verself/postgresql/bin/postgresql-bootstrap"
+        args = [
+          "--replication-roles=$${NOMAD_SECRETS_DIR}/replication-roles.json",
+          "--dsn=postgres://postgres@/postgres?host=/var/run/postgresql&sslmode=disable",
+        ]
+      }
+
+      env {
+        VERSELF_POSTGRESQL_RUNTIME = "verself-artifact://postgresql-runtime"
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/replication-roles.json"
+        perms = "0600"
+        data = <<EOH
+{"roles":__VERSELF_POSTGRESQL_REPLICATION_ROLES_JSON__}
+EOH
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "secrets/replication-roles.env"
+        perms = "0600"
+        env = true
+        data = <<EOH
+__VERSELF_POSTGRESQL_REPLICATION_ROLE_ENV__
+EOH
+      }
+
+      resources {
+        cpu = 100
+        memory = 128
+      }
+    }
+
     task "server" {
       driver = "raw_exec"
       user = "postgres"

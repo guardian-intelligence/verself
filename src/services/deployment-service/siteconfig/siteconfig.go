@@ -16,6 +16,7 @@ import (
 const cloudflareAccountConfigVersion = "verself.cloudflare.account.v1"
 
 var postgresIdentifierRE = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var runtimeSecretNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]*(\.[a-z0-9_]+)+$`)
 
 type CloudflareProvider struct {
 	ControlPlaneSite          string
@@ -27,6 +28,7 @@ type CloudflareProvider struct {
 
 type PostgresBootstrap struct {
 	ServiceDatabases []PostgresServiceDatabase
+	ReplicationRoles []PostgresReplicationRole
 	PeerMappings     []PostgresPeerMapping
 }
 
@@ -38,6 +40,13 @@ type PostgresServiceDatabase struct {
 type PostgresPeerMapping struct {
 	SystemUser string `yaml:"system_user"`
 	PGUser     string `yaml:"pg_user"`
+}
+
+type PostgresReplicationRole struct {
+	Name            string `yaml:"name" json:"name"`
+	ConnectionLimit int    `yaml:"connection_limit" json:"connection_limit"`
+	OpenBaoSecret   string `yaml:"openbao_secret" json:"-"`
+	PasswordEnv     string `yaml:"-" json:"password_env"`
 }
 
 type Model struct {
@@ -210,6 +219,7 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 	}
 	out := PostgresBootstrap{}
 	seenDBs := map[string]string{}
+	seenRoles := map[string]string{}
 	seenPeers := map[string]bool{}
 	for _, relRoot := range roots {
 		root := filepath.Join(repoRoot, filepath.FromSlash(relRoot))
@@ -231,6 +241,7 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 			}
 			var doc struct {
 				ServiceDatabases []PostgresServiceDatabase `yaml:"postgresql_service_databases"`
+				ReplicationRoles []PostgresReplicationRole `yaml:"postgresql_replication_roles"`
 				PeerMappings     []PostgresPeerMapping     `yaml:"postgresql_peer_mappings"`
 			}
 			if err := yaml.Unmarshal(body, &doc); err != nil {
@@ -248,6 +259,24 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 				}
 				seenDBs[db.Name] = path
 				out.ServiceDatabases = append(out.ServiceDatabases, db)
+			}
+			for _, role := range doc.ReplicationRoles {
+				if err := validatePostgresIdentifier(path, "postgresql_replication_roles.name", role.Name); err != nil {
+					return err
+				}
+				if role.ConnectionLimit <= 0 {
+					return fmt.Errorf("%s: postgresql_replication_roles.connection_limit must be positive for %s", path, role.Name)
+				}
+				role.OpenBaoSecret = strings.TrimSpace(role.OpenBaoSecret)
+				if !runtimeSecretNameRE.MatchString(role.OpenBaoSecret) {
+					return fmt.Errorf("%s: postgresql_replication_roles.openbao_secret must match %s for %s", path, runtimeSecretNameRE.String(), role.Name)
+				}
+				if prior := seenRoles[role.Name]; prior != "" {
+					return fmt.Errorf("%s: duplicate PostgreSQL replication role %q previously declared by %s", path, role.Name, prior)
+				}
+				seenRoles[role.Name] = path
+				role.PasswordEnv = postgresReplicationRolePasswordEnv(role.Name)
+				out.ReplicationRoles = append(out.ReplicationRoles, role)
 			}
 			for _, mapping := range doc.PeerMappings {
 				if err := validatePostgresIdentifier(path, "postgresql_peer_mappings.system_user", mapping.SystemUser); err != nil {
@@ -279,6 +308,9 @@ func LoadPostgresBootstrap(repoRoot string) (PostgresBootstrap, error) {
 			return out.PeerMappings[i].PGUser < out.PeerMappings[j].PGUser
 		}
 		return out.PeerMappings[i].SystemUser < out.PeerMappings[j].SystemUser
+	})
+	sort.Slice(out.ReplicationRoles, func(i, j int) bool {
+		return out.ReplicationRoles[i].Name < out.ReplicationRoles[j].Name
 	})
 	return out, nil
 }
@@ -432,6 +464,8 @@ func (m Model) TokenMap() map[string]string {
 		"__VERSELF_DEPLOY_REPO_URL__":                     m.DeployRepoURL,
 		"__VERSELF_POSTGRESQL_BOOTSTRAP_IDENT_ROWS__":     m.PostgresBootstrap.RenderIdentRows(),
 		"__VERSELF_POSTGRESQL_BOOTSTRAP_DATABASE_SQL__":   m.PostgresBootstrap.RenderDatabaseSQL(),
+		"__VERSELF_POSTGRESQL_REPLICATION_ROLES_JSON__":   m.PostgresBootstrap.RenderReplicationRolesJSON(),
+		"__VERSELF_POSTGRESQL_REPLICATION_ROLE_ENV__":     m.PostgresBootstrap.RenderReplicationRoleEnvTemplate(),
 		"__VERSELF_TEMPORAL_SYSTEM_ADMIN_IDS__":           "spiffe://" + m.SpiffeTrustDomain + "/svc/temporal-server",
 	}
 	if m.GitHubAppID != "" && m.GitHubAppID != "0" {
@@ -509,6 +543,35 @@ func (p PostgresBootstrap) RenderDatabaseSQL() string {
 SELECT 'CREATE DATABASE %s OWNER %s'
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = '%s')\gexec
 `, db.Name, db.Owner, db.Name)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func postgresReplicationRolePasswordEnv(roleName string) string {
+	return "VERSELF_POSTGRESQL_REPLICATION_ROLE_PASSWORD_" + strings.ToUpper(roleName)
+}
+
+func (p PostgresBootstrap) RenderReplicationRolesJSON() string {
+	roles := make([]PostgresReplicationRole, len(p.ReplicationRoles))
+	copy(roles, p.ReplicationRoles)
+	for index := range roles {
+		roles[index].PasswordEnv = postgresReplicationRolePasswordEnv(roles[index].Name)
+	}
+	body, err := json.Marshal(roles)
+	if err != nil {
+		panic(err)
+	}
+	return string(body)
+}
+
+func (p PostgresBootstrap) RenderReplicationRoleEnvTemplate() string {
+	if len(p.ReplicationRoles) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, role := range p.ReplicationRoles {
+		env := postgresReplicationRolePasswordEnv(role.Name)
+		fmt.Fprintf(&b, "%s={{ with secret \"kv-runtime/data/secret/org/%s\" }}{{ .Data.data.value }}{{ end }}\n", env, role.OpenBaoSecret)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

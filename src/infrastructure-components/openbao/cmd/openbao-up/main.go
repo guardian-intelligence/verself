@@ -59,14 +59,18 @@ type openBaoRuntimeRolePath struct {
 }
 
 type config struct {
-	bao                string
-	stateDir           string
-	rootKeyFile        string
-	keyShares          int
-	threshold          int
-	addr               string
-	caCert             string
-	runtimeCatalogFile string
+	bao                 string
+	stateDir            string
+	rootKeyFile         string
+	keyShares           int
+	threshold           int
+	addr                string
+	caCert              string
+	runtimeCatalogFile  string
+	spiffeJWKSURL       string
+	spiffeJWKSCAFile    string
+	spiffeJWTIssuer     string
+	spiffeServicePrefix string
 
 	action              string
 	rootTokenOutputFile string
@@ -114,6 +118,10 @@ func main() {
 	fs.StringVar(&cfg.addr, "addr", firstNonEmpty(os.Getenv("BAO_ADDR"), "https://127.0.0.1:8200"), "OpenBao API address")
 	fs.StringVar(&cfg.caCert, "ca-cert", os.Getenv("BAO_CACERT"), "OpenBao CA certificate")
 	fs.StringVar(&cfg.runtimeCatalogFile, "runtime-catalog-file", "local/etc/openbao-runtime-catalog.json", "OpenBao runtime role catalog JSON")
+	fs.StringVar(&cfg.spiffeJWKSURL, "spiffe-jwks-url", firstNonEmpty(os.Getenv("SPIFFE_JWKS_URL"), "https://127.0.0.1:8082"), "SPIRE JWT bundle endpoint JWKS URL")
+	fs.StringVar(&cfg.spiffeJWKSCAFile, "spiffe-jwks-ca-cert", firstNonEmpty(os.Getenv("SPIFFE_JWKS_CA_CERT"), "/etc/openbao/tls/spire-jwks-ca.pem"), "SPIRE JWT bundle endpoint CA certificate")
+	fs.StringVar(&cfg.spiffeJWTIssuer, "spiffe-jwt-issuer", os.Getenv("SPIFFE_JWT_ISSUER"), "SPIRE JWT-SVID issuer")
+	fs.StringVar(&cfg.spiffeServicePrefix, "spiffe-service-prefix", os.Getenv("VERSELF_SPIFFE_SERVICE_PREFIX"), "SPIFFE service ID prefix, for example spiffe://example.test/svc")
 	fs.StringVar(&cfg.rootTokenOutputFile, "root-token-output-file", "", "0600 file to receive a generated temporary root token")
 	fs.Var(&cfg.unsealKeyFiles, "unseal-key-file", "unseal key file for action=generate-root-token; repeat to satisfy the threshold")
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -206,7 +214,14 @@ func normalizeConfig(cfg config) config {
 	cfg.addr = strings.TrimSpace(cfg.addr)
 	cfg.caCert = strings.TrimSpace(cfg.caCert)
 	cfg.runtimeCatalogFile = strings.TrimSpace(cfg.runtimeCatalogFile)
+	cfg.spiffeJWKSURL = strings.TrimSpace(cfg.spiffeJWKSURL)
+	cfg.spiffeJWKSCAFile = strings.TrimSpace(cfg.spiffeJWKSCAFile)
+	cfg.spiffeJWTIssuer = strings.TrimSpace(cfg.spiffeJWTIssuer)
+	cfg.spiffeServicePrefix = strings.TrimRight(strings.TrimSpace(cfg.spiffeServicePrefix), "/")
 	cfg.rootTokenOutputFile = strings.TrimSpace(cfg.rootTokenOutputFile)
+	if cfg.spiffeJWTIssuer == "" {
+		cfg.spiffeJWTIssuer = cfg.spiffeJWKSURL
+	}
 	if cfg.keyShares == 0 {
 		cfg.keyShares = defaultKeyShares
 	}
@@ -691,6 +706,9 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	}, http.StatusNoContent); err != nil {
 		return err
 	}
+	if err := ensureSecretsServiceRuntimeJWT(ctx, cfg, api); err != nil {
+		return err
+	}
 	if err := ensureGeneratedRuntimeSecrets(apiStatus, catalog.GeneratedSecrets); err != nil {
 		return err
 	}
@@ -705,6 +723,71 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 		return err
 	}
 	return nil
+}
+
+func ensureSecretsServiceRuntimeJWT(ctx context.Context, cfg config, api openBaoAPI) error {
+	if cfg.spiffeJWKSURL == "" {
+		return errors.New("SPIFFE JWKS URL is required")
+	}
+	if cfg.spiffeServicePrefix == "" {
+		return errors.New("SPIFFE service prefix is required")
+	}
+	jwksCAPEM, err := os.ReadFile(cfg.spiffeJWKSCAFile)
+	if err != nil {
+		return fmt.Errorf("read SPIFFE JWKS CA certificate: %w", err)
+	}
+	if err := ensureAuth(api, "spiffe-jwt", map[string]any{
+		"type":        "jwt",
+		"description": "Verself SPIRE JWT-SVID auth",
+	}); err != nil {
+		return err
+	}
+	if _, err := api(http.MethodPost, "auth/spiffe-jwt/config", map[string]any{
+		"jwks_url":           cfg.spiffeJWKSURL,
+		"jwks_ca_pem":        string(jwksCAPEM),
+		"bound_issuer":       cfg.spiffeJWTIssuer,
+		"jwt_supported_algs": []string{"ES256"},
+	}, http.StatusNoContent); err != nil {
+		return err
+	}
+	subject := cfg.spiffeServicePrefix + "/secrets-service"
+	if err := ensureSecretsServiceRuntimeRole(ctx, api, "secrets-runtime-read", subject, secretsRuntimeReadPolicy()); err != nil {
+		return err
+	}
+	return ensureSecretsServiceRuntimeRole(ctx, api, "secrets-runtime-write", subject, secretsRuntimeWritePolicy())
+}
+
+func ensureSecretsServiceRuntimeRole(_ context.Context, api openBaoAPI, role string, boundSubject string, policy string) error {
+	if _, err := api(http.MethodPost, "sys/policies/acl/"+role, map[string]any{
+		"policy": policy,
+	}, http.StatusNoContent); err != nil {
+		return err
+	}
+	if _, err := api(http.MethodPost, "auth/spiffe-jwt/role/"+role, map[string]any{
+		"role_type":         "jwt",
+		"user_claim":        "sub",
+		"bound_subject":     boundSubject,
+		"bound_audiences":   []string{"openbao"},
+		"token_policies":    []string{role},
+		"token_ttl":         "5m",
+		"token_max_ttl":     "5m",
+		"token_num_uses":    0,
+		"token_bound_cidrs": []string{},
+	}, http.StatusNoContent); err != nil {
+		return err
+	}
+	return nil
+}
+
+func secretsRuntimeReadPolicy() string {
+	return `path "kv-runtime/data/*" { capabilities = ["read"] }
+`
+}
+
+func secretsRuntimeWritePolicy() string {
+	return `path "kv-runtime/data/*" { capabilities = ["create", "read", "update"] }
+path "kv-runtime/metadata/*" { capabilities = ["delete", "read", "list"] }
+`
 }
 
 func loadOpenBaoRuntimeCatalog(path string) (openBaoRuntimeCatalog, error) {
