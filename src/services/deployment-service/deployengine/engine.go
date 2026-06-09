@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -36,6 +37,7 @@ type Options struct {
 	BuilderID                                     string
 	SourceRepository                              string
 	SourceRef                                     string
+	RuntimeSecretProducerReadyTimeout             time.Duration
 	TaskUserResolver                              TaskUserResolver
 	Tracer                                        trace.Tracer
 	Stdout                                        io.Writer

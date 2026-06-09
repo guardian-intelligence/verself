@@ -9,6 +9,7 @@ go_library(
         "inputs.go",
         "nomad.go",
         "oci.go",
+        "runtime_secret_dependencies.go",
         "source.go",
         "task_users.go",
     ],

@@ -41,6 +41,12 @@ type OpenBaoRuntimePolicyPath struct {
 	Capabilities []string `json:"capabilities"`
 }
 
+type OpenBaoRuntimeSecretDependency struct {
+	SecretName    string
+	ProducerJobID string
+	ReaderJobID   string
+}
+
 type runtimeSecretClaim struct {
 	path        string
 	declaration RuntimeSecretDeclaration
@@ -52,6 +58,60 @@ type runtimeRoleBuilder struct {
 }
 
 func OpenBaoRuntimeCatalogFromFiles(paths []string) (OpenBaoRuntimeCatalog, error) {
+	claims, err := openBaoRuntimeSecretClaimsFromFiles(paths)
+	if err != nil {
+		return OpenBaoRuntimeCatalog{}, err
+	}
+	if len(claims) == 0 {
+		return OpenBaoRuntimeCatalog{}, errors.New("at least one OpenBao runtime secret declaration is required")
+	}
+	return openBaoRuntimeCatalogFromClaims(claims)
+}
+
+func OpenBaoRuntimeSecretDependenciesFromFiles(paths []string) ([]OpenBaoRuntimeSecretDependency, error) {
+	claims, err := openBaoRuntimeSecretClaimsFromFiles(paths)
+	if err != nil {
+		return nil, err
+	}
+	dependencies := []OpenBaoRuntimeSecretDependency{}
+	seen := map[OpenBaoRuntimeSecretDependency]bool{}
+	for _, claim := range claims {
+		declaration := normalizeRuntimeSecretDeclaration(claim.declaration)
+		if err := validateRuntimeSecretDeclaration(claim.path, declaration); err != nil {
+			return nil, err
+		}
+		if declaration.ProducedByJob == "" {
+			continue
+		}
+		for _, reader := range runtimeSecretReaderJobIDs(declaration) {
+			if reader == declaration.ProducedByJob {
+				continue
+			}
+			dependency := OpenBaoRuntimeSecretDependency{
+				SecretName:    declaration.Name,
+				ProducerJobID: declaration.ProducedByJob,
+				ReaderJobID:   reader,
+			}
+			if seen[dependency] {
+				continue
+			}
+			seen[dependency] = true
+			dependencies = append(dependencies, dependency)
+		}
+	}
+	sort.Slice(dependencies, func(i, j int) bool {
+		if dependencies[i].ProducerJobID != dependencies[j].ProducerJobID {
+			return dependencies[i].ProducerJobID < dependencies[j].ProducerJobID
+		}
+		if dependencies[i].ReaderJobID != dependencies[j].ReaderJobID {
+			return dependencies[i].ReaderJobID < dependencies[j].ReaderJobID
+		}
+		return dependencies[i].SecretName < dependencies[j].SecretName
+	})
+	return dependencies, nil
+}
+
+func openBaoRuntimeSecretClaimsFromFiles(paths []string) ([]runtimeSecretClaim, error) {
 	claims := []runtimeSecretClaim{}
 	for _, path := range paths {
 		path = strings.TrimSpace(path)
@@ -60,22 +120,19 @@ func OpenBaoRuntimeCatalogFromFiles(paths []string) (OpenBaoRuntimeCatalog, erro
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {
-			return OpenBaoRuntimeCatalog{}, fmt.Errorf("read %s: %w", path, err)
+			return nil, fmt.Errorf("read %s: %w", path, err)
 		}
 		var doc RuntimeSecretsFile
 		dec := yaml.NewDecoder(bytes.NewReader(body))
 		dec.KnownFields(true)
 		if err := dec.Decode(&doc); err != nil {
-			return OpenBaoRuntimeCatalog{}, fmt.Errorf("decode %s: %w", path, err)
+			return nil, fmt.Errorf("decode %s: %w", path, err)
 		}
 		for _, declaration := range doc.Declarations {
 			claims = append(claims, runtimeSecretClaim{path: path, declaration: declaration})
 		}
 	}
-	if len(claims) == 0 {
-		return OpenBaoRuntimeCatalog{}, errors.New("at least one OpenBao runtime secret declaration is required")
-	}
-	return openBaoRuntimeCatalogFromClaims(claims)
+	return claims, nil
 }
 
 func openBaoRuntimeCatalogFromClaims(claims []runtimeSecretClaim) (OpenBaoRuntimeCatalog, error) {

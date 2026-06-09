@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/nomad/api"
+	"github.com/verself/deployment-service/deploycontract"
 )
 
 func TestNomadApplyResultCountsSubmittedJobs(t *testing.T) {
@@ -14,6 +15,62 @@ func TestNomadApplyResultCountsSubmittedJobs(t *testing.T) {
 	result.add(NomadRegisterResult{JobID: "billing"})
 	if result.SubmittedJobs != 2 {
 		t.Fatalf("submitted jobs = %d, want 2", result.SubmittedJobs)
+	}
+}
+
+func TestOrderNomadJobsByRuntimeSecretDependencies(t *testing.T) {
+	jobs := []nomadJob{
+		testNomadJob("analytics-service", "service"),
+		testNomadJob("auth-control-plane", "batch"),
+		testNomadJob("zitadel", "service"),
+		testNomadJob("email-service-resend-keys", "batch"),
+		testNomadJob("openbao", "service"),
+	}
+	dependencies := []deploycontract.OpenBaoRuntimeSecretDependency{
+		{SecretName: "iam-service.zitadel.auth_audience", ProducerJobID: "auth-control-plane", ReaderJobID: "analytics-service"},
+		{SecretName: "auth-control-plane.zitadel.admin_token", ProducerJobID: "zitadel", ReaderJobID: "auth-control-plane"},
+		{SecretName: "zitadel.smtp.password", ProducerJobID: "email-service-resend-keys", ReaderJobID: "zitadel"},
+	}
+
+	plan, err := orderNomadJobsByRuntimeSecretDependencies(jobs, dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(plan.jobs))
+	for _, job := range plan.jobs {
+		got = append(got, job.JobID)
+	}
+	want := []string{"email-service-resend-keys", "zitadel", "auth-control-plane", "analytics-service", "openbao"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("job order = %v, want %v", got, want)
+	}
+	for _, producer := range []string{"email-service-resend-keys", "zitadel", "auth-control-plane"} {
+		if !plan.producerJobs[producer] {
+			t.Fatalf("producer %s not marked for readiness wait", producer)
+		}
+	}
+}
+
+func TestOrderNomadJobsByRuntimeSecretDependenciesRequiresParticipatingProducer(t *testing.T) {
+	_, err := orderNomadJobsByRuntimeSecretDependencies([]nomadJob{
+		testNomadJob("analytics-service", "service"),
+	}, []deploycontract.OpenBaoRuntimeSecretDependency{
+		{SecretName: "iam-service.zitadel.auth_audience", ProducerJobID: "auth-control-plane", ReaderJobID: "analytics-service"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "producer job is not in this deployment") {
+		t.Fatalf("error = %v, want missing producer error", err)
+	}
+}
+
+func testNomadJob(jobID, jobType string) nomadJob {
+	id := jobID
+	typ := jobType
+	return nomadJob{
+		JobID: jobID,
+		Job: &api.Job{
+			ID:   &id,
+			Type: &typ,
+		},
 	}
 }
 

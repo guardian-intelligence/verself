@@ -44,13 +44,28 @@ func registerNomadJobs(ctx context.Context, exec execution, inputs *deployInputs
 	if err != nil {
 		return nomadApplyResult{}, err
 	}
-	result := nomadApplyResult{Jobs: make([]NomadRegisterResult, 0, len(jobs))}
-	for _, job := range jobs {
+	plan, err := planRuntimeSecretDeployment(exec.RepoRoot, jobs)
+	if err != nil {
+		return nomadApplyResult{}, err
+	}
+	result := nomadApplyResult{Jobs: make([]NomadRegisterResult, 0, len(plan.jobs))}
+	for _, job := range plan.jobs {
 		submitted, err := registerNomadJob(ctx, exec, client, job)
 		if err != nil {
 			return result, err
 		}
 		result.add(submitted)
+		if plan.producerJobs[job.JobID] {
+			if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s waiting for runtime secret producer readiness dependencies=%d\n", job.JobID, len(plan.producedFor[job.JobID])); err != nil {
+				return result, fmt.Errorf("%s: write runtime secret producer wait status: %w", job.JobID, err)
+			}
+			if err := waitForRuntimeSecretProducer(ctx, exec, client, job); err != nil {
+				return result, err
+			}
+			if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s runtime secret producer ready\n", job.JobID); err != nil {
+				return result, fmt.Errorf("%s: write runtime secret producer ready status: %w", job.JobID, err)
+			}
+		}
 	}
 	return result, nil
 }

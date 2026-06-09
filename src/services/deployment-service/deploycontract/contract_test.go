@@ -314,6 +314,40 @@ openbao_runtime_secret_declarations:
 	}
 }
 
+func TestOpenBaoRuntimeSecretDependenciesUseProducedSecrets(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "runtime-secrets.yml")
+	write(t, root, "runtime-secrets.yml", `
+openbao_runtime_secret_declarations:
+  - name: source-service.produced.value
+    job_id: consumer-service
+    consumer_job_ids: [observer-service]
+    produced_by_job: producer-service
+  - name: consumer-service.generated.value
+    job_id: consumer-service
+    generated:
+      bytes: 32
+      encoding: hex
+`)
+
+	dependencies, err := OpenBaoRuntimeSecretDependenciesFromFiles([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, dependency := range dependencies {
+		got[dependency.ReaderJobID] = dependency.ProducerJobID + ":" + dependency.SecretName
+	}
+	for reader, want := range map[string]string{
+		"consumer-service": "producer-service:source-service.produced.value",
+		"observer-service": "producer-service:source-service.produced.value",
+	} {
+		if got[reader] != want {
+			t.Fatalf("dependency for %s = %q, want %q", reader, got[reader], want)
+		}
+	}
+}
+
 func TestValidateRepoRejectsRuntimeSecretWithoutJobID(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
