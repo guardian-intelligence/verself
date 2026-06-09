@@ -57,8 +57,10 @@ type ociRegistryPolicy struct {
 type ociImageBinding struct {
 	Output            string
 	ImageLabel        string
+	LayoutLabel       string
 	PushLabel         string
 	DigestPath        string
+	LayoutPath        string
 	ManifestPath      string
 	Digest            string
 	MediaType         string
@@ -225,12 +227,13 @@ func bindNomadOCIImages(repoRoot string, policy ociRegistryPolicy, components []
 
 func bindNomadOCIImage(repoRoot string, policy ociRegistryPolicy, declared nomadDescriptorOCIImage, bindings map[string]ociImageBinding) error {
 	if prior, exists := bindings[declared.Output]; exists {
-		if prior.ImageLabel != declared.ImageLabel || prior.DigestPath != declared.DigestPath || prior.PushLabel != declared.PushLabel {
+		if prior.ImageLabel != declared.ImageLabel || prior.LayoutLabel != declared.LayoutLabel || prior.DigestPath != declared.DigestPath || prior.LayoutPath != declared.LayoutPath || prior.PushLabel != declared.PushLabel {
 			return fmt.Errorf("OCI image output %q is provided by both %s and %s", declared.Output, prior.ImageLabel, declared.ImageLabel)
 		}
 		return nil
 	}
 	digestPath := resolveWorkspacePath(repoRoot, declared.DigestPath)
+	layoutPath := resolveWorkspacePath(repoRoot, declared.LayoutPath)
 	body, err := os.ReadFile(digestPath)
 	if err != nil {
 		return fmt.Errorf("read OCI digest %s: %w", declared.DigestPath, err)
@@ -239,7 +242,7 @@ func bindNomadOCIImage(repoRoot string, policy ociRegistryPolicy, declared nomad
 	if !ociDigestRE.MatchString(digest) {
 		return fmt.Errorf("OCI digest %s for %q must match sha256:<64 lowercase hex>", digest, declared.Output)
 	}
-	manifestPath, manifestBody, err := readOCIManifestForDigest(digestPath, digest)
+	manifestPath, manifestBody, err := readOCIManifestForDigest(layoutPath, digestPath, digest)
 	if err != nil {
 		return fmt.Errorf("read OCI manifest for %q: %w", declared.Output, err)
 	}
@@ -260,8 +263,10 @@ func bindNomadOCIImage(repoRoot string, policy ociRegistryPolicy, declared nomad
 	bindings[declared.Output] = ociImageBinding{
 		Output:            declared.Output,
 		ImageLabel:        declared.ImageLabel,
+		LayoutLabel:       declared.LayoutLabel,
 		PushLabel:         declared.PushLabel,
 		DigestPath:        declared.DigestPath,
+		LayoutPath:        declared.LayoutPath,
 		ManifestPath:      manifestPath,
 		Digest:            digest,
 		MediaType:         manifest.MediaType,
@@ -277,16 +282,20 @@ func bindNomadOCIImage(repoRoot string, policy ociRegistryPolicy, declared nomad
 	return nil
 }
 
-func readOCIManifestForDigest(digestPath, rawDigest string) (string, []byte, error) {
+func readOCIManifestForDigest(layoutPath, digestPath, rawDigest string) (string, []byte, error) {
 	if !strings.HasSuffix(digestPath, ".sha256") {
 		return "", nil, fmt.Errorf("OCI digest path %s must end in .sha256", digestPath)
 	}
 	digestHex := strings.TrimPrefix(rawDigest, "sha256:")
 	manifestPath := strings.TrimSuffix(digestPath, ".sha256")
-	candidates := []string{manifestPath}
+	candidates := []string{}
+	if strings.TrimSpace(layoutPath) != "" {
+		candidates = append(candidates, filepath.Join(layoutPath, "blobs", "sha256", digestHex))
+	}
+	candidates = append(candidates, manifestPath)
 	if strings.HasSuffix(manifestPath, ".json") {
 		layoutDir := strings.TrimSuffix(manifestPath, ".json")
-		candidates = append([]string{filepath.Join(layoutDir, "blobs", "sha256", digestHex)}, candidates...)
+		candidates = append(candidates, filepath.Join(layoutDir, "blobs", "sha256", digestHex))
 	}
 	var missing []string
 	for _, candidate := range candidates {

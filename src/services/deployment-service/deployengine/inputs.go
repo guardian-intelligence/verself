@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	nomadComponentSchemaVersion = 9
+	nomadComponentSchemaVersion = 10
 	artifactSourcePrefix        = "verself-artifact://"
 	ociImageSourcePrefix        = "verself-oci://"
 
@@ -86,10 +86,12 @@ type nomadDescriptorArtifact struct {
 }
 
 type nomadDescriptorOCIImage struct {
-	ImageLabel string `json:"image_label"`
-	Output     string `json:"output"`
-	DigestPath string `json:"digest_path"`
-	PushLabel  string `json:"push_label"`
+	ImageLabel  string `json:"image_label"`
+	LayoutLabel string `json:"layout_label"`
+	Output      string `json:"output"`
+	DigestPath  string `json:"digest_path"`
+	LayoutPath  string `json:"layout_path"`
+	PushLabel   string `json:"push_label"`
 }
 
 type nomadDescriptorInput struct {
@@ -252,8 +254,8 @@ func loadNomadComponentDescriptors(site string, paths []string) ([]nomadComponen
 			}
 		}
 		for _, artifact := range component.OCIImages {
-			if artifact.ImageLabel == "" || artifact.Output == "" || artifact.DigestPath == "" || artifact.PushLabel == "" {
-				return nil, fmt.Errorf("%s: oci_images entries require image_label, output, digest_path, and push_label", path)
+			if artifact.ImageLabel == "" || artifact.LayoutLabel == "" || artifact.Output == "" || artifact.DigestPath == "" || artifact.LayoutPath == "" || artifact.PushLabel == "" {
+				return nil, fmt.Errorf("%s: oci_images entries require image_label, layout_label, output, digest_path, layout_path, and push_label", path)
 			}
 		}
 		for _, artifact := range component.PreArtifacts {

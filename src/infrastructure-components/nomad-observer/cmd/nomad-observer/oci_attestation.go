@@ -62,7 +62,7 @@ func (o *observer) recordWorkloadOCIEvidence(ctx context.Context, alloc *api.All
 	if meta.empty() {
 		meta = metadataFromAlloc(detailedAlloc)
 	}
-	rows := workloadOCIAttestationRows(o.cfg.site, normalizeNamespace(detailedAlloc.Namespace, o.cfg.namespace), detailedAlloc, meta, time.Now().UTC(), trace.SpanContextFromContext(ctx))
+	rows := workloadOCIAttestationRows(recordCtx, o.cfg.site, normalizeNamespace(detailedAlloc.Namespace, o.cfg.namespace), detailedAlloc, meta, time.Now().UTC(), trace.SpanContextFromContext(ctx), o.measureWorkloadOCIRuntime)
 	if len(rows) == 0 {
 		return
 	}
@@ -102,7 +102,15 @@ func (o *observer) allocationWithJob(ctx context.Context, alloc *api.Allocation)
 	return detailedAlloc, nil
 }
 
-func workloadOCIAttestationRows(site, namespace string, alloc *api.Allocation, meta deployMeta, observedAt time.Time, spanContext trace.SpanContext) []WorkloadOCIAttestationRow {
+type workloadOCIRuntimeMeasurer func(context.Context, *api.Allocation, allocationOCITask) workloadOCIRuntimeMeasurement
+
+type workloadOCIRuntimeMeasurement struct {
+	digest string
+	source string
+	reason string
+}
+
+func workloadOCIAttestationRows(ctx context.Context, site, namespace string, alloc *api.Allocation, meta deployMeta, observedAt time.Time, spanContext trace.SpanContext, measure workloadOCIRuntimeMeasurer) []WorkloadOCIAttestationRow {
 	if alloc == nil || alloc.Job == nil {
 		return nil
 	}
@@ -113,10 +121,21 @@ func workloadOCIAttestationRows(site, namespace string, alloc *api.Allocation, m
 	rows := make([]WorkloadOCIAttestationRow, 0, len(tasks))
 	for _, task := range tasks {
 		declaredDigest, digestErr := imageDigest(task.imageRef)
-		measuredDigest := ""
-		decision, reason := workloadOCIDecision(declaredDigest, measuredDigest)
+		measurement := workloadOCIRuntimeMeasurement{
+			source: "podman_measurement_unconfigured",
+			reason: "runtime container digest measurement is not configured",
+		}
+		if measure != nil {
+			measurement = measure(ctx, alloc, task)
+		}
+		if strings.TrimSpace(measurement.source) == "" {
+			measurement.source = "podman_measurement_unavailable"
+		}
+		decision, reason := workloadOCIDecision(declaredDigest, measurement.digest)
 		if digestErr != nil {
 			reason = digestErr.Error()
+		} else if measurement.reason != "" && decision == "unmeasured" {
+			reason = measurement.reason
 		}
 		taskState := ""
 		if state := alloc.TaskStates[task.name]; state != nil {
@@ -133,7 +152,7 @@ func workloadOCIAttestationRows(site, namespace string, alloc *api.Allocation, m
 			NodeName:          alloc.NodeName,
 			ImageRef:          task.imageRef,
 			DeclaredDigest:    declaredDigest,
-			MeasuredDigest:    measuredDigest,
+			MeasuredDigest:    measurement.digest,
 			SourceCommit:      meta.DeploySHA,
 			DeployRunKey:      meta.DeployRunKey,
 			SpecSHA256:        meta.SpecSHA256,
@@ -141,7 +160,7 @@ func workloadOCIAttestationRows(site, namespace string, alloc *api.Allocation, m
 			AllocClientStatus: alloc.ClientStatus,
 			TaskState:         taskState,
 			Decision:          decision,
-			MeasurementSource: "nomad_job_spec",
+			MeasurementSource: measurement.source,
 			Reason:            reason,
 			AllocModifyIndex:  alloc.ModifyIndex,
 			ObservedAt:        observedAt,

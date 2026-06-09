@@ -10,6 +10,7 @@ NomadComponentInfo = provider(
         "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
+        "oci_image_layouts": "label_keyed_string_dict of OCI image layout targets to release output names.",
         "oci_image_pushes": "label_keyed_string_dict of oci_push targets to release output names.",
         "oci_images": "label_keyed_string_dict of OCI image digest targets to release output names.",
         "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names kept as build outputs.",
@@ -93,11 +94,23 @@ def _nomad_component_impl(ctx):
         oci_push_labels[output] = _repo_label(push_target.label)
     oci_images = []
     oci_image_outputs = {}
+    oci_layouts = {}
+    for layout_target, output in ctx.attr.oci_image_layouts.items():
+        if output in oci_layouts:
+            fail("duplicate OCI image layout output %s in %s" % (output, ctx.label))
+        layout_file = _single_file(layout_target, "OCI image layout")
+        default_outputs.append(layout_file)
+        oci_layouts[output] = {
+            "label": _repo_label(layout_target.label),
+            "path": layout_file.path,
+        }
     for image_target, output in ctx.attr.oci_images.items():
         if output in artifact_outputs:
             fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
         if output not in oci_push_labels:
             fail("OCI image output %s in %s requires a matching oci_image_pushes entry" % (output, ctx.label))
+        if output not in oci_layouts:
+            fail("OCI image output %s in %s requires a matching oci_image_layouts entry" % (output, ctx.label))
         artifact_outputs[output] = True
         oci_image_outputs[output] = True
         image_file = _single_file(image_target, "OCI image digest")
@@ -105,9 +118,14 @@ def _nomad_component_impl(ctx):
         oci_images.append({
             "digest_path": image_file.path,
             "image_label": _repo_label(image_target.label),
+            "layout_label": oci_layouts[output]["label"],
+            "layout_path": oci_layouts[output]["path"],
             "output": output,
             "push_label": oci_push_labels[output],
         })
+    for output in oci_layouts:
+        if output not in oci_image_outputs:
+            fail("OCI image layout output %s in %s has no matching oci_images entry" % (output, ctx.label))
     for output in oci_push_labels:
         if output not in oci_image_outputs:
             fail("OCI image push output %s in %s has no matching oci_images entry" % (output, ctx.label))
@@ -128,7 +146,7 @@ def _nomad_component_impl(ctx):
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 9,
+        "schema_version": 10,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "deploy_phase": ctx.attr.deploy_phase,
@@ -154,6 +172,7 @@ def _nomad_component_impl(ctx):
             digest_inputs = ctx.attr.digest_inputs,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
+            oci_image_layouts = ctx.attr.oci_image_layouts,
             oci_image_pushes = ctx.attr.oci_image_pushes,
             oci_images = ctx.attr.oci_images,
             pre_artifacts = ctx.attr.pre_artifacts,
@@ -175,6 +194,10 @@ nomad_component = rule(
         "oci_images": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "Map of component-owned OCI image digest targets to release output names.",
+        ),
+        "oci_image_layouts": attr.label_keyed_string_dict(
+            allow_files = True,
+            doc = "Map of component-owned OCI image layout targets to release output names.",
         ),
         "oci_image_pushes": attr.label_keyed_string_dict(
             doc = "Map of component-owned oci_push targets to release output names.",

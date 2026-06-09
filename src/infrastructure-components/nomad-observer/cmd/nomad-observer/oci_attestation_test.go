@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -9,20 +10,21 @@ import (
 )
 
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+const otherTestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
-func TestWorkloadOCIAttestationRowsPinnedPodmanTask(t *testing.T) {
+func TestWorkloadOCIAttestationRowsMatchedPodmanTask(t *testing.T) {
 	observedAt := time.Unix(1710000000, 123000000).UTC()
 	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
 		SpanID:  trace.SpanID{0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18},
 	})
 	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
-	rows := workloadOCIAttestationRows("gamma", "default", alloc, deployMeta{
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{
 		DeployRunKey:   "deploy-run",
 		DeploySHA:      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		SpecSHA256:     "spec",
 		ArtifactSHA256: "artifact",
-	}, observedAt, spanContext)
+	}, observedAt, spanContext, fixedMeasurement(testDigest, "podman_container_inspect_labels"))
 	if len(rows) != 1 {
 		t.Fatalf("expected one attestation row, got %d", len(rows))
 	}
@@ -33,7 +35,10 @@ func TestWorkloadOCIAttestationRowsPinnedPodmanTask(t *testing.T) {
 	if row.DeclaredDigest != testDigest {
 		t.Fatalf("declared digest = %q, want %q", row.DeclaredDigest, testDigest)
 	}
-	if row.Decision != "unmeasured" || row.MeasurementSource != "nomad_job_spec" {
+	if row.MeasuredDigest != testDigest {
+		t.Fatalf("measured digest = %q, want %q", row.MeasuredDigest, testDigest)
+	}
+	if row.Decision != "matched" || row.MeasurementSource != "podman_container_inspect_labels" {
 		t.Fatalf("unexpected decision/source: %q/%q", row.Decision, row.MeasurementSource)
 	}
 	if row.SourceCommit != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || row.DeployRunKey != "deploy-run" {
@@ -48,7 +53,7 @@ func TestWorkloadOCIAttestationRowsPinnedPodmanTask(t *testing.T) {
 }
 
 func TestWorkloadOCIAttestationRowsMissingDigest(t *testing.T) {
-	rows := workloadOCIAttestationRows("gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service:latest", "podman"), deployMeta{}, time.Now().UTC(), trace.SpanContext{})
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service:latest", "podman"), deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"))
 	if len(rows) != 1 {
 		t.Fatalf("expected one attestation row, got %d", len(rows))
 	}
@@ -60,27 +65,109 @@ func TestWorkloadOCIAttestationRowsMissingDigest(t *testing.T) {
 	}
 }
 
-func TestWorkloadOCIAttestationRowsFailedAllocation(t *testing.T) {
+func TestWorkloadOCIAttestationRowsMismatchedDigest(t *testing.T) {
 	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
-	alloc.ClientStatus = api.AllocClientStatusFailed
-	alloc.TaskStates["analytics"].State = "dead"
-
-	rows := workloadOCIAttestationRows("gamma", "default", alloc, deployMeta{}, time.Now().UTC(), trace.SpanContext{})
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(otherTestDigest, "podman_container_inspect_name"))
 	if len(rows) != 1 {
 		t.Fatalf("expected one attestation row, got %d", len(rows))
 	}
-	if rows[0].AllocClientStatus != api.AllocClientStatusFailed || rows[0].TaskState != "dead" {
-		t.Fatalf("unexpected allocation status/task state: %#v", rows[0])
+	if rows[0].Decision != "mismatched" {
+		t.Fatalf("decision = %q, want mismatched", rows[0].Decision)
 	}
-	if rows[0].Decision != "unmeasured" {
-		t.Fatalf("decision = %q, want unmeasured", rows[0].Decision)
+	if rows[0].MeasuredDigest != otherTestDigest {
+		t.Fatalf("measured digest = %q, want %q", rows[0].MeasuredDigest, otherTestDigest)
 	}
 }
 
 func TestWorkloadOCIAttestationRowsIgnoreNonPodmanTask(t *testing.T) {
-	rows := workloadOCIAttestationRows("gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "raw_exec"), deployMeta{}, time.Now().UTC(), trace.SpanContext{})
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "raw_exec"), deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"))
 	if len(rows) != 0 {
 		t.Fatalf("expected no rows, got %d", len(rows))
+	}
+}
+
+func TestPodmanMeasuredDigestUsesInspectDigest(t *testing.T) {
+	digest, err := podmanMeasuredDigest(podmanContainerInspect{
+		ID:          "container-1",
+		ImageDigest: testDigest,
+		ImageName:   "127.0.0.1:5080/verself/analytics-service:local",
+	})
+	if err != nil {
+		t.Fatalf("podman measured digest failed: %v", err)
+	}
+	if digest != testDigest {
+		t.Fatalf("digest = %q, want %q", digest, testDigest)
+	}
+}
+
+func TestPodmanMeasuredDigestFallsBackToImageReference(t *testing.T) {
+	digest, err := podmanMeasuredDigest(podmanContainerInspect{
+		ID:        "container-1",
+		ImageName: "127.0.0.1:5080/verself/analytics-service@" + testDigest,
+	})
+	if err != nil {
+		t.Fatalf("podman measured digest failed: %v", err)
+	}
+	if digest != testDigest {
+		t.Fatalf("digest = %q, want %q", digest, testDigest)
+	}
+}
+
+func TestPodmanMeasurementIdentitySourceLabels(t *testing.T) {
+	req := testPodmanMeasurementRequest()
+	source, reason := podmanMeasurementIdentitySource(req, podmanContainerInspect{
+		Name: "unexpected-name",
+		Config: &podmanContainerConfig{Labels: map[string]string{
+			labelNomadAllocID:   req.AllocID,
+			labelNomadNamespace: req.Namespace,
+			labelNomadJobID:     req.JobID,
+			labelNomadTaskGroup: req.TaskGroup,
+			labelNomadTaskName:  req.TaskName,
+		}},
+	})
+	if source != "podman_container_inspect_labels" || reason != "" {
+		t.Fatalf("source/reason = %q/%q", source, reason)
+	}
+}
+
+func TestPodmanMeasurementIdentitySourceRejectsLabelMismatch(t *testing.T) {
+	req := testPodmanMeasurementRequest()
+	_, reason := podmanMeasurementIdentitySource(req, podmanContainerInspect{
+		Name: podmanContainerName(req.AllocID, req.TaskName),
+		Config: &podmanContainerConfig{Labels: map[string]string{
+			labelNomadAllocID:  req.AllocID,
+			labelNomadTaskName: "wrong-task",
+		}},
+	})
+	if reason == "" {
+		t.Fatalf("expected label mismatch reason")
+	}
+}
+
+func TestPodmanMeasurementIdentitySourceFallsBackToName(t *testing.T) {
+	req := testPodmanMeasurementRequest()
+	source, reason := podmanMeasurementIdentitySource(req, podmanContainerInspect{
+		Name: podmanContainerName(req.AllocID, req.TaskName),
+	})
+	if source != "podman_container_inspect_name" || reason != "" {
+		t.Fatalf("source/reason = %q/%q", source, reason)
+	}
+}
+
+func fixedMeasurement(digest, source string) workloadOCIRuntimeMeasurer {
+	return func(context.Context, *api.Allocation, allocationOCITask) workloadOCIRuntimeMeasurement {
+		return workloadOCIRuntimeMeasurement{digest: digest, source: source}
+	}
+}
+
+func testPodmanMeasurementRequest() podmanMeasurementRequest {
+	return podmanMeasurementRequest{
+		AllocID:   "alloc-1",
+		Namespace: "default",
+		JobID:     "analytics-service",
+		TaskGroup: "api",
+		TaskName:  "analytics",
+		ImageRef:  "127.0.0.1:5080/verself/analytics-service@" + testDigest,
 	}
 }
 
