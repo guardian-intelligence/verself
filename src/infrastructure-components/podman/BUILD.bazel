@@ -1,0 +1,77 @@
+# Pinned podman .deb closure bundled as-is for an offline `dpkg -i ./*.deb` on the
+# target. Disaster recovery installs the closure instead of `apt install podman`,
+# so the Nomad podman driver has no Ubuntu-archive dependency; dpkg owns
+# placement, ldconfig, helper dirs, the stock podman.socket/.service unit, and the
+# stock /etc/containers/*.conf. The tar is byte-deterministic for digest reuse.
+genrule(
+    name = "runtime_artifact",
+    srcs = [
+        "@podman_deb_adduser//file",
+        "@podman_deb_catatonit//file",
+        "@podman_deb_conmon//file",
+        "@podman_deb_containernetworking_plugins//file",
+        "@podman_deb_crun//file",
+        "@podman_deb_dirmngr//file",
+        "@podman_deb_gnupg//file",
+        "@podman_deb_gnupg_utils//file",
+        "@podman_deb_golang_github_containers_common//file",
+        "@podman_deb_golang_github_containers_image//file",
+        "@podman_deb_gpg//file",
+        "@podman_deb_gpg_agent//file",
+        "@podman_deb_gpgconf//file",
+        "@podman_deb_gpgsm//file",
+        "@podman_deb_iptables//file",
+        "@podman_deb_keyboxd//file",
+        "@podman_deb_libdevmapper1_02_1//file",
+        "@podman_deb_libglib2_0_0t64//file",
+        "@podman_deb_libgpgme11t64//file",
+        "@podman_deb_libip4tc2//file",
+        "@podman_deb_libip6tc2//file",
+        "@podman_deb_libksba8//file",
+        "@podman_deb_libldap2//file",
+        "@podman_deb_libmnl0//file",
+        "@podman_deb_libnetfilter_conntrack3//file",
+        "@podman_deb_libnfnetlink0//file",
+        "@podman_deb_libnftnl11//file",
+        "@podman_deb_libpopt0//file",
+        "@podman_deb_libreadline8t64//file",
+        "@podman_deb_libsasl2_2//file",
+        "@podman_deb_libsasl2_modules_db//file",
+        "@podman_deb_libsqlite3_0//file",
+        "@podman_deb_libsubid4//file",
+        "@podman_deb_libxtables12//file",
+        "@podman_deb_libyajl2//file",
+        "@podman_deb_netbase//file",
+        "@podman_deb_pinentry_curses//file",
+        "@podman_deb_podman//file",
+        "@podman_deb_readline_common//file",
+        "@podman_deb_rsync//file",
+    ],
+    outs = ["podman-debs.tar"],
+    cmd = """
+set -euo pipefail
+stage="$$(mktemp -d)"
+chmod 0755 "$$stage"
+trap 'rm -rf "$$stage"' EXIT
+for deb in $(SRCS); do
+  install -m 0644 "$$deb" "$$stage/$$(basename "$$deb")"
+done
+tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner -cf "$@" -C "$$stage" .
+""",
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "role_sources",
+    srcs = glob(
+        [
+            "defaults/**",
+            "handlers/**",
+            "meta/**",
+            "tasks/**",
+            "templates/**",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+)

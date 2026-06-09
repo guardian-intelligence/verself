@@ -10,6 +10,7 @@ NomadComponentInfo = provider(
         "digest_inputs": "Files whose content must participate in the Nomad job spec digest without being downloaded as runtime artifacts.",
         "job_id": "Nomad Job.ID.",
         "job_spec": "Single authored Nomad job spec File.",
+        "oci_images": "label_keyed_string_dict of OCI image archive targets to release output names.",
         "pre_artifacts": "label_keyed_string_dict of artifact targets to release output names kept as build outputs.",
     },
 )
@@ -84,6 +85,18 @@ def _nomad_component_impl(ctx):
             "output": output,
             "path": artifact_file.path,
         })
+    oci_images = []
+    for image_target, output in ctx.attr.oci_images.items():
+        if output in artifact_outputs:
+            fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
+        artifact_outputs[output] = True
+        image_file = _single_file(image_target, "OCI image archive")
+        default_outputs.append(image_file)
+        oci_images.append({
+            "label": _repo_label(image_target.label),
+            "output": output,
+            "path": image_file.path,
+        })
     pre_artifacts = []
     for artifact_target, output in ctx.attr.pre_artifacts.items():
         if output in artifact_outputs:
@@ -101,7 +114,7 @@ def _nomad_component_impl(ctx):
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
-        "schema_version": 7,
+        "schema_version": 8,
         "artifacts": artifacts,
         "component": ctx.attr.component,
         "deploy_phase": ctx.attr.deploy_phase,
@@ -110,6 +123,7 @@ def _nomad_component_impl(ctx):
         "job_spec": job_spec.short_path,
         "job_spec_path": job_spec.path,
         "label": _repo_label(ctx.label),
+        "oci_images": oci_images,
         "pre_artifacts": pre_artifacts,
         "sites": ctx.attr.sites,
         "unit_id": ctx.attr.job_id,
@@ -126,6 +140,7 @@ def _nomad_component_impl(ctx):
             digest_inputs = ctx.attr.digest_inputs,
             job_id = ctx.attr.job_id,
             job_spec = job_spec,
+            oci_images = ctx.attr.oci_images,
             pre_artifacts = ctx.attr.pre_artifacts,
         ),
         OutputGroupInfo(nomad_descriptor = depset([descriptor])),
@@ -141,6 +156,10 @@ nomad_component = rule(
         "pre_artifacts": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "Artifact targets kept as deployable-unit build outputs.",
+        ),
+        "oci_images": attr.label_keyed_string_dict(
+            allow_files = True,
+            doc = "Map of component-owned OCI image archive targets to release output names.",
         ),
         "component": attr.string(
             mandatory = True,

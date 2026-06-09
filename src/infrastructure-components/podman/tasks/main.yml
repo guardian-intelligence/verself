@@ -1,0 +1,58 @@
+---
+- name: Check Podman version
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - --version
+  register: podman_version_output
+  changed_when: false
+  failed_when: false
+
+- name: Create Podman deb stage directory
+  ansible.builtin.file:
+    path: "{{ podman_deb_stage }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: podman_version_output.rc != 0 or podman_expected_version not in podman_version_output.stdout
+
+- name: Unpack pinned Podman deb closure
+  ansible.builtin.unarchive:
+    src: "{{ podman_deb_archive }}"
+    dest: "{{ podman_deb_stage }}"
+    remote_src: true
+    owner: root
+    group: root
+  when: podman_version_output.rc != 0 or podman_expected_version not in podman_version_output.stdout
+
+- name: List pinned Podman debs
+  ansible.builtin.find:
+    paths: "{{ podman_deb_stage }}"
+    patterns: "*.deb"
+    file_type: file
+  register: podman_deb_files
+  when: podman_version_output.rc != 0 or podman_expected_version not in podman_version_output.stdout
+
+- name: Install pinned Podman deb closure
+  ansible.builtin.command:
+    argv: "{{ ['dpkg', '-i'] + (podman_deb_files.files | map(attribute='path') | sort | list) }}"
+  register: podman_dpkg_install
+  changed_when: podman_dpkg_install.rc == 0
+  when: podman_version_output.rc != 0 or podman_expected_version not in podman_version_output.stdout
+
+- name: Verify Podman version
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/podman
+      - --version
+  register: podman_installed_version
+  changed_when: false
+  failed_when: podman_expected_version not in podman_installed_version.stdout
+
+- name: Enable and start Podman system socket
+  ansible.builtin.systemd:
+    name: podman.socket
+    enabled: true
+    state: started
+    daemon_reload: true

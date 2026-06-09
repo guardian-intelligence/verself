@@ -1,0 +1,30 @@
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+genrule(
+    name = "ubuntu_ca_certificates_bundle",
+    srcs = ["@ubuntu_noble_deb_ca_certificates//file"],
+    outs = ["ca-certificates.crt"],
+    cmd = """
+set -euo pipefail
+tmp="$$(mktemp -d)"
+trap 'rm -rf "$$tmp"' EXIT
+dpkg-deb -x "$(location @ubuntu_noble_deb_ca_certificates//file)" "$$tmp"
+find "$$tmp/usr/share/ca-certificates/mozilla" -type f -name '*.crt' -print | sort | while read -r cert; do
+  cat "$$cert"
+  printf '\\n'
+done > "$@"
+test -s "$@"
+""",
+    visibility = ["//visibility:private"],
+)
+
+pkg_tar(
+    name = "ubuntu_ca_certificates_layer",
+    files = {
+        ":ubuntu_ca_certificates_bundle": "etc/ssl/certs/ca-certificates.crt",
+    },
+    modes = {
+        "etc/ssl/certs/ca-certificates.crt": "0644",
+    },
+    visibility = ["//visibility:public"],
+)

@@ -49,6 +49,11 @@ func bindNomadArtifacts(repoRoot string, policy artifactDeliveryPolicy, componen
 				return nil, nil, err
 			}
 		}
+		for _, declared := range component.OCIImages {
+			if err := bindNomadArtifact(repoRoot, policy, declared, bindings); err != nil {
+				return nil, nil, err
+			}
+		}
 		for _, declared := range component.PreArtifacts {
 			if err := bindNomadArtifact(repoRoot, policy, declared, bindings); err != nil {
 				return nil, nil, err
@@ -339,6 +344,10 @@ func taskArtifactDestination(output string) string {
 	return path.Join(taskArtifactRoot, output)
 }
 
+func taskOCIArchiveDestination(output string) string {
+	return path.Join(taskArtifactRoot, output+".oci.tar")
+}
+
 func createUploadSession(ctx context.Context, exec execution, client *r2controlplane.Client, req r2controlplane.CreateUploadSessionRequest, delivery artifactDeliveryPolicy) (r2controlplane.CreateUploadSessionResponse, error) {
 	ctx, span := exec.Tracer.Start(ctx, "verself_deploy.artifacts.upload_session.create",
 		trace.WithAttributes(
@@ -520,6 +529,9 @@ func bindArtifactsInSpec(job *api.Job, bindings map[string]artifactBinding) (map
 				task.Env[key] = destination
 				seen[output] = true
 			}
+			if err := bindOCIArchiveImage(task, bindings, seen); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return seen, nil
@@ -532,6 +544,42 @@ func taskArtifact(binding artifactBinding, destination string) *api.TaskArtifact
 	return &api.TaskArtifact{
 		GetterSource:  &source,
 		GetterOptions: getterOptions,
+		RelativeDest:  &destination,
+		Chown:         true,
+	}
+}
+
+func bindOCIArchiveImage(task *api.Task, bindings map[string]artifactBinding, seen map[string]bool) error {
+	if task == nil || task.Config == nil {
+		return nil
+	}
+	image, ok := task.Config["image"].(string)
+	if !ok || !strings.HasPrefix(image, ociArchiveSourcePrefix) {
+		return nil
+	}
+	output := strings.TrimPrefix(image, ociArchiveSourcePrefix)
+	binding, ok := bindings[output]
+	if !ok {
+		return fmt.Errorf("OCI image archive %q is referenced by authored spec but not declared by nomad_component", output)
+	}
+	destination := taskOCIArchiveDestination(output)
+	task.Artifacts = append(task.Artifacts, taskOCIArchiveArtifact(binding, destination))
+	task.Config["image"] = "oci-archive:${NOMAD_TASK_DIR}/" + destination
+	seen[output] = true
+	return nil
+}
+
+func taskOCIArchiveArtifact(binding artifactBinding, destination string) *api.TaskArtifact {
+	getterOptions := map[string]string{
+		"archive":  "false",
+		"checksum": binding.Checksum,
+	}
+	source := binding.Artifact.GetterSource
+	mode := "file"
+	return &api.TaskArtifact{
+		GetterSource:  &source,
+		GetterOptions: getterOptions,
+		GetterMode:    &mode,
 		RelativeDest:  &destination,
 		Chown:         true,
 	}

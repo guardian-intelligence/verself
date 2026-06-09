@@ -1,5 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//src/tools/deployment/nomad:artifact.bzl", "nomad_binary_artifact")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_image_index", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "analytics-service_lib",
@@ -30,8 +31,41 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-nomad_binary_artifact(
-    name = "analytics-service_nomad_artifact",
-    binary = ":analytics-service",
-    output = "analytics-service",
+pkg_tar(
+    name = "analytics_service_layer",
+    files = {
+        ":analytics-service": "usr/local/bin/analytics-service",
+    },
+    modes = {
+        "usr/local/bin/analytics-service": "0755",
+    },
+)
+
+oci_image(
+    name = "analytics_service_image_linux_amd64",
+    base = "@ubuntu_noble_base_linux_amd64",
+    entrypoint = ["/usr/local/bin/analytics-service"],
+    tars = [
+        "//src/tools/deployment/oci:ubuntu_ca_certificates_layer",
+        ":analytics_service_layer",
+    ],
+)
+
+oci_image_index(
+    name = "analytics_service_image",
+    images = [":analytics_service_image_linux_amd64"],
+)
+
+oci_load(
+    name = "analytics_service_image_load",
+    format = "oci",
+    image = ":analytics_service_image",
+    repo_tags = ["verself/analytics-service:phase1"],
+)
+
+filegroup(
+    name = "analytics_service_image_archive",
+    srcs = [":analytics_service_image_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
 )

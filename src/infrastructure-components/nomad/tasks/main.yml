@@ -17,6 +17,27 @@
       Expected Nomad v{{ nomad_expected_version }},
       got: {{ nomad_version_output.stdout_lines[0] }}
 
+- name: Create Nomad plugin directory
+  ansible.builtin.file:
+    path: "{{ nomad_plugin_dir }}"
+    state: directory
+    owner: "{{ nomad_user }}"
+    group: "{{ nomad_group }}"
+    mode: "0755"
+
+- name: Capture Nomad Podman driver version
+  ansible.builtin.command:
+    cmd: "{{ nomad_plugin_dir }}/nomad-driver-podman --version"
+  register: nomad_podman_driver_version_output
+  changed_when: false
+
+- name: Assert Nomad Podman driver version matches pin
+  ansible.builtin.assert:
+    that: "'Nomad Podman Driver Plugin v' + nomad_podman_driver_expected_version in nomad_podman_driver_version_output.stdout"
+    fail_msg: >-
+      Expected Nomad Podman driver v{{ nomad_podman_driver_expected_version }},
+      got: {{ nomad_podman_driver_version_output.stdout_lines[0] }}
+
 - name: Create Nomad configuration directory
   ansible.builtin.file:
     path: "{{ nomad_config_dir }}"
@@ -136,3 +157,19 @@
   retries: 30
   delay: 1
   until: nomad_health.status == 200
+
+- name: Wait for Nomad Podman driver fingerprint
+  ansible.builtin.command:
+    argv:
+      - "{{ verself_bin }}/nomad"
+      - node
+      - status
+      - -self
+      - -json
+  register: nomad_node_status
+  changed_when: false
+  retries: 30
+  delay: 1
+  until: >-
+    (((nomad_node_status.stdout | from_json).Drivers | default({})).get('podman', {}).get('Detected', false))
+    and (((nomad_node_status.stdout | from_json).Drivers | default({})).get('podman', {}).get('Healthy', false))

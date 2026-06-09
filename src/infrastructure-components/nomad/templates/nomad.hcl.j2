@@ -1,13 +1,12 @@
 # {{ ansible_managed }}
 # Single-node Nomad: server + client co-resident. Listens on loopback only;
-# remote operator access is via wg-ops or SSH-forwarded loopback. raw_exec
-# is the only enabled task driver — workloads run as host processes under
-# owner-declared runtime users so they keep peer-auth access to the Postgres
-# Unix socket and the SPIRE workload-API socket. The exec driver's
-# chroot/PID-namespace isolation would cut both.
+# remote operator access is via wg-ops or SSH-forwarded loopback. Host workloads
+# use raw_exec under owner-declared runtime users; OCI workloads use the Podman
+# driver with host networking and explicit mounts for local substrate sockets.
 
 data_dir  = "{{ nomad_data_dir }}"
 log_level = "INFO"
+plugin_dir = "{{ nomad_plugin_dir }}"
 
 # Placement coordinate: datacenter = cluster (IATA metro + ordinal, e.g. iad1).
 # region (cell) stays at Nomad's default until cells exist; node_pool (role) and
@@ -92,9 +91,12 @@ plugin "raw_exec" {
     enabled = true
   }
 }
-# exec/java/qemu drivers are off by default in Nomad and we never opt
-# them in. raw_exec above is the single driver this node accepts;
-# `nomad node status -self` will reflect that.
+
+plugin "nomad-driver-podman" {
+  config {
+    recover_stopped = false
+  }
+}
 
 vault {
   enabled               = true

@@ -94,6 +94,56 @@ func applyTaskSecretTemplateOwnership(ctx context.Context, job *api.Job, resolve
 	return nil
 }
 
+func applyPodmanTaskUserIDs(ctx context.Context, job *api.Job, resolver TaskUserResolver) error {
+	if job == nil {
+		return nil
+	}
+	if resolver == nil {
+		resolver = localTaskUserResolver
+	}
+	cache := map[string]TaskUserIdentity{}
+	for _, group := range job.TaskGroups {
+		if group == nil {
+			continue
+		}
+		for _, task := range group.Tasks {
+			if task == nil || task.Driver != "podman" {
+				continue
+			}
+			taskUser := strings.TrimSpace(task.User)
+			if taskUser == "" || numericTaskUser(taskUser) {
+				continue
+			}
+			identity, ok := cache[taskUser]
+			if !ok {
+				resolved, err := resolver(ctx, taskUser)
+				if err != nil {
+					return fmt.Errorf("job %q group %q task %q resolve task user %q: %w", jobID(job), taskGroupName(group), task.Name, taskUser, err)
+				}
+				if resolved.UID < 0 || resolved.GID < 0 {
+					return fmt.Errorf("job %q group %q task %q user %q resolved to invalid uid=%d gid=%d", jobID(job), taskGroupName(group), task.Name, taskUser, resolved.UID, resolved.GID)
+				}
+				identity = resolved
+				cache[taskUser] = identity
+			}
+			task.User = strconv.Itoa(identity.UID) + ":" + strconv.Itoa(identity.GID)
+		}
+	}
+	return nil
+}
+
+func numericTaskUser(value string) bool {
+	userPart, groupPart, hasGroup := strings.Cut(value, ":")
+	if _, err := strconv.Atoi(userPart); err != nil {
+		return false
+	}
+	if !hasGroup {
+		return true
+	}
+	_, err := strconv.Atoi(groupPart)
+	return err == nil
+}
+
 func isSecretTemplateDestination(dest *string) bool {
 	if dest == nil {
 		return false

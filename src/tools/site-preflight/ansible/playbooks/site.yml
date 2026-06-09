@@ -90,6 +90,10 @@
     - nomad
     - scheduler
   roles:
+    - role: podman
+      tags:
+        - podman
+        - scheduler
     - role: nomad
       tags:
         - nomad
