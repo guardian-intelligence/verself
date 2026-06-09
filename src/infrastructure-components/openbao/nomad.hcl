@@ -223,6 +223,7 @@ PY
           "--root-key-file=/etc/verself/bootstrap/openbao-root.key",
           "--addr=https://127.0.0.1:8200",
           "--ca-cert=/etc/openbao/tls/cert.pem",
+          "--runtime-catalog-file=local/etc/openbao-runtime-catalog.json",
         ]
       }
 

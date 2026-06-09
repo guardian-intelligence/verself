@@ -1,7 +1,10 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//src/tools/deployment:declarations.bzl", "deploy_declarations")
 load("//src/tools/deployment/nomad:component.bzl", "nomad_component")
 
 exports_files(["tools.lock.json"])
+
+deploy_declarations(visibility = ["//visibility:public"])
 
 pkg_tar(
     name = "runtime_artifact",

@@ -32,18 +32,6 @@ go_binary(
 )
 
 pkg_tar(
-    name = "analytics_service_identity_layer",
-    files = {
-        "container/etc/group": "etc/group",
-        "container/etc/passwd": "etc/passwd",
-    },
-    modes = {
-        "etc/group": "0644",
-        "etc/passwd": "0644",
-    },
-)
-
-pkg_tar(
     name = "analytics_service_layer",
     files = {
         ":analytics-service": "usr/local/bin/analytics-service",
@@ -59,7 +47,6 @@ oci_image(
     entrypoint = ["/usr/local/bin/analytics-service"],
     tars = [
         "//src/tools/deployment/oci:ubuntu_ca_certificates_layer",
-        ":analytics_service_identity_layer",
         ":analytics_service_layer",
     ],
 )

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "openbao-runtime-catalog_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/deployment-service/cmd/openbao-runtime-catalog",
+    visibility = ["//visibility:private"],
+    deps = ["//src/services/deployment-service/deploycontract"],
+)
+
+go_binary(
+    name = "openbao-runtime-catalog",
+    embed = [":openbao-runtime-catalog_lib"],
+    visibility = ["//visibility:public"],
+)

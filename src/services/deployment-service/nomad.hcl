@@ -55,16 +55,6 @@ job "deployment-service" {
       user = "deployment_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
-      vault {
-        role = "deployment-service-runtime"
-      }
-
-      identity {
-        name = "vault_default"
-        aud  = ["vault.io"]
-        ttl  = "1h"
-      }
-
       artifact {
         source = "verself-artifact://deployment-service"
         destination = "local"

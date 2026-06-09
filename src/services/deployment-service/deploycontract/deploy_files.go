@@ -161,21 +161,25 @@ func (v *Validator) validatePostgresPeerMappings() {
 
 func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 	for i, declaration := range doc.Declarations {
+		declaration = normalizeRuntimeSecretDeclaration(declaration)
 		v.report.RuntimeSecrets++
 		prefix := fmt.Sprintf("openbao_runtime_secret_declarations[%d]", i)
-		if !secretRE.MatchString(strings.TrimSpace(declaration.Name)) {
+		if !secretRE.MatchString(declaration.Name) {
 			v.add(rel, fmt.Sprintf("%s.name must match %s", prefix, secretRE.String()))
+		}
+		if !jobIDRE.MatchString(declaration.JobID) {
+			v.add(rel, fmt.Sprintf("%s.job_id must match %s", prefix, jobIDRE.String()))
 		}
 		if !exactlyOneRuntimeSecretSource(declaration.ProducedByJob, declaration.Generated.Bytes, declaration.ExternalOpenBao) {
 			v.add(rel, prefix+" must declare exactly one source: generated, produced_by_job, or external_openbao")
 		}
 		for j, jobID := range declaration.ConsumerJobIDs {
-			if !jobIDRE.MatchString(strings.TrimSpace(jobID)) {
+			if !jobIDRE.MatchString(jobID) {
 				v.add(rel, fmt.Sprintf("%s.consumer_job_ids[%d] must match %s", prefix, j, jobIDRE.String()))
 			}
 		}
 		if declaration.ProducedByJob != "" {
-			if !jobIDRE.MatchString(strings.TrimSpace(declaration.ProducedByJob)) {
+			if !jobIDRE.MatchString(declaration.ProducedByJob) {
 				v.add(rel, fmt.Sprintf("%s.produced_by_job must match %s", prefix, jobIDRE.String()))
 			}
 		}
@@ -184,12 +188,16 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 			if declaration.Generated.Bytes < 16 || declaration.Generated.Bytes > 96 {
 				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
 			}
-			switch strings.TrimSpace(declaration.Generated.Encoding) {
-			case "", "base64url", "hex", "alphanumeric":
+			switch declaration.Generated.Encoding {
+			case "base64url", "hex", "alphanumeric":
 			default:
 				v.add(rel, prefix+".generated.encoding must be base64url, hex, or alphanumeric")
 			}
 		}
+		if err := validateRuntimeSecretDeclaration(rel, declaration); err != nil {
+			v.add("", err.Error())
+		}
+		v.runtimeSecretClaims = append(v.runtimeSecretClaims, runtimeSecretClaim{path: rel, declaration: declaration})
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", declaration.Name)
 	}
 }

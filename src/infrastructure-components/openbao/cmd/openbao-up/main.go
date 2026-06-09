@@ -8,11 +8,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -30,37 +32,41 @@ const (
 	defaultThreshold  = 2
 )
 
-var bootstrapRuntimeRoles = []nomadRuntimeRole{
-	{
-		Name:   "deployment-service-runtime",
-		JobID:  "deployment-service",
-		Task:   "deployment-service",
-		Policy: `path "sys/health" { capabilities = ["read"] }`,
-	},
-	{
-		Name:  "cloudflare-r2-control-plane-runtime",
-		JobID: "cloudflare-r2-control-plane",
-		Task:  "cloudflare-r2-control-plane",
-		Policy: `path "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_token_id" { capabilities = ["read"] }
-path "kv-runtime/data/secret/org/cloudflare-r2-control-plane.publisher_secret_access_key" { capabilities = ["read"] }`,
-	},
-}
+const openBaoRuntimeCatalogSchemaVersion = 1
 
 type nomadRuntimeRole struct {
-	Name   string
-	JobID  string
-	Task   string
-	Policy string
+	Name           string                   `json:"name"`
+	NomadNamespace string                   `json:"nomad_namespace"`
+	JobID          string                   `json:"job_id"`
+	Paths          []openBaoRuntimeRolePath `json:"paths"`
+}
+
+type openBaoRuntimeCatalog struct {
+	SchemaVersion    int                      `json:"schema_version"`
+	GeneratedSecrets []openBaoGeneratedSecret `json:"generated_secrets"`
+	Roles            []nomadRuntimeRole       `json:"roles"`
+}
+
+type openBaoGeneratedSecret struct {
+	Name     string `json:"name"`
+	Bytes    int    `json:"bytes"`
+	Encoding string `json:"encoding"`
+}
+
+type openBaoRuntimeRolePath struct {
+	Path         string   `json:"path"`
+	Capabilities []string `json:"capabilities"`
 }
 
 type config struct {
-	bao         string
-	stateDir    string
-	rootKeyFile string
-	keyShares   int
-	threshold   int
-	addr        string
-	caCert      string
+	bao                string
+	stateDir           string
+	rootKeyFile        string
+	keyShares          int
+	threshold          int
+	addr               string
+	caCert             string
+	runtimeCatalogFile string
 
 	action              string
 	rootTokenOutputFile string
@@ -107,6 +113,7 @@ func main() {
 	fs.IntVar(&cfg.threshold, "key-threshold", defaultThreshold, "OpenBao operator init key threshold")
 	fs.StringVar(&cfg.addr, "addr", firstNonEmpty(os.Getenv("BAO_ADDR"), "https://127.0.0.1:8200"), "OpenBao API address")
 	fs.StringVar(&cfg.caCert, "ca-cert", os.Getenv("BAO_CACERT"), "OpenBao CA certificate")
+	fs.StringVar(&cfg.runtimeCatalogFile, "runtime-catalog-file", "local/etc/openbao-runtime-catalog.json", "OpenBao runtime role catalog JSON")
 	fs.StringVar(&cfg.rootTokenOutputFile, "root-token-output-file", "", "0600 file to receive a generated temporary root token")
 	fs.Var(&cfg.unsealKeyFiles, "unseal-key-file", "unseal key file for action=generate-root-token; repeat to satisfy the threshold")
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -198,6 +205,7 @@ func normalizeConfig(cfg config) config {
 	cfg.rootKeyFile = strings.TrimSpace(cfg.rootKeyFile)
 	cfg.addr = strings.TrimSpace(cfg.addr)
 	cfg.caCert = strings.TrimSpace(cfg.caCert)
+	cfg.runtimeCatalogFile = strings.TrimSpace(cfg.runtimeCatalogFile)
 	cfg.rootTokenOutputFile = strings.TrimSpace(cfg.rootTokenOutputFile)
 	if cfg.keyShares == 0 {
 		cfg.keyShares = defaultKeyShares
@@ -649,6 +657,13 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	api := func(method, path string, body any, expected ...int) (map[string]any, error) {
 		return apiRequest(ctx, client, cfg.addr, rootToken, method, path, body, expected...)
 	}
+	apiStatus := func(method, path string, body any, expected ...int) (int, map[string]any, error) {
+		return apiRequestStatus(ctx, client, cfg.addr, rootToken, method, path, body, expected...)
+	}
+	catalog, err := loadOpenBaoRuntimeCatalog(cfg.runtimeCatalogFile)
+	if err != nil {
+		return err
+	}
 	if err := ensureMount(api, "kv-runtime", map[string]any{
 		"type":    "kv",
 		"options": map[string]any{"version": "2"},
@@ -676,15 +691,99 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	}, http.StatusNoContent); err != nil {
 		return err
 	}
-	for _, role := range bootstrapRuntimeRoles {
+	if err := ensureGeneratedRuntimeSecrets(apiStatus, catalog.GeneratedSecrets); err != nil {
+		return err
+	}
+	desiredRoles := map[string]bool{}
+	for _, role := range catalog.Roles {
+		desiredRoles[role.Name] = true
 		if err := ensureNomadRuntimeRole(api, role); err != nil {
 			return err
+		}
+	}
+	if err := pruneNomadRuntimeRoles(apiStatus, desiredRoles); err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadOpenBaoRuntimeCatalog(path string) (openBaoRuntimeCatalog, error) {
+	if path == "" {
+		return openBaoRuntimeCatalog{}, errors.New("OpenBao runtime catalog file is required")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return openBaoRuntimeCatalog{}, fmt.Errorf("read OpenBao runtime catalog %s: %w", path, err)
+	}
+	var catalog openBaoRuntimeCatalog
+	if err := json.Unmarshal(body, &catalog); err != nil {
+		return openBaoRuntimeCatalog{}, fmt.Errorf("decode OpenBao runtime catalog %s: %w", path, err)
+	}
+	if catalog.SchemaVersion != openBaoRuntimeCatalogSchemaVersion {
+		return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s schema_version=%d is not supported", path, catalog.SchemaVersion)
+	}
+	if len(catalog.Roles) == 0 {
+		return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s has no roles", path)
+	}
+	for _, secret := range catalog.GeneratedSecrets {
+		if err := validateGeneratedSecretSpec(secret); err != nil {
+			return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s: %w", path, err)
+		}
+	}
+	for _, role := range catalog.Roles {
+		if err := validateNomadRuntimeRole(role); err != nil {
+			return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s: %w", path, err)
+		}
+	}
+	return catalog, nil
+}
+
+func validateGeneratedSecretSpec(secret openBaoGeneratedSecret) error {
+	if strings.TrimSpace(secret.Name) == "" {
+		return errors.New("generated secret name is required")
+	}
+	if secret.Bytes < 16 || secret.Bytes > 96 {
+		return fmt.Errorf("generated secret %s bytes must be between 16 and 96", secret.Name)
+	}
+	switch secret.Encoding {
+	case "base64url", "hex", "alphanumeric":
+		return nil
+	default:
+		return fmt.Errorf("generated secret %s encoding %q is not supported", secret.Name, secret.Encoding)
+	}
+}
+
+func validateNomadRuntimeRole(role nomadRuntimeRole) error {
+	if strings.TrimSpace(role.Name) == "" || strings.TrimSpace(role.JobID) == "" || strings.TrimSpace(role.NomadNamespace) == "" {
+		return errors.New("runtime role requires name, job_id, and nomad_namespace")
+	}
+	if role.Name != role.JobID+"-runtime" {
+		return fmt.Errorf("runtime role %s must match job_id %s", role.Name, role.JobID)
+	}
+	if len(role.Paths) == 0 {
+		return fmt.Errorf("runtime role %s must declare at least one policy path", role.Name)
+	}
+	for _, path := range role.Paths {
+		if strings.TrimSpace(path.Path) == "" {
+			return fmt.Errorf("runtime role %s has an empty policy path", role.Name)
+		}
+		if len(path.Capabilities) == 0 {
+			return fmt.Errorf("runtime role %s path %s has no capabilities", role.Name, path.Path)
+		}
+		for _, capability := range path.Capabilities {
+			switch capability {
+			case "create", "read", "update":
+			default:
+				return fmt.Errorf("runtime role %s path %s has unsupported capability %q", role.Name, path.Path, capability)
+			}
 		}
 	}
 	return nil
 }
 
 type openBaoAPI func(method, path string, body any, expected ...int) (map[string]any, error)
+
+type openBaoStatusAPI func(method, path string, body any, expected ...int) (int, map[string]any, error)
 
 func ensureMount(api openBaoAPI, name string, body map[string]any) error {
 	if _, err := api(http.MethodPost, "sys/mounts/"+name, body, http.StatusNoContent); err != nil && !isOpenBaoPathInUse(err) {
@@ -700,9 +799,113 @@ func ensureAuth(api openBaoAPI, name string, body map[string]any) error {
 	return nil
 }
 
+func ensureGeneratedRuntimeSecrets(api openBaoStatusAPI, secrets []openBaoGeneratedSecret) error {
+	for _, secret := range secrets {
+		existing, found, err := readRuntimeSecretValue(api, secret.Name)
+		if err != nil {
+			return err
+		}
+		if found {
+			if strings.TrimSpace(existing) == "" {
+				return fmt.Errorf("OpenBao generated runtime secret %s already exists with an empty value", secret.Name)
+			}
+			continue
+		}
+		value, err := generateRuntimeSecretValue(secret)
+		if err != nil {
+			return err
+		}
+		if _, _, err := api(http.MethodPost, runtimeSecretAPIPath(secret.Name), map[string]any{
+			"data": map[string]any{"value": value},
+		}, http.StatusOK, http.StatusNoContent); err != nil {
+			return fmt.Errorf("write generated OpenBao runtime secret %s: %w", secret.Name, err)
+		}
+	}
+	return nil
+}
+
+func readRuntimeSecretValue(api openBaoStatusAPI, name string) (string, bool, error) {
+	status, response, err := api(http.MethodGet, runtimeSecretAPIPath(name), nil, http.StatusOK, http.StatusNotFound)
+	if err != nil {
+		return "", false, fmt.Errorf("read OpenBao runtime secret %s: %w", name, err)
+	}
+	if status == http.StatusNotFound {
+		return "", false, nil
+	}
+	value, ok := runtimeSecretValue(response)
+	if !ok {
+		return "", false, fmt.Errorf("OpenBao runtime secret %s response omitted data.value", name)
+	}
+	return value, true, nil
+}
+
+func runtimeSecretValue(response map[string]any) (string, bool) {
+	data, ok := response["data"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	secret, ok := data["data"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	value, ok := secret["value"].(string)
+	return value, ok
+}
+
+func generateRuntimeSecretValue(secret openBaoGeneratedSecret) (string, error) {
+	switch secret.Encoding {
+	case "base64url":
+		raw, err := randomBytes(secret.Bytes)
+		if err != nil {
+			return "", err
+		}
+		return base64.RawURLEncoding.EncodeToString(raw), nil
+	case "hex":
+		raw, err := randomBytes(secret.Bytes)
+		if err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(raw), nil
+	case "alphanumeric":
+		return randomAlphanumeric(secret.Bytes)
+	default:
+		return "", fmt.Errorf("generated secret %s encoding %q is not supported", secret.Name, secret.Encoding)
+	}
+}
+
+func randomBytes(length int) ([]byte, error) {
+	out := make([]byte, length)
+	if _, err := rand.Read(out); err != nil {
+		return nil, fmt.Errorf("generate runtime secret material: %w", err)
+	}
+	return out, nil
+}
+
+func randomAlphanumeric(length int) (string, error) {
+	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	limit := big.NewInt(int64(len(alphabet)))
+	out := make([]byte, length)
+	for i := range out {
+		index, err := rand.Int(rand.Reader, limit)
+		if err != nil {
+			return "", fmt.Errorf("generate alphanumeric runtime secret material: %w", err)
+		}
+		out[i] = alphabet[index.Int64()]
+	}
+	return string(out), nil
+}
+
+func runtimeSecretAPIPath(name string) string {
+	return "kv-runtime/data/secret/org/" + name
+}
+
 func ensureNomadRuntimeRole(api openBaoAPI, role nomadRuntimeRole) error {
+	policy, err := nomadRuntimeRolePolicy(role)
+	if err != nil {
+		return err
+	}
 	if _, err := api(http.MethodPost, "sys/policies/acl/"+role.Name, map[string]any{
-		"policy": role.Policy,
+		"policy": policy,
 	}, http.StatusNoContent); err != nil {
 		return err
 	}
@@ -722,11 +925,86 @@ func ensureNomadRuntimeRole(api openBaoAPI, role nomadRuntimeRole) error {
 	return nil
 }
 
+func pruneNomadRuntimeRoles(api openBaoStatusAPI, desired map[string]bool) error {
+	authRoles, err := listOpenBaoKeys(api, "auth/jwt-nomad/role")
+	if err != nil {
+		return err
+	}
+	for _, role := range authRoles {
+		if !strings.HasSuffix(role, "-runtime") || desired[role] {
+			continue
+		}
+		if _, _, err := api(http.MethodDelete, "auth/jwt-nomad/role/"+role, nil, http.StatusNoContent); err != nil {
+			return fmt.Errorf("delete stale Nomad OpenBao JWT role %s: %w", role, err)
+		}
+	}
+	policies, err := listOpenBaoKeys(api, "sys/policies/acl")
+	if err != nil {
+		return err
+	}
+	for _, policy := range policies {
+		if !strings.HasSuffix(policy, "-runtime") || desired[policy] {
+			continue
+		}
+		if _, _, err := api(http.MethodDelete, "sys/policies/acl/"+policy, nil, http.StatusNoContent); err != nil {
+			return fmt.Errorf("delete stale Nomad OpenBao ACL policy %s: %w", policy, err)
+		}
+	}
+	return nil
+}
+
+func listOpenBaoKeys(api openBaoStatusAPI, path string) ([]string, error) {
+	_, response, err := api("LIST", path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("list OpenBao keys %s: %w", path, err)
+	}
+	data, ok := response["data"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("list OpenBao keys %s response omitted data", path)
+	}
+	rawKeys, ok := data["keys"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("list OpenBao keys %s response omitted data.keys", path)
+	}
+	keys := make([]string, 0, len(rawKeys))
+	for _, raw := range rawKeys {
+		key, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("list OpenBao keys %s returned a non-string key", path)
+		}
+		key = strings.TrimSuffix(strings.TrimSpace(key), "/")
+		if key != "" {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
+}
+
+func nomadRuntimeRolePolicy(role nomadRuntimeRole) (string, error) {
+	var b strings.Builder
+	for _, policyPath := range role.Paths {
+		if strings.TrimSpace(policyPath.Path) == "" {
+			return "", fmt.Errorf("runtime role %s has an empty policy path", role.Name)
+		}
+		if len(policyPath.Capabilities) == 0 {
+			return "", fmt.Errorf("runtime role %s path %s has no capabilities", role.Name, policyPath.Path)
+		}
+		fmt.Fprintf(&b, "path %q { capabilities = [", policyPath.Path)
+		for index, capability := range policyPath.Capabilities {
+			if index > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%q", capability)
+		}
+		b.WriteString("] }\n")
+	}
+	return b.String(), nil
+}
+
 func nomadRuntimeRoleBoundClaims(role nomadRuntimeRole) map[string]string {
 	return map[string]string{
-		"nomad_namespace": "default",
+		"nomad_namespace": role.NomadNamespace,
 		"nomad_job_id":    role.JobID,
-		"nomad_task":      role.Task,
 	}
 }
 
@@ -757,17 +1035,22 @@ func apiClient(cfg config) (*http.Client, error) {
 }
 
 func apiRequest(ctx context.Context, client *http.Client, addr, token, method, path string, body any, expected ...int) (map[string]any, error) {
+	_, response, err := apiRequestStatus(ctx, client, addr, token, method, path, body, expected...)
+	return response, err
+}
+
+func apiRequestStatus(ctx context.Context, client *http.Client, addr, token, method, path string, body any, expected ...int) (int, map[string]any, error) {
 	var requestBody io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("encode OpenBao API body: %w", err)
+			return 0, nil, fmt.Errorf("encode OpenBao API body: %w", err)
 		}
 		requestBody = bytes.NewReader(raw)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(addr, "/")+"/v1/"+path, requestBody)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	req.Header.Set("X-Vault-Token", token)
 	if body != nil {
@@ -775,26 +1058,26 @@ func apiRequest(ctx context.Context, client *http.Client, addr, token, method, p
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openbao %s %s: %w", method, path, err)
+		return 0, nil, fmt.Errorf("openbao %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if err != nil {
-		return nil, fmt.Errorf("read openbao %s %s response: %w", method, path, err)
+		return resp.StatusCode, nil, fmt.Errorf("read openbao %s %s response: %w", method, path, err)
 	}
 	for _, status := range expected {
 		if resp.StatusCode == status {
 			if len(bytes.TrimSpace(raw)) == 0 {
-				return map[string]any{}, nil
+				return resp.StatusCode, map[string]any{}, nil
 			}
 			var decoded map[string]any
 			if err := json.Unmarshal(raw, &decoded); err != nil {
-				return nil, fmt.Errorf("decode openbao %s %s response: %w", method, path, err)
+				return resp.StatusCode, nil, fmt.Errorf("decode openbao %s %s response: %w", method, path, err)
 			}
-			return decoded, nil
+			return resp.StatusCode, decoded, nil
 		}
 	}
-	return nil, fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
+	return resp.StatusCode, nil, fmt.Errorf("openbao %s %s status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(raw)))
 }
 
 func firstNonEmpty(values ...string) string {
