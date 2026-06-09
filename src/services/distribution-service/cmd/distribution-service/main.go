@@ -168,6 +168,7 @@ func run() error {
 		spiffeSource,
 		workloadauth.ServiceDeployment,
 		workloadauth.ServiceGovernance,
+		workloadauth.ServiceNomadObserver,
 	)
 	if err != nil {
 		return err

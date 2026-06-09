@@ -100,19 +100,26 @@ type PromoteTargetRequest struct {
 }
 
 type ArtifactRecord struct {
-	ResourceName       string `json:"resourceName"`
-	PackageName        string `json:"package_name"`
-	PackageVersion     string `json:"package_version"`
-	ChannelName        string `json:"channel_name"`
-	PlatformOS         string `json:"platform_os"`
-	PlatformArch       string `json:"platform_arch"`
-	Flavor             string `json:"flavor"`
-	OCIRepository      string `json:"oci_repository"`
-	OCIDigest          string `json:"artifact_digest"`
-	OCIMediaType       string `json:"oci_media_type"`
-	OCISizeBytes       int64  `json:"oci_size_bytes"`
-	PublicOCIReference string `json:"public_oci_reference"`
-	State              string `json:"state"`
+	ResourceName       string                     `json:"resourceName"`
+	ArtifactDigestRef  string                     `json:"artifact_digest_ref"`
+	PackageName        string                     `json:"package_name"`
+	PackageVersion     string                     `json:"package_version"`
+	ChannelName        string                     `json:"channel_name"`
+	PlatformOS         string                     `json:"platform_os"`
+	PlatformArch       string                     `json:"platform_arch"`
+	Flavor             string                     `json:"flavor"`
+	OCIRepository      string                     `json:"oci_repository"`
+	OCIDigest          string                     `json:"artifact_digest"`
+	OCIMediaType       string                     `json:"oci_media_type"`
+	OCISizeBytes       int64                      `json:"oci_size_bytes"`
+	PublicOCIReference string                     `json:"public_oci_reference"`
+	State              string                     `json:"state"`
+	PolicyRef          string                     `json:"policy_ref"`
+	RetentionClass     string                     `json:"retention_class"`
+	Verification       ArtifactVerificationRecord `json:"verification"`
+	Replication        ArtifactReplicationRecord  `json:"replication"`
+	CreatedAt          string                     `json:"created_at"`
+	UpdatedAt          string                     `json:"updated_at"`
 }
 
 type TargetRecord struct {
@@ -127,6 +134,25 @@ type TargetRecord struct {
 	PublicOCIReference string `json:"public_oci_reference"`
 	DownloadURL        string `json:"download_url"`
 	State              string `json:"state"`
+}
+
+type ArtifactVerificationRecord struct {
+	Decision         string     `json:"decision"`
+	Reason           string     `json:"reason"`
+	BuilderID        string     `json:"builder_id"`
+	SignerIdentity   string     `json:"signer_identity"`
+	SourceRepository string     `json:"source_repository"`
+	SourceCommit     string     `json:"source_commit"`
+	SourceRef        string     `json:"source_ref"`
+	Evidence         []Evidence `json:"evidence"`
+	CheckedAt        string     `json:"checked_at"`
+}
+
+type ArtifactReplicationRecord struct {
+	State             string `json:"state"`
+	OriginRegistryURL string `json:"origin_registry_url"`
+	PublicRegistryURL string `json:"public_registry_url"`
+	CheckedAt         string `json:"checked_at"`
 }
 
 type ArtifactResponseBody struct {
@@ -218,6 +244,25 @@ func (c *Client) AdmitArtifact(ctx context.Context, request AdmitArtifactRequest
 	return parseArtifactResponse(resp, http.StatusCreated)
 }
 
+func (c *Client) GetArtifact(ctx context.Context, artifactDigestRef string, reqEditors ...RequestEditorFn) (*ArtifactResponse, error) {
+	artifactDigestRef = strings.TrimSpace(artifactDigestRef)
+	if artifactDigestRef == "" {
+		return nil, fmt.Errorf("%s internal transport: artifact digest ref is required", ServiceName)
+	}
+	req, err := c.newRequest(ctx, "GET", "/internal/v1/distribution/artifacts/"+url.PathEscape(artifactDigestRef), nil, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.edit(ctx, req, reqEditors...); err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return parseArtifactResponse(resp, http.StatusOK)
+}
+
 func (c *Client) PromoteTarget(ctx context.Context, request PromoteTargetRequest, idempotencyKey string, reqEditors ...RequestEditorFn) (*TargetResponse, error) {
 	path := "/internal/v1/distribution/packages/" + url.PathEscape(request.PackageName) + "/channels/" + url.PathEscape(request.ChannelName) + "/targets/promote"
 	req, err := c.newJSONRequest(ctx, "POST", path, request, idempotencyKey)
@@ -235,6 +280,19 @@ func (c *Client) PromoteTarget(ctx context.Context, request PromoteTargetRequest
 }
 
 func (c *Client) newJSONRequest(ctx context.Context, method string, path string, body any, idempotencyKey string) (*http.Request, error) {
+	requestBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	req, err := c.newRequest(ctx, method, path, bytes.NewReader(requestBody), idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+func (c *Client) newRequest(ctx context.Context, method string, path string, body io.Reader, idempotencyKey string) (*http.Request, error) {
 	if c == nil || c.client == nil {
 		return nil, fmt.Errorf("%s internal transport: client is not initialized", ServiceName)
 	}
@@ -242,16 +300,11 @@ func (c *Client) newJSONRequest(ctx context.Context, method string, path string,
 	if err != nil {
 		return nil, err
 	}
-	requestBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), bytes.NewReader(requestBody))
+	req, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(idempotencyKey) != "" {
 		req.Header.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey))
 	}
