@@ -25,18 +25,22 @@
     group: "{{ nomad_group }}"
     mode: "0755"
 
-- name: Capture Nomad Podman driver version
-  ansible.builtin.command:
-    cmd: "{{ nomad_plugin_dir }}/nomad-driver-podman --version"
-  register: nomad_podman_driver_version_output
-  changed_when: false
+- name: Inspect Nomad Podman driver
+  ansible.builtin.stat:
+    path: "{{ nomad_plugin_dir }}/nomad-driver-podman"
+    checksum_algorithm: sha256
+  register: nomad_podman_driver
 
-- name: Assert Nomad Podman driver version matches pin
+- name: Assert Nomad Podman driver matches pin
   ansible.builtin.assert:
-    that: "'Nomad Podman Driver Plugin v' + nomad_podman_driver_expected_version in nomad_podman_driver_version_output.stdout"
+    that:
+      - nomad_podman_driver.stat.exists
+      - nomad_podman_driver.stat.isreg
+      - nomad_podman_driver.stat.executable
+      - nomad_podman_driver.stat.checksum == nomad_podman_driver_expected_sha256
     fail_msg: >-
-      Expected Nomad Podman driver v{{ nomad_podman_driver_expected_version }},
-      got: {{ nomad_podman_driver_version_output.stdout_lines[0] }}
+      Expected Nomad Podman driver sha256 {{ nomad_podman_driver_expected_sha256 }},
+      got {{ nomad_podman_driver.stat.checksum | default('missing') }}.
 
 - name: Create Nomad configuration directory
   ansible.builtin.file:
@@ -46,14 +50,22 @@
     group: "{{ nomad_group }}"
     mode: "0750"
 
-- name: Assert OpenBao site root key input
+- name: Check existing OpenBao site root key
+  ansible.builtin.stat:
+    path: "{{ nomad_openbao_root_key_dest }}"
+  register: nomad_openbao_root_key
+  no_log: true
+
+- name: Assert OpenBao site root key availability
   ansible.builtin.assert:
     that:
-      - verself_openbao_site_root_key_file | default('', true) | length > 0
+      - >-
+        (verself_openbao_site_root_key_file | default('', true) | length > 0)
+        or (nomad_openbao_root_key.stat.exists and (nomad_openbao_root_key.stat.size | int) > 0)
     fail_msg: >-
-      OpenBao bootstrap requires verself_openbao_site_root_key_file. Provide
-      the site root key before host convergence.
-  no_log: true
+      OpenBao bootstrap requires a site root key. Provide
+      verself_openbao_site_root_key_file for first convergence, or converge a
+      host that already has {{ nomad_openbao_root_key_dest }}.
 
 - name: Create OpenBao bootstrap key directory
   ansible.builtin.file:
@@ -71,6 +83,15 @@
     group: root
     mode: "0600"
   no_log: true
+  when: verself_openbao_site_root_key_file | default('', true) | length > 0
+
+- name: Set OpenBao site root key permissions
+  ansible.builtin.file:
+    path: "{{ nomad_openbao_root_key_dest }}"
+    state: file
+    owner: root
+    group: root
+    mode: "0600"
 
 - name: Create Nomad state directory
   ansible.builtin.file:

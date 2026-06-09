@@ -15,6 +15,8 @@
           - verself_preflight_tools_artifact is defined
           - verself_preflight_tools_artifact | length > 0
         fail_msg: "site.yml requires verself_preflight_tools_artifact from Bazel."
+      tags:
+        - always
 
     - name: Install Verself preflight tools
       ansible.builtin.unarchive:
@@ -22,7 +24,8 @@
         dest: /
         owner: root
         group: root
-        mode: "0755"
+      tags:
+        - always
   roles:
     - role: base
       tags:
