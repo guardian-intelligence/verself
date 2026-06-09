@@ -150,6 +150,7 @@ type artifactRecord struct {
 	PublicOCIReference string             `json:"public_oci_reference"`
 	OCIMediaType       string             `json:"oci_media_type"`
 	OCISizeBytes       int64              `json:"oci_size_bytes"`
+	PolicyRef          string             `json:"policy_ref"`
 	State              string             `json:"state"`
 	RetentionClass     string             `json:"retention_class"`
 	Verification       verificationRecord `json:"verification"`
@@ -260,6 +261,7 @@ func artifactDTO(installationID string, artifact distribution.Artifact) artifact
 		PublicOCIReference: artifact.PublicOCIReference,
 		OCIMediaType:       artifact.OCIMediaType,
 		OCISizeBytes:       artifact.OCISizeBytes,
+		PolicyRef:          artifact.PolicyRef,
 		State:              artifact.State,
 		RetentionClass:     artifact.RetentionClass,
 		Verification: verificationRecord{

@@ -21,6 +21,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/hashicorp/nomad/api"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	verselfotel "github.com/verself/observability/otel"
 	workloadauth "github.com/verself/service-runtime/workload"
 	"go.opentelemetry.io/otel"
@@ -165,6 +166,7 @@ type observer struct {
 	ch      clickhouse.Conn
 	logger  *slog.Logger
 	tracer  trace.Tracer
+	resolve workloadOCIArtifactResolver
 	meta    *jobMetaCache
 	dedupe  *captureDedupe
 	stats   observerStats
@@ -225,9 +227,20 @@ func run(ctx context.Context, cfg config) error {
 		return fmt.Errorf("nomad client: %w", err)
 	}
 
-	chConn, err := startFleetProjector(ctx, cfg, nomadClient, logger)
+	spiffeSource, err := observerSPIFFESource(ctx, cfg)
+	if err != nil {
+		logger.Warn("nomad-observer spiffe source unavailable", slog.Any("error", err))
+	} else {
+		defer func() { _ = spiffeSource.Close() }()
+	}
+
+	chConn, err := startFleetProjector(ctx, cfg, nomadClient, logger, spiffeSource)
 	if err != nil {
 		logger.Warn("nomad-observer clickhouse sink disabled", slog.Any("error", err))
+	}
+	artifactResolver, err := newDistributionArtifactResolver(spiffeSource)
+	if err != nil {
+		logger.Warn("nomad-observer distribution evidence disabled", slog.Any("error", err))
 	}
 
 	obs := &observer{
@@ -236,6 +249,7 @@ func run(ctx context.Context, cfg config) error {
 		ch:      chConn,
 		logger:  logger,
 		tracer:  otel.Tracer(serviceName),
+		resolve: artifactResolver,
 		meta:    newJobMetaCache(),
 		dedupe:  newCaptureDedupe(),
 		capture: make(chan logCaptureRequest, cfg.captureQueueSize),
@@ -256,10 +270,7 @@ func nomadHTTPClient() *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger) (clickhouse.Conn, error) {
-	if cfg.clickhouseCACertPath == "" {
-		return nil, errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
-	}
+func observerSPIFFESource(ctx context.Context, cfg config) (*workloadapi.X509Source, error) {
 	if cfg.spiffeSocket == "" {
 		return nil, fmt.Errorf("%s must not be empty", workloadauth.EndpointSocketEnv)
 	}
@@ -267,9 +278,22 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 	if err != nil {
 		return nil, fmt.Errorf("spiffe source: %w", err)
 	}
+	if _, err := workloadauth.CurrentIDForService(spiffeSource, workloadauth.ServiceNomadObserver); err != nil {
+		_ = spiffeSource.Close()
+		return nil, fmt.Errorf("nomad-observer spiffe identity: %w", err)
+	}
+	return spiffeSource, nil
+}
+
+func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Client, logger *slog.Logger, spiffeSource *workloadapi.X509Source) (clickhouse.Conn, error) {
+	if cfg.clickhouseCACertPath == "" {
+		return nil, errors.New("VERSELF_CRED_CLICKHOUSE_CA_CERT must not be empty")
+	}
+	if spiffeSource == nil {
+		return nil, errors.New("spiffe source is required")
+	}
 	chTLS, err := workloadauth.TLSConfigWithX509SourceAndCABundle(ctx, spiffeSource, cfg.clickhouseCACertPath)
 	if err != nil {
-		_ = spiffeSource.Close()
 		return nil, fmt.Errorf("clickhouse tls: %w", err)
 	}
 	chConn, err := clickhouse.Open(&clickhouse.Options{
@@ -278,7 +302,6 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 		TLS:  chTLS,
 	})
 	if err != nil {
-		_ = spiffeSource.Close()
 		return nil, fmt.Errorf("open clickhouse: %w", err)
 	}
 	pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -286,19 +309,16 @@ func startFleetProjector(ctx context.Context, cfg config, nomadClient *api.Clien
 	pingCancel()
 	if err != nil {
 		_ = chConn.Close()
-		_ = spiffeSource.Close()
 		return nil, fmt.Errorf("ping clickhouse: %w", err)
 	}
 	region, err := nomadClient.Agent().Region()
 	if err != nil {
 		_ = chConn.Close()
-		_ = spiffeSource.Close()
 		return nil, fmt.Errorf("nomad region: %w", err)
 	}
 	go func() {
 		<-ctx.Done()
 		_ = chConn.Close()
-		_ = spiffeSource.Close()
 	}()
 	go (&fleetProjector{
 		nomad:    nomadClient,

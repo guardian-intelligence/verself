@@ -6,6 +6,8 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/hashicorp/nomad/api v0.0.0-20260501195443-d922fcdd63e4
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/spiffe/go-spiffe/v2 v2.6.0
+	github.com/verself/distribution-service v0.0.0
 	github.com/verself/observability v0.0.0
 	github.com/verself/service-runtime v0.0.0
 	go.opentelemetry.io/otel v1.43.0
@@ -22,7 +24,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
@@ -34,13 +36,12 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/paulmach/orb v0.11.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.17.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
@@ -65,3 +66,5 @@ require (
 replace github.com/verself/service-runtime => ../../services/service-runtime/go
 
 replace github.com/verself/observability => ../../tools/observability/go
+
+replace github.com/verself/distribution-service => ../../services/distribution-service

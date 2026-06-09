@@ -2,8 +2,10 @@
 --
 -- This table is intentionally observe-only: rows record the declared immutable
 -- image digest from the Nomad job payload and the measured Podman image digest
--- when the host runtime can observe a matching container. Policy engines should
--- treat any decision other than 'matched' as non-admissible for secret gating.
+-- when the host runtime can observe a matching container, then join that digest
+-- to distribution-service admission and SLSA provenance evidence. Policy
+-- engines should treat any decision other than 'verified' as non-admissible for
+-- secret gating.
 CREATE TABLE IF NOT EXISTS verself.workload_oci_attestations
 (
     site                LowCardinality(String) CODEC(ZSTD(3)),
@@ -17,6 +19,22 @@ CREATE TABLE IF NOT EXISTS verself.workload_oci_attestations
     image_ref           String                 CODEC(ZSTD(3)),
     declared_digest     String DEFAULT ''      CODEC(ZSTD(3)),
     measured_digest     String DEFAULT ''      CODEC(ZSTD(3)),
+    distribution_artifact_digest       String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_artifact_state        LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    distribution_oci_repository        String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_public_oci_reference  String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_verification_decision LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    distribution_verification_reason   String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_policy_ref            String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_builder_id            String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_signer_identity       String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_source_repository     LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    distribution_source_commit         String DEFAULT '' CODEC(ZSTD(3)),
+    distribution_source_ref            String DEFAULT '' CODEC(ZSTD(3)),
+    slsa_predicate_type                LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
+    slsa_subject_digest                String DEFAULT '' CODEC(ZSTD(3)),
+    slsa_document_digest               String DEFAULT '' CODEC(ZSTD(3)),
+    slsa_oci_referrer_digest           String DEFAULT '' CODEC(ZSTD(3)),
     source_commit       String DEFAULT ''      CODEC(ZSTD(3)),
     deploy_run_key      String DEFAULT ''      CODEC(ZSTD(3)),
     spec_sha256         String DEFAULT ''      CODEC(ZSTD(3)),

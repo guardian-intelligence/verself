@@ -17,6 +17,7 @@ const (
 	ServiceIAM                = "iam-service"
 	ServiceEmail              = "email-service"
 	ServiceNATS               = "nats"
+	ServiceNomadObserver      = "nomad-observer"
 	ServiceNotifications      = "notifications-service"
 	ServiceObjectStorage      = "object-storage-service"
 	ServiceObjectStorageAdmin = "object-storage-admin"

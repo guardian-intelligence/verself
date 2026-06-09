@@ -11,8 +11,10 @@ import (
 
 const testDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const otherTestDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+const testCommit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+const otherTestCommit = "cccccccccccccccccccccccccccccccccccccccc"
 
-func TestWorkloadOCIAttestationRowsMatchedPodmanTask(t *testing.T) {
+func TestWorkloadOCIAttestationRowsVerifiedPodmanTask(t *testing.T) {
 	observedAt := time.Unix(1710000000, 123000000).UTC()
 	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID: trace.TraceID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10},
@@ -21,10 +23,10 @@ func TestWorkloadOCIAttestationRowsMatchedPodmanTask(t *testing.T) {
 	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
 	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{
 		DeployRunKey:   "deploy-run",
-		DeploySHA:      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		DeploySHA:      testCommit,
 		SpecSHA256:     "spec",
 		ArtifactSHA256: "artifact",
-	}, observedAt, spanContext, fixedMeasurement(testDigest, "podman_container_inspect_labels"))
+	}, observedAt, spanContext, fixedMeasurement(testDigest, "podman_container_inspect_labels"), fixedArtifact(verifiedArtifact(testCommit)))
 	if len(rows) != 1 {
 		t.Fatalf("expected one attestation row, got %d", len(rows))
 	}
@@ -38,10 +40,19 @@ func TestWorkloadOCIAttestationRowsMatchedPodmanTask(t *testing.T) {
 	if row.MeasuredDigest != testDigest {
 		t.Fatalf("measured digest = %q, want %q", row.MeasuredDigest, testDigest)
 	}
-	if row.Decision != "matched" || row.MeasurementSource != "podman_container_inspect_labels" {
+	if row.Decision != "verified" || row.MeasurementSource != "podman_container_inspect_labels" {
 		t.Fatalf("unexpected decision/source: %q/%q", row.Decision, row.MeasurementSource)
 	}
-	if row.SourceCommit != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" || row.DeployRunKey != "deploy-run" {
+	if row.DistributionArtifactDigest != testDigest || row.DistributionArtifactState != "available" || row.DistributionVerificationDecision != "allowed" {
+		t.Fatalf("distribution evidence was not copied: %#v", row)
+	}
+	if row.DistributionSourceRepository != workloadOCISourceRepository || row.DistributionSourceCommit != testCommit {
+		t.Fatalf("distribution source evidence was not copied: %#v", row)
+	}
+	if row.SLSAPredicateType != workloadOCIPredicateSLSAProvenance || row.SLSASubjectDigest != testDigest {
+		t.Fatalf("SLSA evidence was not copied: %#v", row)
+	}
+	if row.SourceCommit != testCommit || row.DeployRunKey != "deploy-run" {
 		t.Fatalf("deploy metadata was not copied: %#v", row)
 	}
 	if row.TraceID == "" || row.SpanID == "" {
@@ -52,8 +63,57 @@ func TestWorkloadOCIAttestationRowsMatchedPodmanTask(t *testing.T) {
 	}
 }
 
+func TestWorkloadOCIAttestationRowsUnadmittedWithoutDistributionArtifact(t *testing.T) {
+	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{
+		DeploySHA: testCommit,
+	}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"), fixedArtifact(workloadOCIArtifactEvidence{
+		reason: "distribution artifact lookup rejected: not found",
+	}))
+	if len(rows) != 1 {
+		t.Fatalf("expected one attestation row, got %d", len(rows))
+	}
+	if rows[0].Decision != "unadmitted" {
+		t.Fatalf("decision = %q, want unadmitted", rows[0].Decision)
+	}
+	if rows[0].Reason == "" {
+		t.Fatalf("expected reason for unadmitted row")
+	}
+}
+
+func TestWorkloadOCIAttestationRowsSourceCommitMismatch(t *testing.T) {
+	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{
+		DeploySHA: testCommit,
+	}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"), fixedArtifact(verifiedArtifact(otherTestCommit)))
+	if len(rows) != 1 {
+		t.Fatalf("expected one attestation row, got %d", len(rows))
+	}
+	if rows[0].Decision != "source_commit_mismatch" {
+		t.Fatalf("decision = %q, want source_commit_mismatch", rows[0].Decision)
+	}
+}
+
+func TestWorkloadOCIAttestationRowsRuntimeMismatchDoesNotResolveDistribution(t *testing.T) {
+	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
+	resolved := false
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(otherTestDigest, "podman_container_inspect_name"), func(context.Context, string) workloadOCIArtifactEvidence {
+		resolved = true
+		return verifiedArtifact(testDigest)
+	})
+	if len(rows) != 1 {
+		t.Fatalf("expected one attestation row, got %d", len(rows))
+	}
+	if rows[0].Decision != "mismatched" {
+		t.Fatalf("decision = %q, want mismatched", rows[0].Decision)
+	}
+	if resolved {
+		t.Fatalf("distribution evidence should not be resolved when runtime digest mismatches")
+	}
+}
+
 func TestWorkloadOCIAttestationRowsMissingDigest(t *testing.T) {
-	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service:latest", "podman"), deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"))
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service:latest", "podman"), deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"), nil)
 	if len(rows) != 1 {
 		t.Fatalf("expected one attestation row, got %d", len(rows))
 	}
@@ -67,7 +127,7 @@ func TestWorkloadOCIAttestationRowsMissingDigest(t *testing.T) {
 
 func TestWorkloadOCIAttestationRowsMismatchedDigest(t *testing.T) {
 	alloc := testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "podman")
-	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(otherTestDigest, "podman_container_inspect_name"))
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", alloc, deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(otherTestDigest, "podman_container_inspect_name"), nil)
 	if len(rows) != 1 {
 		t.Fatalf("expected one attestation row, got %d", len(rows))
 	}
@@ -80,7 +140,7 @@ func TestWorkloadOCIAttestationRowsMismatchedDigest(t *testing.T) {
 }
 
 func TestWorkloadOCIAttestationRowsIgnoreNonPodmanTask(t *testing.T) {
-	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "raw_exec"), deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"))
+	rows := workloadOCIAttestationRows(t.Context(), "gamma", "default", testAllocation("127.0.0.1:5080/verself/analytics-service@"+testDigest, "raw_exec"), deployMeta{}, time.Now().UTC(), trace.SpanContext{}, fixedMeasurement(testDigest, "podman_container_inspect_name"), nil)
 	if len(rows) != 0 {
 		t.Fatalf("expected no rows, got %d", len(rows))
 	}
@@ -157,6 +217,33 @@ func TestPodmanMeasurementIdentitySourceFallsBackToName(t *testing.T) {
 func fixedMeasurement(digest, source string) workloadOCIRuntimeMeasurer {
 	return func(context.Context, *api.Allocation, allocationOCITask) workloadOCIRuntimeMeasurement {
 		return workloadOCIRuntimeMeasurement{digest: digest, source: source}
+	}
+}
+
+func fixedArtifact(artifact workloadOCIArtifactEvidence) workloadOCIArtifactResolver {
+	return func(context.Context, string) workloadOCIArtifactEvidence {
+		return artifact
+	}
+}
+
+func verifiedArtifact(sourceCommit string) workloadOCIArtifactEvidence {
+	return workloadOCIArtifactEvidence{
+		digest:                testDigest,
+		state:                 "available",
+		repository:            "verself/analytics-service",
+		publicRef:             "127.0.0.1:5080/verself/analytics-service@" + testDigest,
+		policyRef:             "distribution-policies/deployments/oci-digest-v1",
+		verificationDecision:  "allowed",
+		verificationReason:    "required OCI referrers and policy inputs verified",
+		builderID:             "spiffe://gamma.verself.sh/svc/deployment-service",
+		signerIdentity:        "spiffe://gamma.verself.sh/svc/deployment-service",
+		sourceRepository:      workloadOCISourceRepository,
+		sourceCommit:          sourceCommit,
+		sourceRef:             "refs/heads/main",
+		slsaPredicateType:     workloadOCIPredicateSLSAProvenance,
+		slsaSubjectDigest:     testDigest,
+		slsaDocumentDigest:    "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		slsaOCIReferrerDigest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
 	}
 }
 
