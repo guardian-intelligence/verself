@@ -19,7 +19,7 @@ concurrency:
 jobs:
   deploy:
     name: Submit deployment to gamma
-    if: github.repository == 'guardian-intelligence/verself' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/ansible-nomad-deletion-pass')
+    if: github.repository == 'guardian-intelligence/verself' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
