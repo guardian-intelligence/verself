@@ -77,6 +77,8 @@
     name: "{{ item.name }}"
     uid: "{{ item.uid | default(omit) }}"
     group: "{{ item.name }}"
+    groups: "{{ item.groups | default(omit) }}"
+    append: true
     system: true
     shell: /usr/sbin/nologin
     home: "{{ item.home }}"
