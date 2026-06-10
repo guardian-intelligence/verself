@@ -15,9 +15,9 @@ billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
 deployment_service_subdomain: deployments.api
 deployment_service_domain: "{{ deployment_service_subdomain }}.{{ verself_domain }}"
-deployment_github_allowed_repositories: ""
-deployment_github_allowed_refs: ""
-deployment_github_allowed_workflow_refs: ""
+deployment_github_allowed_repositories: "guardian-intelligence/verself"
+deployment_github_allowed_refs: "refs/heads/main,refs/heads/codex/ansible-nomad-deletion-pass"
+deployment_github_allowed_workflow_refs: "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main,guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/codex/ansible-nomad-deletion-pass"
 deployment_repo_url: https://github.com/guardian-intelligence/verself.git
 distribution_service_subdomain: distribution.api
 distribution_service_domain: "{{ distribution_service_subdomain }}.{{ verself_domain }}"
