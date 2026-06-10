@@ -1,12 +1,17 @@
 package distribution
 
 import (
+	"bytes"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
-	"encoding/json"
+	"encoding/pem"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,9 +20,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	ocidigest "github.com/opencontainers/go-digest"
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	protocommon "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
+	sigsig "github.com/sigstore/sigstore/pkg/signature"
+	sigopts "github.com/sigstore/sigstore/pkg/signature/options"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/verself/attestation/bundle"
+	"github.com/verself/attestation/predicate"
 	distributionreleaseattest "github.com/verself/distribution-service/internal/releaseattest"
 	"github.com/verself/distribution-service/migrations"
 	releaseinput "github.com/verself/releaseattest"
@@ -265,34 +275,141 @@ func TestDeploymentAdmissionDeniesFailedVerifier(t *testing.T) {
 	}
 }
 
-func TestDeploymentEvidenceVerifierAcceptsOCIReferrerStatement(t *testing.T) {
+func TestDeploymentAdmissionRejectsAssertedSignerIdentity(t *testing.T) {
+	ctx, svc := newTestService(t)
+	req := deploymentAdmitRequest("c")
+	req.SignerIdentity = req.BuilderID
+	svc.TrustedBuilders[req.BuilderID] = struct{}{}
+	svc.ReleaseVerifier = failingReleaseVerifier{}
+
+	_, err := svc.AdmitArtifact(ctx, Principal{Actor: req.BuilderID}, req)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("admit deployment artifact with asserted signer error = %v, want %v", err, ErrInvalid)
+	}
+}
+
+func TestReleaseAdmissionRejectsAssertedSigningKeyID(t *testing.T) {
+	ctx, svc := newTestService(t)
+	req := admitRequest("d")
+	req.Evidence[0].SigningKeyID = sixtyFour("ab")
+
+	_, err := svc.AdmitArtifact(ctx, Principal{Actor: req.BuilderID}, req)
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("admit release artifact with asserted signing_key_id error = %v, want %v", err, ErrInvalid)
+	}
+}
+
+func TestDeploymentEvidenceVerifierAcceptsSignedBundle(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	req := deploymentAdmitRequest("e")
-	req, expected := attachDeploymentSLSAReferrer(t, ctx, store, req)
+	req := pushDeploymentSubject(t, ctx, store, deploymentAdmitRequest("e"))
+	kp := newDeployKeypair(t)
+	expected := attachSignedDeploymentBundle(t, ctx, store, req, kp, req.SourceCommit)
 
-	evidence, err := verifyDeploymentEvidenceFromStore(ctx, store, req)
+	evidence, err := verifyDeploymentEvidenceFromStore(ctx, store, deployRing(t, kp), req)
 	if err != nil {
 		t.Fatalf("verify deployment evidence: %v", err)
 	}
 	if len(evidence) != 1 || evidence[0] != expected {
 		t.Fatalf("verified evidence = %#v, want %#v", evidence, []Evidence{expected})
 	}
-
-	badSource := req
-	badSource.SourceCommit = "fedcba9876543210fedcba9876543210fedcba98"
-	_, err = verifyDeploymentEvidenceFromStore(ctx, store, badSource)
-	if !errors.Is(err, ErrSourcePolicyFailure) {
-		t.Fatalf("verify deployment evidence with wrong source error = %v, want %v", err, ErrSourcePolicyFailure)
+	if evidence[0].SigningKeyID != string(kp.keyID) {
+		t.Fatalf("evidence signing key id = %q, want %q", evidence[0].SigningKeyID, kp.keyID)
 	}
 }
 
-func TestDeploymentEvidenceVerifierSkipsNonMatchingReferrers(t *testing.T) {
+func TestDeploymentEvidenceVerifierRejectsKeyOutsideRing(t *testing.T) {
 	ctx := context.Background()
-	req := deploymentAdmitRequest("f")
-	store, req, expected := storeWithStaleDeploymentSLSAReferrerFirst(t, ctx, req)
+	store := memory.New()
+	req := pushDeploymentSubject(t, ctx, store, deploymentAdmitRequest("e"))
+	signer := newDeployKeypair(t)
+	attachSignedDeploymentBundle(t, ctx, store, req, signer, req.SourceCommit)
 
-	evidence, err := verifyDeploymentEvidenceFromStore(ctx, store, req)
+	stranger := newDeployKeypair(t)
+	_, err := verifyDeploymentEvidenceFromStore(ctx, store, deployRing(t, stranger), req)
+	if !errors.Is(err, bundle.ErrVerification) {
+		t.Fatalf("verify with foreign ring error = %v, want %v", err, bundle.ErrVerification)
+	}
+}
+
+func TestDeploymentEvidenceVerifierRequiresBundleReferrer(t *testing.T) {
+	ctx := context.Background()
+	req := deploymentAdmitRequest("e")
+	kp := newDeployKeypair(t)
+
+	t.Run("no referrers at all", func(t *testing.T) {
+		_, err := verifyDeploymentEvidenceFromStore(ctx, memory.New(), deployRing(t, kp), req)
+		if !errors.Is(err, ErrMissingReferrers) {
+			t.Fatalf("verify with empty store error = %v, want %v", err, ErrMissingReferrers)
+		}
+	})
+
+	t.Run("old-style unsigned in-toto referrer is not a bundle", func(t *testing.T) {
+		store := memory.New()
+		attachUnsignedInTotoReferrer(t, ctx, store, req)
+		_, err := verifyDeploymentEvidenceFromStore(ctx, store, deployRing(t, kp), req)
+		if !errors.Is(err, ErrMissingReferrers) {
+			t.Fatalf("verify with unsigned in-toto referrer error = %v, want %v", err, ErrMissingReferrers)
+		}
+	})
+}
+
+func TestDeploymentEvidenceVerifierEnforcesPolicyOnSignedBundle(t *testing.T) {
+	ctx := context.Background()
+	kp := newDeployKeypair(t)
+
+	cases := []struct {
+		name    string
+		mutate  func(*AdmitArtifactRequest)
+		wantErr error
+	}{
+		{
+			name:    "wrong site",
+			mutate:  func(req *AdmitArtifactRequest) { req.Flavor = "prod" },
+			wantErr: ErrSourcePolicyFailure,
+		},
+		{
+			name:    "wrong oci repository",
+			mutate:  func(req *AdmitArtifactRequest) { req.OCIRepository = "verself/other-service" },
+			wantErr: ErrSourcePolicyFailure,
+		},
+		{
+			name:    "builder mismatch",
+			mutate:  func(req *AdmitArtifactRequest) { req.BuilderID = "spiffe://prod.verself.sh/svc/impostor" },
+			wantErr: ErrUntrustedBuilder,
+		},
+		{
+			name:    "missing source dependency",
+			mutate:  func(req *AdmitArtifactRequest) { req.SourceCommit = "fedcba9876543210fedcba9876543210fedcba98" },
+			wantErr: ErrSourcePolicyFailure,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := memory.New()
+			signed := pushDeploymentSubject(t, ctx, store, deploymentAdmitRequest("e"))
+			attachSignedDeploymentBundle(t, ctx, store, signed, kp, signed.SourceCommit)
+			admit := signed
+			tc.mutate(&admit)
+			_, err := verifyDeploymentEvidenceFromStore(ctx, store, deployRing(t, kp), admit)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("verify error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestDeploymentEvidenceVerifierSkipsNonMatchingBundles(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	req := pushDeploymentSubject(t, ctx, store, deploymentAdmitRequest("f"))
+	kp := newDeployKeypair(t)
+	// A validly signed bundle for a different source commit must not satisfy
+	// admission, and must not block the matching bundle next to it.
+	attachSignedDeploymentBundle(t, ctx, store, req, kp, "fedcba9876543210fedcba9876543210fedcba98")
+	expected := attachSignedDeploymentBundle(t, ctx, store, req, kp, req.SourceCommit)
+
+	evidence, err := verifyDeploymentEvidenceFromStore(ctx, store, deployRing(t, kp), req)
 	if err != nil {
 		t.Fatalf("verify deployment evidence: %v", err)
 	}
@@ -345,7 +462,9 @@ func deploymentAdmitRequest(digestFill string) AdmitArtifactRequest {
 	req.Flavor = "gamma"
 	req.OCIRepository = "verself/analytics-service"
 	req.BuilderID = "spiffe://prod.verself.sh/svc/deployment-service"
-	req.SignerIdentity = req.BuilderID
+	// Deployment-channel signer identity is derived from bundle verification;
+	// asserting one is a contract violation.
+	req.SignerIdentity = ""
 	req.PolicyRef = PolicyDeploymentOCI
 	req.SubmittedBy = "deployment-service"
 	req.ReleaseAttestation = ReleaseAttestation{}
@@ -353,112 +472,175 @@ func deploymentAdmitRequest(digestFill string) AdmitArtifactRequest {
 	return req
 }
 
-func attachDeploymentSLSAReferrer(t *testing.T, ctx context.Context, store *memory.Store, req AdmitArtifactRequest) (AdmitArtifactRequest, Evidence) {
-	return attachDeploymentSLSAReferrerWithInvocation(t, ctx, store, req, "test-deploy-run")
+// deployKeypair is a hermetic sign.Keypair over an in-process ECDSA P-256 key,
+// mirroring the production Transit signer's contract: GetHint() returns
+// bundle.DeriveKeyID(pub) so the bundle hint matches a verifier ring.
+type deployKeypair struct {
+	sv     sigsig.SignerVerifier
+	pub    crypto.PublicKey
+	pubPEM []byte
+	keyID  bundle.KeyID
 }
 
-func attachDeploymentSLSAReferrerWithInvocation(t *testing.T, ctx context.Context, store *memory.Store, req AdmitArtifactRequest, invocationID string) (AdmitArtifactRequest, Evidence) {
+func newDeployKeypair(t *testing.T) *deployKeypair {
 	t.Helper()
-	statement := deploymentStatementBody(t, req, invocationID)
-	layer, err := oras.PushBytes(ctx, store, mediaTypeInTotoStatement, statement)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		t.Fatalf("push SLSA statement layer: %v", err)
+		t.Fatalf("generate key: %v", err)
 	}
-	layer.Annotations = map[string]string{
-		v1.AnnotationTitle: "deployment.slsa.intoto.json",
+	sv, err := sigsig.LoadSignerVerifier(priv, crypto.SHA256)
+	if err != nil {
+		t.Fatalf("load signer: %v", err)
 	}
+	id, err := bundle.DeriveKeyID(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("derive key id: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal public key: %v", err)
+	}
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	return &deployKeypair{sv: sv, pub: &priv.PublicKey, pubPEM: pubPEM, keyID: id}
+}
+
+func (k *deployKeypair) GetHashAlgorithm() protocommon.HashAlgorithm {
+	return protocommon.HashAlgorithm_SHA2_256
+}
+
+func (k *deployKeypair) GetSigningAlgorithm() protocommon.PublicKeyDetails {
+	return protocommon.PublicKeyDetails_PKIX_ECDSA_P256_SHA_256
+}
+
+func (k *deployKeypair) GetHint() []byte                { return []byte(k.keyID) }
+func (k *deployKeypair) GetKeyAlgorithm() string        { return "ECDSA" }
+func (k *deployKeypair) GetPublicKey() crypto.PublicKey { return k.pub }
+
+func (k *deployKeypair) GetPublicKeyPem() (string, error) {
+	return string(k.pubPEM), nil
+}
+
+func (k *deployKeypair) SignData(ctx context.Context, data []byte) ([]byte, []byte, error) {
+	sig, err := k.sv.SignMessage(bytes.NewReader(data), sigopts.WithContext(ctx))
+	if err != nil {
+		return nil, nil, err
+	}
+	d := sha256.Sum256(data)
+	return sig, d[:], nil
+}
+
+func deployRing(t *testing.T, kp *deployKeypair) *bundle.Ring {
+	t.Helper()
+	pk, err := bundle.ParsePublicKeyPEM(kp.pubPEM)
+	if err != nil {
+		t.Fatalf("parse public key: %v", err)
+	}
+	ring, err := bundle.NewRing(pk)
+	if err != nil {
+		t.Fatalf("new ring: %v", err)
+	}
+	return ring
+}
+
+// pushDeploymentSubject materializes a real subject manifest in the store and
+// points the request at it. bundle.Attach copies the referrer graph, which
+// requires the subject node to exist, unlike the old direct PackManifest path.
+func pushDeploymentSubject(t *testing.T, ctx context.Context, store *memory.Store, req AdmitArtifactRequest) AdmitArtifactRequest {
+	t.Helper()
+	layer, err := oras.PushBytes(ctx, store, "application/vnd.oci.image.layer.v1.tar", []byte("subject-"+req.PackageName+"-"+req.PackageVersion))
+	if err != nil {
+		t.Fatalf("push subject layer: %v", err)
+	}
+	manifest, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, "application/vnd.verself.deployment.image", oras.PackManifestOptions{
+		Layers: []v1.Descriptor{layer},
+	})
+	if err != nil {
+		t.Fatalf("pack subject manifest: %v", err)
+	}
+	req.OCIDigest = manifest.Digest.String()
+	req.OCIMediaType = manifest.MediaType
+	req.OCISizeBytes = manifest.Size
+	return req
+}
+
+func deploymentSubject(t *testing.T, req AdmitArtifactRequest) v1.Descriptor {
+	t.Helper()
 	subjectDigest, err := ocidigest.Parse(req.OCIDigest)
 	if err != nil {
 		t.Fatalf("parse subject digest: %v", err)
 	}
-	subject := v1.Descriptor{
+	return v1.Descriptor{
 		MediaType: req.OCIMediaType,
 		Digest:    subjectDigest,
 		Size:      req.OCISizeBytes,
 	}
-	referrer, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, mediaTypeInTotoStatement, oras.PackManifestOptions{
-		Subject: &subject,
-		Layers:  []v1.Descriptor{layer},
-		ManifestAnnotations: map[string]string{
-			v1.AnnotationTitle:                "deployment.slsa.intoto.json",
-			"sh.verself.deploy.evidence.kind": EvidenceSLSA,
+}
+
+// attachSignedDeploymentBundle mints a REAL signed sigstore bundle for the
+// request's provenance (with sourceCommit as the attested source input) and
+// attaches it as an OCI referrer. It returns the Evidence admission must emit.
+func attachSignedDeploymentBundle(t *testing.T, ctx context.Context, store *memory.Store, req AdmitArtifactRequest, kp *deployKeypair, sourceCommit string) Evidence {
+	t.Helper()
+	statement, err := predicate.NewProvenance(
+		[]predicate.Subject{{
+			Name:   req.PublicRegistryURL + "/" + req.OCIRepository + "@" + req.OCIDigest,
+			SHA256: req.OCIDigest[len("sha256:"):],
+		}},
+		predicate.SLSAProvenance{
+			BuildType: predicate.BazelOCIBuild,
+			ExternalParameters: predicate.ExternalParameters{
+				BazelTarget:     "//src/services/analytics-service:analytics_service_image",
+				BazelPushTarget: "//src/services/analytics-service:push_analytics_service_image",
+				OCIRepository:   req.OCIRepository,
+				Site:            req.Flavor,
+			},
+			ResolvedDependencies: []predicate.ResolvedDependency{{
+				URI:       "git+https://github.com/" + req.SourceRepository + "@" + sourceCommit,
+				GitCommit: sourceCommit,
+			}},
+			BuilderID:    req.BuilderID,
+			InvocationID: "test-deploy-run-" + sourceCommit,
 		},
-	})
+	)
 	if err != nil {
-		t.Fatalf("pack SLSA referrer manifest: %v", err)
+		t.Fatalf("build provenance: %v", err)
 	}
-	expected := Evidence{
+	envelope, err := bundle.Sign(ctx, statement, kp, bundle.SignOptions{})
+	if err != nil {
+		t.Fatalf("sign deployment bundle: %v", err)
+	}
+	referrer, err := bundle.Attach(ctx, store, deploymentSubject(t, req), envelope)
+	if err != nil {
+		t.Fatalf("attach deployment bundle: %v", err)
+	}
+	documentSum := sha256.Sum256(envelope.Bytes())
+	return Evidence{
 		EvidenceKind:      EvidenceSLSA,
 		PredicateType:     PredicateSLSAProvenance,
 		SubjectDigest:     req.OCIDigest,
-		DocumentDigest:    layer.Digest.String(),
+		DocumentDigest:    "sha256:" + hex.EncodeToString(documentSum[:]),
 		OCIReferrerDigest: referrer.Digest.String(),
+		SigningKeyID:      string(kp.keyID),
 	}
-	return req, expected
 }
 
-func storeWithStaleDeploymentSLSAReferrerFirst(t *testing.T, ctx context.Context, req AdmitArtifactRequest) (*memory.Store, AdmitArtifactRequest, Evidence) {
+// attachUnsignedInTotoReferrer reproduces the pre-cutover unsigned evidence
+// shape: a bare in-toto statement layer behind an in-toto artifactType. It is
+// not a sigstore bundle and must be invisible to discovery.
+func attachUnsignedInTotoReferrer(t *testing.T, ctx context.Context, store *memory.Store, req AdmitArtifactRequest) {
 	t.Helper()
-	stale := req
-	stale.SourceCommit = "fedcba9876543210fedcba9876543210fedcba98"
-	for i := 0; i < 256; i++ {
-		store := memory.New()
-		_, staleEvidence := attachDeploymentSLSAReferrerWithInvocation(t, ctx, store, stale, fmt.Sprintf("stale-deploy-run-%d", i))
-		req, expected := attachDeploymentSLSAReferrerWithInvocation(t, ctx, store, req, fmt.Sprintf("test-deploy-run-%d", i))
-		if staleEvidence.OCIReferrerDigest < expected.OCIReferrerDigest {
-			return store, req, expected
-		}
-	}
-	t.Fatal("could not generate stale referrer that sorts before matching referrer")
-	return nil, AdmitArtifactRequest{}, Evidence{}
-}
-
-func deploymentStatementBody(t *testing.T, req AdmitArtifactRequest, invocationID string) []byte {
-	t.Helper()
-	statement := map[string]any{
-		"_type": inTotoStatementV1,
-		"subject": []map[string]any{
-			{
-				"name": req.PublicRegistryURL + "/" + req.OCIRepository + "@" + req.OCIDigest,
-				"digest": map[string]string{
-					"sha256": req.OCIDigest[len("sha256:"):],
-				},
-			},
-		},
-		"predicateType": PredicateSLSAProvenance,
-		"predicate": map[string]any{
-			"buildDefinition": map[string]any{
-				"buildType": deploymentRulesOCIBuildType,
-				"externalParameters": map[string]any{
-					"bazelTarget":     "//src/services/analytics-service:analytics_service_image",
-					"bazelPushTarget": "//src/services/analytics-service:push_analytics_service_image",
-					"ociRepository":   req.OCIRepository,
-					"site":            req.Flavor,
-				},
-				"resolvedDependencies": []map[string]any{
-					{
-						"uri": "git+https://github.com/" + req.SourceRepository + "@" + req.SourceCommit,
-						"digest": map[string]string{
-							"gitCommit": req.SourceCommit,
-						},
-					},
-				},
-			},
-			"runDetails": map[string]any{
-				"builder": map[string]any{
-					"id": req.BuilderID,
-				},
-				"metadata": map[string]any{
-					"invocationId": invocationID,
-				},
-			},
-		},
-	}
-	body, err := json.Marshal(statement)
+	const mediaTypeInToto = "application/vnd.in-toto+json"
+	layer, err := oras.PushBytes(ctx, store, mediaTypeInToto, []byte(`{"_type":"https://in-toto.io/Statement/v1"}`))
 	if err != nil {
-		t.Fatalf("marshal SLSA statement: %v", err)
+		t.Fatalf("push unsigned statement layer: %v", err)
 	}
-	return body
+	subject := deploymentSubject(t, req)
+	if _, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, mediaTypeInToto, oras.PackManifestOptions{
+		Subject: &subject,
+		Layers:  []v1.Descriptor{layer},
+	}); err != nil {
+		t.Fatalf("pack unsigned referrer manifest: %v", err)
+	}
 }
 
 func admitRequest(digestFill string) AdmitArtifactRequest {

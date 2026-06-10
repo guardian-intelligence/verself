@@ -109,7 +109,7 @@ func TestProductPublicIdentifiersResolveFromZitadel(t *testing.T) {
 					{"id": "app-1", "name": "verself-web", "oidcConfig": map[string]any{"clientId": "browser-client"}},
 				},
 			})
-		case "/admin/v1/idps/_search":
+		case "/admin/v1/idps/templates/_search":
 			if r.Method != http.MethodPost {
 				t.Fatalf("idp search method = %s", r.Method)
 			}

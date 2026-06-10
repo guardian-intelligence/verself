@@ -39,6 +39,7 @@ type Report struct {
 	IntegrationFiles int `json:"integration_files"`
 	PostgresFiles    int `json:"postgres_files"`
 	RuntimeSecrets   int `json:"runtime_secrets"`
+	TransitKeys      int `json:"transit_keys"`
 	PublicRoutes     int `json:"public_routes"`
 	PublicAPIs       int `json:"public_apis"`
 	ClickHouseCreds  int `json:"clickhouse_credentials"`
@@ -64,6 +65,7 @@ type Validator struct {
 	errs                    []ValidationError
 	seen                    seenClaims
 	runtimeSecretClaims     []runtimeSecretClaim
+	transitKeyClaims        []transitKeyClaim
 	nomadRuntimeSecretRefs  []nomadRuntimeSecretRef
 	nomadVaultRoles         []nomadVaultRoleRef
 	generatedRuntimeSecrets bool
@@ -76,6 +78,7 @@ type seenClaims struct {
 	publicRouteHosts  map[string]string
 	publicAPIKeys     map[string]string
 	runtimeSecrets    map[string]string
+	transitKeys       map[string]string
 	clickhouseCreds   map[string]string
 	gateNames         map[string]string
 	peerMappings      []postgresPeerClaim
@@ -145,6 +148,7 @@ func ValidateRepo(root string) (Report, error) {
 			publicRouteHosts:  map[string]string{},
 			publicAPIKeys:     map[string]string{},
 			runtimeSecrets:    map[string]string{},
+			transitKeys:       map[string]string{},
 			clickhouseCreds:   map[string]string{},
 			gateNames:         map[string]string{},
 		},
@@ -704,13 +708,13 @@ func (v *Validator) collectNomadRuntimeSecretContracts(rel string, text string) 
 }
 
 func (v *Validator) validateNomadRuntimeSecretContracts() {
-	if len(v.runtimeSecretClaims) == 0 {
+	if len(v.runtimeSecretClaims) == 0 && len(v.transitKeyClaims) == 0 {
 		for _, ref := range v.nomadVaultRoles {
 			v.add(ref.path, fmt.Sprintf("Nomad vault role %q has no OpenBao runtime secret declaration", ref.role))
 		}
 		return
 	}
-	catalog, err := openBaoRuntimeCatalogFromClaims(v.runtimeSecretClaims)
+	catalog, err := openBaoRuntimeCatalogFromClaims(v.runtimeSecretClaims, v.transitKeyClaims)
 	if err != nil {
 		v.add("", "build OpenBao runtime catalog: "+err.Error())
 		return

@@ -237,17 +237,19 @@ func (r *bootstrapOCIRegistry) PushDeploymentImage(ctx context.Context, req depl
 	return nil
 }
 
-func (r *bootstrapOCIRegistry) PublishDeploymentEvidence(ctx context.Context, req deployengine.DeploymentEvidencePublishRequest) ([]deployengine.DeploymentImageEvidence, error) {
+// PublishDeploymentEvidence skips evidence during bootstrap: deployment
+// evidence is OpenBao-Transit-signed, and OpenBao only comes up via the Nomad
+// jobs this very run registers, so no signer exists yet. Distribution
+// admission is skipped for the same reason; the first steady-state deploy
+// publishes signed evidence for every image.
+func (r *bootstrapOCIRegistry) PublishDeploymentEvidence(_ context.Context, req deployengine.DeploymentEvidencePublishRequest) ([]deployengine.DeploymentImageEvidence, error) {
 	if r == nil {
 		return nil, errors.New("bootstrap OCI registry is nil")
 	}
-	pushRepository, err := r.localRepository(req.PushRepository)
-	if err != nil {
-		return nil, err
+	if _, err := fmt.Printf("bootstrap OCI evidence publication skipped output=%s digest=%s reason=openbao-transit-unavailable-during-bootstrap\n", req.Output, req.Digest); err != nil {
+		return nil, fmt.Errorf("write bootstrap OCI evidence status: %w", err)
 	}
-	req.PushRepository = pushRepository
-	req.DockerConfigDir = r.dockerConfigDir
-	return deployengine.DefaultOCIEvidencePublisher{}.PublishDeploymentEvidence(ctx, req)
+	return nil, nil
 }
 
 func (r *bootstrapOCIRegistry) localRepository(repository string) (string, error) {

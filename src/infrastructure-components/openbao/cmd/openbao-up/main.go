@@ -32,7 +32,9 @@ const (
 	defaultThreshold  = 2
 )
 
-const openBaoRuntimeCatalogSchemaVersion = 1
+const openBaoRuntimeCatalogSchemaVersion = 2
+
+const transitKeyTypeECDSAP256 = "ecdsa-p256"
 
 type nomadRuntimeRole struct {
 	Name           string                   `json:"name"`
@@ -44,7 +46,14 @@ type nomadRuntimeRole struct {
 type openBaoRuntimeCatalog struct {
 	SchemaVersion    int                      `json:"schema_version"`
 	GeneratedSecrets []openBaoGeneratedSecret `json:"generated_secrets"`
+	TransitKeys      []openBaoTransitKey      `json:"transit_keys"`
 	Roles            []nomadRuntimeRole       `json:"roles"`
+}
+
+type openBaoTransitKey struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Exportable bool   `json:"exportable"`
 }
 
 type openBaoGeneratedSecret struct {
@@ -679,6 +688,9 @@ func configureWorkloadIdentity(ctx context.Context, cfg config, rootToken string
 	if err := ensureMount(api, "transit", map[string]any{"type": "transit"}); err != nil {
 		return err
 	}
+	if err := ensureTransitKeys(api, catalog.TransitKeys); err != nil {
+		return err
+	}
 	if err := ensureAuth(api, "jwt-nomad", map[string]any{
 		"type":        "jwt",
 		"description": "Verself Nomad workload identity auth",
@@ -730,6 +742,11 @@ func loadOpenBaoRuntimeCatalog(path string) (openBaoRuntimeCatalog, error) {
 			return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s: %w", path, err)
 		}
 	}
+	for _, key := range catalog.TransitKeys {
+		if err := validateTransitKeySpec(key); err != nil {
+			return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s: %w", path, err)
+		}
+	}
 	for _, role := range catalog.Roles {
 		if err := validateNomadRuntimeRole(role); err != nil {
 			return openBaoRuntimeCatalog{}, fmt.Errorf("OpenBao runtime catalog %s: %w", path, err)
@@ -746,11 +763,24 @@ func validateGeneratedSecretSpec(secret openBaoGeneratedSecret) error {
 		return fmt.Errorf("generated secret %s bytes must be between 16 and 96", secret.Name)
 	}
 	switch secret.Encoding {
-	case "base64url", "hex", "alphanumeric":
+	case "base64url", "hex", "alphanumeric", "password":
 		return nil
 	default:
 		return fmt.Errorf("generated secret %s encoding %q is not supported", secret.Name, secret.Encoding)
 	}
+}
+
+func validateTransitKeySpec(key openBaoTransitKey) error {
+	if strings.TrimSpace(key.Name) == "" {
+		return errors.New("transit key name is required")
+	}
+	if key.Type != transitKeyTypeECDSAP256 {
+		return fmt.Errorf("transit key %s type %q is not supported; only %s is allowed", key.Name, key.Type, transitKeyTypeECDSAP256)
+	}
+	if key.Exportable {
+		return fmt.Errorf("transit key %s must not be exportable", key.Name)
+	}
+	return nil
 }
 
 func validateNomadRuntimeRole(role nomadRuntimeRole) error {
@@ -795,6 +825,36 @@ func ensureMount(api openBaoAPI, name string, body map[string]any) error {
 func ensureAuth(api openBaoAPI, name string, body map[string]any) error {
 	if _, err := api(http.MethodPost, "sys/auth/"+name, body, http.StatusNoContent); err != nil && !isOpenBaoPathInUse(err) {
 		return err
+	}
+	return nil
+}
+
+func ensureTransitKeys(api openBaoAPI, keys []openBaoTransitKey) error {
+	for _, key := range keys {
+		// Transit key creation is a no-op on an existing key, so converge then
+		// read back and verify: a pre-existing key with a different type or
+		// exportable=true is a security configuration error, never adopted.
+		if _, err := api(http.MethodPost, "transit/keys/"+key.Name, map[string]any{
+			"type":       key.Type,
+			"exportable": false,
+		}, http.StatusOK, http.StatusNoContent); err != nil {
+			return fmt.Errorf("ensure OpenBao transit key %s: %w", key.Name, err)
+		}
+		response, err := api(http.MethodGet, "transit/keys/"+key.Name, nil, http.StatusOK)
+		if err != nil {
+			return fmt.Errorf("read OpenBao transit key %s: %w", key.Name, err)
+		}
+		data, ok := response["data"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("OpenBao transit key %s response omitted data", key.Name)
+		}
+		keyType, _ := data["type"].(string)
+		if keyType != key.Type {
+			return fmt.Errorf("OpenBao transit key %s has type %q, want %q; refusing to adopt a mismatched signing key", key.Name, keyType, key.Type)
+		}
+		if exportable, _ := data["exportable"].(bool); exportable {
+			return fmt.Errorf("OpenBao transit key %s is exportable; signing keys must not be exportable", key.Name)
+		}
 	}
 	return nil
 }
@@ -868,6 +928,8 @@ func generateRuntimeSecretValue(secret openBaoGeneratedSecret) (string, error) {
 		return hex.EncodeToString(raw), nil
 	case "alphanumeric":
 		return randomAlphanumeric(secret.Bytes)
+	case "password":
+		return randomPassword(secret.Bytes)
 	default:
 		return "", fmt.Errorf("generated secret %s encoding %q is not supported", secret.Name, secret.Encoding)
 	}
@@ -883,16 +945,74 @@ func randomBytes(length int) ([]byte, error) {
 
 func randomAlphanumeric(length int) (string, error) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	limit := big.NewInt(int64(len(alphabet)))
 	out := make([]byte, length)
 	for i := range out {
-		index, err := rand.Int(rand.Reader, limit)
+		value, err := randomAlphabetByte(alphabet)
 		if err != nil {
 			return "", fmt.Errorf("generate alphanumeric runtime secret material: %w", err)
 		}
-		out[i] = alphabet[index.Int64()]
+		out[i] = value
 	}
 	return string(out), nil
+}
+
+func randomPassword(length int) (string, error) {
+	const (
+		lower   = "abcdefghijklmnopqrstuvwxyz"
+		upper   = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+		digit   = "0123456789"
+		symbol  = "!@#$%^&*_-+="
+		all     = lower + upper + digit + symbol
+		minimum = 4
+	)
+	if length < minimum {
+		return "", fmt.Errorf("password runtime secret length must be at least %d", minimum)
+	}
+	out := make([]byte, length)
+	for i, alphabet := range []string{lower, upper, digit, symbol} {
+		value, err := randomAlphabetByte(alphabet)
+		if err != nil {
+			return "", fmt.Errorf("generate password runtime secret material: %w", err)
+		}
+		out[i] = value
+	}
+	for i := minimum; i < length; i++ {
+		value, err := randomAlphabetByte(all)
+		if err != nil {
+			return "", fmt.Errorf("generate password runtime secret material: %w", err)
+		}
+		out[i] = value
+	}
+	for i := len(out) - 1; i > 0; i-- {
+		j, err := randomIndex(i + 1)
+		if err != nil {
+			return "", fmt.Errorf("shuffle password runtime secret material: %w", err)
+		}
+		out[i], out[j] = out[j], out[i]
+	}
+	return string(out), nil
+}
+
+func randomAlphabetByte(alphabet string) (byte, error) {
+	if alphabet == "" {
+		return 0, errors.New("alphabet is empty")
+	}
+	index, err := randomIndex(len(alphabet))
+	if err != nil {
+		return 0, err
+	}
+	return alphabet[index], nil
+}
+
+func randomIndex(limit int) (int, error) {
+	if limit <= 0 {
+		return 0, errors.New("random limit must be positive")
+	}
+	index, err := rand.Int(rand.Reader, big.NewInt(int64(limit)))
+	if err != nil {
+		return 0, err
+	}
+	return int(index.Int64()), nil
 }
 
 func runtimeSecretAPIPath(name string) string {

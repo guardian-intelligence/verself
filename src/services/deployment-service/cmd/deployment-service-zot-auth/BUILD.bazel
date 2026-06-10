@@ -1,7 +1,14 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_binary(
     name = "deployment-service-zot-auth",
-    srcs = ["main.go"],
+    embed = [":deployment-service-zot-auth_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "deployment-service-zot-auth_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/deployment-service/cmd/deployment-service-zot-auth",
+    visibility = ["//visibility:private"],
 )

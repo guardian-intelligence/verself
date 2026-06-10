@@ -1,0 +1,8 @@
+# Aspect CLI pin, read by the aspect-launcher and by `guardian run aspect`
+# (the guardian repo's tool shim, which serves the aspect/bazel symlinks in
+# ~/.local/bin). The launcher format carries no integrity hash, so the
+# guardian-sha256 line is the sha256 of the linux_amd64 release binary
+# (aspect-cli-x86_64-unknown-linux-musl), verified on every invocation.
+version("2026.17.17")
+
+# guardian-sha256: db45968e114c22af0e0d3dddadfb7091c81983f66499eed9d01d782bb09483d0

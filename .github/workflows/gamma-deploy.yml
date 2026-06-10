@@ -1,0 +1,39 @@
+name: Gamma Deploy
+
+# Steady-state deploys: mint a GitHub Actions OIDC identity and submit the
+# dispatched ref's SHA to gamma's deployment-service, which builds, signs
+# deployment evidence via OpenBao Transit, and gates rollout on distribution
+# admission. Runs on a GitHub-hosted runner so the deploy trigger does not
+# depend on the fleet it is deploying.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gamma-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Submit deployment to gamma
+    if: github.repository == 'guardian-intelligence/verself' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      # Plain git checkout: the deploy contract forbids external actions in
+      # deployment workflows, and the Verself checkout action requires the
+      # host mirror env that only exists inside Verself runner VMs.
+      - name: Check out repository
+        run: |
+          git init -q .
+          git fetch -q --depth=1 "https://github.com/${{ github.repository }}" "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+
+      - name: Bootstrap toolchain
+        run: src/tools/dev/bootstrap/bootstrap-linux-amd64
+
+      - name: Deploy
+        run: aspect deploy --site=gamma --sha="$GITHUB_SHA"

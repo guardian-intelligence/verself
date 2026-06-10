@@ -15,6 +15,8 @@ go_library(
     importpath = "github.com/verself/distribution-service/internal/distribution",
     visibility = ["//src/services/distribution-service:__subpackages__"],
     deps = [
+        "//src/attestation/go/bundle",
+        "//src/attestation/go/predicate",
         "//src/services/distribution-service/internal/releaseattest",
         "//src/services/distribution-service/internal/store",
         "//src/tools/releaseattest",
@@ -39,6 +41,8 @@ go_test(
     srcs = ["service_test.go"],
     embed = [":distribution"],
     deps = [
+        "//src/attestation/go/bundle",
+        "//src/attestation/go/predicate",
         "//src/services/distribution-service/internal/releaseattest",
         "//src/services/distribution-service/migrations",
         "//src/services/service-runtime/go/pgtest",
@@ -46,6 +50,9 @@ go_test(
         "@com_github_jackc_pgx_v5//pgxpool",
         "@com_github_opencontainers_go_digest//:go-digest",
         "@com_github_opencontainers_image_spec//specs-go/v1:specs-go",
+        "@com_github_sigstore_protobuf_specs//gen/pb-go/common/v1:common",
+        "@com_github_sigstore_sigstore//pkg/signature",
+        "@com_github_sigstore_sigstore//pkg/signature/options",
         "@land_oras_oras_go_v2//:oras-go",
         "@land_oras_oras_go_v2//content/memory",
     ],

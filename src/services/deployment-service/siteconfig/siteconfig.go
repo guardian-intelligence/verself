@@ -51,6 +51,10 @@ type Model struct {
 	GitHubAppID             string
 	GitHubAppSlug           string
 	GitHubOAuthClientID     string
+	// GitHubLoginClientID is the dedicated GitHub OAuth App brokered by
+	// Zitadel for "Sign in with GitHub"; distinct from the GitHub App's
+	// user-to-server OAuth client used by github-integration-service.
+	GitHubLoginClientID string
 	GitHubAppSettingsURL    string
 	GitHubRunnerClassPrefix string
 	DeployGitHubRepos       string
@@ -184,6 +188,7 @@ func Load(repoRoot, site string) (Model, error) {
 	model.GitHubAppID = resolveString(values, "github_integration_service_github_app_id")
 	model.GitHubAppSlug = resolveString(values, "github_integration_service_github_app_slug")
 	model.GitHubOAuthClientID = resolveString(values, "github_integration_service_github_app_client_id")
+	model.GitHubLoginClientID = resolveString(values, "github_login_client_id")
 	model.GitHubAppSettingsURL = resolveString(values, "github_integration_service_github_app_settings_url")
 	model.GitHubRunnerClassPrefix = resolveString(values, "github_integration_service_github_runner_class_prefix")
 	model.DeployGitHubRepos = resolveString(values, "deployment_github_allowed_repositories")
@@ -440,6 +445,9 @@ func (m Model) TokenMap() map[string]string {
 	if m.GitHubAppSlug != "" {
 		tokens["__VERSELF_GITHUB_APP_SLUG__"] = m.GitHubAppSlug
 		tokens["__VERSELF_GITHUB_APP_SETUP_URL__"] = "https://github.com/apps/" + m.GitHubAppSlug + "/installations/new"
+	}
+	if m.GitHubLoginClientID != "" {
+		tokens["__VERSELF_GITHUB_LOGIN_CLIENT_ID__"] = m.GitHubLoginClientID
 	}
 	if m.GitHubOAuthClientID != "" {
 		tokens["__VERSELF_GITHUB_OAUTH_CLIENT_ID__"] = m.GitHubOAuthClientID

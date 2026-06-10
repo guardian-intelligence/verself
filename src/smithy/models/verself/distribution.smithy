@@ -147,6 +147,13 @@ string BuilderID
 @length(min: 1, max: 4096)
 string SignerIdentity
 
+/// Derived verification-key identity: lowercase hex(sha256(DER-SPKI public
+/// key)) of the ring key that verified the deployment evidence bundle. Never
+/// operator-assigned or requester-asserted.
+@length(min: 64, max: 64)
+@pattern("^[a-f0-9]{64}$")
+string SigningKeyID
+
 @length(min: 1, max: 4096)
 string PredicateType
 
@@ -299,6 +306,11 @@ structure DistributionEvidenceRecord {
     @required
     @protoField(number: 5)
     oci_referrer_digest: OCIDigest
+
+    /// Present only on deployment-channel SLSA evidence: the derived key ID of
+    /// the trusted key that verified the sigstore bundle.
+    @protoField(number: 6)
+    signing_key_id: SigningKeyID
 }
 
 structure DistributionReleaseAttestation {
@@ -508,9 +520,16 @@ structure DistributionVerificationRecord {
     @protoField(number: 3)
     builder_id: BuilderID
 
-    @required
+    /// Release channels only: the workflow identity asserted at admission and
+    /// checked against the trusted-signer set. Absent on the deployment
+    /// channel, where signer identity is derived cryptographically.
     @protoField(number: 4)
     signer_identity: SignerIdentity
+
+    /// Deployment channel only: derived hex(sha256(DER-SPKI)) identity of the
+    /// verifying key from sigstore-bundle verification.
+    @protoField(number: 11)
+    signing_key_id: SigningKeyID
 
     @required
     @protoField(number: 5)
@@ -880,7 +899,10 @@ structure AdmitDistributionArtifactBody {
     @protoField(number: 13)
     builder_id: BuilderID
 
-    @required
+    /// Required for release channels, where it must be a member of the
+    /// trusted-signer set. Must be ABSENT for the deployment channel: the
+    /// deployment signer identity is derived from cryptographic verification of
+    /// the sigstore evidence bundle and is never self-asserted.
     @protoField(number: 14)
     signer_identity: SignerIdentity
 

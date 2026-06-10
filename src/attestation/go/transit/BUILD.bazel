@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+# The OpenBao Transit signer is server/builder-side only: only the deployment
+# producer, the release producer, and the in-module conformance suite may link
+# it. A verifier binary that imports it must fail at build time. See
+# src/attestation/AGENTS.md.
+# gazelle:default_visibility //src/services/deployment-service:__subpackages__,//src/make-skill/release:__subpackages__,//src/attestation/go/conformance:__subpackages__
+
+package(default_visibility = [
+    "//src/attestation/go/conformance:__subpackages__",
+    "//src/make-skill/release:__subpackages__",
+    "//src/services/deployment-service:__subpackages__",
+])
+
+go_library(
+    name = "transit",
+    srcs = ["transit.go"],
+    importpath = "github.com/verself/attestation/transit",
+    visibility = [
+        "//src/attestation/go/conformance:__subpackages__",
+        "//src/make-skill/release:__subpackages__",
+        "//src/services/deployment-service:__subpackages__",
+    ],
+    deps = [
+        "//src/attestation/go/bundle",
+        "@com_github_sigstore_protobuf_specs//gen/pb-go/common/v1:common",
+        "@com_github_sigstore_sigstore//pkg/signature/kms",
+        "@com_github_sigstore_sigstore//pkg/signature/options",
+        "@com_github_sigstore_sigstore_pkg_signature_kms_hashivault//:hashivault",
+    ],
+)

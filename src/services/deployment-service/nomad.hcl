@@ -82,6 +82,18 @@ job "deployment-service" {
       user = "deployment_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
+      # env = true so Nomad exports VAULT_TOKEN; the sigstore hashivault
+      # provider reads VAULT_TOKEN/BAO_TOKEN from env (falling back to
+      # ~/.vault-token) and cannot read Nomad's secrets-dir token file.
+      vault {
+        env  = true
+        role = "deployment-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
       artifact {
         source = "verself-artifact://deployment-service"
         destination = "local"
@@ -92,6 +104,10 @@ job "deployment-service" {
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
+        BAO_ADDR = "https://127.0.0.1:8200"
+        # sigstore hashivault reads the CA bundle only from VAULT_CACERT;
+        # BAO_CACERT is ignored.
+        VAULT_CACERT = "/etc/verself/openbao/ca.pem"
         BAZELISK_HOME = "/var/lib/verself/deployment-service/.cache/bazelisk"
         HOME = "/var/lib/verself/deployment-service"
         LOGNAME = "deployment_service"

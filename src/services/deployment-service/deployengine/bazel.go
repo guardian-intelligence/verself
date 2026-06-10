@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	nomadComponentsQuery = `kind("nomad_component rule", //src/...)`
+	nomadComponentsQuery = `kind("_nomad_component rule", //src/...)`
 )
 
 func queryNomadComponentLabels(ctx context.Context, repoRoot string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "bazelisk", "query", nomadComponentsQuery)
 	cmd.Dir = repoRoot
+	cmd.Env = bazelbuild.Env()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	body, err := cmd.Output()

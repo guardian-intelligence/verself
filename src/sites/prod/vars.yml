@@ -208,5 +208,7 @@ stalwart_operator_forward_to: ""
 github_integration_service_github_app_id: 3370540
 github_integration_service_github_app_slug: verself-runner
 github_integration_service_github_app_client_id: "Iv23liDpxGOmBSQwSJ5i"
+# Dedicated "Sign in with GitHub" OAuth client brokered by Zitadel.
+github_login_client_id: "Ov23li9wlYzzt3mcfJ7V"
 github_integration_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-runner"
 github_integration_service_github_runner_class_prefix: verself-

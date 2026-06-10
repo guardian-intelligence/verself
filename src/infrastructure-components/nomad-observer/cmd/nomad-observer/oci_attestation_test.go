@@ -52,6 +52,9 @@ func TestWorkloadOCIAttestationRowsVerifiedPodmanTask(t *testing.T) {
 	if row.SLSAPredicateType != workloadOCIPredicateSLSAProvenance || row.SLSASubjectDigest != testDigest {
 		t.Fatalf("SLSA evidence was not copied: %#v", row)
 	}
+	if row.SigningKeyID != "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" {
+		t.Fatalf("signing key id was not copied: %#v", row)
+	}
 	if row.SourceCommit != testCommit || row.DeployRunKey != "deploy-run" {
 		t.Fatalf("deploy metadata was not copied: %#v", row)
 	}
@@ -244,6 +247,7 @@ func verifiedArtifact(sourceCommit string) workloadOCIArtifactEvidence {
 		slsaSubjectDigest:     testDigest,
 		slsaDocumentDigest:    "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 		slsaOCIReferrerDigest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		signingKeyID:          "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 	}
 }
 

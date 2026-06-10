@@ -19,7 +19,6 @@ go_library(
         "//src/services/email-service/internal/sync",
         "//src/services/email-service/migrations",
         "//src/services/iam-service/client",
-        "//src/services/secrets-service/client",
         "//src/services/service-runtime/go/auth",
         "//src/services/service-runtime/go/envconfig",
         "//src/services/service-runtime/go/httpserver",
@@ -27,9 +26,6 @@ go_library(
         "//src/tools/observability/go/otel",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp//:otelhttp",
-        "@io_opentelemetry_go_otel//:otel",
-        "@io_opentelemetry_go_otel//attribute",
-        "@io_opentelemetry_go_otel//codes",
     ],
 )
 

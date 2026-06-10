@@ -75,6 +75,11 @@ func validateAdmit(req AdmitArtifactRequest, trustedBuilders map[string]struct{}
 }
 
 func validateDeploymentAdmit(req AdmitArtifactRequest) error {
+	// Deployment signer identity is derived from sigstore-bundle verification;
+	// a self-asserted identity on this channel is a contract violation.
+	if req.SignerIdentity != "" {
+		return fmt.Errorf("%w: signer_identity must be absent on the deployment channel", ErrInvalid)
+	}
 	if req.SourceRepository == "" || req.SourceCommit == "" || req.SourceRef == "" {
 		return fmt.Errorf("%w: source fields are required", ErrSourcePolicyFailure)
 	}
@@ -88,6 +93,11 @@ func validateDeploymentAdmit(req AdmitArtifactRequest) error {
 }
 
 func validateEvidence(artifactDigest string, evidence Evidence) error {
+	// signing_key_id is derived by deployment-channel bundle verification;
+	// it is never accepted from requests on any channel.
+	if evidence.SigningKeyID != "" {
+		return fmt.Errorf("%w: evidence signing_key_id must be absent", ErrInvalid)
+	}
 	if evidence.EvidenceKind == "" || evidence.PredicateType == "" || evidence.DocumentDigest == "" || evidence.OCIReferrerDigest == "" {
 		return fmt.Errorf("%w: evidence kind, predicate, document digest, and referrer digest are required", ErrMissingReferrers)
 	}

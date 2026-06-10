@@ -15,10 +15,7 @@ import (
 	workloadauth "github.com/verself/service-runtime/workload"
 )
 
-const (
-	defaultBuilderID      = "spiffe://prod.verself.sh/svc/release-builder"
-	defaultSignerIdentity = "https://github.com/guardian-intelligence/verself/.github/workflows/release.yml@refs/heads/main"
-)
+const defaultBuilderID = "spiffe://prod.verself.sh/svc/release-builder"
 
 type config struct {
 	packageName       string
@@ -70,7 +67,7 @@ func run(ctx context.Context, args []string) error {
 	fs.StringVar(&cfg.sourceRef, "source-ref", "", "Source ref.")
 	fs.StringVar(&cfg.policyRef, "policy-ref", "", "Policy reference.")
 	fs.StringVar(&cfg.builderID, "builder-id", defaultBuilderID, "Trusted builder identity.")
-	fs.StringVar(&cfg.signerIdentity, "signer-identity", defaultSignerIdentity, "Trusted signer identity.")
+	fs.StringVar(&cfg.signerIdentity, "signer-identity", "", "Trusted signer identity (release channels only; the deployment channel derives it from bundle verification and rejects a self-asserted value).")
 	fs.StringVar(&cfg.submittedBy, "submitted-by", "", "Submitting actor.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -169,7 +166,6 @@ func require(cfg config) error {
 		"source-ref":          cfg.sourceRef,
 		"policy-ref":          cfg.policyRef,
 		"builder-id":          cfg.builderID,
-		"signer-identity":     cfg.signerIdentity,
 		"submitted-by":        cfg.submittedBy,
 	}
 	for key, value := range check {
@@ -179,6 +175,15 @@ func require(cfg config) error {
 	}
 	if cfg.ociSizeBytes <= 0 {
 		missing = append(missing, "oci-size-bytes")
+	}
+	// Mirror validateDeploymentAdmit: the deployment channel derives signer
+	// identity from bundle verification and rejects a self-asserted one.
+	if cfg.channelName == "deployment" {
+		if strings.TrimSpace(cfg.signerIdentity) != "" {
+			return fmt.Errorf("signer-identity must be absent on the deployment channel")
+		}
+	} else if strings.TrimSpace(cfg.signerIdentity) == "" {
+		missing = append(missing, "signer-identity")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))

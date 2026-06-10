@@ -9,6 +9,7 @@ _RUNTIME_SECRET_DECLARATIONS = [
     "//src/infrastructure-components/zitadel:deploy_declarations",
     "//src/integrations/cloudflare/r2-control-plane:deploy_declarations",
     "//src/services/billing-service:deploy_declarations",
+    "//src/services/deployment-service:deploy_declarations",
     "//src/services/email-service:deploy_declarations",
     "//src/services/github-integration-service:deploy_declarations",
     "//src/services/governance-service:deploy_declarations",

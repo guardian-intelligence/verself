@@ -100,6 +100,7 @@ INSERT INTO distribution_artifact_evidence (
     subject_digest,
     document_digest,
     oci_referrer_digest,
+    signing_key_id,
     created_at
 ) VALUES (
     @evidence_id,
@@ -109,10 +110,12 @@ INSERT INTO distribution_artifact_evidence (
     @subject_digest,
     @document_digest,
     @oci_referrer_digest,
+    @signing_key_id,
     @created_at
 )
 ON CONFLICT (artifact_id, evidence_kind, document_digest) DO UPDATE
-SET oci_referrer_digest = EXCLUDED.oci_referrer_digest
+SET oci_referrer_digest = EXCLUDED.oci_referrer_digest,
+    signing_key_id = EXCLUDED.signing_key_id
 RETURNING *;
 
 -- name: GetArtifactByDigest :one

@@ -60,6 +60,28 @@ job "distribution-service" {
       kill_timeout = "30s"
       shutdown_delay = "5s"
 
+      vault {
+        role = "distribution-service-runtime"
+      }
+      identity {
+        name = "vault_default"
+        aud  = ["vault.io"]
+        ttl  = "1h"
+      }
+      # Deployment evidence trust ring: every version of the site's OpenBao
+      # Transit deployment-signing public key, concatenated PEM. OpenBao is the
+      # trust source; Nomad delivers it and restarts the task on key rotation.
+      # The template blocks until openbao-up has created the key, which also
+      # sequences bootstrap-from-zero without operator key export.
+      template {
+        change_mode = "restart"
+        destination = "secrets/distribution-trusted-deploy-keys"
+        perms = "0600"
+        data = <<-EOT
+{{ with secret "transit/keys/deployment-signing" }}{{ range $version, $key := .Data.keys }}{{ $key.public_key }}
+{{ end }}{{ end }}
+EOT
+      }
       artifact {
         source = "verself-artifact://distribution-service"
         destination = "local"

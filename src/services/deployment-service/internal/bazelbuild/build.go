@@ -73,6 +73,7 @@ func Build(ctx context.Context, cwd string, targets []string, extraFlags ...stri
 
 		cmd := exec.CommandContext(ctx, "bazelisk", args...)
 		cmd.Dir = cwd
+		cmd.Env = Env()
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

@@ -15,9 +15,9 @@ billing_service_subdomain: billing.api
 billing_service_domain: "{{ billing_service_subdomain }}.{{ verself_domain }}"
 deployment_service_subdomain: deployments.api
 deployment_service_domain: "{{ deployment_service_subdomain }}.{{ verself_domain }}"
-deployment_github_allowed_repositories: ""
-deployment_github_allowed_refs: ""
-deployment_github_allowed_workflow_refs: ""
+deployment_github_allowed_repositories: "guardian-intelligence/verself"
+deployment_github_allowed_refs: "refs/heads/main"
+deployment_github_allowed_workflow_refs: "guardian-intelligence/verself/.github/workflows/gamma-deploy.yml@refs/heads/main"
 deployment_repo_url: https://github.com/guardian-intelligence/verself.git
 distribution_service_subdomain: distribution.api
 distribution_service_domain: "{{ distribution_service_subdomain }}.{{ verself_domain }}"
@@ -123,5 +123,7 @@ stalwart_operator_forward_to: ""
 github_integration_service_github_app_id: 3918896
 github_integration_service_github_app_slug: verself-runner-gamma
 github_integration_service_github_app_client_id: "Iv23lidNdRYiMW9kU27r"
+# Dedicated "Sign in with GitHub" OAuth client brokered by Zitadel.
+github_login_client_id: "Iv23lidNdRYiMW9kU27r"
 github_integration_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-runner-gamma"
 github_integration_service_github_runner_class_prefix: verself-gamma-

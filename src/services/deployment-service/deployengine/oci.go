@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -18,15 +17,10 @@ import (
 	"strings"
 
 	"github.com/hashicorp/nomad/api"
-	"github.com/opencontainers/go-digest"
-	v1 "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/verself/deployment-service/internal/bazelbuild"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/content"
-	"oras.land/oras-go/v2/content/memory"
-	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
@@ -39,9 +33,8 @@ var (
 )
 
 const (
-	deploymentOCIPolicyRef   = "distribution-policies/deployments/oci-digest-v1"
-	mediaTypeInTotoStatement = "application/vnd.in-toto+json"
-	predicateSLSAProvenance  = "https://slsa.dev/provenance/v1"
+	deploymentOCIPolicyRef  = "distribution-policies/deployments/oci-digest-v1"
+	predicateSLSAProvenance = "https://slsa.dev/provenance/v1"
 )
 
 type ociRegistryPolicy struct {
@@ -453,10 +446,10 @@ func publishOCIEvidence(ctx context.Context, exec execution, binding ociImageBin
 		DockerConfigDir:   binding.DockerConfigDir,
 		Insecure:          binding.Insecure,
 	}
-	if exec.OCIEvidencePublisher != nil {
-		return exec.OCIEvidencePublisher.PublishDeploymentEvidence(ctx, req)
+	if exec.OCIEvidencePublisher == nil {
+		return nil, fmt.Errorf("OCI evidence publisher is required to sign deployment provenance")
 	}
-	return DefaultOCIEvidencePublisher{}.PublishDeploymentEvidence(ctx, req)
+	return exec.OCIEvidencePublisher.PublishDeploymentEvidence(ctx, req)
 }
 
 func admitOCIImage(ctx context.Context, exec execution, req DeploymentImageAdmissionRequest) (DeploymentImageAdmissionResult, error) {
@@ -514,7 +507,7 @@ func pushOCIImage(ctx context.Context, exec execution, req OCIPushRequest) error
 	}
 	cmd := execCommandContext(ctx, "bazelisk", args...)
 	cmd.Dir = exec.RepoRoot
-	cmd.Env = os.Environ()
+	cmd.Env = bazelbuild.Env()
 	if strings.TrimSpace(req.DockerConfigDir) != "" {
 		cmd.Env = append(cmd.Env, "DOCKER_CONFIG="+req.DockerConfigDir)
 	}
@@ -528,68 +521,6 @@ func pushOCIImage(ctx context.Context, exec execution, req OCIPushRequest) error
 	}
 	span.SetStatus(codes.Ok, "")
 	return nil
-}
-
-// DefaultOCIEvidencePublisher publishes deployment SLSA provenance as an OCI
-// referrer next to the pushed workload image.
-type DefaultOCIEvidencePublisher struct{}
-
-func (DefaultOCIEvidencePublisher) PublishDeploymentEvidence(ctx context.Context, req DeploymentEvidencePublishRequest) ([]DeploymentImageEvidence, error) {
-	if err := validateDeploymentEvidenceRequest(req); err != nil {
-		return nil, err
-	}
-	target, err := newDeploymentEvidenceTarget(req)
-	if err != nil {
-		return nil, err
-	}
-	statement, err := deploymentSLSAStatement(req)
-	if err != nil {
-		return nil, err
-	}
-	documentSum := sha256.Sum256(statement)
-	documentDigest := "sha256:" + hex.EncodeToString(documentSum[:])
-	staging := memory.New()
-	layer, err := oras.PushBytes(ctx, staging, mediaTypeInTotoStatement, statement)
-	if errors.Is(err, errdef.ErrAlreadyExists) {
-		layer = content.NewDescriptorFromBytes(mediaTypeInTotoStatement, statement)
-	} else if err != nil {
-		return nil, fmt.Errorf("push SLSA provenance layer: %w", err)
-	}
-	layer.Annotations = map[string]string{
-		v1.AnnotationTitle: "deployment.slsa.intoto.json",
-	}
-	subject := v1.Descriptor{
-		MediaType: req.MediaType,
-		Digest:    digest.Digest(req.Digest),
-		Size:      req.SizeBytes,
-	}
-	manifest, err := oras.PackManifest(ctx, staging, oras.PackManifestVersion1_1, mediaTypeInTotoStatement, oras.PackManifestOptions{
-		Subject: &subject,
-		Layers:  []v1.Descriptor{layer},
-		ManifestAnnotations: map[string]string{
-			v1.AnnotationCreated:              "1970-01-01T00:00:00Z",
-			v1.AnnotationTitle:                "deployment.slsa.intoto.json",
-			"sh.verself.deploy.evidence.kind": "slsa_provenance",
-			"sh.verself.deploy.run_key":       req.DeployRunKey,
-			"sh.verself.deploy.source_sha":    req.SHA,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pack SLSA provenance referrer: %w", err)
-	}
-	if err := copyOCIGraph(ctx, staging, target, manifest); err != nil {
-		return nil, err
-	}
-	if err := requireOCIReferrer(ctx, target, subject, manifest); err != nil {
-		return nil, err
-	}
-	return []DeploymentImageEvidence{{
-		EvidenceKind:      "slsa_provenance",
-		PredicateType:     predicateSLSAProvenance,
-		SubjectDigest:     req.Digest,
-		DocumentDigest:    documentDigest,
-		OCIReferrerDigest: manifest.Digest.String(),
-	}}, nil
 }
 
 func validateDeploymentEvidenceRequest(req DeploymentEvidencePublishRequest) error {
@@ -675,82 +606,6 @@ func dockerConfigCredential(configDir string, registry string) (auth.Credential,
 		return auth.Credential{Username: username, Password: password}, nil
 	}
 	return auth.Credential{}, fmt.Errorf("docker auth config %s has no credentials for %s", path, registry)
-}
-
-func deploymentSLSAStatement(req DeploymentEvidencePublishRequest) ([]byte, error) {
-	subjectDigest := strings.TrimPrefix(req.Digest, "sha256:")
-	statement := map[string]any{
-		"_type": "https://in-toto.io/Statement/v1",
-		"subject": []map[string]any{
-			{
-				"name": req.PullReference,
-				"digest": map[string]string{
-					"sha256": subjectDigest,
-				},
-			},
-		},
-		"predicateType": predicateSLSAProvenance,
-		"predicate": map[string]any{
-			"buildDefinition": map[string]any{
-				"buildType": "https://bazel.build/rules_oci/oci_image",
-				"externalParameters": map[string]any{
-					"bazelTarget":     req.ImageLabel,
-					"bazelPushTarget": req.PushLabel,
-					"ociRepository":   req.Repository,
-					"site":            req.Site,
-				},
-				"resolvedDependencies": []map[string]any{
-					{
-						"uri": "git+https://github.com/" + req.SourceRepository + "@" + req.SHA,
-						"digest": map[string]string{
-							"gitCommit": req.SHA,
-						},
-					},
-				},
-			},
-			"runDetails": map[string]any{
-				"builder": map[string]any{
-					"id": req.BuilderID,
-				},
-				"metadata": map[string]any{
-					"invocationId": req.DeployRunKey,
-				},
-			},
-		},
-	}
-	return json.Marshal(statement)
-}
-
-func copyOCIGraph(ctx context.Context, source content.ReadOnlyStorage, target content.Storage, root v1.Descriptor) error {
-	err := oras.CopyGraph(ctx, source, target, root, oras.CopyGraphOptions{
-		PreCopy: func(ctx context.Context, descriptor v1.Descriptor) error {
-			exists, err := target.Exists(ctx, descriptor)
-			if err != nil {
-				return err
-			}
-			if exists {
-				return oras.SkipNode
-			}
-			return nil
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("copy OCI evidence graph rooted at %s: %w", root.Digest, err)
-	}
-	return nil
-}
-
-func requireOCIReferrer(ctx context.Context, target oras.GraphTarget, subject v1.Descriptor, referrer v1.Descriptor) error {
-	predecessors, err := target.Predecessors(ctx, subject)
-	if err != nil {
-		return fmt.Errorf("list OCI referrers for %s: %w", subject.Digest, err)
-	}
-	for _, predecessor := range predecessors {
-		if predecessor.Digest == referrer.Digest {
-			return nil
-		}
-	}
-	return fmt.Errorf("missing OCI referrer %s for subject %s", referrer.Digest, subject.Digest)
 }
 
 func bindOCIImagesInSpec(job *api.Job, bindings map[string]ociImageBinding) (map[string]bool, error) {

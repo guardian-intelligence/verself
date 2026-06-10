@@ -64,14 +64,23 @@ type Evidence struct {
 	SubjectDigest     string
 	DocumentDigest    string
 	OCIReferrerDigest string
-	CreatedAt         time.Time
+	// SigningKeyID is the derived hex(sha256(DER-SPKI)) identity of the ring
+	// key that verified the evidence bundle. Deployment channel only; empty for
+	// release evidence.
+	SigningKeyID string
+	CreatedAt    time.Time
 }
 
 type Verification struct {
-	Decision         string
-	Reason           string
-	BuilderID        string
-	SignerIdentity   string
+	Decision  string
+	Reason    string
+	BuilderID string
+	// SignerIdentity is the asserted, trusted-signer-checked workflow identity.
+	// Release channels only; empty on the deployment channel.
+	SignerIdentity string
+	// SigningKeyID is the derived identity of the key that verified deployment
+	// evidence. Deployment channel only.
+	SigningKeyID     string
 	SourceRepository string
 	SourceCommit     string
 	SourceRef        string

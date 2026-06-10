@@ -41,6 +41,19 @@ type PostgresPeerMapping struct {
 
 type RuntimeSecretsFile struct {
 	Declarations []RuntimeSecretDeclaration `yaml:"openbao_runtime_secret_declarations"`
+	TransitKeys  []TransitKeyDeclaration    `yaml:"openbao_transit_key_declarations"`
+}
+
+// TransitKeyDeclaration declares an OpenBao Transit signing key owned by a
+// Nomad job. The owning job's runtime role is granted read on
+// transit/keys/<name> and update on transit/sign/<name>/sha2-256. Consumer
+// jobs are verifiers granted read on transit/keys/<name> so their Nomad
+// templates can pin the public key as a trust ring.
+type TransitKeyDeclaration struct {
+	Name           string   `yaml:"name"`
+	Type           string   `yaml:"type"`
+	JobID          string   `yaml:"job_id"`
+	ConsumerJobIDs []string `yaml:"consumer_job_ids"`
 }
 
 type RuntimeSecretDeclaration struct {
@@ -189,9 +202,9 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 				v.add(rel, prefix+".generated.bytes must be between 16 and 96")
 			}
 			switch declaration.Generated.Encoding {
-			case "base64url", "hex", "alphanumeric":
+			case "base64url", "hex", "alphanumeric", "password":
 			default:
-				v.add(rel, prefix+".generated.encoding must be base64url, hex, or alphanumeric")
+				v.add(rel, prefix+".generated.encoding must be base64url, hex, alphanumeric, or password")
 			}
 		}
 		if err := validateRuntimeSecretDeclaration(rel, declaration); err != nil {
@@ -199,6 +212,15 @@ func (v *Validator) validateRuntimeSecrets(rel string, doc RuntimeSecretsFile) {
 		}
 		v.runtimeSecretClaims = append(v.runtimeSecretClaims, runtimeSecretClaim{path: rel, declaration: declaration})
 		v.claim(rel, v.seen.runtimeSecrets, "OpenBao runtime secret", declaration.Name)
+	}
+	for _, key := range doc.TransitKeys {
+		key = normalizeTransitKeyDeclaration(key)
+		v.report.TransitKeys++
+		if err := validateTransitKeyDeclaration(rel, key); err != nil {
+			v.add("", err.Error())
+		}
+		v.transitKeyClaims = append(v.transitKeyClaims, transitKeyClaim{path: rel, declaration: key})
+		v.claim(rel, v.seen.transitKeys, "OpenBao transit key", key.Name)
 	}
 }
 

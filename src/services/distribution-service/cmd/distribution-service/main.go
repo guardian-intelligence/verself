@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/verself/attestation/bundle"
 	distributionapi "github.com/verself/distribution-service/internal/api"
 	"github.com/verself/distribution-service/internal/distribution"
 	distributionreleaseattest "github.com/verself/distribution-service/internal/releaseattest"
@@ -75,6 +76,10 @@ func run() error {
 	installationID := cfg.RequireString("VERSELF_INSTALLATION_ID")
 	trustedBuilders := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_BUILDERS"))
 	trustedSigners := setFromCSV(cfg.RequireString("DISTRIBUTION_TRUSTED_SIGNERS"))
+	// Concatenated PEM public keys exported from OpenBao Transit by the Nomad
+	// template; an empty or malformed ring is a boot failure, never a
+	// verify-everything ring.
+	trustedDeployKeysPEM := cfg.RequireCredential("distribution-trusted-deploy-keys")
 	chAddress := cfg.String("VERSELF_CLICKHOUSE_ADDRESS", "127.0.0.1:9440")
 	chUser := cfg.String("VERSELF_CLICKHOUSE_USER", "distribution_service")
 	chCACertPath := cfg.RequireCredentialPath("clickhouse-ca-cert")
@@ -82,6 +87,11 @@ func run() error {
 	spiffeEndpoint := cfg.String(workloadauth.EndpointSocketEnv, "")
 	if err := cfg.Err(); err != nil {
 		return err
+	}
+
+	deployRing, err := bundle.NewRingFromPEM([]byte(trustedDeployKeysPEM))
+	if err != nil {
+		return fmt.Errorf("build deployment trust ring from distribution-trusted-deploy-keys credential: %w", err)
 	}
 
 	spiffeSource, err := workloadauth.Source(ctx, spiffeEndpoint)
@@ -135,7 +145,7 @@ func run() error {
 			TrustedAKs:  map[string]distributionreleaseattest.TrustedAK{},
 			PCRPolicies: map[string]distributionreleaseattest.PCRPolicy{},
 		},
-		DeploymentVerifier: distribution.DeploymentOCIEvidenceVerifier{},
+		DeploymentVerifier: distribution.DeploymentOCIEvidenceVerifier{Ring: deployRing},
 		InstallationID:     installationID,
 	}
 	if err := svc.Ready(ctx); err != nil {

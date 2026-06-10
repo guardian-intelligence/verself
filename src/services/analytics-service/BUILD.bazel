@@ -25,14 +25,8 @@ nomad_component(
     digest_inputs = [":deploy_declarations"],
     job_id = "analytics-service",
     job_spec = "nomad.hcl",
-    oci_image_layouts = {
-        "//src/services/analytics-service/cmd/analytics-service:analytics_service_image": "analytics-service",
-    },
-    oci_image_pushes = {
-        "//src/services/analytics-service/cmd/analytics-service:analytics_service_image_push": "analytics-service",
-    },
     oci_images = {
-        "//src/services/analytics-service/cmd/analytics-service:analytics_service_image.digest": "analytics-service",
+        "analytics-service": "//src/services/analytics-service/cmd/analytics-service:image",
     },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

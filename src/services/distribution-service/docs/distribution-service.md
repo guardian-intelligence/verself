@@ -58,7 +58,7 @@ channels through the distribution API, then pull immutable digests.
 
 ## Admission
 
-Admission requires:
+Release-channel admission requires:
 
 - package, version, channel, platform, OCI repository, digest, media type, and
   size;
@@ -72,6 +72,19 @@ Admission requires:
   digest, artifact digest, SLSA provenance digest, SBOM digest, platform,
   flavor, source commit, version, distribution challenge, and TPM release key
   identity.
+
+Deployment-channel admission is the opposite on signer identity:
+
+- `signer_identity` must be absent; a self-asserted identity is rejected with
+  `ErrInvalid`.
+- The service discovers the sigstore DSSE bundle attached as an OCI referrer
+  to the subject digest and verifies it with `bundle.Verify` against the
+  pinned `distribution-trusted-deploy-keys` ring (the site's OpenBao Transit
+  `deployment-signing` public key).
+- Request evidence is ignored; the verified SLSA provenance becomes the
+  persisted evidence, carrying the derived `signing_key_id` onto the evidence
+  and verification records. `signing_key_id` is server-derived and is never
+  accepted from requests on any channel.
 
 All admission and mutation operations require idempotency keys. Idempotency
 payload mismatches return a conflict instead of replacing state.

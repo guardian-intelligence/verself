@@ -89,30 +89,22 @@ def _nomad_component_impl(ctx):
         })
     oci_push_labels = {}
     for push_target, output in ctx.attr.oci_image_pushes.items():
-        if output in oci_push_labels:
-            fail("duplicate OCI image push output %s in %s" % (output, ctx.label))
         oci_push_labels[output] = _repo_label(push_target.label)
-    oci_images = []
-    oci_image_outputs = {}
     oci_layouts = {}
     for layout_target, output in ctx.attr.oci_image_layouts.items():
-        if output in oci_layouts:
-            fail("duplicate OCI image layout output %s in %s" % (output, ctx.label))
         layout_file = _single_file(layout_target, "OCI image layout")
         default_outputs.append(layout_file)
         oci_layouts[output] = {
             "label": _repo_label(layout_target.label),
             "path": layout_file.path,
         }
+    oci_images = []
     for image_target, output in ctx.attr.oci_images.items():
         if output in artifact_outputs:
             fail("duplicate Nomad artifact output %s in %s" % (output, ctx.label))
-        if output not in oci_push_labels:
-            fail("OCI image output %s in %s requires a matching oci_image_pushes entry" % (output, ctx.label))
-        if output not in oci_layouts:
-            fail("OCI image output %s in %s requires a matching oci_image_layouts entry" % (output, ctx.label))
+        if output not in oci_push_labels or output not in oci_layouts:
+            fail("OCI image output %s in %s is missing its derived layout/push entries; instantiate via the nomad_component macro" % (output, ctx.label))
         artifact_outputs[output] = True
-        oci_image_outputs[output] = True
         image_file = _single_file(image_target, "OCI image digest")
         default_outputs.append(image_file)
         oci_images.append({
@@ -123,12 +115,6 @@ def _nomad_component_impl(ctx):
             "output": output,
             "push_label": oci_push_labels[output],
         })
-    for output in oci_layouts:
-        if output not in oci_image_outputs:
-            fail("OCI image layout output %s in %s has no matching oci_images entry" % (output, ctx.label))
-    for output in oci_push_labels:
-        if output not in oci_image_outputs:
-            fail("OCI image push output %s in %s has no matching oci_images entry" % (output, ctx.label))
     pre_artifacts = []
     for artifact_target, output in ctx.attr.pre_artifacts.items():
         if output in artifact_outputs:
@@ -143,6 +129,31 @@ def _nomad_component_impl(ctx):
         })
     digest_input_files, digest_inputs = _digest_input_records(ctx.attr.digest_inputs)
     descriptor_inputs.extend(digest_input_files)
+
+    validations = []
+    if oci_images:
+        oci_refs_marker = ctx.actions.declare_file(ctx.label.name + ".oci_refs_validation")
+        ctx.actions.run_shell(
+            inputs = [job_spec],
+            outputs = [oci_refs_marker],
+            arguments = [oci_refs_marker.path, job_spec.path] + ["verself-oci://" + image["output"] for image in oci_images],
+            command = """
+set -euo pipefail
+marker="$1"
+spec="$2"
+shift 2
+for ref in "$@"; do
+  if ! grep -qF -- "$ref" "$spec"; then
+    echo "Nomad job spec $spec does not reference $ref" >&2
+    exit 1
+  fi
+done
+: > "$marker"
+""",
+            mnemonic = "NomadComponentOCIRefs",
+            progress_message = "Validating OCI image references in %{label}",
+        )
+        validations.append(oci_refs_marker)
 
     descriptor = ctx.actions.declare_file(ctx.label.name + ".nomad_component.json")
     descriptor_data = {
@@ -177,10 +188,13 @@ def _nomad_component_impl(ctx):
             oci_images = ctx.attr.oci_images,
             pre_artifacts = ctx.attr.pre_artifacts,
         ),
-        OutputGroupInfo(nomad_descriptor = depset([descriptor])),
+        OutputGroupInfo(
+            _validation = depset(validations),
+            nomad_descriptor = depset([descriptor]),
+        ),
     ]
 
-nomad_component = rule(
+_nomad_component = rule(
     implementation = _nomad_component_impl,
     attrs = {
         "artifacts": attr.label_keyed_string_dict(
@@ -228,3 +242,32 @@ nomad_component = rule(
         ),
     },
 )
+
+def nomad_component(name, oci_images = {}, **kwargs):
+    """Component-owned Nomad deployment descriptor.
+
+    Args:
+        name: descriptor target name.
+        oci_images: dict of release output name to `verself_service_image`
+            instance label. The digest, layout, and push labels are derived
+            from that macro's child-target naming contract
+            (//src/tools/deployment/oci:service_image.bzl).
+        **kwargs: remaining `nomad_component` rule attributes.
+    """
+    image_digests = {}
+    image_layouts = {}
+    image_pushes = {}
+    for output, image_label in oci_images.items():
+        if image_label in image_layouts:
+            fail("OCI image %s in %s is declared for outputs %r and %r" %
+                 (image_label, native.package_name(), image_layouts[image_label], output))
+        image_digests[image_label + ".digest"] = output
+        image_layouts[image_label] = output
+        image_pushes[image_label + "_push"] = output
+    _nomad_component(
+        name = name,
+        oci_images = image_digests,
+        oci_image_layouts = image_layouts,
+        oci_image_pushes = image_pushes,
+        **kwargs
+    )
