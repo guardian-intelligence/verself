@@ -421,7 +421,8 @@ func nodeHasVaultVersion(node *api.Node) bool {
 	if node == nil || node.Attributes == nil {
 		return false
 	}
-	return strings.TrimSpace(node.Attributes["vault.version"]) != ""
+	// Nomad fingerprints the Vault secrets plugin as plugins.secrets.vault.version, not vault.version.
+	return strings.TrimSpace(node.Attributes["plugins.secrets.vault.version"]) != ""
 }
 
 func deploymentHasUnhealthyOnlyTaskGroup(deployment *api.Deployment) bool {
