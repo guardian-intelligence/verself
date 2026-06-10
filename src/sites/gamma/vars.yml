@@ -123,5 +123,7 @@ stalwart_operator_forward_to: ""
 github_integration_service_github_app_id: 3918896
 github_integration_service_github_app_slug: verself-runner-gamma
 github_integration_service_github_app_client_id: "Iv23lidNdRYiMW9kU27r"
+# Dedicated "Sign in with GitHub" OAuth client brokered by Zitadel.
+github_login_client_id: "Iv23lidNdRYiMW9kU27r"
 github_integration_service_github_app_settings_url: "https://github.com/organizations/guardian-intelligence/settings/apps/verself-runner-gamma"
 github_integration_service_github_runner_class_prefix: verself-gamma-
