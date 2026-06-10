@@ -42,6 +42,7 @@ type Service struct {
 	Config                   Config
 	R2ControlPlaneHTTPClient *http.Client
 	DistributionAdmitter     deployengine.DistributionAdmitter
+	OCIEvidencePublisher     deployengine.OCIEvidencePublisher
 
 	mu      sync.Mutex
 	running bool
@@ -196,6 +197,7 @@ func (s *Service) runDeployment(ctx context.Context, record Record) {
 		SourceRepository:         record.Repository,
 		SourceRef:                record.Ref,
 		DistributionAdmitter:     s.DistributionAdmitter,
+		OCIEvidencePublisher:     s.OCIEvidencePublisher,
 	})
 	if err != nil {
 		_ = s.updateDeploymentStateWithRetry(ctx, record.DeploymentID, StateFailed, func(attemptCtx context.Context) error {

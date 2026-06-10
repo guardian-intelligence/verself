@@ -1,32 +1,33 @@
 go 1.25.8
 
 use (
-	./src/services/analytics-service
-	./src/services/billing-service
-	./src/services/deployment-service
-	./src/services/distribution-service
-	./src/services/governance-service
-	./src/services/github-integration-service
-	./src/services/iam-service
-	./src/services/email-service
-	./src/services/notifications-service
-	./src/services/object-storage-service
-	./src/tools/observability/go
-	./src/tools/operator-runtime/go
-	./src/tools/releaseattest
-	./src/services/profile-service
-	./src/services/projects-service
-	./src/services/sandbox-rental-service
-	./src/services/secrets-service
-	./src/services/source-code-hosting-service
-	./src/services/service-runtime/go
-	./src/sdks/go/verself
+	./src/attestation/go
 	./src/infrastructure-components/nomad-observer
 	./src/infrastructure-components/temporal-platform
 	./src/integrations/cloudflare/r2-control-plane
 	./src/make-skill/release
-	./src/verself-cli
+	./src/sdks/go/verself
+	./src/services/analytics-service
+	./src/services/billing-service
+	./src/services/deployment-service
+	./src/services/distribution-service
+	./src/services/email-service
+	./src/services/github-integration-service
+	./src/services/governance-service
+	./src/services/iam-service
+	./src/services/notifications-service
+	./src/services/object-storage-service
+	./src/services/profile-service
+	./src/services/projects-service
+	./src/services/sandbox-rental-service
+	./src/services/secrets-service
+	./src/services/service-runtime/go
+	./src/services/source-code-hosting-service
+	./src/substrate/vm-orchestrator
 	./src/tools/deployment
 	./src/tools/dev
-	./src/substrate/vm-orchestrator
+	./src/tools/observability/go
+	./src/tools/operator-runtime/go
+	./src/tools/releaseattest
+	./src/verself-cli
 )

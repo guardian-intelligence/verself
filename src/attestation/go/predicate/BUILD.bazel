@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "predicate",
+    srcs = ["predicate.go"],
+    importpath = "github.com/verself/attestation/predicate",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_in_toto_attestation//go/v1:go",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
+
+go_test(
+    name = "predicate_test",
+    srcs = ["predicate_test.go"],
+    embed = [":predicate"],
+)

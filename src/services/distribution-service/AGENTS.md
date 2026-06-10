@@ -97,7 +97,9 @@ state is incomplete.
 ## Security and SLSA
 
 Admission must verify the artifact and its evidence before a digest can resolve
-from any channel:
+from any channel.
+
+Release channels (`nightly`, `rc`, `stable`):
 
 - The OCI descriptor digest matches the in-toto subject digest.
 - Required OCI referrers exist and are immutable.
@@ -112,6 +114,19 @@ from any channel:
   distribution-service.
 - Required SBOM and test evidence are present before stable or RC promotion.
 - Nightly policy may be weaker, but the channel must make that visible.
+
+The `deployment` channel inverts the signer-identity model:
+
+- `signer_identity` MUST be absent in the request; a self-asserted identity is
+  rejected with `ErrInvalid` (`validate.go`, Smithy `distribution.smithy`).
+- Trust comes from verifying the sigstore DSSE bundle OCI referrer with
+  `bundle.Verify` against the pinned trust ring built from the
+  `distribution-trusted-deploy-keys` credential (the site's OpenBao Transit
+  `deployment-signing` public key, delivered by the Nomad template).
+- The server discards request evidence and persists its own verified set; the
+  derived `signing_key_id` (hex sha256 of the verifying key's SPKI) is recorded
+  on the evidence row and the verification record. `signing_key_id` is never
+  accepted from requests on any channel.
 
 SLSA target:
 

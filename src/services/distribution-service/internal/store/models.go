@@ -53,6 +53,7 @@ type DistributionArtifactEvidence struct {
 	DocumentDigest    string
 	OciReferrerDigest string
 	CreatedAt         pgtype.Timestamptz
+	SigningKeyID      string
 }
 
 type DistributionChannelTarget struct {

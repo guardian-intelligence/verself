@@ -192,6 +192,7 @@ INSERT INTO distribution_artifact_evidence (
     subject_digest,
     document_digest,
     oci_referrer_digest,
+    signing_key_id,
     created_at
 ) VALUES (
     $1,
@@ -201,11 +202,13 @@ INSERT INTO distribution_artifact_evidence (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9
 )
 ON CONFLICT (artifact_id, evidence_kind, document_digest) DO UPDATE
-SET oci_referrer_digest = EXCLUDED.oci_referrer_digest
-RETURNING evidence_id, artifact_id, evidence_kind, predicate_type, subject_digest, document_digest, oci_referrer_digest, created_at
+SET oci_referrer_digest = EXCLUDED.oci_referrer_digest,
+    signing_key_id = EXCLUDED.signing_key_id
+RETURNING evidence_id, artifact_id, evidence_kind, predicate_type, subject_digest, document_digest, oci_referrer_digest, created_at, signing_key_id
 `
 
 type CreateEvidenceParams struct {
@@ -216,6 +219,7 @@ type CreateEvidenceParams struct {
 	SubjectDigest     string
 	DocumentDigest    string
 	OciReferrerDigest string
+	SigningKeyID      string
 	CreatedAt         pgtype.Timestamptz
 }
 
@@ -228,6 +232,7 @@ func (q *Queries) CreateEvidence(ctx context.Context, arg CreateEvidenceParams) 
 		arg.SubjectDigest,
 		arg.DocumentDigest,
 		arg.OciReferrerDigest,
+		arg.SigningKeyID,
 		arg.CreatedAt,
 	)
 	var i DistributionArtifactEvidence
@@ -240,6 +245,7 @@ func (q *Queries) CreateEvidence(ctx context.Context, arg CreateEvidenceParams) 
 		&i.DocumentDigest,
 		&i.OciReferrerDigest,
 		&i.CreatedAt,
+		&i.SigningKeyID,
 	)
 	return i, err
 }
@@ -674,7 +680,7 @@ func (q *Queries) ListChannelTargets(ctx context.Context, arg ListChannelTargets
 }
 
 const listEvidenceForArtifact = `-- name: ListEvidenceForArtifact :many
-SELECT evidence_id, artifact_id, evidence_kind, predicate_type, subject_digest, document_digest, oci_referrer_digest, created_at
+SELECT evidence_id, artifact_id, evidence_kind, predicate_type, subject_digest, document_digest, oci_referrer_digest, created_at, signing_key_id
 FROM distribution_artifact_evidence
 WHERE artifact_id = $1
 ORDER BY evidence_kind, evidence_id
@@ -702,6 +708,7 @@ func (q *Queries) ListEvidenceForArtifact(ctx context.Context, arg ListEvidenceF
 			&i.DocumentDigest,
 			&i.OciReferrerDigest,
 			&i.CreatedAt,
+			&i.SigningKeyID,
 		); err != nil {
 			return nil, err
 		}

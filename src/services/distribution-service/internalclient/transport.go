@@ -19,6 +19,7 @@ type Evidence struct {
 	SubjectDigest     string `json:"subject_digest"`
 	DocumentDigest    string `json:"document_digest"`
 	OCIReferrerDigest string `json:"oci_referrer_digest"`
+	SigningKeyID      string `json:"signing_key_id,omitempty"`
 }
 
 type ReleaseAttestation struct {
@@ -63,20 +64,21 @@ type ReleaseKeyCertification struct {
 }
 
 type AdmitArtifactRequest struct {
-	PackageName        string             `json:"package_name"`
-	PackageVersion     string             `json:"package_version"`
-	ChannelName        string             `json:"channel_name"`
-	PlatformOS         string             `json:"platform_os"`
-	PlatformArch       string             `json:"platform_arch"`
-	Flavor             string             `json:"flavor"`
-	OriginRegistryURL  string             `json:"origin_registry_url"`
-	PublicRegistryURL  string             `json:"public_registry_url"`
-	OCIRepository      string             `json:"oci_repository"`
-	OCIDigest          string             `json:"oci_digest"`
-	OCIMediaType       string             `json:"oci_media_type"`
-	OCISizeBytes       int64              `json:"oci_size_bytes"`
-	BuilderID          string             `json:"builder_id"`
-	SignerIdentity     string             `json:"signer_identity"`
+	PackageName       string `json:"package_name"`
+	PackageVersion    string `json:"package_version"`
+	ChannelName       string `json:"channel_name"`
+	PlatformOS        string `json:"platform_os"`
+	PlatformArch      string `json:"platform_arch"`
+	Flavor            string `json:"flavor"`
+	OriginRegistryURL string `json:"origin_registry_url"`
+	PublicRegistryURL string `json:"public_registry_url"`
+	OCIRepository     string `json:"oci_repository"`
+	OCIDigest         string `json:"oci_digest"`
+	OCIMediaType      string `json:"oci_media_type"`
+	OCISizeBytes      int64  `json:"oci_size_bytes"`
+	BuilderID         string `json:"builder_id"`
+	// Release channels only; must be absent on the deployment channel.
+	SignerIdentity     string             `json:"signer_identity,omitempty"`
 	SourceRepository   string             `json:"source_repository"`
 	SourceCommit       string             `json:"source_commit"`
 	SourceRef          string             `json:"source_ref"`
@@ -140,7 +142,8 @@ type ArtifactVerificationRecord struct {
 	Decision         string     `json:"decision"`
 	Reason           string     `json:"reason"`
 	BuilderID        string     `json:"builder_id"`
-	SignerIdentity   string     `json:"signer_identity"`
+	SignerIdentity   string     `json:"signer_identity,omitempty"`
+	SigningKeyID     string     `json:"signing_key_id,omitempty"`
 	SourceRepository string     `json:"source_repository"`
 	SourceCommit     string     `json:"source_commit"`
 	SourceRef        string     `json:"source_ref"`

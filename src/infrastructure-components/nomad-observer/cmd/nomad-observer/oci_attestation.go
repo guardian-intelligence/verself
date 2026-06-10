@@ -56,6 +56,7 @@ type WorkloadOCIAttestationRow struct {
 	SLSASubjectDigest                string    `ch:"slsa_subject_digest"`
 	SLSADocumentDigest               string    `ch:"slsa_document_digest"`
 	SLSAOCIReferrerDigest            string    `ch:"slsa_oci_referrer_digest"`
+	SigningKeyID                     string    `ch:"signing_key_id"`
 	SourceCommit                     string    `ch:"source_commit"`
 	DeployRunKey                     string    `ch:"deploy_run_key"`
 	SpecSHA256                       string    `ch:"spec_sha256"`
@@ -157,6 +158,7 @@ type workloadOCIArtifactEvidence struct {
 	slsaSubjectDigest     string
 	slsaDocumentDigest    string
 	slsaOCIReferrerDigest string
+	signingKeyID          string
 	reason                string
 }
 
@@ -223,6 +225,7 @@ func workloadOCIAttestationRows(ctx context.Context, site, namespace string, all
 			SLSASubjectDigest:                artifact.slsaSubjectDigest,
 			SLSADocumentDigest:               artifact.slsaDocumentDigest,
 			SLSAOCIReferrerDigest:            artifact.slsaOCIReferrerDigest,
+			SigningKeyID:                     artifact.signingKeyID,
 			SourceCommit:                     meta.DeploySHA,
 			DeployRunKey:                     meta.DeployRunKey,
 			SpecSHA256:                       meta.SpecSHA256,
@@ -356,6 +359,7 @@ func workloadOCIArtifactEvidenceFromRecord(artifact distributioninternalclient.A
 		evidence.slsaSubjectDigest = item.SubjectDigest
 		evidence.slsaDocumentDigest = item.DocumentDigest
 		evidence.slsaOCIReferrerDigest = item.OCIReferrerDigest
+		evidence.signingKeyID = item.SigningKeyID
 		break
 	}
 	return evidence

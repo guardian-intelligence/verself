@@ -13,14 +13,25 @@ import (
 )
 
 const (
-	OpenBaoRuntimeCatalogSchemaVersion = 1
+	OpenBaoRuntimeCatalogSchemaVersion = 2
 	DefaultNomadNamespace              = "default"
+	TransitKeyTypeECDSAP256            = "ecdsa-p256"
 )
 
 type OpenBaoRuntimeCatalog struct {
 	SchemaVersion    int                      `json:"schema_version"`
 	GeneratedSecrets []OpenBaoGeneratedSecret `json:"generated_secrets"`
+	TransitKeys      []OpenBaoTransitKey      `json:"transit_keys"`
 	Roles            []OpenBaoRuntimeRole     `json:"roles"`
+}
+
+// OpenBaoTransitKey is a Transit signing key openbao-up must ensure exists.
+// Exportable is always false; it is carried explicitly so the convergence
+// side can refuse a catalog that ever asks for an exportable signing key.
+type OpenBaoTransitKey struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Exportable bool   `json:"exportable"`
 }
 
 type OpenBaoGeneratedSecret struct {
@@ -52,24 +63,29 @@ type runtimeSecretClaim struct {
 	declaration RuntimeSecretDeclaration
 }
 
+type transitKeyClaim struct {
+	path        string
+	declaration TransitKeyDeclaration
+}
+
 type runtimeRoleBuilder struct {
 	role  OpenBaoRuntimeRole
 	paths map[string]map[string]bool
 }
 
 func OpenBaoRuntimeCatalogFromFiles(paths []string) (OpenBaoRuntimeCatalog, error) {
-	claims, err := openBaoRuntimeSecretClaimsFromFiles(paths)
+	claims, transitClaims, err := openBaoRuntimeClaimsFromFiles(paths)
 	if err != nil {
 		return OpenBaoRuntimeCatalog{}, err
 	}
-	if len(claims) == 0 {
-		return OpenBaoRuntimeCatalog{}, errors.New("at least one OpenBao runtime secret declaration is required")
+	if len(claims) == 0 && len(transitClaims) == 0 {
+		return OpenBaoRuntimeCatalog{}, errors.New("at least one OpenBao runtime declaration is required")
 	}
-	return openBaoRuntimeCatalogFromClaims(claims)
+	return openBaoRuntimeCatalogFromClaims(claims, transitClaims)
 }
 
 func OpenBaoRuntimeSecretDependenciesFromFiles(paths []string) ([]OpenBaoRuntimeSecretDependency, error) {
-	claims, err := openBaoRuntimeSecretClaimsFromFiles(paths)
+	claims, _, err := openBaoRuntimeClaimsFromFiles(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +127,9 @@ func OpenBaoRuntimeSecretDependenciesFromFiles(paths []string) ([]OpenBaoRuntime
 	return dependencies, nil
 }
 
-func openBaoRuntimeSecretClaimsFromFiles(paths []string) ([]runtimeSecretClaim, error) {
+func openBaoRuntimeClaimsFromFiles(paths []string) ([]runtimeSecretClaim, []transitKeyClaim, error) {
 	claims := []runtimeSecretClaim{}
+	transitClaims := []transitKeyClaim{}
 	for _, path := range paths {
 		path = strings.TrimSpace(path)
 		if path == "" || filepath.Base(path) != "runtime-secrets.yml" {
@@ -120,22 +137,25 @@ func openBaoRuntimeSecretClaimsFromFiles(paths []string) ([]runtimeSecretClaim, 
 		}
 		body, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", path, err)
+			return nil, nil, fmt.Errorf("read %s: %w", path, err)
 		}
 		var doc RuntimeSecretsFile
 		dec := yaml.NewDecoder(bytes.NewReader(body))
 		dec.KnownFields(true)
 		if err := dec.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("decode %s: %w", path, err)
+			return nil, nil, fmt.Errorf("decode %s: %w", path, err)
 		}
 		for _, declaration := range doc.Declarations {
 			claims = append(claims, runtimeSecretClaim{path: path, declaration: declaration})
 		}
+		for _, key := range doc.TransitKeys {
+			transitClaims = append(transitClaims, transitKeyClaim{path: path, declaration: key})
+		}
 	}
-	return claims, nil
+	return claims, transitClaims, nil
 }
 
-func openBaoRuntimeCatalogFromClaims(claims []runtimeSecretClaim) (OpenBaoRuntimeCatalog, error) {
+func openBaoRuntimeCatalogFromClaims(claims []runtimeSecretClaim, transitClaims []transitKeyClaim) (OpenBaoRuntimeCatalog, error) {
 	builders := map[string]*runtimeRoleBuilder{}
 	generated := []OpenBaoGeneratedSecret{}
 	seenSecrets := map[string]string{}
@@ -162,6 +182,30 @@ func openBaoRuntimeCatalogFromClaims(claims []runtimeSecretClaim) (OpenBaoRuntim
 			addRuntimeRolePath(builders, declaration.ProducedByJob, runtimeSecretDataPath(declaration.Name), "create", "read", "update")
 		}
 	}
+	transitKeys := []OpenBaoTransitKey{}
+	seenTransitKeys := map[string]string{}
+	for _, claim := range transitClaims {
+		declaration := normalizeTransitKeyDeclaration(claim.declaration)
+		if err := validateTransitKeyDeclaration(claim.path, declaration); err != nil {
+			return OpenBaoRuntimeCatalog{}, err
+		}
+		if previous := seenTransitKeys[declaration.Name]; previous != "" {
+			return OpenBaoRuntimeCatalog{}, fmt.Errorf("%s: duplicate OpenBao transit key %q first declared by %s", claim.path, declaration.Name, previous)
+		}
+		seenTransitKeys[declaration.Name] = claim.path
+		transitKeys = append(transitKeys, OpenBaoTransitKey{
+			Name:       declaration.Name,
+			Type:       declaration.Type,
+			Exportable: false,
+		})
+		// The signer needs transit/keys read too: the sigstore hashivault
+		// provider eagerly fetches the public key when it opens.
+		addRuntimeRolePath(builders, declaration.JobID, transitKeysPath(declaration.Name), "read")
+		addRuntimeRolePath(builders, declaration.JobID, transitSignPath(declaration.Name), "update")
+		for _, jobID := range declaration.ConsumerJobIDs {
+			addRuntimeRolePath(builders, jobID, transitKeysPath(declaration.Name), "read")
+		}
+	}
 	roles := make([]OpenBaoRuntimeRole, 0, len(builders))
 	for _, builder := range builders {
 		for path, caps := range builder.paths {
@@ -181,9 +225,13 @@ func openBaoRuntimeCatalogFromClaims(claims []runtimeSecretClaim) (OpenBaoRuntim
 	sort.Slice(generated, func(i, j int) bool {
 		return generated[i].Name < generated[j].Name
 	})
+	sort.Slice(transitKeys, func(i, j int) bool {
+		return transitKeys[i].Name < transitKeys[j].Name
+	})
 	return OpenBaoRuntimeCatalog{
 		SchemaVersion:    OpenBaoRuntimeCatalogSchemaVersion,
 		GeneratedSecrets: generated,
+		TransitKeys:      transitKeys,
 		Roles:            roles,
 	}, nil
 }
@@ -235,6 +283,50 @@ func validateRuntimeSecretDeclaration(path string, declaration RuntimeSecretDecl
 		seen[jobID] = true
 	}
 	return nil
+}
+
+func normalizeTransitKeyDeclaration(declaration TransitKeyDeclaration) TransitKeyDeclaration {
+	declaration.Name = strings.TrimSpace(declaration.Name)
+	declaration.Type = strings.TrimSpace(declaration.Type)
+	declaration.JobID = strings.TrimSpace(declaration.JobID)
+	for index, jobID := range declaration.ConsumerJobIDs {
+		declaration.ConsumerJobIDs[index] = strings.TrimSpace(jobID)
+	}
+	return declaration
+}
+
+func validateTransitKeyDeclaration(path string, declaration TransitKeyDeclaration) error {
+	if !jobIDRE.MatchString(declaration.Name) {
+		return fmt.Errorf("%s: transit key name %q must match %s", path, declaration.Name, jobIDRE.String())
+	}
+	if declaration.Type != TransitKeyTypeECDSAP256 {
+		return fmt.Errorf("%s: transit key %s type must be %s", path, declaration.Name, TransitKeyTypeECDSAP256)
+	}
+	if !jobIDRE.MatchString(declaration.JobID) {
+		return fmt.Errorf("%s: transit key %s requires job_id matching %s", path, declaration.Name, jobIDRE.String())
+	}
+	seen := map[string]bool{declaration.JobID: true}
+	for _, jobID := range declaration.ConsumerJobIDs {
+		if !jobIDRE.MatchString(jobID) {
+			return fmt.Errorf("%s: transit key %s has invalid consumer job_id %q", path, declaration.Name, jobID)
+		}
+		if seen[jobID] {
+			return fmt.Errorf("%s: transit key %s repeats consumer job_id %q", path, declaration.Name, jobID)
+		}
+		seen[jobID] = true
+	}
+	return nil
+}
+
+// transitSignPath includes the /sha2-256 suffix: the sigstore hashivault
+// provider signs at transit/sign/<name>/sha2-256, and OpenBao ACL paths are
+// exact-match, so a grant on transit/sign/<name> alone is a 403.
+func transitSignPath(name string) string {
+	return "transit/sign/" + name + "/sha2-256"
+}
+
+func transitKeysPath(name string) string {
+	return "transit/keys/" + name
 }
 
 func runtimeSecretReaderJobIDs(declaration RuntimeSecretDeclaration) []string {

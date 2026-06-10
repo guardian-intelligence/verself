@@ -86,6 +86,7 @@ func run() error {
 	githubWorkflowRefs := cfg.String("VERSELF_DEPLOY_GITHUB_ALLOWED_WORKFLOW_REFS", "")
 	pgMaxConns := cfg.Int("VERSELF_PG_MAX_CONNS", 4)
 	admissionConcurrency := cfg.Int("VERSELF_DEPLOY_ADMISSION_CONCURRENCY", 4)
+	signingKeyRef := cfg.String("VERSELF_DEPLOYMENT_SIGNING_KEY", "hashivault://deployment-signing")
 	if err := cfg.Err(); err != nil {
 		return err
 	}
@@ -146,6 +147,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	evidencePublisher, err := deployengine.NewTransitEvidencePublisher(signingKeyRef)
+	if err != nil {
+		return fmt.Errorf("deployment evidence signer: %w", err)
+	}
 	svc := &deploymentapi.Service{
 		Store: deploymentapi.Store{PG: pg},
 		Config: deploymentapi.Config{
@@ -162,6 +167,7 @@ func run() error {
 		DistributionAdmitter: deploymentDistributionAdmitter{
 			client: distributionClient,
 		},
+		OCIEvidencePublisher: evidencePublisher,
 	}
 	if err := svc.Store.Ready(ctx); err != nil {
 		return fmt.Errorf("deployment postgres readiness: %w", err)
@@ -278,7 +284,6 @@ func (a deploymentDistributionAdmitter) AdmitDeploymentImage(ctx context.Context
 		OCIMediaType:      req.MediaType,
 		OCISizeBytes:      req.SizeBytes,
 		BuilderID:         req.BuilderID,
-		SignerIdentity:    req.BuilderID,
 		SourceRepository:  req.SourceRepository,
 		SourceCommit:      req.SHA,
 		SourceRef:         req.SourceRef,

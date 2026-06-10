@@ -314,6 +314,108 @@ openbao_runtime_secret_declarations:
 	}
 }
 
+func TestOpenBaoRuntimeCatalogIncludesTransitKeys(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "runtime-secrets.yml")
+	write(t, root, "runtime-secrets.yml", `
+openbao_transit_key_declarations:
+  - name: deployment-signing
+    type: ecdsa-p256
+    job_id: deployment-service
+    consumer_job_ids:
+      - distribution-service
+`)
+
+	catalog, err := OpenBaoRuntimeCatalogFromFiles([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.SchemaVersion != OpenBaoRuntimeCatalogSchemaVersion {
+		t.Fatalf("schema_version = %d", catalog.SchemaVersion)
+	}
+	if len(catalog.TransitKeys) != 1 {
+		t.Fatalf("transit keys = %#v", catalog.TransitKeys)
+	}
+	key := catalog.TransitKeys[0]
+	if key.Name != "deployment-signing" || key.Type != "ecdsa-p256" || key.Exportable {
+		t.Fatalf("transit key = %#v", key)
+	}
+	role := findRuntimeRole(catalog, "deployment-service-runtime")
+	if role.JobID != "deployment-service" {
+		t.Fatalf("role = %#v", role)
+	}
+	// sigstore hashivault signs at transit/sign/<name>/sha2-256 and reads the
+	// public key at transit/keys/<name>; both must be granted exactly.
+	pathPolicy := findRuntimeRolePath(role, "transit/sign/deployment-signing/sha2-256")
+	if strings.Join(pathPolicy.Capabilities, ",") != "update" {
+		t.Fatalf("transit sign capabilities = %#v", pathPolicy.Capabilities)
+	}
+	pathPolicy = findRuntimeRolePath(role, "transit/keys/deployment-signing")
+	if strings.Join(pathPolicy.Capabilities, ",") != "read" {
+		t.Fatalf("transit keys capabilities = %#v", pathPolicy.Capabilities)
+	}
+	consumer := findRuntimeRole(catalog, "distribution-service-runtime")
+	if consumer.JobID != "distribution-service" {
+		t.Fatalf("consumer role = %#v", consumer)
+	}
+	pathPolicy = findRuntimeRolePath(consumer, "transit/keys/deployment-signing")
+	if strings.Join(pathPolicy.Capabilities, ",") != "read" {
+		t.Fatalf("consumer transit keys capabilities = %#v", pathPolicy.Capabilities)
+	}
+}
+
+func TestOpenBaoRuntimeCatalogRejectsUnsupportedTransitKeyType(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "runtime-secrets.yml")
+	write(t, root, "runtime-secrets.yml", `
+openbao_transit_key_declarations:
+  - name: deployment-signing
+    type: rsa-2048
+    job_id: deployment-service
+`)
+
+	_, err := OpenBaoRuntimeCatalogFromFiles([]string{path})
+	if err == nil || !strings.Contains(err.Error(), "type must be ecdsa-p256") {
+		t.Fatalf("expected transit key type error, got %v", err)
+	}
+}
+
+func TestOpenBaoRuntimeCatalogRejectsDuplicateTransitKeys(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "runtime-secrets.yml")
+	write(t, root, "runtime-secrets.yml", `
+openbao_transit_key_declarations:
+  - name: deployment-signing
+    type: ecdsa-p256
+    job_id: deployment-service
+  - name: deployment-signing
+    type: ecdsa-p256
+    job_id: other-service
+`)
+
+	_, err := OpenBaoRuntimeCatalogFromFiles([]string{path})
+	if err == nil || !strings.Contains(err.Error(), `duplicate OpenBao transit key "deployment-signing"`) {
+		t.Fatalf("expected duplicate transit key error, got %v", err)
+	}
+}
+
+func TestValidateRepoRejectsTransitKeyWithoutJobID(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "src/services/example-service/deploy/runtime-secrets.yml", `
+openbao_transit_key_declarations:
+  - name: example-signing
+    type: ecdsa-p256
+`)
+
+	_, err := ValidateRepo(root)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "requires job_id matching") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestOpenBaoRuntimeSecretDependenciesUseProducedSecrets(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "runtime-secrets.yml")

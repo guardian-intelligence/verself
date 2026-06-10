@@ -129,9 +129,12 @@ func TestNomadRuntimeRoleBoundClaims(t *testing.T) {
 func TestLoadOpenBaoRuntimeCatalog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.json")
 	if err := os.WriteFile(path, []byte(`{
-  "schema_version": 1,
+  "schema_version": 2,
   "generated_secrets": [
     {"name": "service.generated.value", "bytes": 32, "encoding": "hex"}
+  ],
+  "transit_keys": [
+    {"name": "deployment-signing", "type": "ecdsa-p256", "exportable": false}
   ],
   "roles": [
     {
@@ -139,7 +142,9 @@ func TestLoadOpenBaoRuntimeCatalog(t *testing.T) {
       "nomad_namespace": "default",
       "job_id": "service",
       "paths": [
-        {"path": "kv-runtime/data/secret/org/service.generated.value", "capabilities": ["read"]}
+        {"path": "kv-runtime/data/secret/org/service.generated.value", "capabilities": ["read"]},
+        {"path": "transit/keys/deployment-signing", "capabilities": ["read"]},
+        {"path": "transit/sign/deployment-signing/sha2-256", "capabilities": ["update"]}
       ]
     }
   ]
@@ -152,6 +157,67 @@ func TestLoadOpenBaoRuntimeCatalog(t *testing.T) {
 	}
 	if len(catalog.GeneratedSecrets) != 1 || len(catalog.Roles) != 1 {
 		t.Fatalf("catalog = %#v", catalog)
+	}
+	if len(catalog.TransitKeys) != 1 || catalog.TransitKeys[0].Name != "deployment-signing" || catalog.TransitKeys[0].Type != "ecdsa-p256" {
+		t.Fatalf("transit keys = %#v", catalog.TransitKeys)
+	}
+}
+
+func TestValidateTransitKeySpec(t *testing.T) {
+	if err := validateTransitKeySpec(openBaoTransitKey{Name: "deployment-signing", Type: "ecdsa-p256"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateTransitKeySpec(openBaoTransitKey{Name: "deployment-signing", Type: "rsa-2048"}); err == nil {
+		t.Fatal("expected unsupported key type to fail")
+	}
+	if err := validateTransitKeySpec(openBaoTransitKey{Name: "deployment-signing", Type: "ecdsa-p256", Exportable: true}); err == nil {
+		t.Fatal("expected exportable key to fail")
+	}
+	if err := validateTransitKeySpec(openBaoTransitKey{Type: "ecdsa-p256"}); err == nil {
+		t.Fatal("expected missing name to fail")
+	}
+}
+
+func TestEnsureTransitKeysCreatesAndVerifiesKey(t *testing.T) {
+	var created map[string]any
+	api := func(method, path string, body any, expected ...int) (map[string]any, error) {
+		switch {
+		case method == http.MethodPost && path == "transit/keys/deployment-signing":
+			created = body.(map[string]any)
+			return map[string]any{}, nil
+		case method == http.MethodGet && path == "transit/keys/deployment-signing":
+			return map[string]any{"data": map[string]any{
+				"type":       "ecdsa-p256",
+				"exportable": false,
+			}}, nil
+		}
+		t.Fatalf("unexpected call %s %s", method, path)
+		return nil, nil
+	}
+	if err := ensureTransitKeys(api, []openBaoTransitKey{{Name: "deployment-signing", Type: "ecdsa-p256"}}); err != nil {
+		t.Fatal(err)
+	}
+	if created["type"] != "ecdsa-p256" || created["exportable"] != false {
+		t.Fatalf("create body = %#v", created)
+	}
+}
+
+func TestEnsureTransitKeysRejectsMismatchedExistingKey(t *testing.T) {
+	read := map[string]any{"data": map[string]any{"type": "rsa-2048", "exportable": false}}
+	api := func(method, path string, body any, expected ...int) (map[string]any, error) {
+		if method == http.MethodGet {
+			return read, nil
+		}
+		return map[string]any{}, nil
+	}
+	err := ensureTransitKeys(api, []openBaoTransitKey{{Name: "deployment-signing", Type: "ecdsa-p256"}})
+	if err == nil || !strings.Contains(err.Error(), "refusing to adopt a mismatched signing key") {
+		t.Fatalf("expected type mismatch error, got %v", err)
+	}
+	read = map[string]any{"data": map[string]any{"type": "ecdsa-p256", "exportable": true}}
+	err = ensureTransitKeys(api, []openBaoTransitKey{{Name: "deployment-signing", Type: "ecdsa-p256"}})
+	if err == nil || !strings.Contains(err.Error(), "must not be exportable") {
+		t.Fatalf("expected exportable error, got %v", err)
 	}
 }
 

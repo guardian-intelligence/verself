@@ -90,6 +90,7 @@ func (s SQLStore) AdmitArtifact(ctx context.Context, req AdmitArtifactRequest, p
 			SubjectDigest:     evidence.SubjectDigest,
 			DocumentDigest:    evidence.DocumentDigest,
 			OciReferrerDigest: evidence.OCIReferrerDigest,
+			SigningKeyID:      evidence.SigningKeyID,
 			CreatedAt:         pgTime(now),
 		}); err != nil {
 			return Artifact{}, storeError(err)
@@ -390,6 +391,7 @@ func (s SQLStore) artifactWithEvidence(ctx context.Context, q *distributionstore
 			SubjectDigest:     item.SubjectDigest,
 			DocumentDigest:    item.DocumentDigest,
 			OCIReferrerDigest: item.OciReferrerDigest,
+			SigningKeyID:      item.SigningKeyID,
 			CreatedAt:         timeFromPG(item.CreatedAt),
 		})
 	}
@@ -498,6 +500,7 @@ func artifactFromStore(row distributionstore.DistributionArtifact, evidence []Ev
 			Reason:           row.VerificationReason,
 			BuilderID:        row.BuilderID,
 			SignerIdentity:   row.SignerIdentity,
+			SigningKeyID:     evidenceSigningKeyID(evidence),
 			SourceRepository: row.SourceRepository,
 			SourceCommit:     row.SourceCommit,
 			SourceRef:        row.SourceRef,
@@ -544,6 +547,18 @@ func targetFromStore(row distributionstore.DistributionChannelTarget) Target {
 		CreatedAt:          timeFromPG(row.CreatedAt),
 		UpdatedAt:          timeFromPG(row.UpdatedAt),
 	}
+}
+
+// evidenceSigningKeyID surfaces the deployment-channel verifying key on the
+// verification record. Deployment admissions persist exactly one SLSA evidence
+// row, so the first non-empty key id is the verifying key.
+func evidenceSigningKeyID(evidence []Evidence) string {
+	for _, item := range evidence {
+		if item.SigningKeyID != "" {
+			return item.SigningKeyID
+		}
+	}
+	return ""
 }
 
 func retentionClass(channel string) string {

@@ -328,6 +328,7 @@ func normalizeAdmit(req AdmitArtifactRequest) AdmitArtifactRequest {
 		req.Evidence[i].SubjectDigest = clean(req.Evidence[i].SubjectDigest)
 		req.Evidence[i].DocumentDigest = clean(req.Evidence[i].DocumentDigest)
 		req.Evidence[i].OCIReferrerDigest = clean(req.Evidence[i].OCIReferrerDigest)
+		req.Evidence[i].SigningKeyID = clean(req.Evidence[i].SigningKeyID)
 	}
 	return req
 }

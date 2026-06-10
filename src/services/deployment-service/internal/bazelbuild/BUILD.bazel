@@ -2,7 +2,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "bazelbuild",
-    srcs = ["build.go"],
+    srcs = [
+        "build.go",
+        "env.go",
+    ],
     importpath = "github.com/verself/deployment-service/internal/bazelbuild",
     visibility = ["//src/services/deployment-service:__subpackages__"],
     deps = [

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "migrations",
@@ -6,6 +6,7 @@ go_library(
     embedsrcs = [
         "001_initial_schema.up.sql",
         "002_allow_deployment_digest_reuse.up.sql",
+        "003_signed_deployment_evidence.up.sql",
     ],
     importpath = "github.com/verself/distribution-service/migrations",
     visibility = ["//visibility:public"],
@@ -14,5 +15,17 @@ go_library(
         "@com_github_golang_migrate_migrate_v4//database/postgres",
         "@com_github_golang_migrate_migrate_v4//source/iofs",
         "@com_github_lib_pq//:pq",
+    ],
+)
+
+go_test(
+    name = "migrations_test",
+    srcs = ["embed_test.go"],
+    embed = [":migrations"],
+    deps = [
+        "//src/services/service-runtime/go/pgtest",
+        "@com_github_golang_migrate_migrate_v4//:migrate",
+        "@com_github_golang_migrate_migrate_v4//database/postgres",
+        "@com_github_golang_migrate_migrate_v4//source/iofs",
     ],
 )
