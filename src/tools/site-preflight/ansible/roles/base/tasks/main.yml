@@ -157,7 +157,6 @@
       - -addext
       - keyUsage=critical,keyCertSign,cRLSign
     creates: /etc/openbao/tls/ca-key.pem
-  register: openbao_local_ca
 
 - name: Set OpenBao local CA permissions
   ansible.builtin.file:
@@ -168,7 +167,6 @@
   loop:
     - { path: /etc/openbao/tls/ca.pem, mode: "0644" }
     - { path: /etc/openbao/tls/ca-key.pem, mode: "0600" }
-  when: openbao_local_ca is changed
 
 - name: Install bootstrap firewall readiness target
   ansible.builtin.copy:
