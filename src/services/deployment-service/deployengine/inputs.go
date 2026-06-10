@@ -101,10 +101,11 @@ type nomadDescriptorInput struct {
 }
 
 type nomadJob struct {
-	Component string
-	JobID     string
-	Source    string
-	Job       *api.Job
+	Component      string
+	JobID          string
+	Source         string
+	UsesNomadVault bool
+	Job            *api.Job
 }
 
 type deployJobMetadata struct {
@@ -335,13 +336,31 @@ func prepareNomadJobsForSite(ctx context.Context, parser authoredNomadSpecParser
 			return nil, fmt.Errorf("%s: descriptor job_id %q does not match authored Nomad Job.ID %q", component.Label, component.JobID, parsedID)
 		}
 		jobs = append(jobs, nomadJob{
-			Component: component.Component,
-			JobID:     component.JobID,
-			Source:    specPath,
-			Job:       job,
+			Component:      component.Component,
+			JobID:          component.JobID,
+			Source:         specPath,
+			UsesNomadVault: jobUsesNomadVault(job),
+			Job:            job,
 		})
 	}
 	return jobs, nil
+}
+
+func jobUsesNomadVault(job *api.Job) bool {
+	if job == nil {
+		return false
+	}
+	for _, group := range job.TaskGroups {
+		if group == nil {
+			continue
+		}
+		for _, task := range group.Tasks {
+			if task != nil && task.Vault != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func applyDeploymentMetadata(job *api.Job, meta deployJobMetadata, specSHA256 string) {

@@ -16,11 +16,11 @@ import (
 )
 
 const defaultRuntimeSecretProducerReadyTimeout = 10 * time.Minute
+const openBaoJobID = "openbao"
 
 type runtimeSecretDeploymentPlan struct {
-	jobs         []nomadJob
-	producerJobs map[string]bool
-	producedFor  map[string][]deploycontract.OpenBaoRuntimeSecretDependency
+	jobs             []nomadJob
+	readinessReasons map[string][]string
 }
 
 func planRuntimeSecretDeployment(repoRoot string, jobs []nomadJob) (runtimeSecretDeploymentPlan, error) {
@@ -77,15 +77,27 @@ func orderNomadJobsByRuntimeSecretDependencies(jobs []nomadJob, dependencies []d
 		if job.JobID == "" {
 			return runtimeSecretDeploymentPlan{}, errors.New("nomad job id is required")
 		}
+		if _, exists := byID[job.JobID]; exists {
+			return runtimeSecretDeploymentPlan{}, fmt.Errorf("duplicate Nomad job id %s", job.JobID)
+		}
 		byID[job.JobID] = job
 		originalIndex[job.JobID] = index
 	}
 	edges := map[string]map[string]bool{}
 	indegree := map[string]int{}
-	producerJobs := map[string]bool{}
-	producedFor := map[string][]deploycontract.OpenBaoRuntimeSecretDependency{}
+	readinessReasons := map[string][]string{}
 	for _, job := range jobs {
 		indegree[job.JobID] = 0
+	}
+	addEdge := func(producer, reader, reason string) {
+		if edges[producer] == nil {
+			edges[producer] = map[string]bool{}
+		}
+		if !edges[producer][reader] {
+			edges[producer][reader] = true
+			indegree[reader]++
+		}
+		readinessReasons[producer] = append(readinessReasons[producer], reason)
 	}
 	for _, dependency := range dependencies {
 		producer := strings.TrimSpace(dependency.ProducerJobID)
@@ -100,17 +112,21 @@ func orderNomadJobsByRuntimeSecretDependencies(jobs []nomadJob, dependencies []d
 		if _, producerParticipates := byID[producer]; !producerParticipates {
 			return runtimeSecretDeploymentPlan{}, fmt.Errorf("runtime secret %s for job %s is produced by %s, but producer job is not in this deployment", dependency.SecretName, reader, producer)
 		}
-		if edges[producer] == nil {
-			edges[producer] = map[string]bool{}
+		addEdge(producer, reader, fmt.Sprintf("runtime secret %s for %s", dependency.SecretName, reader))
+	}
+	if _, openBaoParticipates := byID[openBaoJobID]; openBaoParticipates {
+		for _, job := range jobs {
+			if job.JobID == openBaoJobID || !job.UsesNomadVault {
+				continue
+			}
+			addEdge(openBaoJobID, job.JobID, fmt.Sprintf("Nomad Vault integration for %s", job.JobID))
 		}
-		if edges[producer][reader] {
-			producedFor[producer] = append(producedFor[producer], dependency)
-			continue
+	} else {
+		for _, job := range jobs {
+			if job.UsesNomadVault {
+				return runtimeSecretDeploymentPlan{}, fmt.Errorf("%s uses Nomad Vault integration, but %s is not in this deployment", job.JobID, openBaoJobID)
+			}
 		}
-		edges[producer][reader] = true
-		indegree[reader]++
-		producerJobs[producer] = true
-		producedFor[producer] = append(producedFor[producer], dependency)
 	}
 
 	ready := make([]string, 0, len(jobs))
@@ -155,9 +171,8 @@ func orderNomadJobsByRuntimeSecretDependencies(jobs []nomadJob, dependencies []d
 		return runtimeSecretDeploymentPlan{}, fmt.Errorf("runtime secret producer graph contains a cycle involving jobs: %s", strings.Join(blocked, ", "))
 	}
 	return runtimeSecretDeploymentPlan{
-		jobs:         ordered,
-		producerJobs: producerJobs,
-		producedFor:  producedFor,
+		jobs:             ordered,
+		readinessReasons: readinessReasons,
 	}, nil
 }
 
@@ -177,6 +192,11 @@ func waitForRuntimeSecretProducer(ctx context.Context, exec execution, client *n
 	case "service":
 		if err := client.WaitForServiceDeployment(ctx, job.JobID, timeout); err != nil {
 			return fmt.Errorf("%s: runtime secret producer service did not become healthy: %w", job.JobID, err)
+		}
+		if job.JobID == openBaoJobID {
+			if err := client.WaitForVaultIntegration(ctx, timeout); err != nil {
+				return fmt.Errorf("%s: Nomad Vault integration did not become ready: %w", job.JobID, err)
+			}
 		}
 	default:
 		return fmt.Errorf("%s: runtime secret producer job type %q is not supported", job.JobID, strings.TrimSpace(*job.Job.Type))
