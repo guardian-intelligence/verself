@@ -421,8 +421,10 @@ func nodeHasVaultVersion(node *api.Node) bool {
 	if node == nil || node.Attributes == nil {
 		return false
 	}
-	// Nomad fingerprints the Vault secrets plugin as plugins.secrets.vault.version, not vault.version.
-	return strings.TrimSpace(node.Attributes["plugins.secrets.vault.version"]) != ""
+	// Must mirror the scheduler's implicit ${attr.vault.version} constraint on
+	// vault-consuming jobs; plugins.secrets.vault.version is only the builtin
+	// plugin's API version and is present even when fingerprinting failed.
+	return strings.TrimSpace(node.Attributes["vault.version"]) != ""
 }
 
 func deploymentHasUnhealthyOnlyTaskGroup(deployment *api.Deployment) bool {
