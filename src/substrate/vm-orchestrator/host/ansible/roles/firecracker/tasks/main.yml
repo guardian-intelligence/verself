@@ -67,15 +67,17 @@
   register: firecracker_release_archive_stat
   failed_when: not firecracker_release_archive_stat.stat.exists
 
+# Folded scalars hand Jinja the raw backslashes, so '\\.' becomes an escaped
+# backslash in the regex and never matches; keep single backslashes here.
 - name: Set Firecracker version pins
   ansible.builtin.set_fact:
     firecracker_version_pins:
       version: >-
         {{ firecracker_release_filename
-        | regex_replace('^firecracker-v(.+)-[A-Za-z0-9_]+\\.tgz$', '\\1') }}
+        | regex_replace('^firecracker-v(.+)-[A-Za-z0-9_]+\.tgz$', '\1') }}
       arch: >-
         {{ firecracker_release_filename
-        | regex_replace('^firecracker-v.+-([A-Za-z0-9_]+)\\.tgz$', '\\1') }}
+        | regex_replace('^firecracker-v.+-([A-Za-z0-9_]+)\.tgz$', '\1') }}
 
 - name: Set Firecracker release paths
   ansible.builtin.set_fact:

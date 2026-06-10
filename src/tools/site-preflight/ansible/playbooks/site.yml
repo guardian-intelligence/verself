@@ -106,3 +106,27 @@
       tags:
         - nomad
         - scheduler
+
+# Firecracker binaries, jailer user, vm-clients socket group, KVM, ZFS ARC,
+# and guest NAT are host substrate; the vm-orchestrator Nomad job assumes all
+# of them. The trailing guest-image check expects the vm-orchestrator prestart
+# to have staged images, so first bootstrap converges again after the initial
+# bootstrap-deploy.
+- name: "VM substrate host setup"
+  hosts: infra
+  become: true
+  # The firecracker role selects kvm_amd/kvm_intel from processor facts.
+  gather_facts: true
+  vars_files:
+    - "../../../../sites/{{ verself_site | default('prod') }}/vars.yml"
+  vars:
+    verself_repo_root: "{{ playbook_dir | dirname | dirname | dirname | dirname | dirname }}"
+  tags:
+    - bootstrap
+    - firecracker
+    - vm-substrate
+  roles:
+    - role: firecracker
+      tags:
+        - firecracker
+        - vm-substrate
