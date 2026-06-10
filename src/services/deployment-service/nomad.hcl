@@ -168,9 +168,8 @@ job "deployment-service" {
       min_healthy_time = "3s"
       healthy_deadline = "300s"
       progress_deadline = "600s"
-      canary = 1
+      canary = 0
       auto_revert = true
-      auto_promote = true
     }
   }
 }

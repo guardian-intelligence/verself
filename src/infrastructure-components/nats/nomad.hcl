@@ -20,6 +20,26 @@ job "nats" {
       }
     }
 
+    task "nats-setup" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/usr/bin/install"
+        args = ["-d", "-o", "nats", "-g", "nats", "-m", "0750", "/var/lib/nats", "/var/lib/nats/jetstream", "/var/lib/nats/spiffe"]
+      }
+
+      resources {
+        cpu = 50
+        memory = 32
+      }
+    }
+
     task "spiffe-helper" {
       driver = "raw_exec"
       user = "nats"
@@ -37,7 +57,24 @@ job "nats" {
 
       config {
         command = "local/bin/spiffe-helper"
-        args = ["-config", "/etc/nats/nats-spiffe-helper.conf"]
+        args = ["-config", "local/config/nats-spiffe-helper.conf"]
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "local/config/nats-spiffe-helper.conf"
+        data = <<-EOT
+agent_address = "/run/spire-agent/sockets/agent.sock"
+cert_dir = "/var/lib/nats/spiffe"
+daemon_mode = true
+pid_file_name = "/var/lib/nats/nats.pid"
+renew_signal = "SIGHUP"
+svid_file_name = "svid.pem"
+svid_key_file_name = "svid_key.pem"
+svid_bundle_file_name = "bundle.pem"
+cert_file_mode = 0640
+key_file_mode = 0600
+EOT
       }
 
       resources {
@@ -58,7 +95,7 @@ job "nats" {
 
       config {
         command = "local/bin/nats-server"
-        args = ["-c", "/etc/nats/nats-server.conf"]
+        args = ["-c", "local/config/nats-server.conf"]
       }
 
       env {
@@ -66,6 +103,49 @@ job "nats" {
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "nats"
         VERSELF_SUPERVISOR = "nomad"
+      }
+
+      template {
+        change_mode = "restart"
+        destination = "local/config/nats-server.conf"
+        data = <<-EOT
+server_name: verself-nats
+pid_file: "/var/lib/nats/nats.pid"
+host: 127.0.0.1
+port: 4222
+http: 8222
+
+jetstream {
+  store_dir: "/var/lib/nats/jetstream"
+  max_mem_store: 256Mb
+  max_file_store: 4Gb
+}
+
+tls {
+  cert_file: "/var/lib/nats/spiffe/svid.pem"
+  key_file: "/var/lib/nats/spiffe/svid_key.pem"
+  ca_file: "/var/lib/nats/spiffe/bundle.pem"
+  verify: true
+  verify_and_map: true
+  timeout: 2
+}
+
+authorization {
+  users = [
+    {
+      user: "__VERSELF_SPIFFE_SERVICE_PREFIX__/notifications-service"
+      permissions: {
+        publish: {
+          allow: ["events.>", "$JS.API.>", "$JS.ACK.>"]
+        }
+        subscribe: {
+          allow: ["_INBOX.>"]
+        }
+      }
+    }
+  ]
+}
+EOT
       }
 
       resources {

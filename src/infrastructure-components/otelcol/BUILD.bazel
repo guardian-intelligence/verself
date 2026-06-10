@@ -30,11 +30,13 @@ pkg_tar(
     name = "runtime_artifact",
     out = "otelcol-runtime.tar",
     files = {
+        "//src/infrastructure-components/otelcol/cmd/wait-files-exec": "bin/wait-files-exec",
         "@clickhouse_tools//tools/clickhouse": "bin/clickhouse",
         "@otelcol_tools//tools/otelcol-contrib": "bin/otelcol-contrib",
         "@otelcol_tools//tools/spiffe-helper": "bin/spiffe-helper",
     },
     modes = {
+        "bin/wait-files-exec": "0755",
         "bin/clickhouse": "0755",
         "bin/otelcol-contrib": "0755",
         "bin/spiffe-helper": "0755",

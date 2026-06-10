@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_library(
+    name = "postgresql-bootstrap_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/infrastructure-components/postgresql/cmd/postgresql-bootstrap",
+    visibility = ["//visibility:private"],
+    deps = ["@com_github_jackc_pgx_v5//:pgx"],
+)
+
+go_binary(
+    name = "postgresql-bootstrap",
+    embed = [":postgresql-bootstrap_lib"],
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "postgresql-bootstrap_test",
+    srcs = ["main_test.go"],
+    embed = [":postgresql-bootstrap_lib"],
+)

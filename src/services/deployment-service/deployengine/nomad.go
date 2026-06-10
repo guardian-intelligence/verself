@@ -55,15 +55,15 @@ func registerNomadJobs(ctx context.Context, exec execution, inputs *deployInputs
 			return result, err
 		}
 		result.add(submitted)
-		if plan.producerJobs[job.JobID] {
-			if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s waiting for runtime secret producer readiness dependencies=%d\n", job.JobID, len(plan.producedFor[job.JobID])); err != nil {
-				return result, fmt.Errorf("%s: write runtime secret producer wait status: %w", job.JobID, err)
+		if reasons := plan.readinessReasons[job.JobID]; len(reasons) > 0 {
+			if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s waiting for readiness dependencies=%d\n", job.JobID, len(reasons)); err != nil {
+				return result, fmt.Errorf("%s: write readiness wait status: %w", job.JobID, err)
 			}
 			if err := waitForRuntimeSecretProducer(ctx, exec, client, job); err != nil {
 				return result, err
 			}
-			if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s runtime secret producer ready\n", job.JobID); err != nil {
-				return result, fmt.Errorf("%s: write runtime secret producer ready status: %w", job.JobID, err)
+			if _, err := fmt.Fprintf(exec.stdout(), "deployment-service: %s readiness gate ready\n", job.JobID); err != nil {
+				return result, fmt.Errorf("%s: write readiness ready status: %w", job.JobID, err)
 			}
 		}
 	}

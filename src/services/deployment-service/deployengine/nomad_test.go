@@ -45,9 +45,41 @@ func TestOrderNomadJobsByRuntimeSecretDependencies(t *testing.T) {
 		t.Fatalf("job order = %v, want %v", got, want)
 	}
 	for _, producer := range []string{"email-service-resend-keys", "zitadel", "auth-control-plane"} {
-		if !plan.producerJobs[producer] {
+		if len(plan.readinessReasons[producer]) == 0 {
 			t.Fatalf("producer %s not marked for readiness wait", producer)
 		}
+	}
+}
+
+func TestOrderNomadJobsByRuntimeSecretDependenciesBootstrapsOpenBaoBeforeVaultConsumers(t *testing.T) {
+	jobs := []nomadJob{
+		testNomadJob("forgejo", "service", true),
+		testNomadJob("openbao", "service", false),
+		testNomadJob("analytics-service", "service", false),
+	}
+
+	plan, err := orderNomadJobsByRuntimeSecretDependencies(jobs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(plan.jobs))
+	for _, job := range plan.jobs {
+		got = append(got, job.JobID)
+	}
+	if indexOfJob(got, "openbao") >= indexOfJob(got, "forgejo") {
+		t.Fatalf("job order = %v, want openbao before forgejo", got)
+	}
+	if len(plan.readinessReasons["openbao"]) != 1 {
+		t.Fatalf("openbao readiness reasons = %v, want one Vault dependency", plan.readinessReasons["openbao"])
+	}
+}
+
+func TestOrderNomadJobsByRuntimeSecretDependenciesRequiresOpenBaoForVaultConsumers(t *testing.T) {
+	_, err := orderNomadJobsByRuntimeSecretDependencies([]nomadJob{
+		testNomadJob("forgejo", "service", true),
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "uses Nomad Vault integration") {
+		t.Fatalf("error = %v, want missing openbao error", err)
 	}
 }
 
@@ -62,16 +94,30 @@ func TestOrderNomadJobsByRuntimeSecretDependenciesRequiresParticipatingProducer(
 	}
 }
 
-func testNomadJob(jobID, jobType string) nomadJob {
+func testNomadJob(jobID, jobType string, usesNomadVault ...bool) nomadJob {
 	id := jobID
 	typ := jobType
+	vault := false
+	if len(usesNomadVault) > 0 {
+		vault = usesNomadVault[0]
+	}
 	return nomadJob{
-		JobID: jobID,
+		JobID:          jobID,
+		UsesNomadVault: vault,
 		Job: &api.Job{
 			ID:   &id,
 			Type: &typ,
 		},
 	}
+}
+
+func indexOfJob(jobs []string, jobID string) int {
+	for index, candidate := range jobs {
+		if candidate == jobID {
+			return index
+		}
+	}
+	return -1
 }
 
 func TestApplyTaskSecretTemplateOwnershipSetsTaskUserOwnership(t *testing.T) {

@@ -243,6 +243,19 @@ func TestNomadRuntimeRolePolicy(t *testing.T) {
 	}
 }
 
+func TestSecretsRuntimePolicies(t *testing.T) {
+	readPolicy := secretsRuntimeReadPolicy()
+	if !strings.Contains(readPolicy, `path "kv-runtime/data/*"`) || !strings.Contains(readPolicy, `"read"`) {
+		t.Fatalf("read policy = %s", readPolicy)
+	}
+	writePolicy := secretsRuntimeWritePolicy()
+	for _, want := range []string{`path "kv-runtime/data/*"`, `path "kv-runtime/metadata/*"`, `"create"`, `"update"`, `"delete"`} {
+		if !strings.Contains(writePolicy, want) {
+			t.Fatalf("write policy missing %q: %s", want, writePolicy)
+		}
+	}
+}
+
 func TestGenerateRuntimeSecretValue(t *testing.T) {
 	value, err := generateRuntimeSecretValue(openBaoGeneratedSecret{Name: "secret.hex", Bytes: 16, Encoding: "hex"})
 	if err != nil {

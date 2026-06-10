@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nomad/api"
@@ -360,6 +361,70 @@ func (c *Client) WaitForServiceDeployment(ctx context.Context, jobID string, tim
 		case <-ticker.C:
 		}
 	}
+}
+
+func (c *Client) WaitForVaultIntegration(ctx context.Context, timeout time.Duration) error {
+	if timeout <= 0 {
+		return errors.New("timeout must be positive")
+	}
+	ctx, span := c.tracer.Start(ctx, "verself_deploy.nomad.wait_vault_integration",
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+	defer span.End()
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		ready, err := c.vaultIntegrationReady(waitCtx)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		}
+		if ready {
+			span.SetStatus(codes.Ok, "")
+			return nil
+		}
+		select {
+		case <-waitCtx.Done():
+			err := fmt.Errorf("wait for Nomad Vault integration readiness: %w", waitCtx.Err())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return err
+		case <-ticker.C:
+		}
+	}
+}
+
+func (c *Client) vaultIntegrationReady(ctx context.Context) (bool, error) {
+	nodes, _, err := c.api.Nodes().List((&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		return false, fmt.Errorf("list Nomad nodes: %w", err)
+	}
+	for _, stub := range nodes {
+		if stub == nil || stub.ID == "" || stub.Status != api.NodeStatusReady || stub.SchedulingEligibility != api.NodeSchedulingEligible {
+			continue
+		}
+		node, _, err := c.api.Nodes().Info(stub.ID, (&api.QueryOptions{}).WithContext(ctx))
+		if err != nil {
+			return false, fmt.Errorf("read Nomad node %s: %w", stub.ID, err)
+		}
+		if nodeHasVaultVersion(node) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func nodeHasVaultVersion(node *api.Node) bool {
+	if node == nil || node.Attributes == nil {
+		return false
+	}
+	// Must mirror the scheduler's implicit ${attr.vault.version} constraint on
+	// vault-consuming jobs; plugins.secrets.vault.version is only the builtin
+	// plugin's API version and is present even when fingerprinting failed.
+	return strings.TrimSpace(node.Attributes["vault.version"]) != ""
 }
 
 func deploymentHasUnhealthyOnlyTaskGroup(deployment *api.Deployment) bool {

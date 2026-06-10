@@ -53,6 +53,15 @@
   loop_control:
     label: "{{ item }}"
 
+- name: Create non-SPIFFE Nomad runtime-only groups
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+    state: present
+  loop: "{{ base_nomad_runtime_groups }}"
+  loop_control:
+    label: "{{ item }}"
+
 - name: Create non-SPIFFE Nomad runtime groups
   ansible.builtin.group:
     name: "{{ item.name }}"
@@ -119,7 +128,10 @@
     group: root
     mode: "0755"
 
-- name: Generate OpenBao loopback TLS material before Nomad starts
+# Nomad loads the vault ca_file bytes once at agent start, so the CA trust
+# anchor must exist and stay byte-stable before Nomad starts; the openbao job
+# prestart only mints leaf certificates signed by this CA.
+- name: Generate OpenBao local CA before Nomad starts
   ansible.builtin.command:
     argv:
       - /usr/bin/openssl
@@ -133,24 +145,28 @@
       - "3650"
       - -nodes
       - -keyout
-      - /etc/openbao/tls/key.pem
+      - /etc/openbao/tls/ca-key.pem
       - -out
-      - /etc/openbao/tls/cert.pem
+      - /etc/openbao/tls/ca.pem
       - -subj
-      - /CN=127.0.0.1
+      - /CN=Verself OpenBao local CA
       - -addext
-      - subjectAltName=IP:127.0.0.1,DNS:localhost
-    creates: /etc/openbao/tls/cert.pem
+      - basicConstraints=critical,CA:TRUE
+      - -addext
+      - keyUsage=critical,keyCertSign,cRLSign
+    creates: /etc/openbao/tls/ca-key.pem
+  register: openbao_local_ca
 
-- name: Set OpenBao bootstrap TLS permissions
+- name: Set OpenBao local CA permissions
   ansible.builtin.file:
     path: "{{ item.path }}"
     owner: root
     group: root
     mode: "{{ item.mode }}"
   loop:
-    - { path: /etc/openbao/tls/cert.pem, mode: "0644" }
-    - { path: /etc/openbao/tls/key.pem, mode: "0600" }
+    - { path: /etc/openbao/tls/ca.pem, mode: "0644" }
+    - { path: /etc/openbao/tls/ca-key.pem, mode: "0600" }
+  when: openbao_local_ca is changed
 
 - name: Install bootstrap firewall readiness target
   ansible.builtin.copy:

@@ -21,3 +21,18 @@ func TestDeploymentHasUnhealthyOnlyTaskGroup(t *testing.T) {
 		t.Fatal("deployment with a healthy allocation should keep waiting")
 	}
 }
+
+func TestNodeHasVaultVersion(t *testing.T) {
+	if nodeHasVaultVersion(&api.Node{}) {
+		t.Fatal("empty node should not have Vault integration")
+	}
+	if nodeHasVaultVersion(&api.Node{Attributes: map[string]string{"vault.version": "  "}}) {
+		t.Fatal("blank vault.version should not have Vault integration")
+	}
+	if nodeHasVaultVersion(&api.Node{Attributes: map[string]string{"plugins.secrets.vault.version": "1.0.0"}}) {
+		t.Fatal("plugin API version alone should not mark Vault integration ready")
+	}
+	if !nodeHasVaultVersion(&api.Node{Attributes: map[string]string{"vault.version": "2.5.2"}}) {
+		t.Fatal("vault.version should mark Vault integration ready")
+	}
+}

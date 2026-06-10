@@ -26,6 +26,7 @@ filegroup(
 genrule(
     name = "postgresql_runtime",
     srcs = [
+        "//src/infrastructure-components/postgresql/cmd/postgresql-bootstrap",
         "@postgresql_tool_libpq5//file",
         "@postgresql_tool_libxml2//file",
         "@postgresql_tool_postgresql_16//file",
@@ -49,6 +50,8 @@ cp -a "$$tmp/extract/usr/lib/postgresql/{major}" "$$tmp/{root}/usr/lib/postgresq
 cp -a "$$tmp/extract/usr/share/postgresql/{major}" "$$tmp/{root}/usr/share/postgresql/{major}"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libpq.so.5" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libpq.so.5"
 cp -L "$$tmp/extract/usr/lib/x86_64-linux-gnu/libxml2.so.2" "$$tmp/{root}/usr/lib/x86_64-linux-gnu/libxml2.so.2"
+mkdir -p "$$tmp/{root}/bin"
+cp "$(location //src/infrastructure-components/postgresql/cmd/postgresql-bootstrap:postgresql-bootstrap)" "$$tmp/{root}/bin/postgresql-bootstrap"
 rm -rf "$$tmp/extract"
 chmod -R a+rX "$$tmp"
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime='UTC 2000-01-01' -cf "$@" -C "$$tmp" .

@@ -25,6 +25,46 @@ job "otelcol" {
       }
     }
 
+    task "setup" {
+      driver = "raw_exec"
+      user = "root"
+
+      lifecycle {
+        hook = "prestart"
+        sidecar = false
+      }
+
+      config {
+        command = "/usr/bin/python3"
+        args = ["-c", <<-PY
+import os
+import pathlib
+import pwd
+
+otelcol = pwd.getpwnam("otelcol")
+
+def mkdir(path, mode):
+    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    os.chown(path, otelcol.pw_uid, otelcol.pw_gid)
+    os.chmod(path, mode)
+
+mkdir("/var/lib/otelcol", 0o750)
+mkdir("/var/lib/otelcol/storage", 0o750)
+mkdir("/var/lib/otelcol/clickhouse-spiffe", 0o700)
+
+ready = pathlib.Path("/var/lib/otelcol/clickhouse-spiffe/.ready")
+ready.write_text("ok\n", encoding="utf-8")
+os.chown(ready, otelcol.pw_uid, otelcol.pw_gid)
+PY
+        ]
+      }
+
+      resources {
+        cpu = 50
+        memory = 64
+      }
+    }
+
     task "clickhouse-spiffe-helper" {
       driver = "raw_exec"
       user = "otelcol"
@@ -47,8 +87,18 @@ job "otelcol" {
       }
 
       config {
-        command = "local/bin/spiffe-helper"
-        args = ["-config", "local/config/clickhouse-spiffe-helper.conf"]
+        # The setup prestart races this sidecar; the helper only retries its
+        # cert dump on SVID rotation, so wait for setup's marker first
+        # (wait-files-exec only accepts non-empty regular files).
+        command = "local/bin/wait-files-exec"
+        args = [
+          "--timeout=30s",
+          "/var/lib/otelcol/clickhouse-spiffe/.ready",
+          "--",
+          "local/bin/spiffe-helper",
+          "-config",
+          "local/config/clickhouse-spiffe-helper.conf",
+        ]
       }
 
       resources {
@@ -74,8 +124,17 @@ job "otelcol" {
       }
 
       config {
-        command = "local/bin/otelcol-contrib"
-        args = ["--config", "local/config/config.yaml"]
+        command = "local/bin/wait-files-exec"
+        args = [
+          "--timeout=30s",
+          "/var/lib/otelcol/clickhouse-spiffe/svid.pem",
+          "/var/lib/otelcol/clickhouse-spiffe/svid_key.pem",
+          "/var/lib/otelcol/clickhouse-spiffe/bundle.pem",
+          "--",
+          "local/bin/otelcol-contrib",
+          "--config",
+          "local/config/config.yaml",
+        ]
       }
 
       env {

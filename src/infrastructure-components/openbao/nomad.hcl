@@ -85,10 +85,14 @@ ca_key = pathlib.Path("/etc/openbao/tls/ca-key.pem")
 cert = pathlib.Path("/etc/openbao/tls/cert.pem")
 key = pathlib.Path("/etc/openbao/tls/key.pem")
 
-def usable_tls_material():
-    for path in (ca_cert, ca_key, cert, key):
-        if not path.exists():
-            return False
+# Nomad loads the vault ca_file bytes once at agent start, so the CA trust
+# anchor is owned by host convergence and must never be regenerated here.
+if not (ca_cert.exists() and ca_key.exists()):
+    raise RuntimeError("OpenBao local CA missing at /etc/openbao/tls; host convergence must create it before Nomad workloads run")
+
+def usable_leaf():
+    if not (cert.exists() and key.exists()):
+        return False
     verify = subprocess.run(
         ["/usr/bin/openssl", "verify", "-CAfile", str(ca_cert), str(cert)],
         check=False,
@@ -97,20 +101,10 @@ def usable_tls_material():
     )
     return verify.returncode == 0
 
-if not usable_tls_material():
+if not usable_leaf():
     tmp = pathlib.Path("/etc/openbao/tls/.next")
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(mode=0o700)
-    run([
-        "/usr/bin/openssl", "req", "-x509", "-newkey", "ec",
-        "-pkeyopt", "ec_paramgen_curve:prime256v1",
-        "-days", "3650", "-nodes",
-        "-keyout", str(tmp / "ca-key.pem"),
-        "-out", str(tmp / "ca.pem"),
-        "-subj", "/CN=Verself OpenBao local CA",
-        "-addext", "basicConstraints=critical,CA:TRUE",
-        "-addext", "keyUsage=critical,keyCertSign,cRLSign",
-    ])
     run([
         "/usr/bin/openssl", "req", "-newkey", "ec",
         "-pkeyopt", "ec_paramgen_curve:prime256v1",
@@ -130,20 +124,20 @@ if not usable_tls_material():
     run([
         "/usr/bin/openssl", "x509", "-req",
         "-in", str(tmp / "server.csr"),
-        "-CA", str(tmp / "ca.pem"),
-        "-CAkey", str(tmp / "ca-key.pem"),
+        "-CA", str(ca_cert),
+        "-CAkey", str(ca_key),
         "-CAcreateserial",
         "-out", str(tmp / "cert.pem"),
         "-days", "3650",
         "-sha256",
         "-extfile", str(tmp / "server.ext"),
     ])
-    os.replace(tmp / "ca-key.pem", ca_key)
-    os.replace(tmp / "ca.pem", ca_cert)
     os.replace(tmp / "key.pem", key)
     os.replace(tmp / "cert.pem", cert)
     shutil.rmtree(tmp, ignore_errors=True)
-for path, mode in ((ca_cert, 0o640), (ca_key, 0o640), (cert, 0o640), (key, 0o640)):
+os.chown(ca_key, 0, 0)
+os.chmod(ca_key, 0o600)
+for path, mode in ((ca_cert, 0o640), (cert, 0o640), (key, 0o640)):
     os.chown(path, 0, openbao.pw_gid)
     os.chmod(path, mode)
 
@@ -155,6 +149,14 @@ os.chown(public_ca_dir, 0, 0)
 os.chmod(public_ca_dir, 0o755)
 os.chown(public_ca, 0, 0)
 os.chmod(public_ca, 0o644)
+
+spire_jwks_ca_src = pathlib.Path("/etc/spire/bundle-endpoint/ca.pem")
+spire_jwks_ca = pathlib.Path("/etc/openbao/tls/spire-jwks-ca.pem")
+if not spire_jwks_ca_src.exists():
+    raise RuntimeError(f"SPIRE JWT bundle endpoint CA is required at {spire_jwks_ca_src}")
+shutil.copyfile(spire_jwks_ca_src, spire_jwks_ca)
+os.chown(spire_jwks_ca, 0, openbao.pw_gid)
+os.chmod(spire_jwks_ca, 0o640)
 
 hosts = pathlib.Path("/etc/openbao/hosts")
 hosts.write_text("127.0.0.1 localhost\\n::1 localhost ip6-localhost ip6-loopback\\n", encoding="utf-8")
@@ -269,6 +271,10 @@ PY
           "--addr=https://127.0.0.1:8200",
           "--ca-cert=/etc/openbao/tls/ca.pem",
           "--runtime-catalog-file=local/etc/openbao-runtime-catalog.json",
+          "--spiffe-jwks-url=https://127.0.0.1:8082",
+          "--spiffe-jwks-ca-cert=/etc/openbao/tls/spire-jwks-ca.pem",
+          "--spiffe-jwt-issuer=https://127.0.0.1:8082",
+          "--spiffe-service-prefix=__VERSELF_SPIFFE_SERVICE_PREFIX__",
         ]
       }
 

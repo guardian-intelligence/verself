@@ -44,6 +44,15 @@ postgresql_peer_mappings:
 `)
 	write(t, root, "src/services/distribution-service/deploy/postgres.yml", `postgresql_service_databases:
   - { name: distribution_service, owner: distribution_service }
+postgresql_replication_roles:
+  - { name: electric_iam, connection_limit: 15, openbao_secret: electric-iam.pg.password }
+postgresql_logical_publications:
+  - database: iam_service
+    publication: electric_publication_iam
+    publication_owner: electric_iam
+    table_owner: iam_service
+    replication_role: electric_iam
+    tables: [iam_web_auth_clients]
 postgresql_peer_mappings:
   - { system_user: distribution_service, pg_user: distribution_service }
 `)
@@ -104,6 +113,17 @@ postgresql_peer_mappings:
 	}
 	if !strings.Contains(databaseSQL, "CREATE DATABASE distribution_service OWNER distribution_service") {
 		t.Fatalf("postgres database SQL missing distribution_service database: %q", databaseSQL)
+	}
+	replicationRolesJSON := tokens["__VERSELF_POSTGRESQL_REPLICATION_ROLES_JSON__"]
+	if !strings.Contains(replicationRolesJSON, `"name":"electric_iam"`) || !strings.Contains(replicationRolesJSON, `"password_env":"VERSELF_POSTGRESQL_REPLICATION_ROLE_PASSWORD_ELECTRIC_IAM"`) {
+		t.Fatalf("postgres replication roles JSON = %q", replicationRolesJSON)
+	}
+	if !strings.Contains(replicationRolesJSON, `"publication":"electric_publication_iam"`) || !strings.Contains(replicationRolesJSON, `"tables":["iam_web_auth_clients"]`) {
+		t.Fatalf("postgres replication publications JSON = %q", replicationRolesJSON)
+	}
+	replicationRoleEnv := tokens["__VERSELF_POSTGRESQL_REPLICATION_ROLE_ENV__"]
+	if !strings.Contains(replicationRoleEnv, `VERSELF_POSTGRESQL_REPLICATION_ROLE_PASSWORD_ELECTRIC_IAM={{ with secret "kv-runtime/data/secret/org/electric-iam.pg.password" }}`) {
+		t.Fatalf("postgres replication role env = %q", replicationRoleEnv)
 	}
 }
 
