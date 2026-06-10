@@ -68,6 +68,16 @@ func (p *TransitEvidencePublisher) PublishDeploymentEvidence(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
+	subject := v1.Descriptor{
+		MediaType: req.MediaType,
+		Digest:    digest.Digest(req.Digest),
+		Size:      req.SizeBytes,
+	}
+	if existing, ok, err := reusableEvidence(ctx, signer, target, subject, req); err != nil {
+		return nil, err
+	} else if ok {
+		return existing, nil
+	}
 	statement, err := predicate.NewProvenance(
 		[]predicate.Subject{{
 			Name:   req.PullReference,
@@ -97,11 +107,6 @@ func (p *TransitEvidencePublisher) PublishDeploymentEvidence(ctx context.Context
 	if err != nil {
 		return nil, fmt.Errorf("sign deployment provenance: %w", err)
 	}
-	subject := v1.Descriptor{
-		MediaType: req.MediaType,
-		Digest:    digest.Digest(req.Digest),
-		Size:      req.SizeBytes,
-	}
 	referrer, err := bundle.Attach(ctx, target, subject, envelope)
 	if err != nil {
 		return nil, fmt.Errorf("attach deployment provenance referrer: %w", err)
@@ -114,4 +119,52 @@ func (p *TransitEvidencePublisher) PublishDeploymentEvidence(ctx context.Context
 		DocumentDigest:    "sha256:" + hex.EncodeToString(documentSum[:]),
 		OCIReferrerDigest: referrer.Digest.String(),
 	}}, nil
+}
+
+// reusableEvidence finds a prior referrer bundle for this subject that
+// verifies under the current key and attests this source commit, so repeated
+// deploys of an unchanged digest reuse evidence instead of growing the
+// referrer set by one bundle per deploy run. Admission requires the statement
+// to name the deploy's source commit, so a same-digest bundle from a different
+// commit is not reusable.
+func reusableEvidence(ctx context.Context, signer *transit.Signer, store bundle.Store, subject v1.Descriptor, req DeploymentEvidencePublishRequest) ([]DeploymentImageEvidence, bool, error) {
+	ring, err := bundle.NewRingFromPEM(signer.PublicKeyPEM())
+	if err != nil {
+		return nil, false, fmt.Errorf("build signer ring for evidence reuse: %w", err)
+	}
+	discoveries, err := bundle.Discover(ctx, store, subject)
+	if err != nil {
+		return nil, false, fmt.Errorf("discover existing deployment evidence for %s: %w", req.Digest, err)
+	}
+	subjectHex := strings.TrimPrefix(req.Digest, "sha256:")
+	for _, d := range discoveries {
+		stmt, _, err := bundle.Verify(ctx, d.Envelope, ring, subjectHex, bundle.VerifyOptions{})
+		if err != nil {
+			// Foreign or stale-key bundles never block fresh signing.
+			continue
+		}
+		prov, ok := stmt.Predicate().(predicate.SLSAProvenance)
+		if !ok || !attestsSourceCommit(prov, req.SourceRepository, req.SHA) {
+			continue
+		}
+		documentSum := sha256.Sum256(d.Envelope.Bytes())
+		return []DeploymentImageEvidence{{
+			EvidenceKind:      "slsa_provenance",
+			PredicateType:     predicateSLSAProvenance,
+			SubjectDigest:     req.Digest,
+			DocumentDigest:    "sha256:" + hex.EncodeToString(documentSum[:]),
+			OCIReferrerDigest: d.ReferrerDigest,
+		}}, true, nil
+	}
+	return nil, false, nil
+}
+
+func attestsSourceCommit(prov predicate.SLSAProvenance, repository, commit string) bool {
+	uri := "git+https://github.com/" + repository + "@" + commit
+	for _, dep := range prov.ResolvedDependencies {
+		if dep.URI == uri && dep.GitCommit == commit {
+			return true
+		}
+	}
+	return false
 }
