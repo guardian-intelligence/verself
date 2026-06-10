@@ -47,6 +47,12 @@ func main() {
 	golden := flag.Bool("golden", false, "also checkpoint a golden VM and restore from its snapshot")
 	flag.Parse()
 
+	resources := vmorchestrator.VMResources{
+		VCPUs:       uint32FromUint(*vcpus, "vcpus"),
+		MemoryMiB:   uint32FromUint(*memoryMiB, "memory-mib"),
+		RootDiskGiB: uint32FromUint(*rootDiskGiB, "root-disk-gib"),
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -81,9 +87,7 @@ func main() {
 			defer wg.Done()
 			results[i] = runCycle(ctx, client, i, cycleSpec{
 				key:       fmt.Sprintf("probe-%s-%d", *runID, i),
-				vcpus:     uint32(*vcpus),
-				memoryMiB: uint32(*memoryMiB),
-				rootGiB:   uint32(*rootDiskGiB),
+				resources: resources,
 				orgID:     *orgID,
 				quota:     *quotaGiB << 30,
 				command:   *command,
@@ -96,9 +100,7 @@ func main() {
 	if *golden {
 		emit("golden_roundtrip", goldenRoundtrip(ctx, client, cycleSpec{
 			key:       fmt.Sprintf("probe-golden-%s", *runID),
-			vcpus:     uint32(*vcpus),
-			memoryMiB: uint32(*memoryMiB),
-			rootGiB:   uint32(*rootDiskGiB),
+			resources: resources,
 			orgID:     *orgID,
 			quota:     *quotaGiB << 30,
 			ttl:       *ttlSeconds,
@@ -140,9 +142,7 @@ func main() {
 
 type cycleSpec struct {
 	key       string
-	vcpus     uint32
-	memoryMiB uint32
-	rootGiB   uint32
+	resources vmorchestrator.VMResources
 	orgID     string
 	quota     uint64
 	command   string
@@ -155,11 +155,7 @@ func runCycle(ctx context.Context, client *vmorchestrator.Client, index int, spe
 
 	acquireStart := time.Now()
 	lease, err := client.AcquireLease(ctx, spec.key, vmorchestrator.LeaseSpec{
-		Resources: vmorchestrator.VMResources{
-			VCPUs:       spec.vcpus,
-			MemoryMiB:   spec.memoryMiB,
-			RootDiskGiB: spec.rootGiB,
-		},
+		Resources:   spec.resources,
 		TTLSeconds:  spec.ttl,
 		TrustClass:  "trusted",
 		NetworkMode: "nat",
@@ -236,7 +232,7 @@ func goldenRoundtrip(ctx context.Context, client *vmorchestrator.Client, spec cy
 
 	srcKey := spec.key + "-src"
 	src, err := client.AcquireLease(ctx, srcKey, vmorchestrator.LeaseSpec{
-		Resources:        vmorchestrator.VMResources{VCPUs: spec.vcpus, MemoryMiB: spec.memoryMiB, RootDiskGiB: spec.rootGiB},
+		Resources:        spec.resources,
 		TTLSeconds:       spec.ttl,
 		TrustClass:       "trusted",
 		NetworkMode:      "nat",
@@ -276,7 +272,7 @@ func goldenRoundtrip(ctx context.Context, client *vmorchestrator.Client, spec cy
 	restoreKey := spec.key + "-restore"
 	restoreStart := time.Now()
 	restored, err := client.AcquireLease(ctx, restoreKey, vmorchestrator.LeaseSpec{
-		Resources:        vmorchestrator.VMResources{VCPUs: spec.vcpus, MemoryMiB: spec.memoryMiB, RootDiskGiB: spec.rootGiB},
+		Resources:        spec.resources,
 		TTLSeconds:       spec.ttl,
 		TrustClass:       "trusted",
 		NetworkMode:      "nat",
@@ -365,6 +361,15 @@ func emit(kind string, payload any) {
 		fatal(err)
 	}
 	fmt.Println(string(body))
+}
+
+const maxUint32 = uint64(1<<32 - 1)
+
+func uint32FromUint(value uint, field string) uint32 {
+	if uint64(value) > maxUint32 {
+		fatal(fmt.Errorf("%s exceeds uint32 range: %d", field, value))
+	}
+	return uint32(value) // #nosec G115 -- bounds checked above.
 }
 
 func fatal(err error) {
