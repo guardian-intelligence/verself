@@ -43,12 +43,12 @@ spire_identity(
 
 nomad_component(
     name = "nomad_component",
-    artifacts = {
-        "//src/services/profile-service/cmd/profile-service:profile-service_nomad_artifact": "profile-service",
-    },
     component = "profile_service",
     digest_inputs = [":deploy_declarations"],
     job_id = "profile-service",
     job_spec = "nomad.hcl",
+    oci_images = {
+        "profile-service": "//src/services/profile-service/cmd/profile-service:image",
+    },
     visibility = ["//src/tools/deployment/nomad:__pkg__"],
 )

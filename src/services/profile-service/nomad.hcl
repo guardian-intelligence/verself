@@ -14,27 +14,29 @@ job "profile-service" {
       }
     }
     task "profile-service-migrate" {
-      driver = "raw_exec"
+      driver = "podman"
       user = "profile_service"
       lifecycle {
         hook = "prestart"
         sidecar = false
       }
-      artifact {
-        source = "verself-artifact://profile-service"
-        destination = "local"
-        chown = true
-      }
       config {
+        image = "verself-oci://profile-service"
+        # No command: podman prepends the image entrypoint, so these args
+        # become `profile-service migrate up`.
         args = ["migrate", "up"]
-        command = "local/bin/profile-service"
+        network_mode = "host"
+        volumes = [
+          "/var/run/postgresql:/var/run/postgresql",
+          "/run/spire-agent/sockets/agent.sock:/run/spire-agent.sock:ro",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "profile-service-migration"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_PRODUCT_API_AUTH_AUDIENCE = "__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
@@ -52,25 +54,25 @@ job "profile-service" {
       }
     }
     task "profile-service" {
-      driver = "raw_exec"
+      driver = "podman"
       user = "profile_service"
       kill_signal = "SIGTERM"
       kill_timeout = "30s"
       shutdown_delay = "5s"
-      artifact {
-        source = "verself-artifact://profile-service"
-        destination = "local"
-        chown = true
-      }
       config {
-        command = "local/bin/profile-service"
+        image = "verself-oci://profile-service"
+        network_mode = "host"
+        volumes = [
+          "/var/run/postgresql:/var/run/postgresql",
+          "/run/spire-agent/sockets/agent.sock:/run/spire-agent.sock:ro",
+        ]
       }
       env {
         CREDENTIALS_DIRECTORY = "$${NOMAD_SECRETS_DIR}"
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://127.0.0.1:4317"
         OTEL_RESOURCE_ATTRIBUTES = "verself.supervisor=nomad"
         OTEL_SERVICE_NAME = "profile-service"
-        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent/sockets/agent.sock"
+        SPIFFE_ENDPOINT_SOCKET = "unix:///run/spire-agent.sock"
         VERSELF_AUTH_ISSUER_URL = "__VERSELF_AUTH_ISSUER_URL__"
         VERSELF_PRODUCT_API_AUTH_AUDIENCE = "__VERSELF_ZITADEL_PRODUCT_PROJECT_ID__"
         VERSELF_INTERNAL_LISTEN_ADDR = "127.0.0.1:$${NOMAD_PORT_internal_https}"
