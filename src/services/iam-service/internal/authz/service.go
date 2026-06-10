@@ -205,6 +205,11 @@ var orgPermissionByProductPermission = map[string]string{
 	identity.PermissionObjectStorageBucketWrite:      "manage_iam",
 	identity.PermissionObjectStorageAccessKeyRead:    "manage_iam",
 	identity.PermissionObjectStorageAccessKeyWrite:   "manage_iam",
+	identity.PermissionGithubInstallationRead:        "read",
+	identity.PermissionGithubInstallationWrite:       "manage_iam",
+	identity.PermissionGithubRepositoryRead:          "read",
+	identity.PermissionGithubRepositoryWrite:         "manage_iam",
+	identity.PermissionGithubUserAuthorizationWrite:  "manage_iam",
 }
 
 func New(backend Backend) *Service {

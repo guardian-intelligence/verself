@@ -49,6 +49,7 @@ type Result struct {
 	DeployRunKey       string
 	NomadJobs          []NomadRegisterResult
 	NomadSubmittedJobs uint32
+	NomadSkippedJobs   uint32
 }
 
 type ArtifactPublisher interface {
@@ -101,6 +102,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		DeployRunKey:       exec.DeployRunKey,
 		NomadJobs:          nomadResult.Jobs,
 		NomadSubmittedJobs: nomadResult.SubmittedJobs,
+		NomadSkippedJobs:   nomadResult.SkippedJobs,
 	}, nil
 }
 

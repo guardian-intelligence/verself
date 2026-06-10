@@ -61,7 +61,7 @@ job "billing" {
         destination = "secrets/platform.env"
         perms = "0600"
         data = <<-EOT
-BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }
@@ -145,7 +145,7 @@ EOT
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
-BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+BILLING_TB_ADDRESS={{- with nomadService "tigerbeetle-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }

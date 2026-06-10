@@ -395,6 +395,7 @@ func run() error {
 		spiffeSource,
 		workloadauth.ServiceAnalytics,
 		workloadauth.ServiceBilling,
+		workloadauth.ServiceGitHubIntegration,
 		workloadauth.ServiceGovernance,
 		workloadauth.ServiceEmail,
 		workloadauth.ServiceNotifications,

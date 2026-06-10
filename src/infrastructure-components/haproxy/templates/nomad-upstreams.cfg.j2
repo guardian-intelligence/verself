@@ -185,7 +185,7 @@ backend be_route_product_github_api_github_integration_service_public_api
   http-response set-header Referrer-Policy no-referrer
   http-response set-header X-Content-Type-Options nosniff
   http-response set-header X-Frame-Options DENY
-  http-request return status 404 unless { path -i /api/v1/github/webhooks }
+  http-request return status 404 unless { path_beg /api/v1/github }
   acl has_content_length req.hdr(content-length) -m found
   acl has_transfer_encoding req.hdr(transfer-encoding) -m found
   http-request wait-for-body time 1s at-least 1048577 if has_content_length

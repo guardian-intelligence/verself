@@ -80,6 +80,11 @@ const (
 	PermissionObjectStorageBucketWrite      = "object-storage:bucket:write"
 	PermissionObjectStorageAccessKeyRead    = "object-storage:access-key:read"
 	PermissionObjectStorageAccessKeyWrite   = "object-storage:access-key:write"
+	PermissionGithubInstallationRead        = "github:installation:read"
+	PermissionGithubInstallationWrite       = "github:installation:write"
+	PermissionGithubRepositoryRead          = "github:repository:read"
+	PermissionGithubRepositoryWrite         = "github:repository:write"
+	PermissionGithubUserAuthorizationWrite  = "github:user_authorization:write"
 )
 
 var defaultOperations = Operations{

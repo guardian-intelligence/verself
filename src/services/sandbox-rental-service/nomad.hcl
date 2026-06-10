@@ -183,7 +183,7 @@ EOT
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
-SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }
@@ -245,7 +245,7 @@ EOT
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
-SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+SANDBOX_TEMPORAL_FRONTEND_ADDRESS={{- with nomadService "temporal-frontend-grpc" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }

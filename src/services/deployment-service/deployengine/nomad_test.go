@@ -13,8 +13,47 @@ func TestNomadApplyResultCountsSubmittedJobs(t *testing.T) {
 	var result nomadApplyResult
 	result.add(NomadRegisterResult{JobID: "web"})
 	result.add(NomadRegisterResult{JobID: "billing"})
+	result.add(NomadRegisterResult{JobID: "iam", SkippedUnchanged: true})
 	if result.SubmittedJobs != 2 {
 		t.Fatalf("submitted jobs = %d, want 2", result.SubmittedJobs)
+	}
+	if result.SkippedJobs != 1 {
+		t.Fatalf("skipped jobs = %d, want 1", result.SkippedJobs)
+	}
+	if len(result.Jobs) != 3 {
+		t.Fatalf("jobs = %d, want 3", len(result.Jobs))
+	}
+}
+
+func TestNomadUnitDecision(t *testing.T) {
+	desired := "abc123"
+	runningJob := func(meta map[string]string, status string, stop bool) *api.Job {
+		return &api.Job{Meta: meta, Status: &status, Stop: &stop}
+	}
+	cases := []struct {
+		name         string
+		running      *api.Job
+		found        bool
+		wantDecision string
+		wantPrevious string
+	}{
+		{name: "first deploy creates", running: nil, found: false, wantDecision: "create"},
+		{name: "matching running job skips", running: runningJob(map[string]string{"spec_sha256": desired}, "running", false), found: true, wantDecision: "skip", wantPrevious: desired},
+		{name: "different fingerprint rolls", running: runningJob(map[string]string{"spec_sha256": "other"}, "running", false), found: true, wantDecision: "roll", wantPrevious: "other"},
+		{name: "stopped job rolls despite matching fingerprint", running: runningJob(map[string]string{"spec_sha256": desired}, "running", true), found: true, wantDecision: "roll", wantPrevious: desired},
+		{name: "dead job rolls despite matching fingerprint", running: runningJob(map[string]string{"spec_sha256": desired}, "dead", false), found: true, wantDecision: "roll", wantPrevious: desired},
+		{name: "pre-fingerprint job rolls", running: runningJob(nil, "running", false), found: true, wantDecision: "roll", wantPrevious: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			decision, previous := nomadUnitDecision(tc.running, tc.found, desired)
+			if decision != tc.wantDecision {
+				t.Fatalf("decision = %q, want %q", decision, tc.wantDecision)
+			}
+			if previous != tc.wantPrevious {
+				t.Fatalf("previous = %q, want %q", previous, tc.wantPrevious)
+			}
+		})
 	}
 }
 

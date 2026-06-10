@@ -88,6 +88,37 @@ type SubmitResult struct {
 	JobModifyIndex uint64
 }
 
+// RegisteredJob reads the currently registered job, if any. A missing job is
+// an expected state (first deploy of a unit), reported as found=false rather
+// than an error.
+func (c *Client) RegisteredJob(ctx context.Context, jobID string) (*api.Job, bool, error) {
+	_, span := c.tracer.Start(ctx, "verself_deploy.nomad.read_job",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("nomad.job_id", jobID)),
+	)
+	defer span.End()
+	if jobID == "" {
+		err := errors.New("nomad job ID is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, false, err
+	}
+	job, _, err := c.api.Jobs().Info(jobID, (&api.QueryOptions{}).WithContext(ctx))
+	if err != nil {
+		if nomadNotFound(err) {
+			span.SetAttributes(attribute.Bool("nomad.job_found", false))
+			span.SetStatus(codes.Ok, "")
+			return nil, false, nil
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, false, fmt.Errorf("read %s: %w", jobID, err)
+	}
+	span.SetAttributes(attribute.Bool("nomad.job_found", true))
+	span.SetStatus(codes.Ok, "")
+	return job, true, nil
+}
+
 // Register submits a job exactly as parsed by the target Nomad API. Rollout
 // health, promotion, and rollback policy stay in Nomad job configuration.
 func (c *Client) Register(ctx context.Context, job *api.Job) (*SubmitResult, error) {

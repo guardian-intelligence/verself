@@ -273,6 +273,18 @@ aspect site root-handoff \
   --force-inventory
 ```
 
+Create the VM substrate ZFS pool on the spare NVMe device before deploying
+workload jobs. The vm-orchestrator daemon owns every dataset under the pool but
+deliberately never creates the pool itself; without it the daemon crash-loops
+on `zfs create vspool/images` and sandbox-rental-service cannot reach the API
+socket:
+
+```shell
+# On the target host. The OS lives on one NVMe; vspool takes the other.
+sudo zpool create -o ashift=12 -o autotrim=on -O compression=lz4 -O atime=off \
+  vspool /dev/<spare-nvme-device>
+```
+
 Then materialize provider state, publish DNS, converge the host, and deploy:
 
 OpenBao initialization uses the root token returned by `bao operator init` only

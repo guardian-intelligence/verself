@@ -42,4 +42,7 @@ for _ in $(seq 1 10); do
 done
 
 # --- Load native nftables ruleset (atomic table replace) ---
-nft -f /etc/nftables.d/firecracker.nft
+# Hosts carry no system nft; the Bazel-shipped nftables toolchain under
+# /opt/verself/nftables/current is the only ruleset applier.
+LD_LIBRARY_PATH="{{ firecracker_nft_ld_library_path }}" \
+    "{{ firecracker_nft_bin }}" -f /etc/nftables.d/firecracker.nft

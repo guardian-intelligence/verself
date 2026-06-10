@@ -21,3 +21,5 @@ firecracker_host_uplink_interface: ""
 firecracker_host_service_interface: verself-host0
 firecracker_host_service_ip: 10.255.0.1
 firecracker_vm_orchestrator_socket_group: vm-clients
+firecracker_nft_bin: /opt/verself/nftables/current/bin/nft
+firecracker_nft_ld_library_path: /opt/verself/nftables/current/lib/x86_64-linux-gnu

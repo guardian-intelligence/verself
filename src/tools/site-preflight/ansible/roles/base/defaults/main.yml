@@ -54,6 +54,10 @@ base_nomad_runtime_users:
     home: /var/lib/projects_service
   - name: sandbox_rental
     home: /var/lib/verself/sandbox-rental
+    # vm-clients grants rw on the vm-orchestrator API socket; only
+    # sandbox-rental-service may hold it.
+    groups:
+      - vm-clients
   - name: secrets_service
     home: /var/lib/secrets_service
   - name: source_code_hosting_service

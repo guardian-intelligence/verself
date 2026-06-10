@@ -138,11 +138,16 @@ element-type-aware, e.g. `snapshot -i | grep -E '(button|textbox) "Login
 Name"'`, never a bare label grep which also matches the `heading "Password"`):
 
 1. `agent-browser close` (env needs `--args "--no-sandbox"`).
-2. `open https://verself.sh/login`.
-3. Fill **"Email"** textbox = `qa-flight@verself.sh`.
-4. Fill the **"Password"** textbox and submit the **"Sign in"** button.
-5. It redirects to `https://verself.sh/<org>`. Append `?flight=…` and
-   `screenshot`.
+2. `open https://verself.sh/login/email` — the bare `/login` shows a
+   sign-in-options chooser with no input fields; only `/login/email` renders
+   the form.
+3. Fill `#email` = `qa-flight@verself.sh` and `#password` with **real
+   keystrokes** (`type`, not `fill` — the Base UI inputs ignore value-only
+   writes), e.g. via a single `agent-browser batch` JSON on stdin.
+4. Submit with the form's own `button[type=submit]` (`document.querySelector('form button[type=submit]').click()`),
+   not a label grep — two "Sign in with GitHub" buttons also match "Sign in".
+5. It redirects off `/login` (`/onboarding` or `https://verself.sh/<org>`).
+   Append `?flight=…` and `screenshot`.
 
 ### Flight widget QA states (no backend needed)
 

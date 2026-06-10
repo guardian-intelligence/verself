@@ -89,7 +89,7 @@ job "secrets-service" {
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
-SECRETS_OPENBAO_ADDR=https://{{- with nomadService "openbao-api" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+SECRETS_OPENBAO_ADDR=https://{{- with nomadService "openbao-api" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }
