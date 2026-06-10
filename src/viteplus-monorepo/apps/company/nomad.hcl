@@ -70,14 +70,14 @@ job "company" {
       }
     }
     update {
+      # No canary: it needs +1 alloc of headroom, which deadlocks updates on a
+      # memory-reserved single-node site; rolling replacement stays in budget.
       max_parallel = 1
       health_check = "checks"
       min_healthy_time = "3s"
       healthy_deadline = "300s"
       progress_deadline = "600s"
-      canary = 1
       auto_revert = true
-      auto_promote = true
     }
   }
 }
