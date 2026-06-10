@@ -290,7 +290,7 @@ func (a deploymentDistributionAdmitter) AdmitDeploymentImage(ctx context.Context
 		PolicyRef:         req.PolicyRef,
 		Evidence:          evidence,
 		SubmittedBy:       "deployment-service",
-	}, "deployment-image-"+req.Site+"-"+req.Output+"-"+strings.TrimPrefix(req.Digest, "sha256:"))
+	}, "deployment-image-"+req.Site+"-"+req.Output+"-"+req.SHA+"-"+strings.TrimPrefix(req.Digest, "sha256:"))
 	if err != nil {
 		return deployengine.DeploymentImageAdmissionResult{}, err
 	}
