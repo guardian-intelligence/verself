@@ -2,10 +2,8 @@
 
 load(
     ".aspect/lib/helpers.axl",
-    "bazel_run",
     "checked_spawn",
     "install_bazel_tool_shims",
-    "ws_path",
 )
 
 DEV_CONVENIENCE_SHIMS = [
@@ -37,13 +35,18 @@ def _hooks_install_impl(ctx):
         rc = checked_spawn(ctx, "git", ["config", "--unset-all", "core.hooksPath"], label = "git config --unset-all core.hooksPath")
         if rc != 0:
             return rc
-    return bazel_run(
+
+    # The hook is a Bazel-resolved binary symlinked into .git/hooks, the same
+    # shim mechanism as dev tools. It runs whole-tree checks with no index
+    # stashing.
+    hooks_dir = install_bazel_tool_shims(
         ctx,
-        "//src/tools/dev/binaries:uv",
-        ["tool", "run", "--from", "pre-commit==4.5.1", "pre-commit", "install"],
-        cwd = ws_path(ctx),
-        label = "uv tool run pre-commit install",
+        [("pre-commit", "//src/tools/dev/cmd/git-precommit")],
+        ".git/hooks",
     )
+    if hooks_dir == "":
+        return 1
+    return 0
 
 install = task(
     implementation = _install_impl,
@@ -61,5 +64,5 @@ hooks_install = task(
     implementation = _hooks_install_impl,
     name = "hooks-install",
     group = ["dev"],
-    summary = "Install repo git hooks via pre-commit.",
+    summary = "Install the repo git pre-commit hook (Bazel-resolved, no stashing).",
 )

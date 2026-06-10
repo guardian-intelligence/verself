@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "git-precommit_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/dev-tools/cmd/git-precommit",
+    visibility = ["//visibility:private"],
+)
+
+go_binary(
+    name = "git-precommit",
+    embed = [":git-precommit_lib"],
+    visibility = ["//visibility:public"],
+)
