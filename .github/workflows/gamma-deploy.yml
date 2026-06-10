@@ -23,8 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      # Stock checkout: the Verself checkout action requires the host mirror
+      # env that only exists inside Verself runner VMs, not on ubuntu-latest.
       - name: Check out repository
-        uses: guardian-intelligence/verself/.github/actions/checkout@main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
 
