@@ -3,7 +3,7 @@ base_legacy_component_systemd_units:
   - openbao.service
 
 # Direct Nomad task users that must exist before deployment submission.
-# root/nobody are OS defaults; postgres is created by the PostgreSQL prestart task.
+# root/nobody are OS defaults.
 base_nomad_runtime_groups:
   - vm-clients
 
@@ -46,6 +46,8 @@ base_nomad_runtime_users:
     home: /var/lib/openbao
   - name: otelcol
     home: /var/lib/otelcol
+  - name: postgres
+    home: /var/lib/postgresql
   - name: profile_service
     home: /var/lib/profile_service
   - name: projects_service

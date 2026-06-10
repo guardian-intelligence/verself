@@ -280,7 +280,7 @@ http_file(
 
 http_file(
     name = "podman_deb_rsync",
-    downloaded_file_path = "rsync_3.2.7-1ubuntu1.4_amd64.deb",
-    sha256 = "a2c92fc69ef4f646f2b267dacb456dbfec022bd32d5394e819c147548059627f",
-    url = "https://archive.ubuntu.com/ubuntu/pool/main/r/rsync/rsync_3.2.7-1ubuntu1.4_amd64.deb",
+    downloaded_file_path = "rsync_3.2.7-1ubuntu1.5_amd64.deb",
+    sha256 = "8f952895697d19a6f1caa71f17c7d4e8c1f1fb485eb824ffe3e4c77dd587b338",
+    url = "https://archive.ubuntu.com/ubuntu/pool/main/r/rsync/rsync_3.2.7-1ubuntu1.5_amd64.deb",
 )

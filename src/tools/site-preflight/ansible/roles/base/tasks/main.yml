@@ -161,6 +161,15 @@
     - { path: /etc/openbao/tls/cert.pem, mode: "0644" }
     - { path: /etc/openbao/tls/key.pem, mode: "0600" }
 
+- name: Publish OpenBao loopback CA bundle for Nomad
+  ansible.builtin.copy:
+    src: /etc/openbao/tls/cert.pem
+    dest: /etc/openbao/tls/ca.pem
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: true
+
 - name: Install bootstrap firewall readiness target
   ansible.builtin.copy:
     content: |
