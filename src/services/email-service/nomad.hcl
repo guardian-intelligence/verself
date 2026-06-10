@@ -59,7 +59,7 @@ job "email-service" {
         destination = "secrets/stalwart.env"
         perms = "0600"
         data = <<-EOT
-EMAIL_SERVICE_STALWART_BASE_URL=http://{{- with nomadService "stalwart-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EMAIL_SERVICE_STALWART_BASE_URL=http://{{- with nomadService "stalwart-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }
@@ -177,7 +177,7 @@ EOT
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
-EMAIL_SERVICE_STALWART_BASE_URL=http://{{- with nomadService "stalwart-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+EMAIL_SERVICE_STALWART_BASE_URL=http://{{- with nomadService "stalwart-http" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }

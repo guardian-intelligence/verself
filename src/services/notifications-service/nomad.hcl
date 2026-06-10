@@ -63,7 +63,7 @@ job "notifications-service" {
         destination = "secrets/operations.env"
         perms = "0600"
         data = <<-EOT
-NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }
@@ -149,7 +149,7 @@ EOT
         destination = "secrets/upstreams.env"
         perms = "0600"
         data = <<-EOT
-NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- else }}127.0.0.1:1{{- end }}
+NOTIFICATIONS_NATS_URL=tls://{{- with nomadService "nats-client" }}{{ with index . 0 }}{{ .Address }}:{{ .Port }}{{ end }}{{- end }}
 EOT
         env = true
       }
