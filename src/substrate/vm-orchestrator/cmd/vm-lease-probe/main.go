@@ -60,7 +60,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	capacity, err := client.GetCapacity(ctx)
 	if err != nil {
