@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "spicedb-operator-probe_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/verself/iam-service/cmd/spicedb-operator-probe",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_authzed_authzed_go//proto/authzed/api/v1:api",
+        "@com_github_authzed_authzed_go//v1:authzed-go",
+        "@com_github_authzed_grpcutil//:grpcutil",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+    ],
+)
+
+go_binary(
+    name = "spicedb-operator-probe",
+    embed = [":spicedb-operator-probe_lib"],
+    visibility = ["//visibility:public"],
+)
