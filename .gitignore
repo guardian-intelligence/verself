@@ -110,3 +110,8 @@ smoke-artifacts/
 # Nitro plugin bundles emitted next to each app's vite.config by the build
 src/viteplus-monorepo/apps/*/observability-plugin.mjs
 src/viteplus-monorepo/apps/*/rewrite-cjs-require.mjs
+
+.guardian
+
+# GitHub App private key material must never be tracked; import into OpenBao.
+*.private-key.pem

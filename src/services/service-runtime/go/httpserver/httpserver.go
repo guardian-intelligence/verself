@@ -10,9 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 // Standard server timeouts. Changing any of these changes every listener that
@@ -74,11 +71,10 @@ const ShutdownTimeout = 5 * time.Second
 // Any handler wrapping (otelhttp, request-body limits, allowlists) and TLS
 // configuration remain the caller's responsibility.
 //
-// The handler is wrapped with h2c.NewHandler so the public plane accepts
-// HTTP/2 over cleartext from HAProxy (whose Nomad-backed dynamic backends
-// run with `proto h2`) as well as HTTP/1.1. The wrap is inert on the TLS
-// internal plane: net/http intercepts ALPN h2 via TLSNextProto before the
-// handler runs, so h2c.NewHandler only ever sees cleartext traffic.
+// The server enables unencrypted HTTP/2 (prior knowledge) so the public
+// plane accepts HTTP/2 over cleartext from HAProxy (whose Nomad-backed
+// dynamic backends run with `proto h2`) as well as HTTP/1.1. The setting is
+// inert on the TLS internal plane, where HTTP/2 is negotiated via ALPN.
 func New(addr string, handler http.Handler) *http.Server {
 	return NewWithTimeouts(addr, handler, Timeouts{})
 }
@@ -87,9 +83,14 @@ func New(addr string, handler http.Handler) *http.Server {
 // that legitimately hold requests open for substrate work.
 func NewWithTimeouts(addr string, handler http.Handler, timeouts Timeouts) *http.Server {
 	timeouts = timeouts.withDefaults()
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
 	return &http.Server{
 		Addr:              addr,
-		Handler:           h2c.NewHandler(handler, &http2.Server{}),
+		Handler:           handler,
+		Protocols:         protocols,
 		ReadHeaderTimeout: timeouts.ReadHeader,
 		ReadTimeout:       timeouts.Read,
 		WriteTimeout:      timeouts.Write,

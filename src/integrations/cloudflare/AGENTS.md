@@ -45,6 +45,36 @@ The account-admin token creates the bucket through Cloudflare's REST R2 bucket A
 
 Do not create account-wide R2 child tokens. Live Cloudflare behavior requires bucket-scoped child token resources for S3-compatible credentials; account-wide R2 bucket management stays with the account-admin pair.
 
+### R2 API Token Permission Model
+
+R2 API tokens have exactly four permission tiers: Admin Read & Write, Admin
+Read, Object Read & Write, and Object Read. Constraints that follow:
+
+- A write-only or upload-only tier does not exist. Any credential that can
+  PUT can also GET and LIST within its scope. Designs must not assume a
+  PUT-only grant; treat every writer credential as a reader of its scope and
+  rely on bucket locks for immutability within the retention window. After
+  an object's lock window expires, an Object Read & Write credential can
+  delete or overwrite it.
+- Object-tier tokens scope to a set of buckets. Standard API tokens do not
+  scope to key prefixes; prefix isolation (for example
+  `verself-deployment-artifacts/<site>/...`) is a convention enforced by the
+  code that holds the credential, not by the token.
+- The S3 temporary-credentials API is the only prefix-scoped option: it
+  derives short-lived credentials from a parent token with bucket, prefix,
+  permission, and TTL bounds. It requires the parent token at mint time, so
+  it suits request-path services (`r2-control-plane` signs per-object URLs
+  this way) and not unattended periodic jobs.
+- Bucket locks (`cloudflare_r2_bucket_lock`) are bucket configuration
+  outside the S3 API surface. S3-compatible test substitutes such as Garage
+  validate SigV4 and object semantics but cannot exercise lock behavior;
+  lock semantics are verifiable only against live R2.
+
+The OpenBao recovery bundle writer credential
+(`docs/architecture/openbao-disaster-recovery.md`) is an Object Read & Write
+token scoped to the site recovery bucket. Its integrity story is the bucket
+lock plus manifest-last upload, not token permissions.
+
 ## DNS Model
 
 DNS records are target-site resources inside global hosted zones. For Gamma, `verself_domain: gamma.verself.sh` maps records into hosted zone `verself.sh`; record names are rendered under the Gamma subdomain.
