@@ -9,7 +9,11 @@
     "build": "vp build",
     "preview": "vp preview",
     "start": "node --import ./instrumentation.mjs ./.output/server/index.mjs",
-    "typecheck": "vp exec tsc -p tsconfig.json"
+    "typecheck": "vp exec tsc -p tsconfig.json",
+    "guardian:glow": "vp exec tsx scripts/guardian-glow-harness.ts start",
+    "guardian:glow:run": "vp exec tsx scripts/guardian-glow-harness.ts run",
+    "guardian:glow:tail": "vp exec tsx scripts/guardian-glow-harness.ts tail",
+    "guardian:glow:status": "vp exec tsx scripts/guardian-glow-harness.ts status"
   },
   "dependencies": {
     "@opentelemetry/api": "catalog:",
@@ -20,6 +24,9 @@
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@opentelemetry/sdk-trace-web": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
+    "@react-three/drei": "catalog:",
+    "@react-three/fiber": "catalog:",
+    "@react-three/postprocessing": "catalog:",
     "@resvg/resvg-js": "catalog:",
     "@tanstack/react-router": "catalog:",
     "@tanstack/react-start": "catalog:",
@@ -31,6 +38,7 @@
     "lucide-react": "catalog:",
     "marked": "catalog:",
     "nitro": "catalog:",
+    "postprocessing": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "three": "catalog:",
@@ -44,6 +52,7 @@
     "@types/react-dom": "catalog:",
     "@types/three": "catalog:",
     "@vitejs/plugin-react": "catalog:",
+    "playwright-core": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

@@ -123,6 +123,9 @@ catalogs:
     playwright-core:
       specifier: 1.60.0
       version: 1.60.0
+    postprocessing:
+      specifier: 6.39.1
+      version: 6.39.1
     react:
       specifier: ^19.0.0
       version: 19.2.4
@@ -222,6 +225,15 @@ importers:
       '@opentelemetry/semantic-conventions':
         specifier: 'catalog:'
         version: 1.40.0
+      '@react-three/drei':
+        specifier: 'catalog:'
+        version: 10.7.7(@react-three/fiber@9.6.1(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0))(@types/react@19.2.14)(@types/three@0.184.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
+      '@react-three/fiber':
+        specifier: 'catalog:'
+        version: 9.6.1(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0)
+      '@react-three/postprocessing':
+        specifier: 'catalog:'
+        version: 3.0.4(@react-three/fiber@9.6.1(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(three@0.184.0))(@types/three@0.184.0)(react@19.2.4)(three@0.184.0)
       '@resvg/resvg-js':
         specifier: 'catalog:'
         version: 2.6.2
@@ -255,6 +267,9 @@ importers:
       nitro:
         specifier: 'catalog:'
         version: 3.0.260311-beta(@voidzero-dev/vite-plus-core@0.1.19(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3))(chokidar@5.0.0)(dotenv@17.4.1)(giget@2.0.0)(jiti@2.6.1)
+      postprocessing:
+        specifier: 'catalog:'
+        version: 6.39.1(three@0.184.0)
       react:
         specifier: 'catalog:'
         version: 19.2.4
@@ -289,6 +304,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 'catalog:'
         version: 6.0.1(@voidzero-dev/vite-plus-core@0.1.19(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3))
+      playwright-core:
+        specifier: 'catalog:'
+        version: 1.60.0
       tailwindcss:
         specifier: 'catalog:'
         version: 4.2.2
@@ -391,6 +409,9 @@ importers:
       nitro:
         specifier: 'catalog:'
         version: 3.0.260311-beta(@voidzero-dev/vite-plus-core@0.1.19(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.3))(chokidar@5.0.0)(dotenv@17.4.1)(giget@2.0.0)(jiti@2.6.1)
+      postprocessing:
+        specifier: 'catalog:'
+        version: 6.39.1(three@0.184.0)
       react:
         specifier: 'catalog:'
         version: 19.2.4

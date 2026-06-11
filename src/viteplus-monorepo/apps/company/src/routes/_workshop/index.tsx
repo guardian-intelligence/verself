@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { FirstLight } from "~/features/first-light";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { GuardianGlowDemo } from "~/features/guardian-glow/GuardianGlowDemo";
+import { parseGuardianGlowSearch } from "~/features/guardian-glow/guardian-glow-config";
 import { ogMeta } from "~/lib/head";
 
 export const Route = createFileRoute("/_workshop/")({
@@ -15,14 +16,10 @@ export const Route = createFileRoute("/_workshop/")({
 });
 
 function LandingPage() {
-  return <LandingHero />;
-}
-
-function LandingHero() {
-  return (
-    <section className="relative isolate min-h-[calc(100svh-var(--header-h))] overflow-hidden">
-      <div className="absolute inset-0 bg-[var(--treatment-ground)]" />
-      <FirstLight />
-    </section>
+  const location = useLocation();
+  const settings = parseGuardianGlowSearch(
+    Object.fromEntries(new URLSearchParams(location.searchStr)),
   );
+
+  return <GuardianGlowDemo settings={settings} />;
 }
